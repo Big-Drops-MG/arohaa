@@ -1,0 +1,37 @@
+---
+description: Linting, formatting, and Git commit standards for a clean repo
+alwaysApply: true
+---
+
+# Linting and commits
+
+## Before you commit
+
+- Run `pnpm lint` and `pnpm typecheck` from the repo root when you touch TypeScript, ESLint config, or shared packages. Fix errors; do not rely on `--no-verify` unless there is an exceptional reason.
+- Let **Husky + lint-staged** run on commit. They run **ESLint with `--fix`** and **Prettier** on staged files in `apps/dashboard`, `packages/ui`, and `packages/eslint-config`, and Prettier on staged `json`, `md`, `css`, `yml`, `yaml` files.
+- If you add a new workspace package under `packages/`, register it in `pnpm-workspace.yaml` (paths are listed explicitly, not `packages/*`).
+
+## ESLint
+
+- Prefer fixing the issue over disabling a rule. If you must disable, use the narrowest scope (single line) and a short comment explaining why.
+- Match each app or package’s existing `eslint.config.js` (Next vs React library vs shared base at the repo root). Do not bypass package-local rules from the root unless the change is intentional and documented.
+- Treat warnings from `eslint-plugin-only-warn` as signals to clean up when you are already editing that file; avoid adding new patterns that would add warnings.
+
+## Prettier
+
+- Use the repo’s Prettier setup (including `prettier-plugin-tailwindcss` where it applies). Do not hand-format to fight Prettier; run `pnpm format` or save with format-on-save if you use it locally.
+- Do not commit manual edits to generated or build output (for example `.next/`, `dist/`, coverage). They belong in `.gitignore`, not in Git history.
+
+## TypeScript and imports
+
+- Respect `strict` and existing `tsconfig` paths (`@/*`, `@workspace/ui/*`, NodeNext / bundler resolution as configured per package). Use correct import extensions where NodeNext requires them.
+- Remove unused imports, variables, and parameters. Prefer explicit types on exported APIs and public components when inference is unclear.
+
+## Structure and scope
+
+- Keep changes scoped to the task: avoid unrelated refactors, drive-by formatting of untouched files, or noisy comments in the same commit as a feature fix.
+- Shared UI stays in `@workspace/ui`; app-specific code stays in `apps/dashboard` unless there is a deliberate shared-package change.
+
+## When hooks fail
+
+- Read the ESLint or Prettier output, apply fixes, and stage again. If a rule is wrong for the project, adjust shared ESLint config in `packages/eslint-config` in a dedicated change rather than stacking file-level disables.

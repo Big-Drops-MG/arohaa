@@ -1,0 +1,4 @@
+{
+  "buildCommand": "cd ../.. && pnpm exec turbo run build --filter=dashboard",
+  "outputDirectory": ".next"
+}
