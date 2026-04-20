@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm turbo run lint ${{ github.event_name == 'pull_request' && '--filter=...[origin/main]' || '' }}
+
+      - name: Typecheck
+        run: pnpm turbo run typecheck ${{ github.event_name == 'pull_request' && '--filter=...[origin/main]' || '' }}
+
+      - name: Format
+        run: pnpm turbo run format ${{ github.event_name == 'pull_request' && '--filter=...[origin/main]' || '' }} -- --check
+
+      - name: Build
+        run: pnpm turbo run build ${{ github.event_name == 'pull_request' && '--filter=...[origin/main]' || '' }}
