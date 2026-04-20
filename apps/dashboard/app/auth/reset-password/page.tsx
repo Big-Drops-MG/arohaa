@@ -74,7 +74,7 @@ export default function ResetPasswordPage() {
       } else {
         router.push("/auth/reset-password/success")
       }
-    } catch (error) {
+    } catch {
       toast.error("An unexpected error occurred. Please try again.")
     } finally {
       setIsLoading(false)
@@ -83,20 +83,20 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#F9FAFB] dark:bg-background px-4 py-12">
-      <div className="w-full max-w-[400px] space-y-8">
+      <div className="w-full max-w-[440px] space-y-[30px]">
         <div className="flex flex-col items-center text-center">
-          <h1 className="text-2xl font-bold tracking-tight">Arohaa</h1>
-          <div className="mt-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+          <h1 className="text-2xl font-bold tracking-tight font-heading">Arohaa</h1>
+          <div className="mt-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground font-sans">
             by <Logo /> <span className="font-extrabold text-red-600">Big Drops MG</span>
           </div>
-          <h2 className="mt-10 text-xl font-semibold">
+          <h2 className="mt-10 text-xl font-semibold font-heading">
             Reset Password
           </h2>
         </div>
 
         <Card className="border-none bg-white dark:bg-card shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-          <CardContent className="p-8">
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          <CardContent className="px-8 py-[30px]">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-[30px]">
               <div className="space-y-1">
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -105,7 +105,7 @@ export default function ResetPasswordPage() {
                     placeholder="New Password"
                     disabled={isLoading}
                     className={cn(
-                      "h-12 border-gray-200 pl-10 pr-10 focus:border-black focus:ring-0 dark:border-input dark:focus:border-primary placeholder:text-gray-400",
+                      "h-12 border-gray-200 pl-10 pr-10 focus:border-black focus:ring-0 dark:border-input dark:focus:border-primary placeholder:text-gray-400 font-sans",
                       errors.password && "border-red-500 focus:border-red-500"
                     )}
                     {...register("password")}
@@ -129,7 +129,7 @@ export default function ResetPasswordPage() {
                     placeholder="Confirm Password"
                     disabled={isLoading}
                     className={cn(
-                      "h-12 border-gray-200 pl-10 pr-10 focus:border-black focus:ring-0 dark:border-input dark:focus:border-primary placeholder:text-gray-400",
+                      "h-12 border-gray-200 pl-10 pr-10 focus:border-black focus:ring-0 dark:border-input dark:focus:border-primary placeholder:text-gray-400 font-sans",
                       errors.confirmPassword && "border-red-500 focus:border-red-500"
                     )}
                     {...register("confirmPassword")}
@@ -146,7 +146,7 @@ export default function ResetPasswordPage() {
               </div>
 
               <div className="space-y-3">
-                <p className="text-center text-xs font-medium text-foreground">
+                <p className="text-center text-xs font-medium text-foreground font-sans">
                   Enter Code for Verification
                 </p>
                 <Controller
@@ -163,14 +163,14 @@ export default function ResetPasswordPage() {
               </div>
 
               {(errors.password || errors.confirmPassword || errors.code) && (
-                <p className="text-center text-xs text-red-500">
+                <p className="text-center text-xs text-red-500 font-sans">
                   {errors.password?.message || errors.confirmPassword?.message || errors.code?.message}
                 </p>
               )}
 
               <Button
                 type="submit"
-                className="h-12 w-full bg-[#1F2937] text-white hover:bg-[#111827] dark:bg-primary dark:text-primary-foreground font-medium"
+                className="h-12 w-full bg-[#1F2937] text-white hover:bg-[#111827] dark:bg-primary dark:text-primary-foreground font-medium font-heading"
                 disabled={isLoading}
               >
                 {isLoading ? (

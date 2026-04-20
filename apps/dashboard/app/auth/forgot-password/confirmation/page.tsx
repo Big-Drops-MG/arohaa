@@ -25,23 +25,23 @@ const Logo = () => (
 export default function ConfirmationPage() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#F9FAFB] dark:bg-background px-4 py-12">
-      <div className="w-full max-w-[400px] space-y-8 text-center">
+      <div className="w-full max-w-[440px] space-y-[30px] text-center">
         <div className="flex flex-col items-center">
-          <h1 className="text-2xl font-bold tracking-tight">Arohaa</h1>
-          <div className="mt-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+          <h1 className="text-2xl font-bold tracking-tight font-heading">Arohaa</h1>
+          <div className="mt-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground font-sans">
             by <Logo /> <span className="font-extrabold text-red-600">Big Drops MG</span>
           </div>
         </div>
 
         <Card className="border-none bg-white dark:bg-card shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-          <CardContent className="p-10 flex flex-col items-center">
-            <h2 className="text-xl font-semibold mb-2">
+          <CardContent className="px-10 py-[30px] flex flex-col items-center">
+            <h2 className="text-xl font-semibold mb-2 font-heading">
               Check your email
             </h2>
-            <p className="text-sm text-muted-foreground mb-8">
+            <p className="text-sm text-muted-foreground mb-8 font-sans">
               We&apos;ve sent a password reset link to your email address
             </p>
-            <Button asChild className="h-12 w-full bg-[#1F2937] text-white hover:bg-[#111827] dark:bg-primary dark:text-primary-foreground font-medium">
+            <Button asChild className="h-12 w-full bg-[#1F2937] text-white hover:bg-[#111827] dark:bg-primary dark:text-primary-foreground font-medium font-heading">
               <Link href="/login">Back to Login</Link>
             </Button>
           </CardContent>

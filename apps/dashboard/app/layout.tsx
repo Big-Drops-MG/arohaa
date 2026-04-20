@@ -1,4 +1,4 @@
-import { Geist_Mono, Inter } from "next/font/google"
+import { Geist_Mono, Inter, Poppins } from "next/font/google"
 
 import "@workspace/ui/globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -7,6 +7,11 @@ import { Toaster } from "sonner"
 import { cn } from "@workspace/ui/lib/utils"
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-heading",
+})
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
@@ -26,7 +31,8 @@ export default function RootLayout({
         "antialiased",
         fontMono.variable,
         "font-sans",
-        inter.variable
+        inter.variable,
+        poppins.variable
       )}
     >
       <body>
