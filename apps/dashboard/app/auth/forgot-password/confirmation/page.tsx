@@ -1,5 +1,4 @@
 import Link from "next/link"
-import { CheckCircle2 } from "lucide-react"
 
 import { Button } from "@workspace/ui/components/button"
 import {
@@ -7,31 +6,42 @@ import {
   CardContent,
 } from "@workspace/ui/components/card"
 
+const Logo = () => (
+  <div className="flex items-center gap-0.5 px-1">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="12" r="3" fill="#EF4444"/>
+      <circle cx="12" cy="4" r="2" fill="#EF4444"/>
+      <circle cx="12" cy="20" r="2" fill="#EF4444"/>
+      <circle cx="4" cy="12" r="2" fill="#EF4444"/>
+      <circle cx="20" cy="12" r="2" fill="#EF4444"/>
+      <circle cx="6.34" cy="6.34" r="2" fill="#EF4444"/>
+      <circle cx="17.66" cy="17.66" r="2" fill="#EF4444"/>
+      <circle cx="6.34" cy="17.66" r="2" fill="#EF4444"/>
+      <circle cx="17.66" cy="6.34" r="2" fill="#EF4444"/>
+    </svg>
+  </div>
+)
+
 export default function ConfirmationPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4 py-12 sm:px-6 lg:px-8">
-      <div className="w-full max-w-md space-y-8 text-center">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[#F9FAFB] dark:bg-background px-4 py-12">
+      <div className="w-full max-w-[400px] space-y-8 text-center">
         <div className="flex flex-col items-center">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-2xl font-bold">Arohaa</span>
+          <h1 className="text-2xl font-bold tracking-tight">Arohaa</h1>
+          <div className="mt-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+            by <Logo /> <span className="font-extrabold text-red-600">Big Drops MG</span>
           </div>
-          <p className="text-sm text-muted-foreground">
-            by <span className="font-semibold text-destructive">Big Drops MG</span>
-          </p>
         </div>
 
-        <Card className="border-none shadow-lg">
-          <CardContent className="pt-8 pb-8 flex flex-col items-center">
-            <div className="rounded-full bg-green-100 p-3 mb-4 dark:bg-green-900/20">
-              <CheckCircle2 className="h-8 w-8 text-green-600 dark:text-green-400" />
-            </div>
-            <h2 className="text-xl font-semibold tracking-tight mb-2">
+        <Card className="border-none bg-white dark:bg-card shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+          <CardContent className="p-10 flex flex-col items-center">
+            <h2 className="text-xl font-semibold mb-2">
               Check your email
             </h2>
-            <p className="text-sm text-muted-foreground mb-6">
-              We've sent a password reset link to your email address. Please check your inbox and follow the instructions.
+            <p className="text-sm text-muted-foreground mb-8">
+              We&apos;ve sent a password reset link to your email address
             </p>
-            <Button asChild className="w-full">
+            <Button asChild className="h-12 w-full bg-[#1F2937] text-white hover:bg-[#111827] dark:bg-primary dark:text-primary-foreground font-medium">
               <Link href="/login">Back to Login</Link>
             </Button>
           </CardContent>

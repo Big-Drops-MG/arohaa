@@ -20,7 +20,6 @@ export const OTPInput = React.forwardRef<HTMLDivElement, OTPInputProps>(
       if (!/^\d*$/.test(char)) return
 
       const newValue = value.split("")
-      // Ensure the array is at least 'length' long
       while (newValue.length < length) newValue.push("")
 
       newValue[index] = char
@@ -46,31 +45,33 @@ export const OTPInput = React.forwardRef<HTMLDivElement, OTPInputProps>(
 
     const handlePaste = (e: React.ClipboardEvent) => {
       e.preventDefault()
-      const data = e.clipboardData.getData("text").slice(0, length)
-      if (!/^\d+$/.test(data)) return
-
+      const data = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, length)
       onChange(data)
       const lastIndex = Math.min(data.length, length - 1)
       inputRefs.current[lastIndex]?.focus()
     }
 
     return (
-      <div ref={ref} className={cn("flex gap-2 justify-center", className)}>
+      <div ref={ref} className={cn("flex items-center gap-2 justify-center", className)}>
         {Array.from({ length }).map((_, i) => (
-          <input
-            key={i}
-            ref={(el) => { inputRefs.current[i] = el }}
-            type="text"
-            inputMode="numeric"
-            pattern="\d{1}"
-            maxLength={1}
-            value={value[i] || ""}
-            onChange={(e) => handleChange(i, e)}
-            onKeyDown={(e) => handleKeyDown(i, e)}
-            onPaste={handlePaste}
-            disabled={disabled}
-            className="w-10 h-12 text-center text-lg font-semibold border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50"
-          />
+          <React.Fragment key={i}>
+            <input
+              ref={(el) => { inputRefs.current[i] = el }}
+              type="text"
+              inputMode="numeric"
+              pattern="\d{1}"
+              maxLength={1}
+              value={value[i] || ""}
+              onChange={(e) => handleChange(i, e)}
+              onKeyDown={(e) => handleKeyDown(i, e)}
+              onPaste={handlePaste}
+              disabled={disabled}
+              className="w-10 h-12 text-center text-lg font-semibold border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 border-input shadow-sm"
+            />
+            {i === 2 && length === 6 && (
+              <span className="text-muted-foreground font-bold px-1">-</span>
+            )}
+          </React.Fragment>
         ))}
       </div>
     )
