@@ -36,6 +36,8 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  apps/api: {}
+
   apps/dashboard:
     dependencies:
       '@workspace/ui':
@@ -103,6 +105,8 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/database: {}
+
   packages/eslint-config:
     devDependencies:
       '@eslint/js':
@@ -144,6 +148,8 @@ importers:
       typescript-eslint:
         specifier: ^8.54.0
         version: 8.55.0(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)
+
+  packages/tracker-sdk: {}
 
   packages/typescript-config: {}
 
