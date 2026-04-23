@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: arohaa-clickhouse
+    ports:
+      - "8123:8123" # HTTP port (Fastify connects here)
+      - "9000:9000" # Native port
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+volumes:
+  clickhouse_data:
