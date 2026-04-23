@@ -91,4 +91,37 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  ::selection {
+    background-color: #000;
+    color: #fff;
+  }
+
+  ::-moz-selection {
+    background-color: #000;
+    color: #fff;
+  }
+
+  [data-slot="input"]:-webkit-autofill,
+  [data-slot="input"]:-webkit-autofill:hover,
+  [data-slot="input"]:-webkit-autofill:focus,
+  [data-slot="input"]:-webkit-autofill:focus-visible,
+  [data-slot="input"]:-webkit-autofill:active {
+    -webkit-text-fill-color: oklch(0.145 0 0) !important;
+    caret-color: oklch(0.145 0 0) !important;
+    -webkit-box-shadow: inset 0 0 0 1000px #fff !important;
+    box-shadow: inset 0 0 0 1000px #fff !important;
+  }
+
+  [data-slot="input"]:autofill,
+  [data-slot="input"]:autofill:hover,
+  [data-slot="input"]:autofill:focus,
+  [data-slot="input"]:autofill:focus-visible,
+  [data-slot="input"]:autofill:active {
+    color: oklch(0.145 0 0) !important;
+    caret-color: oklch(0.145 0 0) !important;
+    -webkit-text-fill-color: oklch(0.145 0 0) !important;
+    -webkit-box-shadow: inset 0 0 0 1000px #fff !important;
+    box-shadow: inset 0 0 0 1000px #fff !important;
+  }
 }
