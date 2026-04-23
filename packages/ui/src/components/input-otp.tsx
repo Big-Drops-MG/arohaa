@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { OTPInput, OTPInputContext } from "input-otp"
+import { OTPInput, OTPInputContext, REGEXP_ONLY_DIGITS } from "input-otp"
 
 import { cn } from "@workspace/ui/lib/utils"
 import { MinusIcon } from "lucide-react"
@@ -9,6 +9,8 @@ import { MinusIcon } from "lucide-react"
 function InputOTP({
   className,
   containerClassName,
+  pattern = REGEXP_ONLY_DIGITS,
+  inputMode = "numeric",
   ...props
 }: React.ComponentProps<typeof OTPInput> & {
   containerClassName?: string
@@ -21,6 +23,8 @@ function InputOTP({
         containerClassName
       )}
       spellCheck={false}
+      pattern={pattern}
+      inputMode={inputMode}
       className={cn("disabled:cursor-not-allowed", className)}
       {...props}
     />
@@ -83,4 +87,9 @@ function InputOTPSeparator({ ...props }: React.ComponentProps<"div">) {
   )
 }
 
-export { InputOTP, InputOTPGroup, InputOTPSlot, InputOTPSeparator }
+export { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot }
+export {
+  REGEXP_ONLY_CHARS,
+  REGEXP_ONLY_DIGITS,
+  REGEXP_ONLY_DIGITS_AND_CHARS,
+} from "input-otp"

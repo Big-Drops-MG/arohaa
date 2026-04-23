@@ -1,17 +1,11 @@
 "use client"
 
-import Image from "next/image"
+import { AuthBrandHeader, AuthScreen } from "./AuthScreen"
 import { useRouter } from "next/navigation"
 import type { FormEvent } from "react"
 import { useMemo, useState } from "react"
 import { Button } from "@workspace/ui/components/button"
-
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@workspace/ui/components/card"
+import { Card, CardContent, CardHeader } from "@workspace/ui/components/card"
 import {
   InputOTP,
   InputOTPGroup,
@@ -19,22 +13,17 @@ import {
   InputOTPSlot,
 } from "@workspace/ui/components/input-otp"
 import { Input } from "@workspace/ui/components/input"
+import { Label } from "@workspace/ui/components/label"
 import { cn } from "@workspace/ui/lib/utils"
 import { Eye, EyeOff, LoaderCircle, Lock } from "lucide-react"
 
 const CORRECT_TEST_OTP = "456789"
 
-const loginFieldClass =
-  "box-border flex h-12 max-w-full shrink-0 items-center gap-[15px] rounded-[10px] border border-[1px] px-[25px] opacity-100 shadow-none focus-within:border-black focus-within:ring-0 focus-within:shadow-none dark:focus-within:border-white"
+const iconWrap =
+  "pointer-events-none absolute inset-y-0 left-0 flex w-10 items-center justify-center text-muted-foreground"
 
-const loginInputClass =
-  "h-full min-h-0 min-w-0 flex-1 border-0 bg-transparent p-0 shadow-none focus-visible:border-0 focus-visible:ring-0 focus-visible:shadow-none aria-invalid:border-0 aria-invalid:ring-0 aria-invalid:shadow-none dark:aria-invalid:border-0 dark:aria-invalid:ring-0 invalid:ring-0 invalid:shadow-none"
-
-const baseOtpSlotClass =
-  "h-[70px] w-[40px] rounded-[10px] border text-center text-lg font-medium shadow-none focus:outline-none focus:ring-0 data-[active=true]:ring-0 data-[active=true]:shadow-none"
-
-const submitButtonClass =
-  "mt-3 box-border flex h-12 w-full max-w-[360px] shrink-0 items-center justify-center gap-2 rounded-[10px] border p-3 text-base font-medium leading-none shadow-none"
+const otpSlotBase =
+  "relative flex size-11 items-center justify-center rounded-md border border-input bg-white text-lg font-medium text-neutral-900 shadow-xs transition-colors data-[active=true]:z-10 data-[active=true]:border-ring data-[active=true]:ring-3 data-[active=true]:ring-ring/50 sm:size-12 sm:text-xl"
 
 export function ResetPassword() {
   const router = useRouter()
@@ -45,10 +34,7 @@ export function ResetPassword() {
   const [code, setCode] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
 
-  const newPasswordValid = useMemo(
-    () => newPassword.length === 0 || newPassword.length >= 8,
-    [newPassword]
-  )
+  const newPasswordValid = newPassword.length === 0 || newPassword.length >= 8
   const passwordsMatch =
     confirmPassword.length === 0 || newPassword === confirmPassword
 
@@ -56,25 +42,18 @@ export function ResetPassword() {
   const confirmPasswordFieldError =
     confirmPassword.length > 0 && !passwordsMatch
 
-  const passwordsReady = useMemo(() => {
-    return (
-      newPassword.length >= 8 &&
-      confirmPassword.length > 0 &&
-      newPassword === confirmPassword
-    )
-  }, [newPassword, confirmPassword])
+  const passwordsReady =
+    newPassword.length >= 8 &&
+    confirmPassword.length > 0 &&
+    newPassword === confirmPassword
 
   const isComplete = code.length === 6
-  const isCorrect = code === CORRECT_TEST_OTP
-  const isWrong = isComplete && !isCorrect
-
+  const isWrong = isComplete && code !== CORRECT_TEST_OTP
   const canSubmit = passwordsReady && code.length === 6
 
-  const otpSlotClass = cn(
-    baseOtpSlotClass,
-    isWrong
-      ? "border-destructive focus:border-destructive data-[active=true]:border-destructive dark:border-destructive"
-      : "border-black focus:border-black data-[active=true]:border-black dark:border-white dark:focus:border-white dark:data-[active=true]:border-white"
+  const slotClass = useMemo(
+    () => cn(otpSlotBase, isWrong && "border-destructive"),
+    [isWrong]
   )
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -93,166 +72,198 @@ export function ResetPassword() {
   }
 
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-4">
-      <Card className="w-full max-w-[408px]">
-        <CardHeader className="pb-0">
-          <div className="flex w-full flex-col items-center gap-3 text-center">
-            <Image
-              src="/Frame%2030.svg"
-              alt="Company logo"
-              width={161}
-              height={58}
-              className="shrink-0 object-contain"
-              priority
-            />
-          </div>
+    <AuthScreen>
+      <Card className="border-border/80 shadow-sm">
+        <CardHeader className="gap-0 pb-2 text-center sm:pb-4">
+          <AuthBrandHeader
+            title="Reset password"
+            description="Choose a new password, then enter the 6-digit code from your email."
+          />
         </CardHeader>
-        <CardTitle className="text-center">Reset Password</CardTitle>
-        <CardContent className="flex flex-col gap-6 pt-2">
-          <div className="mx-auto flex w-[360px] max-w-full flex-col gap-[15px]">
-            <div
-              className={cn(
-                loginFieldClass,
-                "group/reset-new-password",
-                newPasswordFieldError &&
-                  "border-destructive focus-within:border-destructive dark:border-destructive dark:focus-within:border-destructive"
-              )}
-            >
-              <Lock
-                className="size-4 shrink-0 text-muted-foreground"
-                aria-hidden
-              />
-              <Input
-                id="new-password"
-                type={newPasswordVisible ? "text" : "password"}
-                name="newPassword"
-                autoComplete="new-password"
-                placeholder="New password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                aria-invalid={newPasswordFieldError}
-                className={cn(
-                  loginInputClass,
-                  newPasswordFieldError
-                    ? "text-foreground"
-                    : "text-muted-foreground group-focus-within/reset-new-password:text-foreground"
-                )}
-              />
-              <button
-                type="button"
-                className="inline-flex shrink-0 rounded-sm text-muted-foreground transition-opacity outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                aria-label={
-                  newPasswordVisible ? "Hide password" : "Show password"
-                }
-                aria-pressed={newPasswordVisible}
-                onClick={() => setNewPasswordVisible((v) => !v)}
-              >
-                {newPasswordVisible ? (
-                  <EyeOff className="size-4" aria-hidden />
-                ) : (
-                  <Eye className="size-4" aria-hidden />
-                )}
-              </button>
-            </div>
-            <div
-              className={cn(
-                loginFieldClass,
-                "group/reset-confirm-password",
-                confirmPasswordFieldError &&
-                  "border-destructive focus-within:border-destructive dark:border-destructive dark:focus-within:border-destructive"
-              )}
-            >
-              <Lock
-                className="size-4 shrink-0 gap-5 text-muted-foreground"
-                aria-hidden
-              />
-              <Input
-                id="confirm-password"
-                type={confirmPasswordVisible ? "text" : "password"}
-                name="confirmPassword"
-                autoComplete="new-password"
-                placeholder="Confirm password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                aria-invalid={confirmPasswordFieldError}
-                className={cn(
-                  loginInputClass,
-                  confirmPasswordFieldError
-                    ? "text-foreground"
-                    : "text-muted-foreground group-focus-within/reset-confirm-password:text-foreground"
-                )}
-              />
-              <button
-                type="button"
-                className="inline-flex shrink-0 rounded-sm text-muted-foreground transition-opacity outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                aria-label={
-                  confirmPasswordVisible ? "Hide password" : "Show password"
-                }
-                aria-pressed={confirmPasswordVisible}
-                onClick={() => setConfirmPasswordVisible((v) => !v)}
-              >
-                {confirmPasswordVisible ? (
-                  <EyeOff className="size-4" aria-hidden />
-                ) : (
-                  <Eye className="size-4" aria-hidden />
-                )}
-              </button>
-            </div>
-          </div>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-8">
+            <div className="flex flex-col gap-5">
+              <div className="space-y-2">
+                <Label htmlFor="new-password" className="text-foreground">
+                  New password
+                </Label>
+                <div className="relative">
+                  <span className={iconWrap} aria-hidden>
+                    <Lock className="size-4" />
+                  </span>
+                  <Input
+                    id="new-password"
+                    type={newPasswordVisible ? "text" : "password"}
+                    name="newPassword"
+                    autoComplete="new-password"
+                    placeholder="At least 8 characters"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    aria-invalid={newPasswordFieldError}
+                    aria-describedby={
+                      newPasswordFieldError
+                        ? "reset-new-password-error"
+                        : undefined
+                    }
+                    className={cn(
+                      "h-11 pr-11 pl-10 text-base md:text-sm",
+                      newPasswordFieldError && "border-destructive"
+                    )}
+                  />
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    aria-label={
+                      newPasswordVisible ? "Hide password" : "Show password"
+                    }
+                    aria-pressed={newPasswordVisible}
+                    onClick={() => setNewPasswordVisible((v) => !v)}
+                  >
+                    {newPasswordVisible ? (
+                      <EyeOff className="size-4 shrink-0" aria-hidden />
+                    ) : (
+                      <Eye className="size-4 shrink-0" aria-hidden />
+                    )}
+                  </button>
+                </div>
+                {newPasswordFieldError ? (
+                  <p
+                    id="reset-new-password-error"
+                    className="text-sm text-destructive"
+                    role="alert"
+                  >
+                    Password must be at least 8 characters.
+                  </p>
+                ) : null}
+              </div>
 
-          <div className="mx-auto flex w-full max-w-[360px] flex-col items-center gap-5">
-            <CardTitle className="text-center">
-              Enter the code for verification
-            </CardTitle>
-            <form
-              onSubmit={handleSubmit}
-              className="flex w-full flex-col items-center gap-5"
-            >
-              <InputOTP
-                maxLength={6}
-                value={code}
-                onChange={setCode}
-                disabled={isProcessing || !passwordsReady}
-              >
-                <InputOTPGroup className="flex gap-[15px]">
-                  <InputOTPSlot index={0} className={otpSlotClass} />
-                  <InputOTPSlot index={1} className={otpSlotClass} />
-                  <InputOTPSlot index={2} className={otpSlotClass} />
-                </InputOTPGroup>
-                <InputOTPSeparator />
-                <InputOTPGroup className="flex gap-[15px]">
-                  <InputOTPSlot index={3} className={otpSlotClass} />
-                  <InputOTPSlot index={4} className={otpSlotClass} />
-                  <InputOTPSlot index={5} className={otpSlotClass} />
-                </InputOTPGroup>
-              </InputOTP>
-              <Button
-                type="submit"
-                disabled={!canSubmit || isProcessing}
-                aria-busy={isProcessing}
-                className={submitButtonClass}
-              >
-                {isProcessing ? (
-                  <>
-                    <span>Verifying</span>
-                    <LoaderCircle
-                      className="size-5 shrink-0 animate-spin"
-                      aria-hidden
-                    />
-                  </>
-                ) : (
-                  "Verify"
-                )}
-              </Button>
-              {isWrong && (
-                <p className="mt-2 text-center text-sm text-destructive">
-                  Invalid code. Please try again.
-                </p>
-              )}
-            </form>
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password" className="text-foreground">
+                  Confirm password
+                </Label>
+                <div className="relative">
+                  <span className={iconWrap} aria-hidden>
+                    <Lock className="size-4" />
+                  </span>
+                  <Input
+                    id="confirm-password"
+                    type={confirmPasswordVisible ? "text" : "password"}
+                    name="confirmPassword"
+                    autoComplete="new-password"
+                    placeholder="Re-enter your password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    aria-invalid={confirmPasswordFieldError}
+                    aria-describedby={
+                      confirmPasswordFieldError
+                        ? "reset-confirm-password-error"
+                        : undefined
+                    }
+                    className={cn(
+                      "h-11 pr-11 pl-10 text-base md:text-sm",
+                      confirmPasswordFieldError && "border-destructive"
+                    )}
+                  />
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    aria-label={
+                      confirmPasswordVisible ? "Hide password" : "Show password"
+                    }
+                    aria-pressed={confirmPasswordVisible}
+                    onClick={() => setConfirmPasswordVisible((v) => !v)}
+                  >
+                    {confirmPasswordVisible ? (
+                      <EyeOff className="size-4 shrink-0" aria-hidden />
+                    ) : (
+                      <Eye className="size-4 shrink-0" aria-hidden />
+                    )}
+                  </button>
+                </div>
+                {confirmPasswordFieldError ? (
+                  <p
+                    id="reset-confirm-password-error"
+                    className="text-sm text-destructive"
+                    role="alert"
+                  >
+                    Passwords do not match.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-5">
+              <div className="space-y-2">
+                <Label
+                  id="reset-otp-label"
+                  htmlFor="reset-otp"
+                  className="text-foreground"
+                >
+                  Verification code
+                </Label>
+                <div className="flex justify-center">
+                  <InputOTP
+                    id="reset-otp"
+                    maxLength={6}
+                    value={code}
+                    onChange={setCode}
+                    disabled={isProcessing || !passwordsReady}
+                    containerClassName="gap-2 sm:gap-3"
+                    aria-labelledby="reset-otp-label"
+                  >
+                    <InputOTPGroup className="gap-2 sm:gap-3">
+                      <InputOTPSlot index={0} className={slotClass} />
+                      <InputOTPSlot index={1} className={slotClass} />
+                      <InputOTPSlot index={2} className={slotClass} />
+                    </InputOTPGroup>
+                    <InputOTPSeparator className="text-muted-foreground" />
+                    <InputOTPGroup className="gap-2 sm:gap-3">
+                      <InputOTPSlot index={3} className={slotClass} />
+                      <InputOTPSlot index={4} className={slotClass} />
+                      <InputOTPSlot index={5} className={slotClass} />
+                    </InputOTPGroup>
+                  </InputOTP>
+                </div>
+                {!passwordsReady ? (
+                  <p className="text-center text-sm text-muted-foreground">
+                    Enter matching passwords above to enable the code field.
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <Button
+                  type="submit"
+                  size="lg"
+                  className="h-11 w-full text-base font-medium"
+                  disabled={!canSubmit || isProcessing}
+                  aria-busy={isProcessing}
+                >
+                  {isProcessing ? (
+                    <>
+                      <span>Verifying</span>
+                      <LoaderCircle
+                        className="size-5 shrink-0 animate-spin"
+                        aria-hidden
+                      />
+                    </>
+                  ) : (
+                    "Reset password"
+                  )}
+                </Button>
+                {isWrong ? (
+                  <p
+                    className="text-center text-sm text-destructive"
+                    role="alert"
+                  >
+                    That code did not match. Please try again.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </form>
         </CardContent>
       </Card>
-    </div>
+    </AuthScreen>
   )
 }

@@ -1,127 +1,133 @@
 "use client"
+
+import { AuthBrandHeader, AuthScreen } from "./AuthScreen"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
-import Image from "next/image"
 import type { FormEvent } from "react"
 import { useState } from "react"
 import { Button } from "@workspace/ui/components/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@workspace/ui/components/card"
+import { Card, CardContent, CardHeader } from "@workspace/ui/components/card"
 import {
   InputOTP,
   InputOTPGroup,
   InputOTPSeparator,
   InputOTPSlot,
 } from "@workspace/ui/components/input-otp"
-import { LoaderCircle } from "lucide-react"
+import { cn } from "@workspace/ui/lib/utils"
+import { ArrowLeft, LoaderCircle } from "lucide-react"
 
-const baseOtpSlotClass =
-  "h-[70px] w-[47.5px] rounded-[10px] border border-black text-center text-lg font-medium focus:outline-none focus:border-black focus:ring-0 focus:shadow-none shadow-none data-[active=true]:border-black data-[active=true]:ring-0 data-[active=true]:shadow-none"
-const submitButtonClass =
-  "mt-3 box-border flex h-12 w-full max-w-[360px] shrink-0 items-center justify-center gap-2 rounded-[10px] border p-3 text-base font-medium leading-none shadow-none"
+const DEFAULT_OTP = "456789"
+
+const otpSlotClass =
+  "relative flex size-11 items-center justify-center rounded-md border border-input bg-white text-lg font-medium text-neutral-900 shadow-xs transition-colors data-[active=true]:z-10 data-[active=true]:border-ring data-[active=true]:ring-3 data-[active=true]:ring-ring/50 sm:size-12 sm:text-xl"
 
 export function GoogleAuthenticatorScreen() {
   const [code, setCode] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
   const router = useRouter()
+
+  const isComplete = code.length === 6
+  const isWrong = isComplete && code !== DEFAULT_OTP
+  const slotClass = cn(otpSlotClass, isWrong && "border-destructive")
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (code.length !== 6 || isProcessing) return
-
+    if (!isComplete || isProcessing) return
     setIsProcessing(true)
-
     try {
       await new Promise((resolve) => setTimeout(resolve, 500))
-
-      if (code === "456789") {
-        router.push("/Homepage")
-        return
+      if (code === DEFAULT_OTP) {
+        router.push("/dashboard")
       }
     } finally {
       setIsProcessing(false)
     }
   }
 
-  const DEFAULT_OTP = "456789"
-  const isComplete = code.length === 6
-  const isCorrect = code === DEFAULT_OTP
-  const isWrong = isComplete && !isCorrect
-  const getOtpClass = () => {
-    if (isWrong) return `${baseOtpSlotClass} border-red-500`
-    return `${baseOtpSlotClass} border-black`
-  }
-
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-4">
-      <Card className="w-full max-w-[408px]">
-        <CardHeader>
-          <div className="flex w-full flex-col items-center gap-3 text-center">
-            <Image
-              src="/Frame%2030.svg"
-              alt="Company logo"
-              width={161}
-              height={58}
-              className="shrink-0 object-contain"
-              priority
-            />
-            <CardTitle className="text-center text-[20px] font-bold">
-              Enter Code for verification
-            </CardTitle>
-            <CardDescription>
-              Enter the code from your authenticator app
-            </CardDescription>
-          </div>
+    <AuthScreen>
+      <Card className="border-border/80 shadow-sm">
+        <CardHeader className="gap-0 pb-2 text-center sm:pb-4">
+          <AuthBrandHeader
+            title="Verify your identity"
+            description="Enter the 6-digit code from your authenticator app."
+          />
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="flex flex-col items-center">
-            <InputOTP
-              maxLength={6}
-              value={code}
-              onChange={setCode}
-              disabled={isProcessing}
-            >
-              <InputOTPGroup className="flex gap-[15px]">
-                <InputOTPSlot index={0} className={getOtpClass()} />
-                <InputOTPSlot index={1} className={getOtpClass()} />
-                <InputOTPSlot index={2} className={getOtpClass()} />
-              </InputOTPGroup>
-              <InputOTPSeparator />
-              <InputOTPGroup className="flex gap-[15px]">
-                <InputOTPSlot index={3} className={getOtpClass()} />
-                <InputOTPSlot index={4} className={getOtpClass()} />
-                <InputOTPSlot index={5} className={getOtpClass()} />
-              </InputOTPGroup>
-            </InputOTP>
-            <Button
-              type="submit"
-              disabled={code.length !== 6 || isProcessing}
-              aria-busy={isProcessing}
-              className={submitButtonClass}
-            >
-              {isProcessing ? (
-                <>
-                  <span>Verifying</span>
-                  <LoaderCircle
-                    className="size-5 shrink-0 animate-spin"
-                    aria-hidden
-                  />
-                </>
-              ) : (
-                "Verify"
-              )}
-            </Button>
-            {isWrong && (
-              <p className="mt-2 text-sm text-red-500">
-                Invalid code. Please try again.
-              </p>
-            )}
+          <form
+            noValidate
+            onSubmit={handleSubmit}
+            className="flex flex-col gap-6"
+          >
+            <div className="flex justify-center">
+              <InputOTP
+                id="ga-otp"
+                maxLength={6}
+                value={code}
+                onChange={setCode}
+                disabled={isProcessing}
+                containerClassName="gap-2 sm:gap-3"
+                aria-label="6-digit authenticator code"
+              >
+                <InputOTPGroup className="gap-2 sm:gap-3">
+                  <InputOTPSlot index={0} className={slotClass} />
+                  <InputOTPSlot index={1} className={slotClass} />
+                  <InputOTPSlot index={2} className={slotClass} />
+                </InputOTPGroup>
+                <InputOTPSeparator className="text-muted-foreground" />
+                <InputOTPGroup className="gap-2 sm:gap-3">
+                  <InputOTPSlot index={3} className={slotClass} />
+                  <InputOTPSlot index={4} className={slotClass} />
+                  <InputOTPSlot index={5} className={slotClass} />
+                </InputOTPGroup>
+              </InputOTP>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <Button
+                type="submit"
+                size="lg"
+                className="h-11 w-full text-base font-medium"
+                disabled={!isComplete || isProcessing}
+                aria-busy={isProcessing}
+              >
+                {isProcessing ? (
+                  <>
+                    <span>Verifying</span>
+                    <LoaderCircle
+                      className="size-5 shrink-0 animate-spin"
+                      aria-hidden
+                    />
+                  </>
+                ) : (
+                  "Continue"
+                )}
+              </Button>
+              {isWrong ? (
+                <p
+                  className="text-center text-sm text-destructive"
+                  role="alert"
+                >
+                  That code did not match. Please try again.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="flex justify-center">
+              <Button
+                variant="ghost"
+                asChild
+                className="h-auto gap-2 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+              >
+                <Link href="/login">
+                  <ArrowLeft className="size-4 shrink-0" aria-hidden />
+                  Back to sign in
+                </Link>
+              </Button>
+            </div>
           </form>
         </CardContent>
       </Card>
-    </div>
+    </AuthScreen>
   )
 }
