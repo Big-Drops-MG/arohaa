@@ -27,7 +27,8 @@ server.post('/ingest', { schema: ingestSchema }, async (request, reply) => {
   const payload = request.body as Record<string, unknown>;
 
   server.log.info({ msg: 'Valid payload received', data: payload });
-  void (clickhouse, db);
+  void clickhouse;
+  void db;
 
   return reply.code(202).send({ success: true, message: 'Event queued for ingestion' });
 });
