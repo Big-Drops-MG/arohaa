@@ -207,8 +207,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  packages/tracker-sdk: {}
-
   packages/typescript-config: {}
 
   packages/ui:
