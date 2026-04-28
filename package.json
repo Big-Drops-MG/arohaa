@@ -9,9 +9,14 @@
     "format": "turbo format",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
-    "prepare": "husky"
+    "prepare": "husky",
+    "vercel:link": "pnpm dlx vercel@latest link --yes --cwd apps/dashboard --scope big-drops-mg-admins-projects --project arohaa-dashboard",
+    "vercel:env:pull": "pnpm dlx vercel@latest env pull --cwd apps/dashboard"
   },
   "devDependencies": {
+    "@clickhouse/client": "^1.14.0",
+    "dotenv": "^16.6.1",
+    "tsx": "^4.21.0",
     "@workspace/eslint-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "eslint": "^9.39.2",
