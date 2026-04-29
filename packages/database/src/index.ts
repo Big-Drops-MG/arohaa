@@ -1,24 +1,17 @@
-import { createClient, type ClickHouseClient } from '@clickhouse/client';
-import { config } from 'dotenv';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { neon } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-http';
+import * as authSchema from './schema/auth.js';
+import * as tokenSchema from './schema/tokens.js';
 
-const monorepoRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../../../',
-);
+const schema = {
+  ...authSchema,
+  ...tokenSchema,
+};
 
-config({ path: path.join(monorepoRoot, '.env') });
-config({ path: path.join(monorepoRoot, 'apps/dashboard/.env.local') });
+const sql = neon(process.env.DATABASE_URL!);
+export const db = drizzle(sql, { schema });
 
-const url = process.env.CLICKHOUSE_URL?.trim();
+export * from './schema/auth.js';
+export * from './schema/tokens.js';
 
-export const clickhouse: ClickHouseClient | null = url
-  ? createClient({
-      url,
-      username: process.env.CLICKHOUSE_USER || 'default',
-      password: process.env.CLICKHOUSE_PASSWORD,
-    })
-  : null;
-
-export const db: null = null;
+export const clickhouse = null;
