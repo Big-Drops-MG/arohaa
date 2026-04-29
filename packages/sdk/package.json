@@ -13,7 +13,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "esbuild src/sdk.ts --bundle --minify --outfile=dist/sdk.js && cp dist/sdk.js dist/sdk.v1.js",
+    "build": "tsx build.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

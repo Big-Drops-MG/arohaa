@@ -8,13 +8,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@clickhouse/client": "^1.14.0",
     "@fastify/cors": "^11.2.0",
+    "@fastify/rate-limit": "^10.3.0",
+    "@sentry/node": "^10.51.0",
     "@workspace/database": "workspace:*",
-    "fastify": "^5.2.1"
+    "fastify": "^5.2.1",
+    "ua-parser-js": "^2.0.9"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@workspace/typescript-config": "workspace:*",
+    "dotenv": "^16.6.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }

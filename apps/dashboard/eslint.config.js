@@ -5,7 +5,7 @@ import globals from "globals"
 export default [
   ...nextJsConfig,
   {
-    ignores: ["jest.config.cjs"],
+    ignores: ["jest.config.cjs", "public/**"],
   },
   {
     files: [
