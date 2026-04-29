@@ -21,7 +21,6 @@ const googleProviderConfigured =
   Boolean(process.env.GOOGLE_CLIENT_SECRET)
 
 const nextAuth = NextAuth({
-  trustHost: true,
   ...authConfig,
   adapter: DrizzleAdapter(db as DrizzleAdapterDb, {
     usersTable: users,
