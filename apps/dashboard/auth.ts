@@ -16,7 +16,12 @@ import { authConfig } from "./auth.config"
 
 type DrizzleAdapterDb = Parameters<typeof DrizzleAdapter>[0]
 
+const googleProviderConfigured =
+  Boolean(process.env.GOOGLE_CLIENT_ID) &&
+  Boolean(process.env.GOOGLE_CLIENT_SECRET)
+
 const nextAuth = NextAuth({
+  trustHost: true,
   ...authConfig,
   adapter: DrizzleAdapter(db as DrizzleAdapterDb, {
     usersTable: users,
@@ -79,11 +84,15 @@ const nextAuth = NextAuth({
         }
       },
     }),
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      allowDangerousEmailAccountLinking: true,
-    }),
+    ...(googleProviderConfigured
+      ? [
+          Google({
+            clientId: process.env.GOOGLE_CLIENT_ID!,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+            allowDangerousEmailAccountLinking: true,
+          }),
+        ]
+      : []),
   ],
   callbacks: {
     ...authConfig.callbacks,

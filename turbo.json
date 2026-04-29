@@ -3,6 +3,7 @@
   "ui": "tui",
   "globalEnv": [
     "AUTH_SECRET",
+    "AUTH_URL",
     "DATABASE_URL",
     "DATABASE_URL_UNPOOLED",
     "DEV_PASSWORD_RESET_OTP",
@@ -34,6 +35,7 @@
       "outputs": [".next/**", "!.next/cache/**"],
       "env": [
         "AUTH_SECRET",
+        "AUTH_URL",
         "DATABASE_URL",
         "DATABASE_URL_UNPOOLED",
         "INGEST_BASE_URL",
