@@ -1,3 +1,5 @@
 import { initSDK } from "./core/init"
 
-initSDK()
+if (typeof window !== "undefined") {
+  initSDK()
+}
