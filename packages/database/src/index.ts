@@ -8,7 +8,20 @@ const schema = {
   ...tokenSchema,
 };
 
-const sql = neon(process.env.DATABASE_URL!);
+function resolveDatabaseUrl(): string {
+  const url =
+    process.env.DATABASE_URL ??
+    process.env.POSTGRES_PRISMA_URL ??
+    process.env.POSTGRES_URL
+  if (!url) {
+    throw new Error(
+      'No database URL. Set DATABASE_URL (or POSTGRES_PRISMA_URL / POSTGRES_URL for Neon/Vercel).',
+    )
+  }
+  return url
+}
+
+const sql = neon(resolveDatabaseUrl());
 export const db = drizzle(sql, { schema });
 
 export * from './schema/auth';

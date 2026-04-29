@@ -2,18 +2,51 @@
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
   "globalEnv": [
+    "AUTH_SECRET",
+    "DATABASE_URL",
+    "DATABASE_URL_UNPOOLED",
     "DEV_PASSWORD_RESET_OTP",
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET",
     "INGEST_BASE_URL",
-    "NODE_ENV"
+    "NEON_PROJECT_ID",
+    "NEXTAUTH_SECRET",
+    "NEXTAUTH_URL",
+    "NODE_ENV",
+    "PGDATABASE",
+    "PGHOST",
+    "PGHOST_UNPOOLED",
+    "PGPASSWORD",
+    "PGUSER",
+    "POSTGRES_DATABASE",
+    "POSTGRES_HOST",
+    "POSTGRES_PASSWORD",
+    "POSTGRES_PRISMA_URL",
+    "POSTGRES_URL",
+    "POSTGRES_URL_NON_POOLING",
+    "POSTGRES_URL_NO_SSL",
+    "POSTGRES_USER"
   ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": [".next/**", "!.next/cache/**"],
-      "env": ["INGEST_BASE_URL"]
+      "env": [
+        "AUTH_SECRET",
+        "DATABASE_URL",
+        "DATABASE_URL_UNPOOLED",
+        "INGEST_BASE_URL",
+        "NEXTAUTH_SECRET",
+        "NEXTAUTH_URL",
+        "PGDATABASE",
+        "PGHOST",
+        "PGPASSWORD",
+        "PGUSER",
+        "POSTGRES_PRISMA_URL",
+        "POSTGRES_URL",
+        "POSTGRES_URL_NON_POOLING"
+      ]
     },
     "lint": {
       "dependsOn": ["^lint"]
