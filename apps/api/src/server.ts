@@ -6,8 +6,8 @@ import { healthRoutes } from './routes/health.js';
 const server = Fastify({ logger: true });
 
 const allowedOrigins = [
-  'https://cdn.arohaa.com',
-  'https://cdn-dev.arohaa.com',
+  'https://cdn.arohaa.net',
+  'https://cdn-dev.arohaa.net',
   'http://localhost:3000',
   'http://localhost:3001',
 ];
