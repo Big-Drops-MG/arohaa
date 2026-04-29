@@ -3,6 +3,7 @@ export interface SDKConfig {
   page: string
   variant: string
   formtype: "zip" | "single" | "multiple"
+  apiBase: string
 }
 
 export interface EventPayload {

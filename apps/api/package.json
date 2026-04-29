@@ -1,6 +1,6 @@
 {
   "name": "@workspace/api",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,12 +8,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fastify/cors": "^11.2.0",
     "@workspace/database": "workspace:*",
     "fastify": "^5.2.1"
   },
   "devDependencies": {
-    "@workspace/typescript-config": "workspace:*",
     "@types/node": "^22.10.0",
+    "@workspace/typescript-config": "workspace:*",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }

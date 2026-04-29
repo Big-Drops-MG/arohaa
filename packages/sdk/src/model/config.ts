@@ -12,5 +12,6 @@ export function getConfig(): SDKConfig {
       formtype === "zip" || formtype === "single" || formtype === "multiple"
         ? formtype
         : "single",
+    apiBase: script?.getAttribute("data-api") ?? "",
   }
 }

@@ -1,21 +1,27 @@
 import type { EventPayload } from "../types"
-
-const INGEST_URL = "https://analytics.arohaa.com/v1/ingest"
+import { getConfig } from "../model/config"
 
 export function sendRequest(payload: EventPayload): void {
-  const body = JSON.stringify(payload)
+  const { apiBase } = getConfig()
 
-  if (typeof navigator !== "undefined" && navigator.sendBeacon) {
-    navigator.sendBeacon(INGEST_URL, body)
+  if (!apiBase) {
+    console.error("[arohaa] data-api attribute is missing on script tag")
     return
   }
 
-  fetch(INGEST_URL, {
+  const url = `${apiBase}/v1/ingest`
+  const body = JSON.stringify(payload)
+
+  if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+    const blob = new Blob([body], { type: "application/json" })
+    navigator.sendBeacon(url, blob)
+    return
+  }
+
+  fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body,
     keepalive: true,
-  }).catch(() => {
-    // silently fail -- analytics should never break host page
-  })
+  }).catch(() => {})
 }
