@@ -1,7 +1,7 @@
 import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
-import * as authSchema from './schema/auth.js';
-import * as tokenSchema from './schema/tokens.js';
+import * as authSchema from './schema/auth';
+import * as tokenSchema from './schema/tokens';
 
 const schema = {
   ...authSchema,
@@ -11,7 +11,8 @@ const schema = {
 const sql = neon(process.env.DATABASE_URL!);
 export const db = drizzle(sql, { schema });
 
-export * from './schema/auth.js';
-export * from './schema/tokens.js';
+export * from './schema/auth';
+export * from './schema/tokens';
+export * from './email';
 
 export const clickhouse = null;

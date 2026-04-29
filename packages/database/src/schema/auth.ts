@@ -18,6 +18,8 @@ export const users = pgTable('user', {
   image: text('image'),
   password: text('password'),
   isTwoFactorEnabled: boolean('isTwoFactorEnabled').default(false),
+  pendingTwoFactorSecret: text('pendingTwoFactorSecret'),
+  twoFactorSecret: text('twoFactorSecret'),
 });
 
 export const accounts = pgTable(

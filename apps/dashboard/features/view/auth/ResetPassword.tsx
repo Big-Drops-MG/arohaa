@@ -1,7 +1,7 @@
 "use client"
 
+import { submitResetPasswordAttempt } from "@/actions/reset-password.actions"
 import { AuthBrandHeader, AuthScreen } from "./AuthScreen"
-import { useRouter } from "next/navigation"
 import type { FormEvent } from "react"
 import { useMemo, useState } from "react"
 import { Button } from "@workspace/ui/components/button"
@@ -17,8 +17,6 @@ import { Label } from "@workspace/ui/components/label"
 import { cn } from "@workspace/ui/lib/utils"
 import { Eye, EyeOff, LoaderCircle, Lock } from "lucide-react"
 
-const CORRECT_TEST_OTP = "456789"
-
 const iconWrap =
   "pointer-events-none absolute inset-y-0 left-0 flex w-10 items-center justify-center text-muted-foreground"
 
@@ -26,13 +24,13 @@ const otpSlotBase =
   "relative flex size-11 items-center justify-center rounded-md border border-input bg-white text-lg font-medium text-neutral-900 shadow-xs transition-colors data-[active=true]:z-10 data-[active=true]:border-ring data-[active=true]:ring-3 data-[active=true]:ring-ring/50 sm:size-12 sm:text-xl"
 
 export function ResetPassword() {
-  const router = useRouter()
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [newPasswordVisible, setNewPasswordVisible] = useState(false)
   const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false)
   const [code, setCode] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
+  const [serverError, setServerError] = useState("")
 
   const newPasswordValid = newPassword.length === 0 || newPassword.length >= 8
   const passwordsMatch =
@@ -47,13 +45,11 @@ export function ResetPassword() {
     confirmPassword.length > 0 &&
     newPassword === confirmPassword
 
-  const isComplete = code.length === 6
-  const isWrong = isComplete && code !== CORRECT_TEST_OTP
   const canSubmit = passwordsReady && code.length === 6
 
   const slotClass = useMemo(
-    () => cn(otpSlotBase, isWrong && "border-destructive"),
-    [isWrong]
+    () => cn(otpSlotBase, !!serverError && "border-destructive"),
+    [serverError]
   )
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -61,10 +57,15 @@ export function ResetPassword() {
     if (!passwordsReady || code.length !== 6 || isProcessing) return
 
     setIsProcessing(true)
+    setServerError("")
     try {
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      if (code === CORRECT_TEST_OTP) {
-        router.push("/ResetPasswordMsgScr")
+      const result = await submitResetPasswordAttempt({
+        code,
+        newPassword,
+        confirmPassword,
+      })
+      if (result?.error) {
+        setServerError(result.error)
       }
     } finally {
       setIsProcessing(false)
@@ -77,7 +78,7 @@ export function ResetPassword() {
         <CardHeader className="gap-0 pb-2 text-center sm:pb-4">
           <AuthBrandHeader
             title="Reset password"
-            description="Choose a new password, then enter the 6-digit code from your email."
+            description="Choose a new password, then enter the 6-digit verification code."
           />
         </CardHeader>
         <CardContent>
@@ -251,12 +252,12 @@ export function ResetPassword() {
                     "Reset password"
                   )}
                 </Button>
-                {isWrong ? (
+                {serverError ? (
                   <p
                     className="text-center text-sm text-destructive"
                     role="alert"
                   >
-                    That code did not match. Please try again.
+                    {serverError}
                   </p>
                 ) : null}
               </div>

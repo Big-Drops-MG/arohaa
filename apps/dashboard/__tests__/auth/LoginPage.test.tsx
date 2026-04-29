@@ -1,18 +1,41 @@
-import { act, render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import { LoginPage } from "@/features/view/auth/LoginPage"
 
+const mockLoginWithCredentials = jest.fn()
+const mockPush = jest.fn()
+const mockRefresh = jest.fn()
+
+jest.mock("@/actions/auth.actions", () => ({
+  loginWithCredentials: (...args: unknown[]) =>
+    mockLoginWithCredentials(...args),
+}))
+
 jest.mock("next/navigation", () => ({
   useRouter: () => ({
-    push: jest.fn(),
+    push: mockPush,
     replace: jest.fn(),
     prefetch: jest.fn(),
     back: jest.fn(),
+    refresh: mockRefresh,
   }),
 }))
 
+function getOtpInput(): HTMLInputElement {
+  const el = document.querySelector("[data-input-otp]")
+  expect(el).toBeInstanceOf(HTMLInputElement)
+  return el as HTMLInputElement
+}
+
 describe("LoginPage", () => {
+  beforeEach(() => {
+    mockLoginWithCredentials.mockReset()
+    mockLoginWithCredentials.mockResolvedValue(undefined)
+    mockPush.mockClear()
+    mockRefresh.mockClear()
+  })
+
   it("renders the login form", () => {
     render(<LoginPage />)
     expect(screen.getByText("Login using your credentials")).toBeInTheDocument()
@@ -63,23 +86,71 @@ describe("LoginPage", () => {
     expect(password.type).toBe("password")
   })
 
-  it("advances to the OTP step after a valid submit", async () => {
-    jest.useFakeTimers()
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+  it("advances to the OTP step when the server requests two-factor", async () => {
+    mockLoginWithCredentials.mockResolvedValue({ requiresTwoFactor: true })
+
+    const user = userEvent.setup()
     render(<LoginPage />)
 
     await user.type(screen.getByLabelText("Email"), "user@example.com")
     await user.type(screen.getByLabelText("Password"), "password12")
-    await user.click(screen.getByRole("button", { name: "Continue" }))
-
-    act(() => {
-      jest.advanceTimersByTime(1000)
-    })
+    await user.click(screen.getByRole("button", { name: /Continue/i }))
 
     await waitFor(() => {
       expect(screen.getByText("Verify your identity")).toBeInTheDocument()
     })
+    expect(
+      screen.getByText(
+        /Open the authenticator entry you added for this email and type the current 6-digit code/
+      )
+    ).toBeInTheDocument()
 
-    jest.useRealTimers()
+    await waitFor(() => {
+      expect(mockLoginWithCredentials).toHaveBeenCalledTimes(1)
+    })
+    const fd = mockLoginWithCredentials.mock.calls[0][0] as FormData
+    expect(fd.get("email")).toBe("user@example.com")
+    expect(fd.get("password")).toBe("password12")
+    expect(fd.get("code")).toBeNull()
+  })
+
+  it("shows back navigation from the OTP step", async () => {
+    mockLoginWithCredentials.mockResolvedValue({ requiresTwoFactor: true })
+
+    const user = userEvent.setup()
+    render(<LoginPage />)
+
+    await user.type(screen.getByLabelText("Email"), "user@example.com")
+    await user.type(screen.getByLabelText("Password"), "password12")
+    await user.click(screen.getByRole("button", { name: /Continue/i }))
+
+    await screen.findByText("Verify your identity")
+
+    await user.click(screen.getByRole("button", { name: /Back to sign in/i }))
+
+    expect(screen.getByText("Login using your credentials")).toBeInTheDocument()
+  })
+
+  it("navigates to the dashboard after a successful OTP login", async () => {
+    mockLoginWithCredentials
+      .mockResolvedValueOnce({ requiresTwoFactor: true })
+      .mockResolvedValueOnce({ redirectTo: "/dashboard" })
+
+    const user = userEvent.setup()
+    render(<LoginPage />)
+
+    await user.type(screen.getByLabelText("Email"), "user@example.com")
+    await user.type(screen.getByLabelText("Password"), "password12")
+    await user.click(screen.getByRole("button", { name: /Continue/i }))
+
+    await screen.findByText("Verify your identity")
+
+    await user.type(getOtpInput(), "123456")
+    await user.click(screen.getByRole("button", { name: /Continue/i }))
+
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith("/dashboard")
+      expect(mockRefresh).toHaveBeenCalled()
+    })
   })
 })
