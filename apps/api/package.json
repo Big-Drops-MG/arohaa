@@ -11,9 +11,11 @@
     "@clickhouse/client": "^1.14.0",
     "@fastify/cors": "^11.2.0",
     "@fastify/rate-limit": "^10.3.0",
+    "@fastify/redis": "^7.2.0",
     "@sentry/node": "^10.51.0",
     "@workspace/database": "workspace:*",
     "fastify": "^5.2.1",
+    "ioredis": "^5.10.1",
     "ua-parser-js": "^2.0.9"
   },
   "devDependencies": {

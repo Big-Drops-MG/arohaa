@@ -7,7 +7,8 @@ export const authConfig = {
     error: "/login",
   },
   callbacks: {
-    authorized({ auth, request: { nextUrl } }) {
+    authorized({ auth, request }) {
+      const { nextUrl } = request
       const isLoggedIn = !!auth?.user
       const path = nextUrl.pathname
       const isOnDashboard = path.startsWith("/dashboard")
@@ -15,8 +16,19 @@ export const authConfig = {
       const isApi = path.startsWith("/api")
 
       if (isOnDashboard) {
-        if (isLoggedIn) return true
-        return false
+        if (!isLoggedIn) return false
+
+        const isTwoFactorEnabled = (auth.user as any)?.isTwoFactorEnabled
+        const hasVerified2FA =
+          request.cookies.get("arohaa_2fa_verified")?.value === "true"
+
+        if (isTwoFactorEnabled && !hasVerified2FA) {
+          return Response.redirect(
+            new URL("/login?requiresTwoFactor=true", nextUrl)
+          )
+        }
+
+        return true
       }
 
       if (isApi) {

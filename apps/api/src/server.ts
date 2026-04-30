@@ -5,6 +5,8 @@ import * as Sentry from '@sentry/node'
 import Fastify, { type FastifyError } from 'fastify'
 import cors from '@fastify/cors'
 import rateLimit from '@fastify/rate-limit'
+import fastifyRedis from '@fastify/redis'
+import { redis } from './services/redis.service.js'
 import { ingestRoutes } from './routes/ingest.js'
 import { healthRoutes } from './routes/health.js'
 import { devRoutes } from './routes/dev.js'
@@ -70,8 +72,11 @@ server.register(cors, {
   methods: ['GET', 'POST', 'OPTIONS'],
 })
 
+server.register(fastifyRedis, { client: redis })
+
 server.register(rateLimit, {
   global: false,
+  redis: redis,
   errorResponseBuilder: (request, context) => ({
     statusCode: 429,
     error: 'Too Many Requests',

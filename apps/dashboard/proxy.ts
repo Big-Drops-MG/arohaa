@@ -1,10 +1,7 @@
-import NextAuth from "next-auth"
+import { auth } from "./auth"
 import type { NextMiddleware } from "next/server"
-import { authConfig } from "./auth.config"
 
-const { auth } = NextAuth(authConfig)
-
-export const proxy: NextMiddleware = auth as NextMiddleware
+export const proxy: NextMiddleware = auth as unknown as NextMiddleware
 
 export const config = {
   matcher: [
