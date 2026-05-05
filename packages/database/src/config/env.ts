@@ -5,9 +5,15 @@ import { fileURLToPath } from "node:url"
 
 export function bootstrapDatabaseEnv(metaUrl: string): void {
   const moduleDir = dirname(fileURLToPath(metaUrl))
-  const packageEnv = resolve(moduleDir, "../../.env")
-  const rootEnv = resolve(moduleDir, "../../../../.env")
+  const candidates = [
+    resolve(process.cwd(), ".env"),
+    resolve(process.cwd(), "../../.env"),
+    resolve(process.cwd(), "../../../.env"),
+    resolve(moduleDir, "../../.env"),
+    resolve(moduleDir, "../../../../.env"),
+  ]
 
-  if (existsSync(packageEnv)) loadEnv({ path: packageEnv, override: false })
-  if (existsSync(rootEnv)) loadEnv({ path: rootEnv, override: false })
+  for (const path of candidates) {
+    if (existsSync(path)) loadEnv({ path, override: false })
+  }
 }
