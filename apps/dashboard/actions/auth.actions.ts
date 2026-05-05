@@ -128,7 +128,7 @@ export async function loginWithCredentials(
       sameSite: "lax",
       path: "/",
     })
-    return { redirectTo: "/dashboard" }
+    return { redirectTo: "/onboarding" }
   } else {
     return { redirectTo: "/authenticate" }
   }

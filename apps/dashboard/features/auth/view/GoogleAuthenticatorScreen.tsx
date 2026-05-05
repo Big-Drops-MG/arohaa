@@ -90,7 +90,7 @@ export function GoogleAuthenticatorScreen() {
       } else {
         setVerifyStatus("success")
         await new Promise((resolve) => setTimeout(resolve, 500))
-        router.push("/dashboard")
+        router.push("/onboarding")
       }
     } finally {
       otpSubmitInFlightRef.current = false

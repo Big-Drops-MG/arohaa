@@ -12,6 +12,13 @@ const googleProviderConfigured =
   Boolean(process.env.GOOGLE_CLIENT_ID) &&
   Boolean(process.env.GOOGLE_CLIENT_SECRET)
 
+function getFullName(
+  firstName?: string | null,
+  lastName?: string | null
+): string {
+  return [firstName, lastName].filter(Boolean).join(" ").trim()
+}
+
 const nextAuth = NextAuth({
   ...authConfig,
   adapter: DrizzleAdapter(db as any) as Adapter,
@@ -58,7 +65,7 @@ const nextAuth = NextAuth({
         return {
           id: userRow.id,
           email: userRow.email,
-          name: userRow.name,
+          name: getFullName(userRow.firstName, userRow.lastName),
         }
       },
     }),

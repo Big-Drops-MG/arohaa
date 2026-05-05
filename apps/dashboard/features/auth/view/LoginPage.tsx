@@ -144,7 +144,7 @@ export function LoginPage() {
           return
         }
         if (result.success) {
-          router.push("/dashboard")
+          router.push("/onboarding")
           router.refresh()
         }
       }
