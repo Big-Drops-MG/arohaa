@@ -2,10 +2,16 @@ import NextAuth from "next-auth"
 import Google from "next-auth/providers/google"
 import Credentials from "next-auth/providers/credentials"
 import { DrizzleAdapter } from "@auth/drizzle-adapter"
-import type { Adapter } from "next-auth/adapters"
-import { db, whereUserEmail } from "@workspace/database"
+import type { Adapter, AdapterUser } from "next-auth/adapters"
+import {
+  accounts,
+  db,
+  sessions,
+  users,
+  verificationTokens,
+  whereUserEmail,
+} from "@workspace/database"
 import bcrypt from "bcryptjs"
-import { redis } from "./lib/redis"
 import { authConfig } from "./auth.config"
 
 const googleProviderConfigured =
@@ -19,9 +25,65 @@ function getFullName(
   return [firstName, lastName].filter(Boolean).join(" ").trim()
 }
 
+function parseOAuthDisplayName(name: string | null | undefined): {
+  firstName: string | null
+  lastName: string | null
+} {
+  const trimmed = name?.trim()
+  if (!trimmed) return { firstName: null, lastName: null }
+  const parts = trimmed.split(/\s+/)
+  if (parts.length === 1) {
+    return { firstName: parts[0] ?? null, lastName: null }
+  }
+  return {
+    firstName: parts[0] ?? null,
+    lastName: parts.slice(1).join(" ") || null,
+  }
+}
+
+function drizzleAdapter(): Adapter {
+  const base = DrizzleAdapter(
+    db as never,
+    {
+      usersTable: users,
+      accountsTable: accounts,
+      sessionsTable: sessions,
+      verificationTokensTable: verificationTokens,
+    } as never
+  ) as Adapter
+  return {
+    ...base,
+    async createUser(data: AdapterUser) {
+      const { name, ...rest } = data
+      const mapped = parseOAuthDisplayName(name)
+      return await base.createUser!({
+        ...rest,
+        firstName: mapped.firstName,
+        lastName: mapped.lastName,
+      } as AdapterUser)
+    },
+    async updateUser(data: Partial<AdapterUser> & Pick<AdapterUser, "id">) {
+      if (!data.id) {
+        throw new Error("No user id.")
+      }
+      const { name, ...rest } = data
+      if (name === undefined) {
+        return await base.updateUser!(data as AdapterUser & { id: string })
+      }
+      const mapped = parseOAuthDisplayName(name)
+      return await base.updateUser!({
+        ...rest,
+        id: data.id,
+        firstName: mapped.firstName,
+        lastName: mapped.lastName,
+      } as AdapterUser & { id: string })
+    },
+  }
+}
+
 const nextAuth = NextAuth({
   ...authConfig,
-  adapter: DrizzleAdapter(db as any) as Adapter,
+  adapter: drizzleAdapter(),
   session: { strategy: "jwt" },
 
   providers: [
@@ -63,7 +125,7 @@ const nextAuth = NextAuth({
         }
 
         const displayName =
-          getFullName(userRow.firstName, userRow.lastName) || userRow.name
+          getFullName(userRow.firstName, userRow.lastName) || userRow.email
 
         return {
           id: userRow.id,
