@@ -16,6 +16,7 @@
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.2",
     "@auth/upstash-redis-adapter": "^2.11.2",
+    "@upstash/ratelimit": "^2.0.5",
     "@upstash/redis": "^1.37.0",
     "@workspace/database": "workspace:^",
     "@workspace/ui": "workspace:*",

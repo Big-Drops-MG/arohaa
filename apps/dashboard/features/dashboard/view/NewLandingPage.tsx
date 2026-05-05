@@ -1,12 +1,15 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import { CheckCircle2, XCircle, Loader2, Copy, Check } from "lucide-react"
 
 type Step = 1 | 2 | 3
 type ConnectionStatus = "idle" | "checking" | "connected" | "failed"
+
+const POLL_MS = 2000
+const TIMEOUT_MS = 90_000
 
 export function NewLandingPage() {
   const [currentStep, setCurrentStep] = useState<Step>(1)
@@ -15,21 +18,57 @@ export function NewLandingPage() {
   const [connectionStatus, setConnectionStatus] =
     useState<ConnectionStatus>("idle")
   const [copied, setCopied] = useState(false)
-
-  const [projectId] = useState(() => `lp_${Date.now().toString(36)}`)
-
-  const sdkSnippet = `<script src="https://cdn.arohaa.com/sdk.js" data-brand="${brandName || "brand_name"}" data-page-url="${landingPageUrl || "https://example.com"}" data-project-id="${projectId}"> </script>`
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [sdkSnippet, setSdkSnippet] = useState("")
+  const [htmlVerificationMetaTag, setHtmlVerificationMetaTag] = useState("")
+  const [publicLandingId, setPublicLandingId] = useState<string | null>(null)
+  const [verifyHtmlHint, setVerifyHtmlHint] = useState<string | null>(null)
 
   const isStep1Valid =
     brandName.trim().length > 0 && landingPageUrl.trim().length > 0
 
-  const handleContinue = useCallback(() => {
-    if (isStep1Valid) {
+  const handleContinue = useCallback(async () => {
+    if (!isStep1Valid) return
+    setSubmitError(null)
+    setIsSubmitting(true)
+    try {
+      const res = await fetch("/api/landing-pages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandName, landingPageUrl }),
+      })
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string
+        sdkSnippetHtml?: string
+        htmlVerificationMetaTag?: string
+        landingPage?: { publicId?: string }
+      }
+      if (!res.ok) {
+        setSubmitError(data.error ?? "Could not create landing page")
+        return
+      }
+      const snippet = data.sdkSnippetHtml
+      const pid = data.landingPage?.publicId
+      if (typeof snippet !== "string" || !snippet.trim() || !pid) {
+        setSubmitError("Invalid response from server")
+        return
+      }
+      setSdkSnippet(snippet)
+      setPublicLandingId(pid)
+      setHtmlVerificationMetaTag(
+        typeof data.htmlVerificationMetaTag === "string"
+          ? data.htmlVerificationMetaTag
+          : ""
+      )
       setCurrentStep(2)
+    } finally {
+      setIsSubmitting(false)
     }
-  }, [isStep1Valid])
+  }, [brandName, isStep1Valid, landingPageUrl])
 
   const handleCopySDK = useCallback(async () => {
+    if (!sdkSnippet) return
     await navigator.clipboard.writeText(sdkSnippet)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
@@ -38,24 +77,103 @@ export function NewLandingPage() {
   const handleCheckConnection = useCallback(() => {
     setCurrentStep(3)
     setConnectionStatus("checking")
-
-    setTimeout(() => {
-      const success = Math.random() > 0.5
-      setConnectionStatus(success ? "connected" : "failed")
-    }, 3000)
   }, [])
+
+  useEffect(() => {
+    if (
+      currentStep !== 3 ||
+      connectionStatus !== "checking" ||
+      !publicLandingId
+    )
+      return
+
+    const pid = publicLandingId
+
+    let cancelled = false
+    const startedAt = Date.now()
+
+    async function pollOnce(): Promise<boolean> {
+      try {
+        const res = await fetch(
+          `/api/landing-pages/${encodeURIComponent(pid)}/connection-status`,
+          { cache: "no-store" }
+        )
+        const data = (await res.json().catch(() => ({}))) as {
+          sdkInstallStatus?: string
+          status?: string
+          verificationMethod?: string
+        }
+        if (!res.ok) return false
+
+        const connected =
+          data.verificationMethod === "html_meta" ||
+          data.sdkInstallStatus === "detected" ||
+          data.status === "verified"
+
+        if (connected && !cancelled) {
+          setConnectionStatus("connected")
+          return true
+        }
+      } catch {
+        /* transient */
+      }
+
+      return false
+    }
+
+    void pollOnce()
+
+    const iv = window.setInterval(() => {
+      void (async () => {
+        if (cancelled) return
+        if (await pollOnce()) {
+          cancelled = true
+          window.clearInterval(iv)
+          return
+        }
+
+        if (Date.now() - startedAt >= TIMEOUT_MS) {
+          if (!cancelled) {
+            setConnectionStatus("failed")
+          }
+          cancelled = true
+          window.clearInterval(iv)
+        }
+      })()
+    }, POLL_MS)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(iv)
+    }
+  }, [connectionStatus, currentStep, publicLandingId])
 
   const handleCheckAgain = useCallback(() => {
     setConnectionStatus("checking")
-    setTimeout(() => {
-      const success = Math.random() > 0.5
-      setConnectionStatus(success ? "connected" : "failed")
-    }, 3000)
   }, [])
+
+  const verifyHtmlInstallation = useCallback(async () => {
+    if (!publicLandingId) return
+    setVerifyHtmlHint(null)
+    const res = await fetch(
+      `/api/landing-pages/${encodeURIComponent(publicLandingId)}/verify-html`,
+      { method: "POST" }
+    )
+    const data = (await res.json().catch(() => ({}))) as {
+      error?: string
+      ok?: boolean
+    }
+    if (!res.ok) {
+      setVerifyHtmlHint(data.error ?? "HTML verification failed")
+      return
+    }
+    setVerifyHtmlHint(
+      data.ok === true ? "HTML verification succeeded." : "Verified."
+    )
+  }, [publicLandingId])
 
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-10">
-      {/* Step 1 */}
       <section className="mb-8">
         <h2 className="mb-5 text-xl font-semibold text-foreground">
           Step 1: Add Landing Page
@@ -73,19 +191,31 @@ export function NewLandingPage() {
             onChange={(e) => setLandingPageUrl(e.target.value)}
             className="h-12 rounded-lg px-4 text-base"
           />
+          {submitError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {submitError}
+            </p>
+          ) : null}
           {currentStep === 1 && (
             <Button
-              onClick={handleContinue}
-              disabled={!isStep1Valid}
+              type="button"
+              onClick={() => void handleContinue()}
+              disabled={!isStep1Valid || isSubmitting}
               className="mt-2"
             >
-              Continue
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+                  Saving
+                </>
+              ) : (
+                "Continue"
+              )}
             </Button>
           )}
         </div>
       </section>
 
-      {/* Step 2 */}
       {currentStep >= 2 && (
         <section className="mb-8">
           <h2 className="mb-2 text-xl font-semibold text-foreground">
@@ -100,8 +230,44 @@ export function NewLandingPage() {
               {sdkSnippet}
             </code>
           </div>
+          {htmlVerificationMetaTag.trim() ? (
+            <div className="mt-6 space-y-2">
+              <p className="text-sm font-medium text-foreground">
+                Optional HTML verification (meta tag)
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Paste this meta tag anywhere inside the landing page HTML
+                &lt;head&gt; to prove ownership without waiting for SDK
+                telemetry.
+              </p>
+              <div className="rounded-lg border border-border bg-muted/30 px-4 py-4">
+                <code className="block text-sm break-all whitespace-pre-wrap text-foreground">
+                  {htmlVerificationMetaTag}
+                </code>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-2"
+                onClick={() => void verifyHtmlInstallation()}
+              >
+                Check HTML verification
+              </Button>
+              {verifyHtmlHint ? (
+                <p className="text-sm text-muted-foreground" role="status">
+                  {verifyHtmlHint}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <div className="mt-4 flex items-center gap-3">
-            <Button variant="outline" onClick={handleCopySDK} className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleCopySDK()}
+              className="gap-2"
+              disabled={!sdkSnippet}
+            >
               {copied ? (
                 <Check className="size-4" aria-hidden />
               ) : (
@@ -109,12 +275,13 @@ export function NewLandingPage() {
               )}
               {copied ? "Copied" : "Copy SDK"}
             </Button>
-            <Button onClick={handleCheckConnection}>Check Connection</Button>
+            <Button type="button" onClick={handleCheckConnection}>
+              Check Connection
+            </Button>
           </div>
         </section>
       )}
 
-      {/* Step 3 */}
       {currentStep >= 3 && (
         <section>
           <h2 className="mb-2 text-xl font-semibold text-foreground">

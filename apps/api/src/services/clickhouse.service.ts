@@ -5,6 +5,7 @@ const CREATE_EVENTS_SQL = `
 CREATE TABLE IF NOT EXISTS events (
     event_name LowCardinality(String),
     workspace_id UUID,
+    lp_public_id LowCardinality(String) DEFAULT '',
     user_id String,
     session_id String,
     fingerprint String DEFAULT '',
@@ -64,6 +65,10 @@ export function getClickHouseClient(): ClickHouseClient {
 export async function ensureEventsTable(): Promise<void> {
   const ch = getClickHouseClient()
   await ch.command({ query: CREATE_EVENTS_SQL })
+  await ch.command({
+    query:
+      "ALTER TABLE events ADD COLUMN IF NOT EXISTS lp_public_id LowCardinality(String) DEFAULT ''",
+  })
 }
 
 export async function pingClickHouse(timeoutMs: number = 3000): Promise<boolean> {

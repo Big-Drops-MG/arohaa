@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifySchema } from 'fastify'
 import { pushEvent } from '../services/event-buffer.js'
+import { reconcileLandingPageIngest } from '../services/landing-page-ingest.js'
 import { ingestBodyToEventRow, type IngestEventBody } from '../types/event.js'
 import { buildEnrichmentContext } from '../utils/enrichment.js'
 import { normalizeReferrer } from '../utils/referrer.js'
@@ -32,6 +33,11 @@ const ingestSchema = {
       referrer: { type: 'string', maxLength: 2048 },
       metric_name: { type: 'string', maxLength: 50 },
       metric_value: { type: 'number' },
+      lp_id: {
+        type: 'string',
+        maxLength: 160,
+        pattern: '^lp_[A-Za-z0-9_-]{8,128}$',
+      },
       props: {
         type: 'object',
         additionalProperties: true,
@@ -56,6 +62,39 @@ export async function ingestRoutes(server: FastifyInstance) {
       config: INGEST_RATE_LIMIT,
     },
     async (request, reply) => {
+      const landing = await reconcileLandingPageIngest({
+        lpIdRaw: request.body.lp_id,
+        wid: request.body.wid,
+        eventUrl: request.body.url,
+      })
+
+      if (landing.outcome === 'reject') {
+        request.log.warn(
+          {
+            trace_id: request.id,
+            event: 'ingest_lp_rejected',
+            reason: landing.reason,
+            lp_id: request.body.lp_id,
+            wid: request.body.wid,
+          },
+          'ingest landing-page validation failed',
+        )
+        return reply.code(400).send({
+          status: 'invalid_landing_page_context',
+          trace_id: request.id,
+          reason: landing.reason,
+        })
+      }
+
+      if (landing.outcome === 'ok') {
+        request.log.info({
+          trace_id: request.id,
+          event: 'ingest_lp_linked',
+          lp_id: request.body.lp_id,
+          wid: request.body.wid,
+        })
+      }
+
       const ctx = buildEnrichmentContext(request)
       const referrerSource = normalizeReferrer(request.body.referrer)
 

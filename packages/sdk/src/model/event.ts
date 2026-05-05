@@ -14,6 +14,7 @@ export function buildEvent(
 
   return {
     wid: config.wid,
+    ...(config.lpId.trim() ? { lp_id: config.lpId.trim() } : {}),
     uid: identity.uid,
     sid: identity.sid,
     fp: identity.fp,

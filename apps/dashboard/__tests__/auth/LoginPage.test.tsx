@@ -4,8 +4,33 @@ import userEvent from "@testing-library/user-event"
 import { LoginPage } from "@/features/auth/view/LoginPage"
 
 const mockLoginWithCredentials = jest.fn()
-const mockPush = jest.fn()
-const mockRefresh = jest.fn()
+
+type NextNavigationRouterMocks = {
+  push: jest.Mock
+  refresh: jest.Mock
+  replace: jest.Mock
+  prefetch: jest.Mock
+  back: jest.Mock
+}
+
+const STABLE_NAV_ROUTER_KEY = "__LOGIN_PAGE_NAV_ROUTER__" as const
+
+function stableNavigationRouterMocks(): NextNavigationRouterMocks {
+  const g = globalThis as unknown as Record<
+    string,
+    NextNavigationRouterMocks | undefined
+  >
+  if (!g[STABLE_NAV_ROUTER_KEY]) {
+    g[STABLE_NAV_ROUTER_KEY] = {
+      push: jest.fn(),
+      refresh: jest.fn(),
+      replace: jest.fn(),
+      prefetch: jest.fn(),
+      back: jest.fn(),
+    }
+  }
+  return g[STABLE_NAV_ROUTER_KEY]
+}
 
 jest.mock("@/actions/auth.actions", () => ({
   loginWithCredentials: (...args: unknown[]) =>
@@ -13,17 +38,12 @@ jest.mock("@/actions/auth.actions", () => ({
 }))
 
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({
-    push: mockPush,
-    replace: jest.fn(),
-    prefetch: jest.fn(),
-    back: jest.fn(),
-    refresh: mockRefresh,
-  }),
+  useRouter: () => stableNavigationRouterMocks(),
+  useSearchParams: () => new URLSearchParams(),
 }))
 
 function getOtpInput(): HTMLInputElement {
-  const el = document.querySelector("[data-input-otp]")
+  const el = screen.getByRole("textbox", { name: "6-digit authenticator code" })
   expect(el).toBeInstanceOf(HTMLInputElement)
   return el as HTMLInputElement
 }
@@ -32,13 +52,13 @@ describe("LoginPage", () => {
   beforeEach(() => {
     mockLoginWithCredentials.mockReset()
     mockLoginWithCredentials.mockResolvedValue(undefined)
-    mockPush.mockClear()
-    mockRefresh.mockClear()
+    stableNavigationRouterMocks().push.mockClear()
+    stableNavigationRouterMocks().refresh.mockClear()
   })
 
   it("renders the login form", () => {
     render(<LoginPage />)
-    expect(screen.getByText("Login using your credentials")).toBeInTheDocument()
+    expect(screen.getByText("Sign in to Dashboard")).toBeInTheDocument()
     expect(screen.getByLabelText("Email")).toBeInTheDocument()
     expect(screen.getByLabelText("Password")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled()
@@ -100,9 +120,7 @@ describe("LoginPage", () => {
       expect(screen.getByText("Verify your identity")).toBeInTheDocument()
     })
     expect(
-      screen.getByText(
-        /Open the authenticator entry you added for this email and type the current 6-digit code/
-      )
+      screen.getByText(/Open your authenticator app and enter the current code/)
     ).toBeInTheDocument()
 
     await waitFor(() => {
@@ -128,7 +146,7 @@ describe("LoginPage", () => {
 
     await user.click(screen.getByRole("button", { name: /Back to sign in/i }))
 
-    expect(screen.getByText("Login using your credentials")).toBeInTheDocument()
+    expect(screen.getByText("Sign in to Dashboard")).toBeInTheDocument()
   })
 
   it("navigates to the dashboard after a successful OTP login", async () => {
@@ -146,11 +164,13 @@ describe("LoginPage", () => {
     await screen.findByText("Verify your identity")
 
     await user.type(getOtpInput(), "123456")
-    await user.click(screen.getByRole("button", { name: /Continue/i }))
 
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith("/dashboard")
-      expect(mockRefresh).toHaveBeenCalled()
+      expect(mockLoginWithCredentials).toHaveBeenCalledTimes(2)
+      expect(stableNavigationRouterMocks().push).toHaveBeenCalledWith(
+        "/dashboard"
+      )
+      expect(stableNavigationRouterMocks().refresh).toHaveBeenCalled()
     })
   })
 })

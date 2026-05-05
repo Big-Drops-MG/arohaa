@@ -4,6 +4,62 @@ This document is for the backend developer who will implement persistent storage
 
 The goal is not only to save `brandName` and `landingPageUrl`, but to build a production-safe system that supports ownership, SDK installation, verification, event attribution, and future analytics features.
 
+---
+
+## Implementation status (completed work)
+
+_Last updated: 2026-05-06_
+
+The codebase now implements most of Sections 3–21 below. Original guidance is kept for reference. Operational follow-up: apply SQL migrations (`0004`, `0005`) and ClickHouse schema updates in each environment.
+
+### Ownership and tenancy
+
+- `workspace` table with owner linkage; landing pages keyed by **`workspaceId`** with **`createdByUserId`** / **`updatedByUserId`**.
+- **`getOrCreateOwnerWorkspace`** on the dashboard ensures a workspace per owner before landing CRUD.
+
+### Database (Postgres)
+
+- Drizzle schema: `landing_page`, `landing_page_audit_log`; migrations **`0004_landing_pages.sql`** and **`0005_workspace_landing_tenant.sql`**.
+- Stable **`publicId`** (`lp_…`), normalized URL uniqueness per workspace (partial unique index where `deletedAt` is null).
+- **`htmlVerificationToken`** for HTML meta verification.
+- URL helpers under `packages/database/src/landing/` (e.g. **`normalizeLandingPageUrl`**) with unit tests.
+
+### Dashboard APIs (authenticated, workspace-scoped)
+
+- `POST/GET` **`/api/landing-pages`** (create + list).
+- `GET/PATCH` **`/api/landing-pages/[publicId]`**.
+- **`…/archive`**, **`…/connection-status`**, **`…/check-connection`**.
+- **`POST …/verify-html`** — SSRF-aware fetch (**`safe-fetch-landing-verify.ts`**: DNS, private IPs, redirects, body cap), token check, audit **`verify_html`**.
+- **Rate limiting** (Upstash; optional if KV env missing), **quota** (`LANDING_PAGES_MAX_PER_WORKSPACE`).
+
+### Snippet / SDK
+
+- Server-built snippet includes **`data-lp-id`** and ingest base URL (**`landing-snippet.ts`**).
+- SDK carries optional **`lp_id`** on payloads; dashboard ships updated **`snippet` / bundled assets**.
+
+### Ingest (API)
+
+- **`landing-page-ingest.ts`**: validates **`lp_id`**, resolves row, hostname / normalized URL checks.
+- ClickHouse **`lp_public_id`** on events (create + **`ADD COLUMN IF NOT EXISTS`** paths; **`init-clickhouse.ts`** updated).
+- Structured logs for rejected vs accepted landing linkage.
+
+### Frontend (dashboard)
+
+- **`NewLandingPage`**: calls real APIs, connection polling treats **`verificationMethod === "html_meta"`** as connected, optional meta tag UI + **Check HTML verification**.
+
+### Tests / tooling
+
+- Jest: **`normalizeLandingPageUrl`**, **`LoginPage`** (stable **`useRouter`**, copy), **`GoogleAuthenticatorScreen`**, **`ForgotPassword`** mocks include **`useSearchParams`**.
+- **`turbo.json`**: declares **`LANDING_PAGES_MAX_PER_WORKSPACE`**, **`KV_REST_API_URL`**, **`KV_REST_API_TOKEN`**.
+
+### Still environment-specific (not “code TODO”)
+
+- Run migrations **`0004`**, **`0005`** on Neon (and **`0003_user_first_last_name.sql`** where applicable).
+- Ensure ClickHouse **`events.lp_public_id`** exists in deployed analytics DBs.
+- Configure **`INGEST_BASE_URL`** / **`NEXT_PUBLIC_AROHAA_*`**, **`DATABASE_URL`**, KV for rate limits as needed.
+
+---
+
 ## 1. Core Product Goal
 
 When a logged-in dashboard user adds a landing page, the backend should:

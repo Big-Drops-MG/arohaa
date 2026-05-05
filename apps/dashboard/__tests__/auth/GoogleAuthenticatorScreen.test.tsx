@@ -24,6 +24,7 @@ jest.mock("next/navigation", () => ({
     prefetch: jest.fn(),
     back: jest.fn(),
   }),
+  useSearchParams: () => new URLSearchParams(),
 }))
 
 jest.mock("@/actions/otp.actions", () => ({
@@ -87,13 +88,15 @@ describe("GoogleAuthenticatorScreen", () => {
     )
 
     await user.type(getOtpInput(), TEST_OTP_INPUT_FAILURE_CASE)
-    await user.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => {
+      expect(mockVerifyAndEnableOTP).toHaveBeenCalled()
+    })
 
-    expect(
-      await screen.findByText(
-        /Invalid code\. Try again using the code for this email in your authenticator app/
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Invalid code. Try again using the code for this email in your authenticator app."
       )
-    ).toBeInTheDocument()
+    })
     expect(mockPush).not.toHaveBeenCalled()
   })
 
@@ -108,13 +111,12 @@ describe("GoogleAuthenticatorScreen", () => {
     )
 
     await user.type(getOtpInput(), TEST_OTP_INPUT_SUCCESS_CASE)
-    await user.click(screen.getByRole("button", { name: "Continue" }))
 
     await waitFor(() => {
       expect(mockVerifyAndEnableOTP).toHaveBeenCalledWith(
         TEST_OTP_INPUT_SUCCESS_CASE
       )
-      expect(mockPush).toHaveBeenCalledWith("/dashboard")
+      expect(mockPush).toHaveBeenCalledWith("/onboarding")
     })
   })
 

@@ -3,6 +3,7 @@ export interface IngestEventBody {
   wid: string
   uid: string
   sid: string
+  lp_id?: string
   fp?: string
   ts?: number
   url?: string
@@ -23,6 +24,7 @@ export interface IngestEventBody {
 export interface EventRow {
   event_name: string
   workspace_id: string
+  lp_public_id: string
   user_id: string
   session_id: string
   fingerprint: string
@@ -63,6 +65,7 @@ export function ingestBodyToEventRow(
   return {
     event_name: body.ev,
     workspace_id: body.wid,
+    lp_public_id: body.lp_id?.trim() ?? '',
     user_id: body.uid,
     session_id: body.sid,
     fingerprint: body.fp ?? '',

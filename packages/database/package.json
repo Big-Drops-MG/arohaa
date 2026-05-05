@@ -7,6 +7,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./landing/normalizeLandingPageUrl": {
+      "types": "./src/landing/normalizeLandingPageUrl.ts",
+      "default": "./src/landing/normalizeLandingPageUrl.ts"
     }
   },
   "dependencies": {

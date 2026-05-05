@@ -1,5 +1,6 @@
 export interface SDKConfig {
   wid: string
+  lpId: string
   page: string
   variant: string
   formtype: "zip" | "single" | "multiple"
@@ -8,6 +9,7 @@ export interface SDKConfig {
 
 export interface EventPayload {
   wid: string
+  lp_id?: string
   uid: string
   sid: string
   fp: string

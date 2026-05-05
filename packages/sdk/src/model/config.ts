@@ -2,6 +2,7 @@ import type { SDKConfig } from "../types"
 
 const DEFAULT_CONFIG: SDKConfig = {
   wid: "",
+  lpId: "",
   page: "",
   variant: "A",
   formtype: "single",
@@ -40,6 +41,7 @@ export function initializeConfig(script?: HTMLScriptElement | null): SDKConfig {
 
   config = {
     wid: resolvedScript?.getAttribute("data-wid") ?? "",
+    lpId: resolvedScript?.getAttribute("data-lp-id") ?? "",
     page: resolvedScript?.getAttribute("data-page") ?? pageFallback,
     variant: resolvedScript?.getAttribute("data-variant") ?? "A",
     formtype: parseFormType(resolvedScript?.getAttribute("data-formtype")),

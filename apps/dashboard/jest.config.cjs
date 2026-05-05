@@ -10,6 +10,8 @@ const customJestConfig = {
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
     "^@workspace/ui/(.*)$": "<rootDir>/../../packages/ui/src/$1",
+    "^@workspace/database/landing/normalizeLandingPageUrl$":
+      "<rootDir>/../../packages/database/src/landing/normalizeLandingPageUrl.ts",
   },
 }
 

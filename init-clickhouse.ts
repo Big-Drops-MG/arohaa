@@ -21,6 +21,7 @@ const client = createClient({
 const EXPECTED_COLUMNS = [
   "event_name",
   "workspace_id",
+  "lp_public_id",
   "user_id",
   "session_id",
   "fingerprint",
@@ -48,6 +49,7 @@ const CREATE_EVENTS = `
 CREATE TABLE IF NOT EXISTS events (
     event_name LowCardinality(String),
     workspace_id UUID,
+    lp_public_id LowCardinality(String) DEFAULT '',
     user_id String,
     session_id String,
     fingerprint String DEFAULT '',

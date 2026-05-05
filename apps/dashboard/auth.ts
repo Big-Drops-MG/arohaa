@@ -62,10 +62,13 @@ const nextAuth = NextAuth({
           return null
         }
 
+        const displayName =
+          getFullName(userRow.firstName, userRow.lastName) || userRow.name
+
         return {
           id: userRow.id,
           email: userRow.email,
-          name: getFullName(userRow.firstName, userRow.lastName),
+          name: displayName || null,
         }
       },
     }),

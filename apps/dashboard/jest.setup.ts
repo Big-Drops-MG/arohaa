@@ -1,6 +1,11 @@
 import "@testing-library/jest-dom"
 import * as React from "react"
 
+jest.mock("next-auth/react", () => ({
+  __esModule: true,
+  signIn: jest.fn().mockResolvedValue({ ok: true, error: null }),
+}))
+
 if (
   typeof document !== "undefined" &&
   typeof document.elementFromPoint !== "function"

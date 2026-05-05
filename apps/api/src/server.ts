@@ -40,35 +40,11 @@ server.addHook('onRequest', async (request, reply) => {
   reply.header(TRACE_ID_HEADER, request.id)
 })
 
-const allowedOrigins = [
-  'https://cdn.arohaa.net',
-  'https://cdn-dev.arohaa.net',
-]
-
 const isDev = process.env.NODE_ENV !== 'production'
 
-const localhostOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/
-
 server.register(cors, {
-  origin: (origin, cb) => {
-    if (!origin) {
-      cb(null, true)
-      return
-    }
-
-    if (allowedOrigins.includes(origin)) {
-      cb(null, true)
-      return
-    }
-
-    if (isDev && localhostOriginPattern.test(origin)) {
-      cb(null, true)
-      return
-    }
-
-    cb(new Error('Not allowed by CORS'), false)
-  },
-  credentials: true,
+  origin: true,
+  credentials: false,
   methods: ['GET', 'POST', 'OPTIONS'],
 })
 

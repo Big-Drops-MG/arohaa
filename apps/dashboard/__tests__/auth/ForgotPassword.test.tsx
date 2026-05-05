@@ -12,6 +12,7 @@ jest.mock("next/navigation", () => ({
     prefetch: jest.fn(),
     back: jest.fn(),
   }),
+  useSearchParams: () => new URLSearchParams(),
 }))
 
 describe("ForgotPassword", () => {
