@@ -111,7 +111,11 @@ export function LoginPage() {
 
   const handleOtpSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (isProcessing || otpSubmitInFlightRef.current) return
+    await submitOtp()
+  }
+
+  const submitOtp = useCallback(async () => {
+    if (otpSubmitInFlightRef.current) return
 
     const fromDom = readOtpDigitsFromInput("login-otp")
     const fromState = otpCode.replace(/\D/g, "").slice(0, 6)
@@ -155,7 +159,13 @@ export function LoginPage() {
       otpSubmitInFlightRef.current = false
       setIsProcessing(false)
     }
-  }
+  }, [email, normalizedEmail, otpCode, password, router])
+
+  useEffect(() => {
+    if (showTwoFactor && otpCode.length === 6) {
+      void submitOtp()
+    }
+  }, [otpCode, showTwoFactor, submitOtp])
 
   const handleOtpChange = useCallback((value: string) => {
     setOtpCode(value)

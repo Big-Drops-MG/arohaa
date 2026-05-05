@@ -73,9 +73,8 @@ export function GoogleAuthenticatorScreen() {
   const isComplete = code.length === 6
   const slotClass = cn(otpSlotClass, verifyError && "border-destructive")
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (isProcessing || otpSubmitInFlightRef.current || !qrCodeDataUrl) return
+  const submitOtp = useCallback(async () => {
+    if (otpSubmitInFlightRef.current || !qrCodeDataUrl) return
 
     const fromDom = readOtpDigitsFromInput("ga-otp")
     const fromState = code.replace(/\D/g, "").slice(0, 6)
@@ -96,7 +95,23 @@ export function GoogleAuthenticatorScreen() {
       otpSubmitInFlightRef.current = false
       setIsProcessing(false)
     }
+  }, [code, qrCodeDataUrl, router])
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await submitOtp()
   }
+
+  useEffect(() => {
+    if (
+      code.length === 6 &&
+      !isLoadingSetup &&
+      !setupError &&
+      !!qrCodeDataUrl
+    ) {
+      void submitOtp()
+    }
+  }, [code, isLoadingSetup, qrCodeDataUrl, setupError, submitOtp])
 
   return (
     <AuthScreen>
