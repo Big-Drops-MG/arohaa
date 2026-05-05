@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
-import { ForgotPassword } from "@/features/view/auth/ForgotPassword"
+import { ForgotPassword } from "@/features/auth/view/ForgotPassword"
 
 const mockPush = jest.fn()
 

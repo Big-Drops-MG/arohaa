@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
-import { GoogleAuthenticatorScreen } from "@/features/view/auth/GoogleAuthenticatorScreen"
+import { GoogleAuthenticatorScreen } from "@/features/auth/view/GoogleAuthenticatorScreen"
 
 /** User input mocked as invalid when the fake server returns an error — not real TOTP material. */
 const TEST_OTP_INPUT_FAILURE_CASE = `${0}${0}${0}${0}${0}${0}`

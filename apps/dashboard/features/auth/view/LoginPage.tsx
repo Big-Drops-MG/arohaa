@@ -4,6 +4,8 @@ import {
   loginWithCredentials,
   verifyTwoFactorCode,
 } from "@/actions/auth.actions"
+import { resolveOtpDigits, shouldAutoSubmitOtp } from "../controller/otp"
+import { isOtpComplete } from "../model/otp"
 import { signIn } from "next-auth/react"
 import { AuthBrandHeader, AuthScreen } from "./AuthScreen"
 import Link from "next/link"
@@ -30,13 +32,6 @@ const otpSlotClass =
 
 const iconWrap =
   "pointer-events-none absolute inset-y-0 left-0 flex w-10 items-center justify-center text-muted-foreground"
-
-function readOtpDigitsFromInput(elementId: string): string {
-  if (typeof document === "undefined") return ""
-  const el = document.getElementById(elementId)
-  if (!el || !(el instanceof HTMLInputElement)) return ""
-  return el.value.replace(/\D/g, "").slice(0, 6)
-}
 
 export function LoginPage() {
   const router = useRouter()
@@ -67,7 +62,7 @@ export function LoginPage() {
   const passwordValid = password.length >= 8
   const canSubmitPassword = emailValid && passwordValid
   const hasBothInputs = trimmedEmail.length > 0 && password.length > 0
-  const otpComplete = otpCode.length === 6
+  const otpComplete = isOtpComplete(otpCode)
 
   const emailFieldError = submitAttempted && !emailValid
   const passwordFieldError = submitAttempted && !passwordValid
@@ -117,9 +112,7 @@ export function LoginPage() {
   const submitOtp = useCallback(async () => {
     if (otpSubmitInFlightRef.current) return
 
-    const fromDom = readOtpDigitsFromInput("login-otp")
-    const fromState = otpCode.replace(/\D/g, "").slice(0, 6)
-    const digits = fromDom.length === 6 ? fromDom : fromState
+    const digits = resolveOtpDigits(otpCode)
     if (digits.length !== 6) return
 
     otpSubmitInFlightRef.current = true
@@ -162,7 +155,7 @@ export function LoginPage() {
   }, [email, normalizedEmail, otpCode, password, router])
 
   useEffect(() => {
-    if (showTwoFactor && otpCode.length === 6) {
+    if (shouldAutoSubmitOtp(otpCode, { enabled: showTwoFactor })) {
       void submitOtp()
     }
   }, [otpCode, showTwoFactor, submitOtp])
@@ -178,7 +171,7 @@ export function LoginPage() {
     setIsGoogleProcessing(true)
     try {
       await signIn("google", { callbackUrl: "/dashboard" })
-    } catch (error) {
+    } catch {
       setIsGoogleProcessing(false)
     }
   }
@@ -190,7 +183,7 @@ export function LoginPage() {
           <CardHeader className="gap-0 pb-2 text-center sm:pb-4">
             <AuthBrandHeader
               title="Verify your identity"
-              description="Open the authenticator entry you added for this email and type the current 6-digit code. You do not scan a QR when signing in—only the first time you set up 2FA."
+              description="Open your authenticator app and enter the current code."
             />
           </CardHeader>
           <CardContent>

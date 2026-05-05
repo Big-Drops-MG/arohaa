@@ -1,12 +1,14 @@
-import { render, screen } from "@testing-library/react"
+import { redirect } from "next/navigation"
 
 import Page from "@/app/page"
 
+jest.mock("next/navigation", () => ({
+  redirect: jest.fn(),
+}))
+
 describe("Page", () => {
-  it("renders the dashboard title", () => {
-    render(<Page />)
-    expect(
-      screen.getByRole("heading", { name: "Dashboard" })
-    ).toBeInTheDocument()
+  it("redirects to /login", async () => {
+    await Page()
+    expect(redirect).toHaveBeenCalledWith("/login")
   })
 })

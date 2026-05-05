@@ -1,27 +1,9 @@
 import type { NextAuthConfig } from "next-auth"
-import { config as loadEnv } from "dotenv"
-import { existsSync } from "node:fs"
-import { dirname, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
+import { bootstrapDashboardEnv, resolveAuthSecret } from "@/lib/server/env"
 
-function bootstrapEnv(): void {
-  const moduleDir = dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    resolve(process.cwd(), ".env"),
-    resolve(process.cwd(), "../../.env"),
-    resolve(moduleDir, "../../.env"),
-  ]
+bootstrapDashboardEnv(import.meta.url)
 
-  for (const path of candidates) {
-    if (existsSync(path)) {
-      loadEnv({ path, override: false })
-    }
-  }
-}
-
-bootstrapEnv()
-
-const authSecret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET
+const authSecret = resolveAuthSecret()
 if (!authSecret && process.env.NODE_ENV === "production") {
   throw new Error("Missing AUTH_SECRET (or NEXTAUTH_SECRET) in production")
 }

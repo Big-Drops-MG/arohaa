@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react"
 
-import { ForgotPasswordMessageScreen } from "@/features/view/auth/ForgotPasswordMessageScreen"
+import { ForgotPasswordMessageScreen } from "@/features/auth/view/ForgotPasswordMessageScreen"
 
 describe("ForgotPasswordMessageScreen", () => {
   it("renders confirmation copy and a link to login", () => {

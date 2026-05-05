@@ -1,5 +1,5 @@
 import { auth } from "@/auth"
-import { LoginPage } from "@/features/view/auth/LoginPage"
+import { LoginPage } from "@/features/auth/view/LoginPage"
 import { redirect } from "next/navigation"
 import { Suspense } from "react"
 

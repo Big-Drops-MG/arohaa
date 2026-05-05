@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react"
 
-import { ResetPasswordMessageScreen } from "@/features/view/auth/ResetPasswordMessageScreen"
+import { ResetPasswordMessageScreen } from "@/features/auth/view/ResetPasswordMessageScreen"
 
 describe("ResetPasswordMessageScreen", () => {
   it("renders success copy and a link to login", () => {

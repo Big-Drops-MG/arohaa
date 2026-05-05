@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react"
 
-import { AuthBrandHeader, AuthScreen } from "@/features/view/auth/AuthScreen"
+import { AuthBrandHeader, AuthScreen } from "@/features/auth/view/AuthScreen"
 
 describe("AuthScreen", () => {
   it("renders children inside the shell", () => {

@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
-import { LoginPage } from "@/features/view/auth/LoginPage"
+import { LoginPage } from "@/features/auth/view/LoginPage"
 
 const mockLoginWithCredentials = jest.fn()
 const mockPush = jest.fn()

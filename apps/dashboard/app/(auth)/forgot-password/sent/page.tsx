@@ -1,4 +1,4 @@
-import { ForgotPasswordMessageScreen } from "@/features/view/auth/ForgotPasswordMessageScreen"
+import { ForgotPasswordMessageScreen } from "@/features/auth/view/ForgotPasswordMessageScreen"
 
 export default function MessageScreenPage() {
   return <ForgotPasswordMessageScreen />

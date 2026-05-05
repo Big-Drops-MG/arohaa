@@ -1,4 +1,4 @@
-import { HomePage } from "@/features/view/dashboard/HomePage"
+import { HomePage } from "@/features/dashboard/HomePage"
 
 export default function HomepagePage() {
   return <HomePage />

@@ -1,4 +1,4 @@
-import { ForgotPassword } from "@/features/view/auth/ForgotPassword"
+import { ForgotPassword } from "@/features/auth/view/ForgotPassword"
 
 export default function ForgotPasswordPage() {
   return <ForgotPassword />
