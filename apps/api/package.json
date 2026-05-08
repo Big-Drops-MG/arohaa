@@ -17,6 +17,7 @@
     "@workspace/database": "workspace:*",
     "fastify": "^5.2.1",
     "ioredis": "^5.10.1",
+    "pino-cloudwatch": "^0.7.0",
     "ua-parser-js": "^2.0.9"
   },
   "devDependencies": {

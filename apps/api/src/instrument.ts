@@ -33,6 +33,7 @@ function loadLocalEnv(): void {
     path.join(apiRoot, '.env.local'),
     path.join(apiRoot, '.env'),
     path.join(repoRoot, 'apps', 'dashboard', '.env.local'),
+    path.join(repoRoot, 'apps', 'dashboard', '.env'),
   ]
 
   for (const file of candidates) {

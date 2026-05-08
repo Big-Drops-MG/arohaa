@@ -28,8 +28,32 @@ function pickInboundTraceId(value: string | string[] | undefined): string | null
   return TRACE_ID_PATTERN.test(raw) ? raw : null
 }
 
+function buildLoggerConfig(): boolean | Record<string, unknown> {
+  const isProduction = process.env.NODE_ENV === 'production'
+  const awsKeyId = process.env.AWS_ACCESS_KEY_ID?.trim()
+  const awsSecret = process.env.AWS_SECRET_ACCESS_KEY?.trim()
+
+  if (isProduction && awsKeyId && awsSecret) {
+    return {
+      transport: {
+        target: 'pino-cloudwatch',
+        options: {
+          group: '/arohaa/production/fastify-backend',
+          stream: 'api-service',
+          aws_region: 'eu-north-1',
+          aws_access_key_id: awsKeyId,
+          aws_secret_access_key: awsSecret,
+          interval: 1_000,
+        },
+      },
+    }
+  }
+
+  return true
+}
+
 const server = Fastify({
-  logger: true,
+  logger: buildLoggerConfig(),
   trustProxy: true,
   requestIdHeader: TRACE_ID_HEADER,
   genReqId: (req) =>
