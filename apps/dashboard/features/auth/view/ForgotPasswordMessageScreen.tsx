@@ -2,16 +2,20 @@
 
 import { AuthBrandHeader, AuthScreen } from "./AuthScreen"
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
 import { useState } from "react"
 import { requestPasswordReset } from "@/actions/forgot-password.actions"
 import { Button } from "@workspace/ui/components/button"
 import { Card, CardContent, CardHeader } from "@workspace/ui/components/card"
 import { Loader2 } from "lucide-react"
 
-export function ForgotPasswordMessageScreen() {
-  const searchParams = useSearchParams()
-  const emailParam = (searchParams.get("email") ?? "").trim().toLowerCase()
+type ForgotPasswordMessageScreenProps = {
+  email?: string
+}
+
+export function ForgotPasswordMessageScreen({
+  email = "",
+}: ForgotPasswordMessageScreenProps) {
+  const emailParam = email.trim().toLowerCase()
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState("")
   const [sent, setSent] = useState(false)

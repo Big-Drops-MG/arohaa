@@ -55,15 +55,6 @@ export function PasswordResetEmail({
             This link expires in {expiresInMinutes} minutes. If you did not
             request a password reset, you can safely ignore this email.
           </Text>
-
-          <Hr style={hr} />
-
-          <Text style={footer}>
-            If the button above does not work, paste this URL into your browser:
-          </Text>
-          <Link href={resetLink} style={footerLink}>
-            {resetLink}
-          </Link>
         </Container>
       </Body>
     </Html>
@@ -107,6 +98,7 @@ const heading = {
   fontSize: "24px",
   fontWeight: "700",
   lineHeight: "32px",
+  textAlign: "center" as const,
   margin: "0 0 12px",
 }
 
@@ -114,10 +106,12 @@ const text = {
   color: "#344054",
   fontSize: "14px",
   lineHeight: "22px",
+  textAlign: "center" as const,
   margin: "0 0 16px",
 }
 
 const buttonRow = {
+  textAlign: "center" as const,
   margin: "20px 0",
 }
 
@@ -125,9 +119,12 @@ const button = {
   backgroundColor: "#0f172a",
   borderRadius: "8px",
   color: "#ffffff",
-  display: "inline-block",
+  display: "block",
   fontSize: "14px",
   fontWeight: "600",
+  textAlign: "center" as const,
+  width: "100%",
+  boxSizing: "border-box" as const,
   padding: "12px 20px",
   textDecoration: "none",
 }
@@ -136,6 +133,7 @@ const expiry = {
   color: "#667085",
   fontSize: "13px",
   lineHeight: "20px",
+  textAlign: "center" as const,
   margin: "0 0 16px",
 }
 
@@ -148,11 +146,14 @@ const footer = {
   color: "#667085",
   fontSize: "12px",
   lineHeight: "18px",
+  textAlign: "center" as const,
   margin: "0 0 4px",
 }
 
 const footerLink = {
   color: "#344054",
+  display: "block",
   fontSize: "12px",
+  textAlign: "center" as const,
   wordBreak: "break-all" as const,
 }
