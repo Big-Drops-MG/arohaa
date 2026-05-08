@@ -10,11 +10,16 @@
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "email:dev": "react-email dev --dir ./emails/templates",
+    "email:export": "react-email export --dir ./emails/templates --outDir ./emails/dist"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.2",
     "@auth/upstash-redis-adapter": "^2.11.2",
+    "@aws-sdk/client-sesv2": "3.1045.0",
+    "@react-email/components": "1.0.12",
+    "@react-email/render": "2.0.8",
     "@upstash/ratelimit": "^2.0.5",
     "@upstash/redis": "^1.37.0",
     "@workspace/database": "workspace:^",
@@ -29,9 +34,11 @@
     "otplib": "^13.4.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "react-email": "6.1.1"
   },
   "devDependencies": {
+    "@react-email/ui": "6.1.1",
     "@tailwindcss/postcss": "^4.1.18",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

@@ -31,7 +31,11 @@
     "POSTGRES_URL",
     "POSTGRES_URL_NON_POOLING",
     "POSTGRES_URL_NO_SSL",
-    "POSTGRES_USER"
+    "POSTGRES_USER",
+    "AWS_REGION",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SES_FROM_EMAIL"
   ],
   "tasks": {
     "build": {
@@ -52,7 +56,11 @@
         "PGUSER",
         "POSTGRES_PRISMA_URL",
         "POSTGRES_URL",
-        "POSTGRES_URL_NON_POOLING"
+        "POSTGRES_URL_NON_POOLING",
+        "AWS_REGION",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SES_FROM_EMAIL"
       ]
     },
     "lint": {

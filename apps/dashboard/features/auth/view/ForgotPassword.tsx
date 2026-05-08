@@ -5,12 +5,13 @@ import Link from "next/link"
 import type { FormEvent } from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { requestPasswordReset } from "@/actions/forgot-password.actions"
 import { Button } from "@workspace/ui/components/button"
 import { Card, CardContent, CardHeader } from "@workspace/ui/components/card"
 import { Input } from "@workspace/ui/components/input"
 import { Label } from "@workspace/ui/components/label"
 import { cn } from "@workspace/ui/lib/utils"
-import { ArrowLeft, Mail } from "lucide-react"
+import { ArrowLeft, Loader2, Mail } from "lucide-react"
 
 const EMAIL_PATTERN = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
 
@@ -21,19 +22,32 @@ export function ForgotPassword() {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [submitAttempted, setSubmitAttempted] = useState(false)
+  const [isSending, setIsSending] = useState(false)
+  const [error, setError] = useState("")
 
   const normalized = email.trim().toLowerCase()
   const emailValid = EMAIL_PATTERN.test(normalized)
   const emailFieldError = submitAttempted && !emailValid
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!email.trim()) return
     if (!emailValid) {
       setSubmitAttempted(true)
       return
     }
-    router.push("/forgot-password/sent")
+
+    setIsSending(true)
+    setError("")
+    const result = await requestPasswordReset(normalized)
+    setIsSending(false)
+
+    if (result.error) {
+      setError(result.error)
+      return
+    }
+
+    router.push(`/forgot-password/sent?email=${encodeURIComponent(normalized)}`)
   }
 
   return (
@@ -93,15 +107,21 @@ export function ForgotPassword() {
                   Enter a valid email address.
                 </p>
               ) : null}
+              {error ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {error}
+                </p>
+              ) : null}
             </div>
 
             <Button
               type="submit"
               size="lg"
               className="h-11 w-full text-base font-medium"
-              disabled={!email.trim()}
+              disabled={!email.trim() || isSending}
             >
-              Send reset link
+              {isSending ? <Loader2 className="size-4 animate-spin" /> : null}
+              {isSending ? "Sending..." : "Continue"}
             </Button>
 
             <div className="flex justify-center">
