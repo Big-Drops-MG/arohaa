@@ -28,7 +28,7 @@ export function LandingPagesDashboard({ pages }: LandingPagesDashboardProps) {
 
   if (pages.length === 0) {
     return (
-      <div className="mx-auto flex w-full max-w-[1280px] flex-1 flex-col items-center justify-center px-4 py-10">
+      <div className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col items-center justify-center px-4 py-10">
         <Button type="button" size="lg" className="gap-2" asChild>
           <Link href="/dashboard/new-landing">
             <Plus className="size-5" aria-hidden />
@@ -40,7 +40,7 @@ export function LandingPagesDashboard({ pages }: LandingPagesDashboardProps) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[1280px] flex-1 flex-col px-6 py-9">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col px-6 py-9">
       <div className="mb-6 grid gap-4 lg:grid-cols-[180px_minmax(280px,1fr)_140px] lg:items-center">
         <h1 className="text-xl font-semibold text-foreground">Landing Pages</h1>
 

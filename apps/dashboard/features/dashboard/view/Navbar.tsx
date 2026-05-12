@@ -30,7 +30,7 @@ export function Navbar({ firstName, lastName, role }: NavbarProps) {
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-border bg-background px-4 sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-[1280px] items-center justify-between">
+      <div className="mx-auto flex w-full max-w-[1440px] items-center justify-between">
         <div className="flex items-center">
           <Image
             src="/main-logo.svg"
