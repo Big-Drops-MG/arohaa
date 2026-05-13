@@ -30,6 +30,8 @@ export async function reconcileLandingPageIngest(payload: {
   lpIdRaw: string | undefined
   wid: string
   eventUrl?: string | undefined
+  ev?: string
+  props?: Record<string, unknown>
 }): Promise<ReconcileResult> {
   const raw = payload.lpIdRaw?.trim() ?? ''
   if (!raw) {
@@ -65,18 +67,39 @@ export async function reconcileLandingPageIngest(payload: {
     row.verifiedAt != null ? new Date(row.verifiedAt) : now
   const nextStatus = row.status === 'inactive' ? 'inactive' : 'verified'
 
-  await sql`
-    UPDATE landing_page
-    SET
-      "lastSeenAt" = ${now},
-      "lastEventAt" = ${now},
-      "sdkInstallStatus" = ${'detected'},
-      "status" = ${nextStatus},
-      "verifiedAt" = ${nextVerifiedAt},
-      "verificationMethod" = ${'sdk_event'},
-      "updatedAt" = ${now}
-    WHERE id = ${row.id}
-  `
+  const faviconRaw =
+    payload.ev === 'sdk_connected' && typeof payload.props?.favicon_url === 'string'
+      ? payload.props.favicon_url.trim().slice(0, 2048)
+      : null
+
+  if (faviconRaw) {
+    await sql`
+      UPDATE landing_page
+      SET
+        "lastSeenAt" = ${now},
+        "lastEventAt" = ${now},
+        "sdkInstallStatus" = ${'detected'},
+        "status" = ${nextStatus},
+        "verifiedAt" = ${nextVerifiedAt},
+        "verificationMethod" = ${'sdk_event'},
+        "faviconUrl" = ${faviconRaw},
+        "updatedAt" = ${now}
+      WHERE id = ${row.id}
+    `
+  } else {
+    await sql`
+      UPDATE landing_page
+      SET
+        "lastSeenAt" = ${now},
+        "lastEventAt" = ${now},
+        "sdkInstallStatus" = ${'detected'},
+        "status" = ${nextStatus},
+        "verifiedAt" = ${nextVerifiedAt},
+        "verificationMethod" = ${'sdk_event'},
+        "updatedAt" = ${now}
+      WHERE id = ${row.id}
+    `
+  }
 
   return { outcome: 'ok' }
 }

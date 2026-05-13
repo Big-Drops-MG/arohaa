@@ -3,10 +3,17 @@ export type LandingPageMetric = {
   value: string
 }
 
+export type LandingPageNavItem = {
+  publicId: string
+  brandName: string
+  faviconUrl: string | null
+}
+
 export type LandingPageListItem = {
   publicId: string
   brandName: string
   landingPageUrl: string
+  faviconUrl: string | null
   metrics: LandingPageMetric[]
 }
 

@@ -2,6 +2,8 @@ import Image from "next/image"
 import { Bell, CircleUserRound, LogOut, User } from "lucide-react"
 import Link from "next/link"
 import { logout } from "@/actions/auth.actions"
+import type { LandingPageNavItem } from "@/features/dashboard/model/landing-page"
+import { LandingPageProjectDropdown } from "@/features/dashboard/view/LandingPageProjectDropdown"
 import { Button } from "@workspace/ui/components/button"
 import {
   Popover,
@@ -16,6 +18,7 @@ type NavbarProps = {
   firstName: string
   lastName: string
   role: string
+  landingPageNavItems: LandingPageNavItem[]
 }
 
 function buildInitials(firstName: string, lastName: string): string {
@@ -24,22 +27,34 @@ function buildInitials(firstName: string, lastName: string): string {
   return `${first}${last}`.trim().toUpperCase() || "DU"
 }
 
-export function Navbar({ firstName, lastName, role }: NavbarProps) {
+export function Navbar({
+  firstName,
+  lastName,
+  role,
+  landingPageNavItems,
+}: NavbarProps) {
   const fullName = `${firstName} ${lastName}`.trim()
   const initials = buildInitials(firstName, lastName)
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-border bg-background px-4 sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-[1440px] items-center justify-between">
-        <div className="flex items-center">
-          <Image
-            src="/main-logo.svg"
-            alt="Arohaa brand logo"
-            width={138}
-            height={40}
-            className="h-10 w-auto object-contain"
-            priority
-          />
+        <div className="flex min-w-0 items-center gap-6">
+          <Link
+            href="/dashboard"
+            className="inline-flex shrink-0 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Go to dashboard home"
+          >
+            <Image
+              src="/main-logo.svg"
+              alt="Arohaa brand logo"
+              width={138}
+              height={40}
+              className="h-10 w-auto object-contain"
+              priority
+            />
+          </Link>
+          <LandingPageProjectDropdown pages={landingPageNavItems} />
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
           <Popover>

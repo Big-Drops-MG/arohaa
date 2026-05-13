@@ -66,6 +66,8 @@ export async function ingestRoutes(server: FastifyInstance) {
         lpIdRaw: request.body.lp_id,
         wid: request.body.wid,
         eventUrl: request.body.url,
+        ev: request.body.ev,
+        props: request.body.props,
       })
 
       if (landing.outcome === 'reject') {

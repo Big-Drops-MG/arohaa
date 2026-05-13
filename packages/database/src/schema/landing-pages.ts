@@ -36,6 +36,7 @@ export const landingPages = pgTable(
     verifiedAt: timestamp('verifiedAt', { mode: 'date' }),
     lastSeenAt: timestamp('lastSeenAt', { mode: 'date' }),
     lastEventAt: timestamp('lastEventAt', { mode: 'date' }),
+    faviconUrl: text('faviconUrl'),
     notes: text('notes'),
     htmlVerificationToken: text('htmlVerificationToken'),
     metadata: jsonb('metadata').$type<Record<string, unknown> | null>(),
