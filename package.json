@@ -10,7 +10,6 @@
     "typecheck": "turbo typecheck",
     "db:migrate": "pnpm --filter @workspace/database db:migrate",
     "db:push": "pnpm --filter @workspace/database db:push",
-    "test": "turbo test",
     "prepare": "husky",
     "vercel:link": "pnpm dlx vercel@latest link --yes --cwd apps/dashboard --scope big-drops-mg-admins-projects --project arohaa-dashboard",
     "vercel:env:pull": "pnpm dlx vercel@latest env pull --cwd apps/dashboard"

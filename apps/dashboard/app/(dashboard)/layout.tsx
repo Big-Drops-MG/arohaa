@@ -3,6 +3,7 @@ import { Navbar } from "@/features/dashboard/view/Navbar"
 import { getLandingPageNavItems } from "@/features/dashboard/controller/landing-pages"
 import { db, normalizeUserEmail, whereUserEmail } from "@workspace/database"
 import { redirect } from "next/navigation"
+import { cookies } from "next/headers"
 
 export default async function DashboardGroupLayout({
   children,
@@ -22,6 +23,14 @@ export default async function DashboardGroupLayout({
 
   if (!user?.isTwoFactorEnabled) {
     redirect("/authenticate")
+  }
+
+  const cookieStore = await cookies()
+  const hasVerified2FA =
+    cookieStore.get("arohaa_2fa_verified")?.value === "true"
+
+  if (!hasVerified2FA) {
+    redirect("/login?requiresTwoFactor=true")
   }
 
   if (!user.firstName?.trim() || !user.lastName?.trim() || !user.role?.trim()) {

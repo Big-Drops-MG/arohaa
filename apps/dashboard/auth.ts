@@ -10,6 +10,7 @@ import {
   users,
   verificationTokens,
   whereUserEmail,
+  normalizeUserEmail,
 } from "@workspace/database"
 import bcrypt from "bcryptjs"
 import { authConfig } from "./auth.config"
@@ -108,7 +109,7 @@ const nextAuth = NextAuth({
 
         const email = credentials.email as string
         const userRow = await db.query.users.findFirst({
-          where: whereUserEmail(email),
+          where: whereUserEmail(normalizeUserEmail(email)),
         })
 
         if (!userRow || !userRow.password) return null
@@ -156,7 +157,7 @@ const nextAuth = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         const dbUser = await db.query.users.findFirst({
-          where: whereUserEmail(user.email || ""),
+          where: whereUserEmail(normalizeUserEmail(user.email || "")),
         })
         token.sub = dbUser?.id || user.id
         token.isTwoFactorEnabled = dbUser?.isTwoFactorEnabled || false
@@ -171,7 +172,7 @@ const nextAuth = NextAuth({
       } else if (user && session.user) {
         session.user.id = user.id
         const dbUser = await db.query.users.findFirst({
-          where: whereUserEmail(user.email || ""),
+          where: whereUserEmail(normalizeUserEmail(user.email || "")),
         })
         ;(session.user as any).isTwoFactorEnabled =
           dbUser?.isTwoFactorEnabled || false

@@ -21,7 +21,7 @@ export async function verifyTwoFactorCode(
   }
 
   const userRow = await db.query.users.findFirst({
-    where: whereUserEmail(session.user.email),
+    where: whereUserEmail(normalizeUserEmail(session.user.email)),
   })
 
   if (!userRow || !userRow.twoFactorSecret) {

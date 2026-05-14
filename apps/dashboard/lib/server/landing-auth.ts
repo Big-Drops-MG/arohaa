@@ -1,5 +1,7 @@
 import type { InferSelectModel } from "drizzle-orm"
 import { auth } from "@/auth"
+import { cookies } from "next/headers"
+
 import {
   db,
   normalizeUserEmail,
@@ -25,6 +27,11 @@ export async function requireLandingPageActor(): Promise<UserRow | null> {
 
   const user = await fetchUser(email)
   if (!user?.isTwoFactorEnabled) return null
+
+  const cookieStore = await cookies()
+  const hasVerified2FA =
+    cookieStore.get("arohaa_2fa_verified")?.value === "true"
+  if (!hasVerified2FA) return null
 
   if (!user.firstName?.trim() || !user.lastName?.trim() || !user.role?.trim()) {
     return null

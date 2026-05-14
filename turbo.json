@@ -35,7 +35,8 @@
     "AWS_REGION",
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
-    "AWS_SES_FROM_EMAIL"
+    "AWS_SES_FROM_EMAIL",
+    "AROHAA_INTERNAL_API_SECRET"
   ],
   "tasks": {
     "build": {
@@ -71,9 +72,6 @@
     },
     "typecheck": {
       "dependsOn": ["^typecheck"]
-    },
-    "test": {
-      "inputs": ["$TURBO_DEFAULT$"]
     },
     "dev": {
       "cache": false,

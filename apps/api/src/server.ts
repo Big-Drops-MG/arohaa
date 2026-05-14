@@ -10,6 +10,7 @@ import { redis } from './services/redis.service.js'
 import { ingestRoutes } from './routes/ingest.js'
 import { healthRoutes } from './routes/health.js'
 import { devRoutes } from './routes/dev.js'
+import { analyticsRoutes } from './routes/analytics.js'
 import {
   closeClickHouseClient,
   ensureEventsTable,
@@ -132,6 +133,7 @@ server.setErrorHandler((error: FastifyError, request, reply) => {
 })
 
 server.register(ingestRoutes)
+server.register(analyticsRoutes)
 server.register(healthRoutes)
 if (isDev) {
   server.register(devRoutes)

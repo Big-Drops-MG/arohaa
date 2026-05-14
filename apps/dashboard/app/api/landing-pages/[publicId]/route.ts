@@ -1,5 +1,5 @@
 import type { InferSelectModel } from "drizzle-orm"
-import { eq } from "drizzle-orm"
+import { eq, isNull, and } from "drizzle-orm"
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import {
@@ -227,4 +227,46 @@ export async function PATCH(
     landingPage: toJson(saved),
     ...(htmlVerificationMetaTag ? { htmlVerificationMetaTag } : {}),
   })
+}
+
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ publicId: string }> }
+) {
+  const actor = await requireLandingPageActor()
+  if (!actor) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  const limited = await enforceLandingApiRateLimit(actor.id)
+  if (limited) return limited
+
+  const ws = await getOrCreateOwnerWorkspace(actor.id)
+  const { publicId } = await context.params
+  const row = await getActiveLandingPageInWorkspace(ws.id, publicId)
+  if (!row) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  }
+
+  const now = new Date()
+  await db
+    .update(landingPages)
+    .set({
+      deletedAt: now,
+      updatedAt: now,
+      updatedByUserId: actor.id,
+      status: "archived",
+      sdkInstallStatus: "failed",
+    })
+    .where(and(eq(landingPages.id, row.id), isNull(landingPages.deletedAt)))
+
+  await db.insert(landingPageAuditLogs).values({
+    actorUserId: actor.id,
+    landingPageId: row.id,
+    action: "delete",
+    beforePayload: { publicId: row.publicId, brandName: row.brandName },
+    afterPayload: null,
+    traceId: traceIdFrom(request),
+  })
+
+  return new NextResponse(null, { status: 204 })
 }
