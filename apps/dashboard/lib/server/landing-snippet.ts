@@ -12,6 +12,7 @@ export type LandingSdkSnippetInput = {
   workspaceUuid: string
   publicLandingId: string
   pageHostname: string
+  formType?: "single" | "multiple" | "zip"
 }
 
 export function buildLandingSdkScriptTag(
@@ -22,7 +23,9 @@ export function buildLandingSdkScriptTag(
   const wid = escapeHtmlAttribute(options.workspaceUuid)
   const lp = escapeHtmlAttribute(options.publicLandingId)
   const page = escapeHtmlAttribute(options.pageHostname)
-  return `<script src="${src}" async data-wid="${wid}" data-api="${api}" data-lp-id="${lp}" data-page="${page}"></script>`
+  const formType = options.formType ?? "single"
+  const ft = escapeHtmlAttribute(formType)
+  return `<script src="${src}" async data-wid="${wid}" data-api="${api}" data-lp-id="${lp}" data-page="${page}" data-formtype="${ft}"></script>`
 }
 
 export function buildHtmlVerificationMetaTag(
@@ -38,7 +41,7 @@ export function resolveLandingSdkEnv(): {
 } {
   const sdkScriptUrl =
     process.env.NEXT_PUBLIC_AROHAA_SDK_SCRIPT_URL?.trim() ||
-    "https://cdn.arohaa.com/sdk.js"
+    "https://cdn.arohaa.net/sdk.js"
   const ingestApiBase =
     process.env.NEXT_PUBLIC_AROHAA_INGEST_API_BASE?.trim() ||
     process.env.INGEST_BASE_URL?.trim() ||

@@ -57,9 +57,28 @@ function toJson(row: LandingRow) {
     verifiedAt: row.verifiedAt?.toISOString() ?? null,
     lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
     lastEventAt: row.lastEventAt?.toISOString() ?? null,
+    formType: row.formType,
+    faviconUrl: row.faviconUrl,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   }
+}
+
+function parseOptionalFaviconUrl(
+  raw: string
+): { ok: true; value: string | null } | { ok: false; error: string } {
+  const t = raw.trim()
+  if (t.length === 0) return { ok: true, value: null }
+  let u: URL
+  try {
+    u = new URL(t)
+  } catch {
+    return { ok: false, error: "Invalid favicon URL" }
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    return { ok: false, error: "Favicon URL must use http or https" }
+  }
+  return { ok: true, value: u.href }
 }
 
 export async function GET() {
@@ -123,6 +142,27 @@ export async function POST(request: NextRequest) {
       ? String((body as Record<string, unknown>).landingPageUrl)
       : ""
 
+  let formType: "single" | "multiple" | "zip" = "single"
+  if (typeof body === "object" && body !== null && "formType" in body) {
+    const ft = String((body as Record<string, unknown>).formType)
+      .trim()
+      .toLowerCase()
+    if (ft === "zip" || ft === "multiple" || ft === "single") {
+      formType = ft
+    } else {
+      return NextResponse.json({ error: "Invalid formType" }, { status: 400 })
+    }
+  }
+
+  const faviconRaw =
+    typeof body === "object" && body !== null && "faviconUrl" in body
+      ? String((body as Record<string, unknown>).faviconUrl)
+      : ""
+  const faviconParsed = parseOptionalFaviconUrl(faviconRaw)
+  if (!faviconParsed.ok) {
+    return NextResponse.json({ error: faviconParsed.error }, { status: 400 })
+  }
+
   const bn = normalizedBrandName(brandRaw)
   if (!bn.ok) {
     return NextResponse.json({ error: bn.error }, { status: 400 })
@@ -162,6 +202,8 @@ export async function POST(request: NextRequest) {
       lastSeenAt: null as Date | null,
       lastEventAt: null as Date | null,
       deletedAt: null as Date | null,
+      formType,
+      faviconUrl: faviconParsed.value,
       createdAt,
       updatedAt,
     }
@@ -202,6 +244,7 @@ export async function POST(request: NextRequest) {
         workspaceUuid: id,
         publicLandingId: publicId,
         pageHostname: nu.hostname,
+        formType,
       })
 
       const htmlVerificationMetaTag = buildHtmlVerificationMetaTag(htmlToken)

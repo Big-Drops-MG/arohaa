@@ -220,10 +220,10 @@ export function LandingPageProjectDropdown({
         <button
           type="button"
           className={cn(
-            "flex min-h-10 w-full max-w-[min(100vw-8rem,320px)] items-center gap-3 rounded-md border border-neutral-200 bg-white py-2 pr-2 pl-3 text-left text-sm shadow-sm transition-colors outline-none",
-            "hover:border-neutral-300 hover:bg-neutral-50/80",
+            "flex min-h-10 w-full max-w-[min(100vw-8rem,320px)] items-center gap-3.5 rounded-sm border border-neutral-200 bg-white py-2.5 pr-2 pl-3.5 text-left text-sm shadow-sm transition-colors outline-none focus:outline-none",
+            "hover:border-neutral-300 hover:bg-neutral-50/90",
             "focus-visible:border-neutral-300 focus-visible:ring-2 focus-visible:ring-neutral-900/10",
-            "data-[state=open]:border-neutral-300 data-[state=open]:bg-neutral-50/80"
+            "data-[state=open]:border-neutral-300 data-[state=open]:bg-neutral-50/90"
           )}
           aria-label="Switch landing page"
         >
@@ -237,10 +237,10 @@ export function LandingPageProjectDropdown({
             {label}
           </span>
           <span
-            className="flex size-7 shrink-0 items-center justify-center rounded-sm bg-black text-white"
+            className="flex size-5 shrink-0 items-center justify-center rounded-sm bg-black text-white"
             aria-hidden
           >
-            <ChevronsUpDown className="size-4" strokeWidth={2} />
+            <ChevronsUpDown className="size-3" strokeWidth={2} />
           </span>
         </button>
       </DropdownMenuTrigger>
@@ -248,8 +248,7 @@ export function LandingPageProjectDropdown({
         align="start"
         sideOffset={6}
         className={cn(
-          "w-[min(calc(100vw-2rem),340px)] overflow-hidden rounded-md border border-neutral-200 bg-white p-0 text-neutral-900 shadow-xl",
-          "ring-0"
+          "w-[min(calc(100vw-2rem),340px)] overflow-hidden rounded-sm border border-neutral-200/90 bg-white p-0 text-neutral-900 shadow-lg ring-0"
         )}
         onCloseAutoFocus={(e) => e.preventDefault()}
       >

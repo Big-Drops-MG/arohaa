@@ -1,0 +1,118 @@
+export type OverviewDateRangeId = "24h" | "7d" | "30d" | "3m" | "12m" | "24m"
+
+export type OverviewLandingFormType = "zip" | "single" | "multiple"
+
+export function parseOverviewLandingFormType(
+  raw: string | null | undefined
+): OverviewLandingFormType {
+  if (raw === "zip" || raw === "single" || raw === "multiple") return raw
+  return "single"
+}
+
+export type OverviewDateRangeOption = {
+  id: OverviewDateRangeId
+  label: string
+}
+
+export type OverviewKpiMetricId =
+  | "visitors"
+  | "sessions"
+  | "page-views"
+  | "form-submitted"
+  | "fsr"
+  | "bounce-rate"
+
+export const OVERVIEW_KPI_METRIC_ORDER: readonly OverviewKpiMetricId[] = [
+  "visitors",
+  "sessions",
+  "page-views",
+  "form-submitted",
+  "fsr",
+  "bounce-rate",
+]
+
+export function overviewKpiLabelsForFormType(
+  formType: OverviewLandingFormType
+): Record<OverviewKpiMetricId, string> {
+  const isZip = formType === "zip"
+  return {
+    visitors: "Visitors",
+    sessions: "Sessions",
+    "page-views": "Page Views",
+    "form-submitted": isZip ? "Zip Submits" : "Form Submits",
+    fsr: isZip ? "ZSR (Zip Success Rate)" : "FSR (Form Success Rate)",
+    "bounce-rate": "Bounce Rate",
+  }
+}
+
+export type OverviewKpi = {
+  id: OverviewKpiMetricId
+  label: string
+  value: string
+}
+
+export type OverviewKpiValuesByMetric = Partial<
+  Record<OverviewKpiMetricId, string>
+>
+
+export type OverviewKpiValuesByDateRange = Record<
+  OverviewDateRangeId,
+  OverviewKpiValuesByMetric
+>
+
+export type OverviewFunnelChangeVariant = "positive" | "negative" | "neutral"
+
+export type OverviewFunnelStep = {
+  label: string
+  value: string
+  change?: string
+  changeVariant?: OverviewFunnelChangeVariant
+}
+
+export type OverviewTimeSeriesPoint = {
+  label: string
+  value: number
+}
+
+export type OverviewTrafficStat = {
+  label: string
+  value: string
+}
+
+export type OverviewAlertSeverity = "warning" | "alert" | "error"
+
+export type OverviewAlert = {
+  id: string
+  message: string
+  severity: OverviewAlertSeverity
+}
+
+export type OverviewKpiSeriesByDateRange = Partial<
+  Record<
+    OverviewDateRangeId,
+    Partial<Record<OverviewKpiMetricId, OverviewTimeSeriesPoint[]>>
+  >
+>
+
+/**
+ * Full server payload for the Overview tab. The project page should load this
+ * (e.g. from your API or database) and pass it to `OverviewDashboard`.
+ */
+export type OverviewDashboardData = {
+  /** From landing page `data-formtype` (`single` | `multiple` | `zip`). */
+  formType: OverviewLandingFormType
+  dateRangeOptions: OverviewDateRangeOption[]
+  defaultDateRangeId: OverviewDateRangeId
+  kpisByDateRange: OverviewKpiValuesByDateRange
+  defaultKpiMetricId: OverviewKpiMetricId
+  funnel: OverviewFunnelStep[]
+  traffic: OverviewTrafficStat[]
+  segments: OverviewTrafficStat[]
+  alerts: OverviewAlert[]
+  /**
+   * Optional time series for the performance chart. When provided for the
+   * active date range and KPI, those points are used; otherwise the chart
+   * uses client-generated x-axis buckets with zero values.
+   */
+  kpiSeriesByDateRange?: OverviewKpiSeriesByDateRange
+}

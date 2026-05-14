@@ -6,6 +6,8 @@ import {
   TabsList,
   TabsTrigger,
 } from "@workspace/ui/components/tabs"
+import type { OverviewDashboardData } from "@/features/overview/model/overview"
+import { OverviewDashboard } from "@/features/overview/view/OverviewDashboard"
 
 const PROJECT_TABS = [
   { value: "overview", label: "Overview" },
@@ -18,7 +20,11 @@ const PROJECT_TABS = [
   { value: "settings", label: "Settings" },
 ] as const
 
-export function ProjectDashboardView() {
+type ProjectDashboardViewProps = {
+  overview: OverviewDashboardData
+}
+
+export function ProjectDashboardView({ overview }: ProjectDashboardViewProps) {
   return (
     <div className="flex w-full flex-1 flex-col">
       <Tabs defaultValue="overview" className="w-full">
@@ -37,10 +43,16 @@ export function ProjectDashboardView() {
         <div className="mx-auto w-full max-w-[1440px] pb-10">
           {PROJECT_TABS.map((tab) => (
             <TabsContent key={tab.value} value={tab.value}>
-              <p className="max-w-prose text-sm text-muted-foreground">
-                <span className="font-medium text-foreground">{tab.label}</span>{" "}
-                for this landing page.
-              </p>
+              {tab.value === "overview" ? (
+                <OverviewDashboard data={overview} />
+              ) : (
+                <p className="max-w-prose px-4 pt-6 text-sm text-muted-foreground sm:px-6 lg:px-8">
+                  <span className="font-medium text-foreground">
+                    {tab.label}
+                  </span>{" "}
+                  for this landing page.
+                </p>
+              )}
             </TabsContent>
           ))}
         </div>

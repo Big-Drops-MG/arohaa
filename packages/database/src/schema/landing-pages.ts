@@ -30,6 +30,7 @@ export const landingPages = pgTable(
     normalizedUrl: text('normalizedUrl').notNull(),
     origin: text('origin').notNull(),
     hostname: text('hostname').notNull(),
+    formType: text('formType').notNull().default('single'),
     status: text('status').notNull().default('pending_verification'),
     sdkInstallStatus: text('sdkInstallStatus').notNull().default('waiting'),
     verificationMethod: text('verificationMethod'),

@@ -38,6 +38,8 @@ function toJson(row: LandingRow) {
     verifiedAt: row.verifiedAt?.toISOString() ?? null,
     lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
     lastEventAt: row.lastEventAt?.toISOString() ?? null,
+    formType: row.formType,
+    faviconUrl: row.faviconUrl,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   }
