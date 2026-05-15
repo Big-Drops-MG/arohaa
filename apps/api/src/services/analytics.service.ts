@@ -135,27 +135,27 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
             uniqExactIf(user_id, created_at >= now() - INTERVAL 24 HOUR AND event_name = 'page_view') AS vis_24h,
             uniqExactIf(session_id, created_at >= now() - INTERVAL 24 HOUR) AS ses_24h,
             countIf(event_name = 'page_view' AND created_at >= now() - INTERVAL 24 HOUR) AS pv_24h,
-            countIf(event_name IN ('form_submit','form_success') AND created_at >= now() - INTERVAL 24 HOUR) AS fs_24h,
+            uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL 24 HOUR) AS fs_24h,
             uniqExactIf(user_id, created_at >= now() - INTERVAL 7 DAY AND event_name = 'page_view') AS vis_7d,
             uniqExactIf(session_id, created_at >= now() - INTERVAL 7 DAY) AS ses_7d,
             countIf(event_name = 'page_view' AND created_at >= now() - INTERVAL 7 DAY) AS pv_7d,
-            countIf(event_name IN ('form_submit','form_success') AND created_at >= now() - INTERVAL 7 DAY) AS fs_7d,
+            uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL 7 DAY) AS fs_7d,
             uniqExactIf(user_id, created_at >= now() - INTERVAL 30 DAY AND event_name = 'page_view') AS vis_30d,
             uniqExactIf(session_id, created_at >= now() - INTERVAL 30 DAY) AS ses_30d,
             countIf(event_name = 'page_view' AND created_at >= now() - INTERVAL 30 DAY) AS pv_30d,
-            countIf(event_name IN ('form_submit','form_success') AND created_at >= now() - INTERVAL 30 DAY) AS fs_30d,
+            uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL 30 DAY) AS fs_30d,
             uniqExactIf(user_id, created_at >= now() - INTERVAL 3 MONTH AND event_name = 'page_view') AS vis_3m,
             uniqExactIf(session_id, created_at >= now() - INTERVAL 3 MONTH) AS ses_3m,
             countIf(event_name = 'page_view' AND created_at >= now() - INTERVAL 3 MONTH) AS pv_3m,
-            countIf(event_name IN ('form_submit','form_success') AND created_at >= now() - INTERVAL 3 MONTH) AS fs_3m,
+            uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL 3 MONTH) AS fs_3m,
             uniqExactIf(user_id, created_at >= now() - INTERVAL 12 MONTH AND event_name = 'page_view') AS vis_12m,
             uniqExactIf(session_id, created_at >= now() - INTERVAL 12 MONTH) AS ses_12m,
             countIf(event_name = 'page_view' AND created_at >= now() - INTERVAL 12 MONTH) AS pv_12m,
-            countIf(event_name IN ('form_submit','form_success') AND created_at >= now() - INTERVAL 12 MONTH) AS fs_12m,
+            uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL 12 MONTH) AS fs_12m,
             uniqExactIf(user_id, event_name = 'page_view') AS vis_24m,
             uniqExact(session_id) AS ses_24m,
             countIf(event_name = 'page_view') AS pv_24m,
-            countIf(event_name IN ('form_submit','form_success')) AS fs_24m
+            uniqExactIf(session_id, event_name = 'form_success') AS fs_24m
           FROM events
           WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 24 MONTH
         `,
@@ -226,7 +226,7 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
             countIf(event_name = 'page_view') AS page_views,
             uniqExactIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth')) AS interactions,
             uniqExactIf(session_id, event_name = 'form_start') AS form_started,
-            uniqExactIf(session_id, event_name IN ('form_submit','form_success')) AS form_submitted
+            uniqExactIf(session_id, event_name = 'form_success') AS form_submitted
           FROM events
           WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 7 DAY
         `,
@@ -323,5 +323,68 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
     topCity: cityRow?.city ?? '-',
     bestDayLabel: DOW[dowRow?.dow ?? ''] ?? '-',
     hasEvents24h: n(kd.ses_24h) > 0,
+  }
+}
+
+export interface LandingPageCardMetrics {
+  activeUsers: number
+  formSubmissions7d: number
+  bounceRate7d: number
+}
+
+export async function getLandingPageCardMetrics(
+  workspaceId: string
+): Promise<LandingPageCardMetrics> {
+  const ch = getClickHouseClient()
+  const metricsRes = await ch.query({
+    query: `
+      SELECT
+        uniqExactIf(
+          user_id,
+          created_at >= now() - INTERVAL 5 MINUTE
+            AND event_name IN ('heartbeat', 'page_view')
+        ) AS active_users,
+        uniqExactIf(
+          session_id,
+          event_name = 'form_success'
+            AND created_at >= now() - INTERVAL 7 DAY
+        ) AS form_submissions_7d
+      FROM events
+      WHERE workspace_id = {wid:UUID}
+    `,
+    query_params: { wid: workspaceId },
+    format: 'JSON',
+  })
+  const [row] = (
+    (await metricsRes.json()) as CHJson<{
+      active_users: string
+      form_submissions_7d: string
+    }>
+  ).data
+
+  const bounceRes = await ch.query({
+    query: `
+      SELECT
+        sumIf(1, first_at >= now() - INTERVAL 7 DAY AND is_bounce = 1) AS bounce_7d,
+        sumIf(1, first_at >= now() - INTERVAL 7 DAY) AS ses_7d
+      FROM (
+        SELECT session_id, min(created_at) AS first_at, toUInt8(count() = 1) AS is_bounce
+        FROM events
+        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 24 MONTH
+        GROUP BY session_id
+      )
+    `,
+    query_params: { wid: workspaceId },
+    format: 'JSON',
+  })
+  const [bounceRow] = (
+    (await bounceRes.json()) as CHJson<{ ses_7d: string; bounce_7d: string }>
+  ).data
+
+  const ses7d = n(bounceRow?.ses_7d)
+  return {
+    activeUsers: n(row?.active_users),
+    formSubmissions7d: n(row?.form_submissions_7d),
+    bounceRate7d: bouncePct(n(bounceRow?.bounce_7d), ses7d),
   }
 }

@@ -7,12 +7,14 @@ import { Button } from "@workspace/ui/components/button"
 import { Plus, Search } from "lucide-react"
 import type { LandingPageListItem } from "@/features/dashboard/model/landing-page"
 import { LandingPageCard } from "@/features/dashboard/view/LandingPageCard"
+import { useSoftRefresh } from "@/hooks/use-soft-refresh"
 
 type LandingPagesDashboardProps = {
   pages: LandingPageListItem[]
 }
 
 export function LandingPagesDashboard({ pages }: LandingPagesDashboardProps) {
+  useSoftRefresh()
   const [query, setQuery] = useState("")
 
   const filteredPages = useMemo(() => {

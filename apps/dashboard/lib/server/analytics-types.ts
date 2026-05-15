@@ -29,3 +29,9 @@ export interface AnalyticsOverview {
   bestDayLabel: string
   hasEvents24h: boolean
 }
+
+export interface LandingPageCardMetrics {
+  activeUsers: number
+  formSubmissions7d: number
+  bounceRate7d: number
+}

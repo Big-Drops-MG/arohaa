@@ -1,5 +1,6 @@
 import { initializeConfig } from "../model/config"
 import { initIdentity } from "../model/identity"
+import { installFormFetchTracking } from "../events/form-tracking"
 import { setupLifecycle } from "./lifecycle"
 
 let isSDKInitialized = false
@@ -18,6 +19,7 @@ export function initSDK(): void {
     return
   }
 
+  installFormFetchTracking()
   initIdentity()
   setupLifecycle()
   isSDKInitialized = true

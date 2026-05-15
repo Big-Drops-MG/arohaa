@@ -8,6 +8,7 @@ import {
 } from "@workspace/ui/components/tabs"
 import type { OverviewDashboardData } from "@/features/overview/model/overview"
 import { OverviewDashboard } from "@/features/overview/view/OverviewDashboard"
+import { useSoftRefresh } from "@/hooks/use-soft-refresh"
 
 const PROJECT_TABS = [
   { value: "overview", label: "Overview" },
@@ -25,6 +26,8 @@ type ProjectDashboardViewProps = {
 }
 
 export function ProjectDashboardView({ overview }: ProjectDashboardViewProps) {
+  useSoftRefresh()
+
   return (
     <div className="flex w-full flex-1 flex-col">
       <Tabs defaultValue="overview" className="w-full">

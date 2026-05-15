@@ -2,6 +2,7 @@ import { track } from "./tracker"
 import { trackPageView } from "../events/page.events"
 import { setupScrollTracking } from "../events/scroll.events"
 import { setupClickTracking } from "../events/click.events"
+import { setupFormTracking } from "../events/form-tracking"
 import { startHeartbeat } from "../events/heartbeat"
 import { monitorWebVitals } from "../performance/vitals"
 import { attemptSend } from "../services/network.service"
@@ -17,6 +18,7 @@ export function setupLifecycle(): void {
   trackPageView()
   setupScrollTracking()
   setupClickTracking()
+  setupFormTracking()
   startHeartbeat()
   monitorWebVitals()
 }
