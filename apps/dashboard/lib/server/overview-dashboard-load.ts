@@ -155,12 +155,22 @@ export async function loadOverviewDashboardData(
     )
 
     if (!resp.ok) {
+      const body = await resp.text().catch(() => "")
+      if (process.env.NODE_ENV === "development") {
+        console.error(
+          `[overview] analytics API ${resp.status} ${apiBase}/v1/analytics/overview`,
+          body.slice(0, 200)
+        )
+      }
       return getOverviewPlaceholderData(landingPagePublicId, formType)
     }
 
     const data = (await resp.json()) as AnalyticsOverview
     return buildOverviewFromAnalytics(data, formType)
-  } catch {
+  } catch (err) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("[overview] analytics fetch failed", err)
+    }
     return getOverviewPlaceholderData(landingPagePublicId, formType)
   } finally {
     clearTimeout(timer)

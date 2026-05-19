@@ -141,8 +141,15 @@ if (isDev) {
 
 const start = async () => {
   try {
-    await ensureEventsTable()
-    server.log.info('clickhouse events table verified')
+    try {
+      await ensureEventsTable()
+      server.log.info('clickhouse events table verified')
+    } catch (err) {
+      server.log.warn(
+        { err },
+        'clickhouse schema setup failed; API will start but ingest/analytics may fail until ClickHouse is reachable',
+      )
+    }
 
     startBufferProcessor({ logger: server.log })
 

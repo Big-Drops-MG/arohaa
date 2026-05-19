@@ -53,6 +53,7 @@ export function getClickHouseClient(): ClickHouseClient {
     url,
     username: getEnv('CLICKHOUSE_USER') ?? 'default',
     password: getEnv('CLICKHOUSE_PASSWORD'),
+    request_timeout: 60_000,
     clickhouse_settings: {
       async_insert: 1,
       wait_for_async_insert: 1,

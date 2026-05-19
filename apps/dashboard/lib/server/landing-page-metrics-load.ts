@@ -49,12 +49,22 @@ export async function fetchLandingPageCardMetrics(
     )
 
     if (!resp.ok) {
+      if (process.env.NODE_ENV === "development") {
+        const body = await resp.text().catch(() => "")
+        console.error(
+          `[landing-metrics] API ${resp.status} ${apiBase}/v1/analytics/landing-summary`,
+          body.slice(0, 200)
+        )
+      }
       return emptyLandingPageMetrics
     }
 
     const data = (await resp.json()) as LandingPageCardMetrics
     return buildLandingPageMetrics(data)
-  } catch {
+  } catch (err) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("[landing-metrics] fetch failed", err)
+    }
     return emptyLandingPageMetrics
   } finally {
     clearTimeout(timer)
