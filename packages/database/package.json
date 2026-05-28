@@ -7,18 +7,31 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./landing/normalizeLandingPageUrl": {
+      "types": "./src/landing/normalizeLandingPageUrl.ts",
+      "default": "./src/landing/normalizeLandingPageUrl.ts"
     }
   },
   "dependencies": {
+    "@auth/core": "^0.34.3",
     "@clickhouse/client": "^1.14.0",
-    "dotenv": "^16.6.1"
+    "@neondatabase/serverless": "^1.1.0",
+    "dotenv": "^16.6.1",
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.20.0"
   },
   "devDependencies": {
-    "@workspace/typescript-config": "workspace:*",
     "@types/node": "^22.10.0",
+    "@types/pg": "^8.15.5",
+    "@workspace/typescript-config": "workspace:*",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "tsx scripts/apply-migrations.ts",
+    "db:push": "drizzle-kit push"
   }
 }

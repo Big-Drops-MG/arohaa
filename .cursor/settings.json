@@ -1,0 +1,10 @@
+{
+  "plugins": {
+    "clickhouse-cursor-plugin": {
+      "enabled": true
+    },
+    "neon-postgres": {
+      "enabled": true
+    }
+  }
+}

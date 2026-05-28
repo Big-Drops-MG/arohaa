@@ -2,7 +2,19 @@
   "routes": [
     {
       "src": "/sdk.js",
-      "dest": "/dist/sdk.js"
+      "dest": "/dist/sdk.js",
+      "headers": {
+        "Cache-Control": "public, max-age=300, s-maxage=600",
+        "Access-Control-Allow-Origin": "*"
+      }
+    },
+    {
+      "src": "/sdk.v1.js",
+      "dest": "/dist/sdk.v1.js",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "Access-Control-Allow-Origin": "*"
+      }
     }
   ]
 }
