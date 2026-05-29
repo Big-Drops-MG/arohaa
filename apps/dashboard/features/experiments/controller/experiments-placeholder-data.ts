@@ -1,0 +1,86 @@
+import type { ExperimentsDashboardData } from "@/features/experiments/model/experiments"
+
+export function getExperimentsPlaceholderData(
+  _landingPagePublicId: string
+): ExperimentsDashboardData {
+  void _landingPagePublicId
+
+  return {
+    dateRangeOptions: [
+      { id: "24h", label: "Last 24 hours" },
+      { id: "7d", label: "Last 7 days" },
+      { id: "30d", label: "Last 30 days" },
+      { id: "3m", label: "Last 3 months" },
+      { id: "12m", label: "Last 12 months" },
+      { id: "24m", label: "Last 24 months" },
+    ],
+    defaultDateRangeId: "7d",
+    experiments: [
+      {
+        id: "landing-page-test",
+        name: "Landing Page Test",
+        status: "Running",
+        variants: "A / B",
+        startDate: "Apr 1",
+      },
+      {
+        id: "cta-button-test",
+        name: "CTA Button Test",
+        status: "Completed",
+        variants: "A / B / C",
+        startDate: "Mar 20",
+        highlighted: true,
+      },
+      {
+        id: "form-layout-test",
+        name: "Form Layout Test",
+        status: "Running",
+        variants: "A / B",
+        startDate: "Apr 5",
+      },
+    ],
+    variantPerformance: {
+      title: "Variant performance",
+      columns: [
+        { key: "variant", label: "Variant" },
+        { key: "visitors", label: "Visitors" },
+        { key: "formSubmitted", label: "Form Submitted" },
+        { key: "fsr", label: "FSR" },
+      ],
+      rows: [
+        { variant: "A", visitors: "2,000", formSubmitted: "300", fsr: "15%" },
+        { variant: "B", visitors: "2,100", formSubmitted: "420", fsr: "20%" },
+        { variant: "C", visitors: "1,800", formSubmitted: "250", fsr: "13%" },
+      ],
+    },
+    performanceByLocation: {
+      title: "Performance by location",
+      columns: [
+        { key: "city", label: "City" },
+        { key: "variantA", label: "Variant A FSR" },
+        { key: "variantB", label: "Variant B FSR" },
+        { key: "variantC", label: "Variant C FSR" },
+      ],
+      rows: [
+        {
+          city: "New York",
+          variantA: "18%",
+          variantB: "25%",
+          variantC: "15%",
+        },
+        {
+          city: "Chicago",
+          variantA: "14%",
+          variantB: "19%",
+          variantC: "12%",
+        },
+        {
+          city: "Dallas",
+          variantA: "12%",
+          variantB: "15%",
+          variantC: "10%",
+        },
+      ],
+    },
+  }
+}

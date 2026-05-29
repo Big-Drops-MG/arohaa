@@ -4,7 +4,12 @@
   "private": true,
   "scripts": {
     "build": "turbo build",
-    "dev": "turbo dev",
+    "kill:dev": "powershell -NoProfile -Command \"$ErrorActionPreference='SilentlyContinue'; Get-NetTCPConnection -LocalPort 3000,3001,3002 | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force }; exit 0\"",
+    "predev": "pnpm kill:dev",
+    "predev:web": "pnpm kill:dev",
+    "dev": "turbo dev --continue",
+    "dev:web": "turbo dev --continue --filter=dashboard --filter=@workspace/api",
+    "dev:infra": "docker compose up -d redis clickhouse",
     "lint": "turbo lint",
     "format": "turbo format",
     "typecheck": "turbo typecheck",

@@ -29,6 +29,10 @@ export function OverviewHeader({
   dateRangeId,
   onDateRangeChange,
 }: OverviewHeaderProps) {
+  const selectedLabel =
+    dateRangeOptions.find((opt) => opt.id === dateRangeId)?.label ??
+    "Last 7 days"
+
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <h1 className="text-xl font-semibold tracking-tight text-foreground">
@@ -43,7 +47,7 @@ export function OverviewHeader({
           className={cn(overviewSelectTriggerClassName, "w-full sm:w-40")}
           aria-label="Date range"
         >
-          <SelectValue />
+          <SelectValue placeholder="Date range">{selectedLabel}</SelectValue>
         </SelectTrigger>
         <SelectContent
           align="end"
