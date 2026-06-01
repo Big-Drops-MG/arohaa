@@ -511,3 +511,22 @@ export async function getAnalyticsTraffic({
   TRAFFIC_RESPONSE_CACHE.set(cacheKey, response)
   return response
 }
+
+export function emptyAnalyticsTraffic(rangeId: TrafficRangeId): TrafficDashboardResponse {
+  return {
+    rangeId,
+    kpis: {
+      activeUsersNow: 0,
+      visitors: 0,
+      sessions: 0,
+      pageViews: 0,
+      bounceRate: 0,
+    },
+    trafficByTime: buildTrafficByTime(rangeId, [], new Date()),
+    trafficByDevice: [],
+    topPages: [],
+    trafficByLocation: [],
+    referrers: [],
+    utmParameters: [],
+  }
+}

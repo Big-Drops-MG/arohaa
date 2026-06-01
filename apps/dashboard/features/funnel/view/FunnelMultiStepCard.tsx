@@ -30,7 +30,7 @@ export function FunnelMultiStepCard({ steps }: FunnelMultiStepCardProps) {
     >
       <CardHeader className={overviewAnalyticCardHeaderClassName}>
         <CardTitle className={overviewSectionHeadingClassName}>
-          Multi-step form tracking
+          Multi-Step Form Tracking
         </CardTitle>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col p-0">

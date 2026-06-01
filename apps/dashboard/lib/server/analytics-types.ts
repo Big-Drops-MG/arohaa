@@ -90,3 +90,29 @@ export interface AnalyticsTraffic {
   referrers: AnalyticsTrafficReferrerRow[]
   utmParameters: AnalyticsTrafficUtmRow[]
 }
+
+export interface AnalyticsFunnelMetric {
+  label: string
+  count: number
+  changePct: number | null
+}
+
+export interface AnalyticsFunnelStep {
+  label: string
+  count: number
+  changePct: number | null
+}
+
+export interface AnalyticsFunnelDropOffRow {
+  fieldName: string
+  dropOffs: number
+  percentDrop: number
+  emphasized: boolean
+}
+
+export interface AnalyticsFunnel {
+  rangeId: RangeId
+  metrics: AnalyticsFunnelMetric[]
+  multiStepSteps: AnalyticsFunnelStep[]
+  dropOffRows: AnalyticsFunnelDropOffRow[]
+}

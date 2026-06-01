@@ -1,12 +1,9 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { useCallback, useEffect, useState } from "react"
 import { cn } from "@workspace/ui/lib/utils"
 import { getTrafficEmptyDashboardData } from "@/features/traffic/controller/traffic-empty-data"
-import type { OverviewDateRangeId } from "@/features/overview/model/overview"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
-import { parseTrafficRangeId } from "@/features/traffic/model/traffic-range"
 import type {
   TrafficDashboardData,
   TrafficKpiMetricId,
@@ -14,6 +11,7 @@ import type {
 import { TrafficDataTableCard } from "@/features/traffic/view/TrafficDataTableCard"
 import { TrafficKpiRow } from "@/features/traffic/view/TrafficKpiRow"
 import { TrafficSourcesCard } from "@/features/traffic/view/TrafficSourcesCard"
+import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
 const TRAFFIC_REFETCH_MS = 30_000
 
@@ -28,26 +26,16 @@ export function TrafficDashboard({
   projectId,
   isActive = true,
 }: TrafficDashboardProps) {
-  const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
-
-  const [dateRangeId, setDateRangeId] = useState<OverviewDateRangeId>(
-    initialData.defaultDateRangeId
-  )
+  const { dateRangeId, setDateRangeId } = useDashboardDateRange()
   const [activeKpiId, setActiveKpiId] = useState<TrafficKpiMetricId>(
     initialData.defaultKpiMetricId
   )
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isLoading, setIsLoading] = useState(false)
-  const fetchGenerationRef = useRef(0)
-  const skipFetchForInitialServerData = useRef(true)
 
   const fetchTrafficForRange = useCallback(
-    async (rangeId: OverviewDateRangeId, signal?: AbortSignal) => {
-      const generation = ++fetchGenerationRef.current
+    async (rangeId: typeof dateRangeId, signal?: AbortSignal) => {
       setIsLoading(true)
-      setDashboardData(getTrafficEmptyDashboardData(projectId, rangeId))
 
       const url = `/api/landing-pages/${encodeURIComponent(projectId)}/traffic?range_id=${encodeURIComponent(rangeId)}`
       try {
@@ -60,25 +48,19 @@ export function TrafficDashboard({
               body.slice(0, 200)
             )
           }
-          if (generation === fetchGenerationRef.current) {
-            setDashboardData(getTrafficEmptyDashboardData(projectId, rangeId))
-          }
+          setDashboardData(getTrafficEmptyDashboardData(projectId, rangeId))
           return
         }
         const next = (await res.json()) as TrafficDashboardData
-        if (generation === fetchGenerationRef.current) {
-          setDashboardData(next)
-        }
+        setDashboardData(next)
       } catch (err) {
         if (signal?.aborted) return
         if (process.env.NODE_ENV === "development") {
           console.error("[traffic] client fetch failed", err)
         }
-        if (generation === fetchGenerationRef.current) {
-          setDashboardData(getTrafficEmptyDashboardData(projectId, rangeId))
-        }
+        setDashboardData(getTrafficEmptyDashboardData(projectId, rangeId))
       } finally {
-        if (generation === fetchGenerationRef.current) {
+        if (!signal?.aborted) {
           setIsLoading(false)
         }
       }
@@ -87,42 +69,16 @@ export function TrafficDashboard({
   )
 
   useEffect(() => {
-    setDateRangeId(initialData.defaultDateRangeId)
-    setDashboardData(initialData)
-    skipFetchForInitialServerData.current = true
-  }, [initialData])
-
-  useEffect(() => {
-    const urlRangeId = parseTrafficRangeId(searchParams.get("range_id"))
-    setDateRangeId((current) => (current === urlRangeId ? current : urlRangeId))
-  }, [searchParams])
-
-  const handleDateRangeChange = useCallback(
-    (nextRangeId: OverviewDateRangeId) => {
-      if (nextRangeId === dateRangeId) return
-
-      setDateRangeId(nextRangeId)
-
-      const params = new URLSearchParams(searchParams.toString())
-      params.set("range_id", nextRangeId)
-      const query = params.toString()
-      router.replace(query ? `${pathname}?${query}` : pathname, {
-        scroll: false,
-      })
-    },
-    [dateRangeId, pathname, router, searchParams]
-  )
-
-  useEffect(() => {
-    if (skipFetchForInitialServerData.current) {
-      skipFetchForInitialServerData.current = false
+    if (dateRangeId === initialData.defaultDateRangeId) {
+      setDashboardData(initialData)
+      setIsLoading(false)
       return
     }
 
     const controller = new AbortController()
     void fetchTrafficForRange(dateRangeId, controller.signal)
     return () => controller.abort()
-  }, [dateRangeId, fetchTrafficForRange])
+  }, [dateRangeId, initialData, fetchTrafficForRange])
 
   useEffect(() => {
     if (!isActive) return
@@ -145,7 +101,7 @@ export function TrafficDashboard({
         title="Traffic"
         dateRangeOptions={dashboardData.dateRangeOptions}
         dateRangeId={dateRangeId}
-        onDateRangeChange={handleDateRangeChange}
+        onDateRangeChange={setDateRangeId}
       />
 
       <div

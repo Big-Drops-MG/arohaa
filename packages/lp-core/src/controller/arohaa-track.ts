@@ -107,3 +107,27 @@ export function arohaaTrackFormSubmit(formId?: string): void {
 export function arohaaTrackFormSuccess(formId?: string): void {
   arohaaTrack("form_success", formId ? { formId } : {})
 }
+
+export function arohaaTrackFormStepView(
+  stepIndex: number,
+  props?: { formId?: string; stepName?: string },
+): void {
+  if (!Number.isFinite(stepIndex) || stepIndex < 1) return
+  arohaaTrack("form_step_view", {
+    stepIndex,
+    ...(props?.formId ? { formId: props.formId } : {}),
+    ...(props?.stepName ? { stepName: props.stepName } : {}),
+  })
+}
+
+export function arohaaTrackFormFieldFocus(
+  fieldName: string,
+  props?: { formId?: string },
+): void {
+  const name = fieldName.trim()
+  if (!name) return
+  arohaaTrack("form_field_focus", {
+    fieldName: name,
+    ...(props?.formId ? { formId: props.formId } : {}),
+  })
+}
