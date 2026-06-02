@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation"
 import { getFunnelEmptyDashboardData } from "@/features/funnel/controller/funnel-empty-data"
-import type { FunnelDashboardData } from "@/features/funnel/model/funnel"
+import {
+  type FunnelDashboardData,
+  funnelKpiMetricIdAtIndex,
+} from "@/features/funnel/model/funnel"
 import type {
   OverviewFunnelStep,
   OverviewLandingFormType,
@@ -71,7 +74,9 @@ export function buildFunnelDashboardData(
   return {
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: data.rangeId,
-    metrics: metrics.map((metric) => ({
+    defaultKpiMetricId: "landing-page-visits",
+    metrics: metrics.map((metric, index) => ({
+      id: funnelKpiMetricIdAtIndex(index),
       label: metric.label,
       value: fmtCount(metric.count),
       ...fmtChange(metric.changePct),

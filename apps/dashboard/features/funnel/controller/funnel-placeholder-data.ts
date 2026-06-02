@@ -15,26 +15,31 @@ export function getFunnelPlaceholderData(
       { id: "24m", label: "Last 24 months" },
     ],
     defaultDateRangeId: "7d",
+    defaultKpiMetricId: "landing-page-visits",
     metrics: [
       {
+        id: "landing-page-visits",
         label: "Landing Page Visits",
         value: "8,000",
         change: "-31%",
         changeVariant: "negative",
       },
       {
+        id: "interactions",
         label: "Interactions",
         value: "5,500",
         change: "-45%",
         changeVariant: "negative",
       },
       {
+        id: "form-started",
         label: "Form Started",
         value: "3,000",
         change: "+5%",
         changeVariant: "positive",
       },
       {
+        id: "form-submitted",
         label: "Form Submitted",
         value: "1,200",
       },

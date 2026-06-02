@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { cn } from "@workspace/ui/lib/utils"
 import { getFunnelEmptyDashboardData } from "@/features/funnel/controller/funnel-empty-data"
 import type { FunnelDashboardData } from "@/features/funnel/model/funnel"
+import { FUNNEL_DEFAULT_KPI_METRIC_ID } from "@/features/funnel/model/funnel"
 import { FunnelDropOffCard } from "@/features/funnel/view/FunnelDropOffCard"
 import { FunnelKpiRow } from "@/features/funnel/view/FunnelKpiRow"
 import { FunnelMultiStepCard } from "@/features/funnel/view/FunnelMultiStepCard"
@@ -24,6 +25,7 @@ export function FunnelDashboard({
   isActive = true,
 }: FunnelDashboardProps) {
   const { dateRangeId, setDateRangeId } = useDashboardDateRange()
+  const [activeKpiId, setActiveKpiId] = useState(FUNNEL_DEFAULT_KPI_METRIC_ID)
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isLoading, setIsLoading] = useState(false)
 
@@ -63,6 +65,8 @@ export function FunnelDashboard({
   )
 
   useEffect(() => {
+    setActiveKpiId(FUNNEL_DEFAULT_KPI_METRIC_ID)
+
     if (dateRangeId === initialData.defaultDateRangeId) {
       setDashboardData(initialData)
       setIsLoading(false)
@@ -73,6 +77,12 @@ export function FunnelDashboard({
     void fetchFunnelForRange(dateRangeId, controller.signal)
     return () => controller.abort()
   }, [dateRangeId, initialData, fetchFunnelForRange])
+
+  useEffect(() => {
+    if (isActive) {
+      setActiveKpiId(FUNNEL_DEFAULT_KPI_METRIC_ID)
+    }
+  }, [isActive])
 
   useEffect(() => {
     if (!isActive) return
@@ -105,7 +115,11 @@ export function FunnelDashboard({
         )}
         aria-busy={isLoading}
       >
-        <FunnelKpiRow metrics={dashboardData.metrics} />
+        <FunnelKpiRow
+          metrics={dashboardData.metrics}
+          activeKpiId={activeKpiId}
+          onKpiSelect={setActiveKpiId}
+        />
 
         <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-stretch gap-4">
           <FunnelMultiStepCard steps={dashboardData.multiStepSteps} />

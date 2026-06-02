@@ -11,11 +11,12 @@ export function getFunnelEmptyDashboardData(
   return {
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: rangeId,
+    defaultKpiMetricId: "landing-page-visits",
     metrics: [
-      { label: "Landing Page Visits", value: "0" },
-      { label: "Interactions", value: "0" },
-      { label: "Form Started", value: "0" },
-      { label: "Form Submitted", value: "0" },
+      { id: "landing-page-visits", label: "Landing Page Visits", value: "0" },
+      { id: "interactions", label: "Interactions", value: "0" },
+      { id: "form-started", label: "Form Started", value: "0" },
+      { id: "form-submitted", label: "Form Submitted", value: "0" },
     ],
     multiStepSteps: [
       { label: "Step 1", value: "0" },
