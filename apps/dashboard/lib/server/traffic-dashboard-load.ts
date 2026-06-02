@@ -7,6 +7,10 @@ import {
 } from "@/features/traffic/model/traffic-range"
 import type { TrafficDashboardData } from "@/features/traffic/model/traffic"
 import type { AnalyticsTraffic, RangeId } from "@/lib/server/analytics-types"
+import {
+  resolveIngestApiBase,
+  resolveInternalApiSecret,
+} from "@/lib/server/analytics-env"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageInWorkspace } from "@/lib/server/landing-pages-store"
 import { getOrCreateOwnerWorkspace } from "@/lib/server/resolve-workspace"
@@ -130,10 +134,8 @@ export async function fetchTrafficAnalytics(
   workspaceId: string,
   rangeId: RangeId
 ): Promise<AnalyticsTraffic | null> {
-  const apiBase =
-    process.env.INGEST_BASE_URL?.trim() ||
-    process.env.NEXT_PUBLIC_AROHAA_INGEST_API_BASE?.trim()
-  const secret = process.env.AROHAA_INTERNAL_API_SECRET?.trim()
+  const apiBase = resolveIngestApiBase()
+  const secret = resolveInternalApiSecret()
 
   if (!apiBase || !secret) return null
 

@@ -6,4 +6,6 @@ export {
   arohaaTrackFormStart,
   arohaaTrackFormSubmit,
   arohaaTrackFormSuccess,
+  arohaaTrackFormStepView,
+  arohaaTrackFormFieldFocus,
 } from './arohaa-track';

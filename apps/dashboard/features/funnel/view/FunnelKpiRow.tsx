@@ -11,22 +11,22 @@ export function FunnelKpiRow({ metrics }: FunnelKpiRowProps) {
       {metrics.map((metric) => (
         <div
           key={metric.label}
-          className="flex items-start justify-between gap-3 rounded-[15px] border border-foreground/10 bg-card px-4 py-4 shadow-xs"
+          className="rounded-[15px] border border-foreground/10 bg-card px-4 py-4 shadow-xs"
         >
-          <div className="min-w-0">
+          <div className="flex items-center justify-between gap-2">
             <p className="text-xs font-medium text-muted-foreground">
               {metric.label}
             </p>
-            <p className="mt-2 font-heading text-xl font-semibold tracking-tight text-foreground tabular-nums">
-              {metric.value}
-            </p>
+            {metric.change ? (
+              <FunnelTrendBadge
+                change={metric.change}
+                variant={metric.changeVariant}
+              />
+            ) : null}
           </div>
-          {metric.change ? (
-            <FunnelTrendBadge
-              change={metric.change}
-              variant={metric.changeVariant}
-            />
-          ) : null}
+          <p className="mt-2 font-heading text-xl font-semibold tracking-tight text-foreground tabular-nums">
+            {metric.value}
+          </p>
         </div>
       ))}
     </div>

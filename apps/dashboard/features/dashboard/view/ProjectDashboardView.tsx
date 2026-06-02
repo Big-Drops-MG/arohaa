@@ -77,7 +77,7 @@ export function ProjectDashboardView({
           {PROJECT_TABS.map((tab) => (
             <TabsContent key={tab.value} value={tab.value}>
               {tab.value === "overview" ? (
-                <OverviewDashboard data={overview} />
+                <OverviewDashboard data={overview} projectId={projectId} />
               ) : tab.value === "traffic" ? (
                 <TrafficDashboard
                   data={traffic}
@@ -85,7 +85,11 @@ export function ProjectDashboardView({
                   isActive={activeTab === "traffic"}
                 />
               ) : tab.value === "funnel" ? (
-                <FunnelDashboard data={funnel} />
+                <FunnelDashboard
+                  data={funnel}
+                  projectId={projectId}
+                  isActive={activeTab === "funnel"}
+                />
               ) : tab.value === "event-tracking" ? (
                 <EventTrackingDashboard data={eventTracking} />
               ) : tab.value === "segments" ? (

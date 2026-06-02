@@ -2,8 +2,8 @@ import { ProjectDashboardView } from "@/features/dashboard/view/ProjectDashboard
 import { getAlertsPlaceholderData } from "@/features/alerts/controller/alerts-placeholder-data"
 import { getEventTrackingPlaceholderData } from "@/features/event-tracking/controller/event-tracking-placeholder-data"
 import { getExperimentsPlaceholderData } from "@/features/experiments/controller/experiments-placeholder-data"
-import { getFunnelPlaceholderData } from "@/features/funnel/controller/funnel-placeholder-data"
 import { getSegmentsPlaceholderData } from "@/features/segments/controller/segments-placeholder-data"
+import { loadFunnelDashboardData } from "@/lib/server/funnel-dashboard-load"
 import { parseTrafficRangeId } from "@/features/traffic/model/traffic-range"
 import { loadOverviewDashboardData } from "@/lib/server/overview-dashboard-load"
 import { loadTrafficDashboardData } from "@/lib/server/traffic-dashboard-load"
@@ -30,9 +30,9 @@ export default async function ProjectPage({
     experiments,
     alerts,
   ] = await Promise.all([
-    loadOverviewDashboardData(project),
+    loadOverviewDashboardData(project, rangeId),
     loadTrafficDashboardData({ landingPagePublicId: project, rangeId }),
-    Promise.resolve(getFunnelPlaceholderData(project)),
+    loadFunnelDashboardData({ landingPagePublicId: project, rangeId }),
     Promise.resolve(getEventTrackingPlaceholderData(project)),
     Promise.resolve(getSegmentsPlaceholderData(project)),
     Promise.resolve(getExperimentsPlaceholderData(project)),
