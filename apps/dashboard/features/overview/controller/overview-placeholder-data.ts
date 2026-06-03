@@ -5,10 +5,15 @@ import type {
 } from "@/features/overview/model/overview"
 import {
   defaultAlerts,
-  defaultFunnelSteps,
   defaultSegmentStats,
   defaultTrafficStats,
 } from "@/features/overview/controller/overview-default-payload"
+import {
+  defaultFormDropOffByField,
+  defaultFunnelSteps,
+  defaultMultiStepFormTracking,
+} from "@/features/funnel/controller/funnel-default-payload"
+import { defaultTrafficTablesByDateRange } from "@/features/traffic/controller/traffic-default-payload"
 
 const emptyKpisByDateRange: OverviewKpiValuesByDateRange = {
   "24h": {},
@@ -21,7 +26,11 @@ const emptyKpisByDateRange: OverviewKpiValuesByDateRange = {
 
 const overviewPlaceholderShell: Omit<
   OverviewDashboardData,
-  "formType" | "funnel"
+  | "formType"
+  | "funnel"
+  | "multiStepFormTracking"
+  | "formDropOffByField"
+  | "trafficTablesByDateRange"
 > = {
   dateRangeOptions: [
     { id: "24h", label: "Last 24 hours" },
@@ -37,6 +46,7 @@ const overviewPlaceholderShell: Omit<
   traffic: defaultTrafficStats(),
   segments: defaultSegmentStats(),
   alerts: defaultAlerts,
+  activeUsersNow: "0 Users",
 }
 
 export function getOverviewPlaceholderData(
@@ -48,5 +58,8 @@ export function getOverviewPlaceholderData(
     ...overviewPlaceholderShell,
     formType,
     funnel: defaultFunnelSteps(formType),
+    multiStepFormTracking: defaultMultiStepFormTracking(),
+    formDropOffByField: defaultFormDropOffByField(),
+    trafficTablesByDateRange: defaultTrafficTablesByDateRange(formType),
   }
 }

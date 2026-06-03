@@ -12,7 +12,7 @@ import { overviewChartPointsForRange } from "@/features/overview/utils/overview-
 import { overviewKpisForDateRange } from "@/features/overview/utils/overview-kpi-row"
 import { overviewRechartsPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
 import { OverviewAlertsCard } from "@/features/overview/view/OverviewAlertsCard"
-import { OverviewFunnelCard } from "@/features/overview/view/OverviewFunnelCard"
+import { FunnelCard } from "@/features/funnel/view/FunnelCard"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import { OverviewKpiRow } from "@/features/overview/view/OverviewKpiRow"
 import { OverviewPerformanceChart } from "@/features/overview/view/OverviewPerformanceChart"
@@ -66,7 +66,7 @@ export function OverviewDashboard({ data }: OverviewDashboardProps) {
   return (
     <div
       className={cn(
-        "flex flex-col gap-4",
+        "flex flex-col gap-4 px-4 sm:px-6 lg:px-8",
         overviewRechartsPointerFocusResetClassName
       )}
     >
@@ -84,7 +84,7 @@ export function OverviewDashboard({ data }: OverviewDashboardProps) {
       />
 
       <div className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-[3fr_7fr] lg:items-stretch lg:[&>*]:min-h-0">
-        <OverviewFunnelCard steps={data.funnel} />
+        <FunnelCard steps={data.funnel} />
         <OverviewPerformanceChart
           points={chartPoints}
           metricLabel={activeKpiLabel}

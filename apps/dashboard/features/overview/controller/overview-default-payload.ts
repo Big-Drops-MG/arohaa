@@ -1,19 +1,7 @@
 import type {
   OverviewAlert,
-  OverviewFunnelStep,
-  OverviewLandingFormType,
   OverviewTrafficStat,
 } from "@/features/overview/model/overview"
-
-const FUNNEL_BASE_LABELS = ["Landing Page Visits", "Interactions"] as const
-
-function funnelTailLabels(
-  formType: OverviewLandingFormType
-): readonly [string, string] {
-  return formType === "zip"
-    ? (["Zip Started", "Zip Submitted"] as const)
-    : (["Form Started", "Form Submitted"] as const)
-}
 
 const TRAFFIC_STATS = [
   { label: "Unique Visitors", valueKind: "number" as const },
@@ -27,16 +15,6 @@ const SEGMENT_STATS = [
 
 function placeholderValue(kind: "number" | "string"): string {
   return kind === "number" ? "0" : "-"
-}
-
-export function defaultFunnelSteps(
-  formType: OverviewLandingFormType
-): OverviewFunnelStep[] {
-  const labels = [...FUNNEL_BASE_LABELS, ...funnelTailLabels(formType)] as const
-  return labels.map((label) => ({
-    label,
-    value: placeholderValue("number"),
-  }))
 }
 
 export function defaultTrafficStats(): OverviewTrafficStat[] {

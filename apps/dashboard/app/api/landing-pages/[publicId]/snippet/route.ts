@@ -1,14 +1,13 @@
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { getActiveLandingPageInWorkspace } from "@/lib/server/landing-pages-store"
+import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
 import {
   buildHtmlVerificationMetaTag,
   buildLandingSdkScriptTag,
   resolveLandingSdkEnv,
 } from "@/lib/server/landing-snippet"
 import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
-import { getOrCreateOwnerWorkspace } from "@/lib/server/resolve-workspace"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
 
 export async function GET(
@@ -22,9 +21,8 @@ export async function GET(
   const limited = await enforceLandingApiRateLimit(actor.id)
   if (limited) return limited
 
-  const ws = await getOrCreateOwnerWorkspace(actor.id)
   const { publicId } = await context.params
-  const row = await getActiveLandingPageInWorkspace(ws.id, publicId)
+  const row = await getActiveLandingPageByPublicId(publicId)
   if (!row) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }

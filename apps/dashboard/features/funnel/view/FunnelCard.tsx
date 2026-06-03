@@ -5,18 +5,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@workspace/ui/components/card"
+import type {
+  FunnelChangeVariant,
+  FunnelStep,
+} from "@/features/funnel/model/funnel"
 import {
   overviewAnalyticCardHeaderClassName,
   overviewAnalyticCardShellClassName,
   overviewSectionHeadingClassName,
 } from "@/features/overview/view/overview-card-density"
 import { overviewCardPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
-import type {
-  OverviewFunnelChangeVariant,
-  OverviewFunnelStep,
-} from "@/features/overview/model/overview"
 
-function changeBadgeClass(variant: OverviewFunnelChangeVariant | undefined) {
+function changeBadgeClass(variant: FunnelChangeVariant | undefined) {
   if (variant === "positive") {
     return "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-600/15"
   }
@@ -26,11 +26,11 @@ function changeBadgeClass(variant: OverviewFunnelChangeVariant | undefined) {
   return "bg-muted text-muted-foreground ring-1 ring-border"
 }
 
-type OverviewFunnelCardProps = {
-  steps: OverviewFunnelStep[]
+type FunnelCardProps = {
+  steps: FunnelStep[]
 }
 
-export function OverviewFunnelCard({ steps }: OverviewFunnelCardProps) {
+export function FunnelCard({ steps }: FunnelCardProps) {
   return (
     <Card
       className={cn(

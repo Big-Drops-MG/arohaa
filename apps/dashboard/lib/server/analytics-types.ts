@@ -28,6 +28,7 @@ export interface AnalyticsOverview {
   topCity: string
   bestDayLabel: string
   hasEvents24h: boolean
+  activeUsersNow: number
 }
 
 export interface LandingPageCardMetrics {

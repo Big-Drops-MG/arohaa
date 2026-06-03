@@ -1,3 +1,9 @@
+import type {
+  FunnelFieldDropOff,
+  FunnelStep,
+} from "@/features/funnel/model/funnel"
+import type { TrafficTablesByDateRange } from "@/features/traffic/model/traffic"
+
 export type OverviewDateRangeId = "24h" | "7d" | "30d" | "3m" | "12m" | "24m"
 
 export type OverviewLandingFormType = "zip" | "single" | "multiple"
@@ -60,15 +66,6 @@ export type OverviewKpiValuesByDateRange = Record<
   OverviewKpiValuesByMetric
 >
 
-export type OverviewFunnelChangeVariant = "positive" | "negative" | "neutral"
-
-export type OverviewFunnelStep = {
-  label: string
-  value: string
-  change?: string
-  changeVariant?: OverviewFunnelChangeVariant
-}
-
 export type OverviewTimeSeriesPoint = {
   label: string
   value: number
@@ -95,8 +92,8 @@ export type OverviewKpiSeriesByDateRange = Partial<
 >
 
 /**
- * Full server payload for the Overview tab. The project page should load this
- * (e.g. from your API or database) and pass it to `OverviewDashboard`.
+ * Full server payload for the project dashboard. The project page should load this
+ * (e.g. from your API or database) and pass it to tab views.
  */
 export type OverviewDashboardData = {
   /** From landing page `data-formtype` (`single` | `multiple` | `zip`). */
@@ -105,10 +102,15 @@ export type OverviewDashboardData = {
   defaultDateRangeId: OverviewDateRangeId
   kpisByDateRange: OverviewKpiValuesByDateRange
   defaultKpiMetricId: OverviewKpiMetricId
-  funnel: OverviewFunnelStep[]
+  funnel: FunnelStep[]
+  multiStepFormTracking: FunnelStep[]
+  formDropOffByField: FunnelFieldDropOff[]
   traffic: OverviewTrafficStat[]
   segments: OverviewTrafficStat[]
   alerts: OverviewAlert[]
+  /** Live count for the Traffic tab (e.g. "128 Users"). */
+  activeUsersNow: string
+  trafficTablesByDateRange: TrafficTablesByDateRange
   /**
    * Optional time series for the performance chart. When provided for the
    * active date range and KPI, those points are used; otherwise the chart

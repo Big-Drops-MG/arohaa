@@ -11,10 +11,9 @@ import {
   normalizedBrandName,
 } from "@workspace/database"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { getActiveLandingPageInWorkspace } from "@/lib/server/landing-pages-store"
+import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
 import { buildHtmlVerificationMetaTag } from "@/lib/server/landing-snippet"
 import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
-import { getOrCreateOwnerWorkspace } from "@/lib/server/resolve-workspace"
 
 type LandingRow = InferSelectModel<typeof landingPages>
 
@@ -69,10 +68,8 @@ export async function GET(
   const limited = await enforceLandingApiRateLimit(actor.id)
   if (limited) return limited
 
-  const ws = await getOrCreateOwnerWorkspace(actor.id)
-
   const { publicId } = await context.params
-  const row = await getActiveLandingPageInWorkspace(ws.id, publicId)
+  const row = await getActiveLandingPageByPublicId(publicId)
   if (!row) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
@@ -91,10 +88,8 @@ export async function PATCH(
   const limited = await enforceLandingApiRateLimit(actor.id)
   if (limited) return limited
 
-  const ws = await getOrCreateOwnerWorkspace(actor.id)
-
   const { publicId } = await context.params
-  const row = await getActiveLandingPageInWorkspace(ws.id, publicId)
+  const row = await getActiveLandingPageByPublicId(publicId)
   if (!row) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
@@ -182,8 +177,7 @@ export async function PATCH(
     if (isUniqueViolation(err)) {
       return NextResponse.json(
         {
-          error:
-            "This landing page URL is already registered for this workspace",
+          error: "This landing page URL is already registered",
         },
         { status: 409 }
       )
@@ -240,9 +234,8 @@ export async function DELETE(
   const limited = await enforceLandingApiRateLimit(actor.id)
   if (limited) return limited
 
-  const ws = await getOrCreateOwnerWorkspace(actor.id)
   const { publicId } = await context.params
-  const row = await getActiveLandingPageInWorkspace(ws.id, publicId)
+  const row = await getActiveLandingPageByPublicId(publicId)
   if (!row) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }

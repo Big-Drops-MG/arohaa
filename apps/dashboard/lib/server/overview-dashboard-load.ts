@@ -1,17 +1,21 @@
 import { notFound } from "next/navigation"
 import { getOverviewPlaceholderData } from "@/features/overview/controller/overview-placeholder-data"
+import {
+  defaultFormDropOffByField,
+  defaultMultiStepFormTracking,
+} from "@/features/funnel/controller/funnel-default-payload"
+import { defaultTrafficTablesByDateRange } from "@/features/traffic/controller/traffic-default-payload"
 import type {
   OverviewAlert,
   OverviewDashboardData,
-  OverviewFunnelStep,
   OverviewKpiSeriesByDateRange,
   OverviewKpiValuesByDateRange,
   OverviewTrafficStat,
 } from "@/features/overview/model/overview"
+import type { FunnelStep } from "@/features/funnel/model/funnel"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { getActiveLandingPageInWorkspace } from "@/lib/server/landing-pages-store"
-import { getOrCreateOwnerWorkspace } from "@/lib/server/resolve-workspace"
+import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
 import type { AnalyticsOverview, RangeId } from "@/lib/server/analytics-types"
 
 // ── formatters ────────────────────────────────────────────────────────────────
@@ -31,6 +35,11 @@ function fmtDuration(secs: number): string {
   if (!secs || secs < 1) return "-"
   if (secs < 60) return `${Math.round(secs)}s`
   return `${Math.floor(secs / 60)}m ${Math.round(secs % 60)}s`
+}
+
+function fmtActiveUsers(count: number): string {
+  const n = Math.max(0, Math.floor(count))
+  return `${n.toLocaleString("en-US")} User${n === 1 ? "" : "s"}`
 }
 
 // ── transform ─────────────────────────────────────────────────────────────────
@@ -68,7 +77,7 @@ function buildOverviewFromAnalytics(
       : (["Form Started", "Form Submitted"] as const)
   const funnelLabels = ["Landing Page Visits", "Interactions", ...funnelTail]
 
-  const funnel: OverviewFunnelStep[] = data.funnel.map((step, i) => ({
+  const funnel: FunnelStep[] = data.funnel.map((step, i) => ({
     label: funnelLabels[i] ?? step.label,
     value: fmtCount(step.count),
   }))
@@ -111,9 +120,13 @@ function buildOverviewFromAnalytics(
     kpisByDateRange,
     defaultKpiMetricId: "visitors",
     funnel,
+    multiStepFormTracking: defaultMultiStepFormTracking(),
+    formDropOffByField: defaultFormDropOffByField(),
     traffic,
     segments,
     alerts,
+    activeUsersNow: fmtActiveUsers(data.activeUsersNow),
+    trafficTablesByDateRange: defaultTrafficTablesByDateRange(formType),
     kpiSeriesByDateRange,
   }
 }
@@ -126,8 +139,7 @@ export async function loadOverviewDashboardData(
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
 
-  const ws = await getOrCreateOwnerWorkspace(actor.id)
-  const row = await getActiveLandingPageInWorkspace(ws.id, landingPagePublicId)
+  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
   if (!row) notFound()
 
   const formType = parseOverviewLandingFormType(row.formType)

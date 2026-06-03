@@ -8,6 +8,8 @@ import {
 } from "@workspace/ui/components/tabs"
 import type { OverviewDashboardData } from "@/features/overview/model/overview"
 import { OverviewDashboard } from "@/features/overview/view/OverviewDashboard"
+import { FunnelDashboard } from "@/features/funnel/view/FunnelDashboard"
+import { TrafficDashboard } from "@/features/traffic/view/TrafficDashboard"
 import { useSoftRefresh } from "@/hooks/use-soft-refresh"
 
 const PROJECT_TABS = [
@@ -48,6 +50,10 @@ export function ProjectDashboardView({ overview }: ProjectDashboardViewProps) {
             <TabsContent key={tab.value} value={tab.value}>
               {tab.value === "overview" ? (
                 <OverviewDashboard data={overview} />
+              ) : tab.value === "traffic" ? (
+                <TrafficDashboard data={overview} />
+              ) : tab.value === "funnel" ? (
+                <FunnelDashboard data={overview} />
               ) : (
                 <p className="max-w-prose px-4 pt-6 text-sm text-muted-foreground sm:px-6 lg:px-8">
                   <span className="font-medium text-foreground">
