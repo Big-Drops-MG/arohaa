@@ -5,6 +5,11 @@ import {
   defaultMultiStepFormTracking,
 } from "@/features/funnel/controller/funnel-default-payload"
 import { defaultTrafficTablesByDateRange } from "@/features/traffic/controller/traffic-default-payload"
+import {
+  defaultEventTrackingByDateRange,
+  defaultEventTrackingKpiSegmentsByDateRange,
+  defaultEventTrackingSubmissionByDateRange,
+} from "@/features/event-tracking/controller/event-tracking-default-payload"
 import type {
   OverviewAlert,
   OverviewDashboardData,
@@ -127,6 +132,11 @@ function buildOverviewFromAnalytics(
     alerts,
     activeUsersNow: fmtActiveUsers(data.activeUsersNow),
     trafficTablesByDateRange: defaultTrafficTablesByDateRange(formType),
+    eventTrackingByDateRange: defaultEventTrackingByDateRange(),
+    eventTrackingSubmissionByDateRange:
+      defaultEventTrackingSubmissionByDateRange(),
+    eventTrackingKpiSegmentsByDateRange:
+      defaultEventTrackingKpiSegmentsByDateRange(),
     kpiSeriesByDateRange,
   }
 }

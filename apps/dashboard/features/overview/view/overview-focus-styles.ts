@@ -1,5 +1,5 @@
 export const overviewRechartsPointerFocusResetClassName =
-  "[&_.recharts-responsive-container]:outline-none [&_.recharts-responsive-container:focus]:outline-none [&_.recharts-wrapper]:outline-none [&_.recharts-wrapper:focus]:outline-none [&_.recharts-surface]:outline-none [&_.recharts-surface:focus]:outline-none [&_.recharts-wrapper_svg]:outline-none [&_.recharts-wrapper_svg:focus]:outline-none"
+  "[&_.recharts-responsive-container]:outline-none [&_.recharts-responsive-container:focus]:outline-none [&_.recharts-responsive-container:focus-visible]:outline-none [&_.recharts-wrapper]:outline-none [&_.recharts-wrapper:focus]:outline-none [&_.recharts-wrapper:focus-visible]:outline-none [&_.recharts-surface]:outline-none [&_.recharts-surface:focus]:outline-none [&_.recharts-surface:focus-visible]:outline-none [&_.recharts-wrapper_svg]:outline-none [&_.recharts-wrapper_svg:focus]:outline-none [&_.recharts-wrapper_svg:focus-visible]:outline-none [&_.recharts-layer]:outline-none [&_path]:outline-none [&_path:focus]:outline-none [&_path:focus-visible]:outline-none [&_svg]:outline-none [&_svg:focus]:outline-none [&_svg:focus-visible]:outline-none [&_*:focus]:outline-none [&_*:focus-visible]:outline-none [&_*:focus-visible]:ring-0"
 
 export const overviewCardPointerFocusResetClassName =
   "outline-none focus:outline-none focus-visible:outline-none"

@@ -1,5 +1,7 @@
 "use client"
 
+import { useCallback } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   Tabs,
   TabsContent,
@@ -9,6 +11,7 @@ import {
 import type { OverviewDashboardData } from "@/features/overview/model/overview"
 import { OverviewDashboard } from "@/features/overview/view/OverviewDashboard"
 import { FunnelDashboard } from "@/features/funnel/view/FunnelDashboard"
+import { EventTrackingDashboard } from "@/features/event-tracking/view/EventTrackingDashboard"
 import { TrafficDashboard } from "@/features/traffic/view/TrafficDashboard"
 import { useSoftRefresh } from "@/hooks/use-soft-refresh"
 
@@ -23,6 +26,17 @@ const PROJECT_TABS = [
   { value: "settings", label: "Settings" },
 ] as const
 
+export type ProjectTabValue = (typeof PROJECT_TABS)[number]["value"]
+
+const PROJECT_TAB_VALUES = new Set<string>(PROJECT_TABS.map((tab) => tab.value))
+
+function parseProjectTab(value: string | null): ProjectTabValue {
+  if (value && PROJECT_TAB_VALUES.has(value)) {
+    return value as ProjectTabValue
+  }
+  return "overview"
+}
+
 type ProjectDashboardViewProps = {
   overview: OverviewDashboardData
 }
@@ -30,9 +44,27 @@ type ProjectDashboardViewProps = {
 export function ProjectDashboardView({ overview }: ProjectDashboardViewProps) {
   useSoftRefresh()
 
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const activeTab = parseProjectTab(searchParams.get("tab"))
+
+  const handleTabChange = useCallback(
+    (value: string) => {
+      const params = new URLSearchParams(searchParams.toString())
+      params.set("tab", value)
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+    },
+    [pathname, router, searchParams]
+  )
+
   return (
     <div className="flex w-full flex-1 flex-col">
-      <Tabs defaultValue="overview" className="w-full">
+      <Tabs
+        value={activeTab}
+        onValueChange={handleTabChange}
+        className="w-full"
+      >
         <div className="w-full border-b border-neutral-200 bg-neutral-50/90">
           <div className="mx-auto w-full max-w-[1440px] px-0">
             <TabsList className="h-auto min-h-11 justify-start rounded-none border-0 bg-transparent px-0">
@@ -54,6 +86,8 @@ export function ProjectDashboardView({ overview }: ProjectDashboardViewProps) {
                 <TrafficDashboard data={overview} />
               ) : tab.value === "funnel" ? (
                 <FunnelDashboard data={overview} />
+              ) : tab.value === "event-tracking" ? (
+                <EventTrackingDashboard data={overview} />
               ) : (
                 <p className="max-w-prose px-4 pt-6 text-sm text-muted-foreground sm:px-6 lg:px-8">
                   <span className="font-medium text-foreground">

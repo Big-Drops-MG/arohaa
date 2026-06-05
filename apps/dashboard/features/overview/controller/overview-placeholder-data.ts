@@ -14,6 +14,11 @@ import {
   defaultMultiStepFormTracking,
 } from "@/features/funnel/controller/funnel-default-payload"
 import { defaultTrafficTablesByDateRange } from "@/features/traffic/controller/traffic-default-payload"
+import {
+  mockEventTrackingByDateRange,
+  mockEventTrackingKpiSegmentsByDateRange,
+  mockEventTrackingSubmissionByDateRange,
+} from "@/features/event-tracking/controller/event-tracking-default-payload"
 
 const emptyKpisByDateRange: OverviewKpiValuesByDateRange = {
   "24h": {},
@@ -31,6 +36,9 @@ const overviewPlaceholderShell: Omit<
   | "multiStepFormTracking"
   | "formDropOffByField"
   | "trafficTablesByDateRange"
+  | "eventTrackingByDateRange"
+  | "eventTrackingSubmissionByDateRange"
+  | "eventTrackingKpiSegmentsByDateRange"
 > = {
   dateRangeOptions: [
     { id: "24h", label: "Last 24 hours" },
@@ -61,5 +69,10 @@ export function getOverviewPlaceholderData(
     multiStepFormTracking: defaultMultiStepFormTracking(),
     formDropOffByField: defaultFormDropOffByField(),
     trafficTablesByDateRange: defaultTrafficTablesByDateRange(formType),
+    eventTrackingByDateRange: mockEventTrackingByDateRange(),
+    eventTrackingSubmissionByDateRange:
+      mockEventTrackingSubmissionByDateRange(),
+    eventTrackingKpiSegmentsByDateRange:
+      mockEventTrackingKpiSegmentsByDateRange(formType),
   }
 }

@@ -2,6 +2,11 @@ import type {
   FunnelFieldDropOff,
   FunnelStep,
 } from "@/features/funnel/model/funnel"
+import type {
+  EventTrackingByDateRange,
+  EventTrackingKpiSegmentsByDateRange,
+  EventTrackingSubmissionByDateRange,
+} from "@/features/event-tracking/model/event-tracking"
 import type { TrafficTablesByDateRange } from "@/features/traffic/model/traffic"
 
 export type OverviewDateRangeId = "24h" | "7d" | "30d" | "3m" | "12m" | "24m"
@@ -111,6 +116,9 @@ export type OverviewDashboardData = {
   /** Live count for the Traffic tab (e.g. "128 Users"). */
   activeUsersNow: string
   trafficTablesByDateRange: TrafficTablesByDateRange
+  eventTrackingByDateRange: EventTrackingByDateRange
+  eventTrackingSubmissionByDateRange: EventTrackingSubmissionByDateRange
+  eventTrackingKpiSegmentsByDateRange: EventTrackingKpiSegmentsByDateRange
   /**
    * Optional time series for the performance chart. When provided for the
    * active date range and KPI, those points are used; otherwise the chart
