@@ -7,6 +7,10 @@ import type {
   EventTrackingKpiSegmentsByDateRange,
   EventTrackingSubmissionByDateRange,
 } from "@/features/event-tracking/model/event-tracking"
+import type { AlertsByDateRange } from "@/features/alerts/model/alerts"
+import type { ExperimentsByDateRange } from "@/features/experiments/model/experiments"
+import type { SegmentsByDateRange } from "@/features/segments/model/segments"
+import type { SegmentsPerformanceByDateRange } from "@/features/segments/model/segments-performance"
 import type { TrafficTablesByDateRange } from "@/features/traffic/model/traffic"
 
 export type OverviewDateRangeId = "24h" | "7d" | "30d" | "3m" | "12m" | "24m"
@@ -87,6 +91,8 @@ export type OverviewAlert = {
   id: string
   message: string
   severity: OverviewAlertSeverity
+  /** Display date for the Alerts tab (e.g. "Apr 10"). */
+  dateLabel?: string
 }
 
 export type OverviewKpiSeriesByDateRange = Partial<
@@ -119,6 +125,10 @@ export type OverviewDashboardData = {
   eventTrackingByDateRange: EventTrackingByDateRange
   eventTrackingSubmissionByDateRange: EventTrackingSubmissionByDateRange
   eventTrackingKpiSegmentsByDateRange: EventTrackingKpiSegmentsByDateRange
+  segmentsByDateRange: SegmentsByDateRange
+  segmentsPerformanceByDateRange: SegmentsPerformanceByDateRange
+  experimentsByDateRange: ExperimentsByDateRange
+  alertsByDateRange: AlertsByDateRange
   /**
    * Optional time series for the performance chart. When provided for the
    * active date range and KPI, those points are used; otherwise the chart

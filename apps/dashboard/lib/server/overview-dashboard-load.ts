@@ -10,6 +10,10 @@ import {
   defaultEventTrackingKpiSegmentsByDateRange,
   defaultEventTrackingSubmissionByDateRange,
 } from "@/features/event-tracking/controller/event-tracking-default-payload"
+import { defaultAlertsByDateRange } from "@/features/alerts/controller/alerts-default-payload"
+import { defaultExperimentsByDateRange } from "@/features/experiments/controller/experiments-default-payload"
+import { defaultSegmentsByDateRange } from "@/features/segments/controller/segments-default-payload"
+import { defaultSegmentsPerformanceByDateRange } from "@/features/segments/controller/segments-performance-default-payload"
 import type {
   OverviewAlert,
   OverviewDashboardData,
@@ -137,6 +141,11 @@ function buildOverviewFromAnalytics(
       defaultEventTrackingSubmissionByDateRange(),
     eventTrackingKpiSegmentsByDateRange:
       defaultEventTrackingKpiSegmentsByDateRange(),
+    segmentsByDateRange: defaultSegmentsByDateRange(),
+    segmentsPerformanceByDateRange:
+      defaultSegmentsPerformanceByDateRange(formType),
+    experimentsByDateRange: defaultExperimentsByDateRange(formType),
+    alertsByDateRange: defaultAlertsByDateRange(),
     kpiSeriesByDateRange,
   }
 }

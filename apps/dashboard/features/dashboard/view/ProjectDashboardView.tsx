@@ -12,6 +12,9 @@ import type { OverviewDashboardData } from "@/features/overview/model/overview"
 import { OverviewDashboard } from "@/features/overview/view/OverviewDashboard"
 import { FunnelDashboard } from "@/features/funnel/view/FunnelDashboard"
 import { EventTrackingDashboard } from "@/features/event-tracking/view/EventTrackingDashboard"
+import { AlertsDashboard } from "@/features/alerts/view/AlertsDashboard"
+import { ExperimentsDashboard } from "@/features/experiments/view/ExperimentsDashboard"
+import { SegmentsDashboard } from "@/features/segments/view/SegmentsDashboard"
 import { TrafficDashboard } from "@/features/traffic/view/TrafficDashboard"
 import { useSoftRefresh } from "@/hooks/use-soft-refresh"
 
@@ -88,6 +91,12 @@ export function ProjectDashboardView({ overview }: ProjectDashboardViewProps) {
                 <FunnelDashboard data={overview} />
               ) : tab.value === "event-tracking" ? (
                 <EventTrackingDashboard data={overview} />
+              ) : tab.value === "segments" ? (
+                <SegmentsDashboard data={overview} />
+              ) : tab.value === "experiments" ? (
+                <ExperimentsDashboard data={overview} />
+              ) : tab.value === "alerts" ? (
+                <AlertsDashboard data={overview} />
               ) : (
                 <p className="max-w-prose px-4 pt-6 text-sm text-muted-foreground sm:px-6 lg:px-8">
                   <span className="font-medium text-foreground">

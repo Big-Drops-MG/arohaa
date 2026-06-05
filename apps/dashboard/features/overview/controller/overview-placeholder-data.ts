@@ -15,10 +15,14 @@ import {
 } from "@/features/funnel/controller/funnel-default-payload"
 import { defaultTrafficTablesByDateRange } from "@/features/traffic/controller/traffic-default-payload"
 import {
-  mockEventTrackingByDateRange,
-  mockEventTrackingKpiSegmentsByDateRange,
-  mockEventTrackingSubmissionByDateRange,
+  defaultEventTrackingByDateRange,
+  defaultEventTrackingKpiSegmentsByDateRange,
+  defaultEventTrackingSubmissionByDateRange,
 } from "@/features/event-tracking/controller/event-tracking-default-payload"
+import { defaultAlertsByDateRange } from "@/features/alerts/controller/alerts-default-payload"
+import { defaultExperimentsByDateRange } from "@/features/experiments/controller/experiments-default-payload"
+import { defaultSegmentsByDateRange } from "@/features/segments/controller/segments-default-payload"
+import { defaultSegmentsPerformanceByDateRange } from "@/features/segments/controller/segments-performance-default-payload"
 
 const emptyKpisByDateRange: OverviewKpiValuesByDateRange = {
   "24h": {},
@@ -39,6 +43,10 @@ const overviewPlaceholderShell: Omit<
   | "eventTrackingByDateRange"
   | "eventTrackingSubmissionByDateRange"
   | "eventTrackingKpiSegmentsByDateRange"
+  | "segmentsByDateRange"
+  | "segmentsPerformanceByDateRange"
+  | "experimentsByDateRange"
+  | "alertsByDateRange"
 > = {
   dateRangeOptions: [
     { id: "24h", label: "Last 24 hours" },
@@ -69,10 +77,15 @@ export function getOverviewPlaceholderData(
     multiStepFormTracking: defaultMultiStepFormTracking(),
     formDropOffByField: defaultFormDropOffByField(),
     trafficTablesByDateRange: defaultTrafficTablesByDateRange(formType),
-    eventTrackingByDateRange: mockEventTrackingByDateRange(),
+    eventTrackingByDateRange: defaultEventTrackingByDateRange(),
     eventTrackingSubmissionByDateRange:
-      mockEventTrackingSubmissionByDateRange(),
+      defaultEventTrackingSubmissionByDateRange(),
     eventTrackingKpiSegmentsByDateRange:
-      mockEventTrackingKpiSegmentsByDateRange(formType),
+      defaultEventTrackingKpiSegmentsByDateRange(),
+    segmentsByDateRange: defaultSegmentsByDateRange(),
+    segmentsPerformanceByDateRange:
+      defaultSegmentsPerformanceByDateRange(formType),
+    experimentsByDateRange: defaultExperimentsByDateRange(formType),
+    alertsByDateRange: defaultAlertsByDateRange(),
   }
 }
