@@ -15,7 +15,9 @@ import { EventTrackingDashboard } from "@/features/event-tracking/view/EventTrac
 import { AlertsDashboard } from "@/features/alerts/view/AlertsDashboard"
 import { ExperimentsDashboard } from "@/features/experiments/view/ExperimentsDashboard"
 import { SegmentsDashboard } from "@/features/segments/view/SegmentsDashboard"
+import { SettingsDashboard } from "@/features/settings/view/SettingsDashboard"
 import { TrafficDashboard } from "@/features/traffic/view/TrafficDashboard"
+import type { LandingPageSettingsData } from "@/features/settings/model/landing-page-settings"
 import { useSoftRefresh } from "@/hooks/use-soft-refresh"
 
 const PROJECT_TABS = [
@@ -42,9 +44,13 @@ function parseProjectTab(value: string | null): ProjectTabValue {
 
 type ProjectDashboardViewProps = {
   overview: OverviewDashboardData
+  settings: LandingPageSettingsData
 }
 
-export function ProjectDashboardView({ overview }: ProjectDashboardViewProps) {
+export function ProjectDashboardView({
+  overview,
+  settings,
+}: ProjectDashboardViewProps) {
   useSoftRefresh()
 
   const router = useRouter()
@@ -97,14 +103,9 @@ export function ProjectDashboardView({ overview }: ProjectDashboardViewProps) {
                 <ExperimentsDashboard data={overview} />
               ) : tab.value === "alerts" ? (
                 <AlertsDashboard data={overview} />
-              ) : (
-                <p className="max-w-prose px-4 pt-6 text-sm text-muted-foreground sm:px-6 lg:px-8">
-                  <span className="font-medium text-foreground">
-                    {tab.label}
-                  </span>{" "}
-                  for this landing page.
-                </p>
-              )}
+              ) : tab.value === "settings" ? (
+                <SettingsDashboard initialData={settings} />
+              ) : null}
             </TabsContent>
           ))}
         </div>

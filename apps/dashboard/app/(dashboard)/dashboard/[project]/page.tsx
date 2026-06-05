@@ -2,6 +2,7 @@ import { Suspense } from "react"
 import type { Metadata } from "next"
 import { ProjectDashboardView } from "@/features/dashboard/view/ProjectDashboardView"
 import { pageMetadata } from "@/lib/site-metadata"
+import { loadLandingPageSettingsData } from "@/lib/server/landing-page-settings-load"
 import { loadOverviewDashboardData } from "@/lib/server/overview-dashboard-load"
 import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
 
@@ -22,10 +23,17 @@ export async function generateMetadata({
 
 export default async function ProjectPage({ params }: ProjectPageProps) {
   const { project } = await params
-  const overview = await loadOverviewDashboardData(project)
+  const [overview, settings] = await Promise.all([
+    loadOverviewDashboardData(project),
+    loadLandingPageSettingsData(project),
+  ])
   return (
     <Suspense>
-      <ProjectDashboardView key={project} overview={overview} />
+      <ProjectDashboardView
+        key={project}
+        overview={overview}
+        settings={settings}
+      />
     </Suspense>
   )
 }
