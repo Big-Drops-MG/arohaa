@@ -1,10 +1,7 @@
-import { Redis } from 'ioredis';
+import { Redis } from 'ioredis'
+import { resolveRedisUrl } from '../lib/resolve-redis-url.js'
 
-if (!process.env.REDIS_URL) {
-  throw new Error('REDIS_URL environment variable is missing');
-}
-
-export const redis = new Redis(process.env.REDIS_URL, {
+export const redis = new Redis(resolveRedisUrl(), {
   maxRetriesPerRequest: null,
   enableReadyCheck: true,
 });

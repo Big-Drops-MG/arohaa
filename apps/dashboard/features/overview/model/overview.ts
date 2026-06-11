@@ -75,6 +75,15 @@ export type OverviewKpiValuesByDateRange = Record<
   OverviewKpiValuesByMetric
 >
 
+export type OverviewFunnelChangeVariant = "positive" | "negative" | "neutral"
+
+export type OverviewFunnelStep = {
+  label: string
+  value: string
+  change?: string
+  changeVariant?: OverviewFunnelChangeVariant
+}
+
 export type OverviewTimeSeriesPoint = {
   label: string
   value: number

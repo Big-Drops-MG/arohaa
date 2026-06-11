@@ -1,4 +1,7 @@
-import type { OverviewDateRangeId } from "@/features/overview/model/overview"
+import type {
+  OverviewDateRangeId,
+  OverviewDateRangeOption,
+} from "@/features/overview/model/overview"
 
 export type EventTrackingMetricId =
   | "total-events"
@@ -14,9 +17,30 @@ export const EVENT_TRACKING_METRIC_ORDER: readonly EventTrackingMetricId[] = [
 ]
 
 export type EventTrackingKpi = {
-  id: EventTrackingMetricId
+  id?: EventTrackingMetricId
   label: string
   value: string
+}
+
+export type EventTrackingSubmissionRow = {
+  date: string
+  formSubmitted: string
+  fsr: string
+  share?: string
+}
+
+export type EventTrackingPieSegment = {
+  name: string
+  value: number
+  color: string
+}
+
+export type EventTrackingDashboardData = {
+  dateRangeOptions: OverviewDateRangeOption[]
+  defaultDateRangeId: OverviewDateRangeId
+  kpis: EventTrackingKpi[]
+  submissionRows: EventTrackingSubmissionRow[]
+  pieSegments: EventTrackingPieSegment[]
 }
 
 export type EventTrackingValuesByMetric = Partial<
@@ -27,13 +51,6 @@ export type EventTrackingByDateRange = Record<
   OverviewDateRangeId,
   EventTrackingValuesByMetric
 >
-
-export type EventTrackingSubmissionRow = {
-  date: string
-  formSubmitted: string
-  /** Computed share of period total; set by withSubmissionShare. */
-  share?: string
-}
 
 export type EventTrackingSubmissionByDateRange = Record<
   OverviewDateRangeId,

@@ -8,16 +8,22 @@ import {
   TabsList,
   TabsTrigger,
 } from "@workspace/ui/components/tabs"
+import type { AlertsDashboardData } from "@/features/alerts/model/alerts"
+import { AlertsDashboard } from "@/features/alerts/view/AlertsDashboard"
+import type { EventTrackingDashboardData } from "@/features/event-tracking/model/event-tracking"
+import { EventTrackingDashboard } from "@/features/event-tracking/view/EventTrackingDashboard"
+import type { ExperimentsDashboardData } from "@/features/experiments/model/experiments"
+import { ExperimentsDashboard } from "@/features/experiments/view/ExperimentsDashboard"
+import type { FunnelDashboardData } from "@/features/funnel/model/funnel"
+import { FunnelDashboard } from "@/features/funnel/view/FunnelDashboard"
 import type { OverviewDashboardData } from "@/features/overview/model/overview"
 import { OverviewDashboard } from "@/features/overview/view/OverviewDashboard"
-import { FunnelDashboard } from "@/features/funnel/view/FunnelDashboard"
-import { EventTrackingDashboard } from "@/features/event-tracking/view/EventTrackingDashboard"
-import { AlertsDashboard } from "@/features/alerts/view/AlertsDashboard"
-import { ExperimentsDashboard } from "@/features/experiments/view/ExperimentsDashboard"
+import type { SegmentsDashboardData } from "@/features/segments/model/segments"
 import { SegmentsDashboard } from "@/features/segments/view/SegmentsDashboard"
-import { SettingsDashboard } from "@/features/settings/view/SettingsDashboard"
-import { TrafficDashboard } from "@/features/traffic/view/TrafficDashboard"
 import type { LandingPageSettingsData } from "@/features/settings/model/landing-page-settings"
+import { SettingsDashboard } from "@/features/settings/view/SettingsDashboard"
+import type { TrafficDashboardData } from "@/features/traffic/model/traffic"
+import { TrafficDashboard } from "@/features/traffic/view/TrafficDashboard"
 import { useSoftRefresh } from "@/hooks/use-soft-refresh"
 
 const PROJECT_TABS = [
@@ -43,12 +49,26 @@ function parseProjectTab(value: string | null): ProjectTabValue {
 }
 
 type ProjectDashboardViewProps = {
+  projectId: string
   overview: OverviewDashboardData
+  traffic: TrafficDashboardData
+  funnel: FunnelDashboardData
+  eventTracking: EventTrackingDashboardData
+  segments: SegmentsDashboardData
+  experiments: ExperimentsDashboardData
+  alerts: AlertsDashboardData
   settings: LandingPageSettingsData
 }
 
 export function ProjectDashboardView({
+  projectId,
   overview,
+  traffic,
+  funnel,
+  eventTracking,
+  segments,
+  experiments,
+  alerts,
   settings,
 }: ProjectDashboardViewProps) {
   useSoftRefresh()
@@ -90,19 +110,43 @@ export function ProjectDashboardView({
           {PROJECT_TABS.map((tab) => (
             <TabsContent key={tab.value} value={tab.value}>
               {tab.value === "overview" ? (
-                <OverviewDashboard data={overview} />
+                <OverviewDashboard data={overview} projectId={projectId} />
               ) : tab.value === "traffic" ? (
-                <TrafficDashboard data={overview} />
+                <TrafficDashboard
+                  data={traffic}
+                  projectId={projectId}
+                  isActive={activeTab === "traffic"}
+                />
               ) : tab.value === "funnel" ? (
-                <FunnelDashboard data={overview} />
+                <FunnelDashboard
+                  data={funnel}
+                  projectId={projectId}
+                  isActive={activeTab === "funnel"}
+                />
               ) : tab.value === "event-tracking" ? (
-                <EventTrackingDashboard data={overview} />
+                <EventTrackingDashboard
+                  data={eventTracking}
+                  projectId={projectId}
+                  isActive={activeTab === "event-tracking"}
+                />
               ) : tab.value === "segments" ? (
-                <SegmentsDashboard data={overview} />
+                <SegmentsDashboard
+                  data={segments}
+                  projectId={projectId}
+                  isActive={activeTab === "segments"}
+                />
               ) : tab.value === "experiments" ? (
-                <ExperimentsDashboard data={overview} />
+                <ExperimentsDashboard
+                  data={experiments}
+                  projectId={projectId}
+                  isActive={activeTab === "experiments"}
+                />
               ) : tab.value === "alerts" ? (
-                <AlertsDashboard data={overview} />
+                <AlertsDashboard
+                  data={alerts}
+                  projectId={projectId}
+                  isActive={activeTab === "alerts"}
+                />
               ) : tab.value === "settings" ? (
                 <SettingsDashboard initialData={settings} />
               ) : null}

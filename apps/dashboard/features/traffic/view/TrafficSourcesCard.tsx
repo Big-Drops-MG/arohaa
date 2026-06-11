@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { cn } from "@workspace/ui/lib/utils"
 import {
   Card,
@@ -7,131 +8,121 @@ import {
   CardHeader,
   CardTitle,
 } from "@workspace/ui/components/card"
+import { overviewSectionHeadingClassName } from "@/features/overview/view/overview-card-density"
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@workspace/ui/components/tabs"
-import type { TrafficSourcesData } from "@/features/traffic/model/traffic"
-import { TrafficBreakdownTableView } from "@/features/traffic/view/TrafficBreakdownTableView"
-import { TrafficExpandableCard } from "@/features/traffic/view/TrafficExpandableCard"
-import {
-  overviewAnalyticCardHeaderClassName,
-  overviewAnalyticCardShellClassName,
-  overviewSectionHeadingClassName,
-} from "@/features/overview/view/overview-card-density"
+  trafficSourcesTabBarClassName,
+  trafficSourcesTitleClassName,
+  trafficTableCardShellClassName,
+} from "@/features/traffic/view/traffic-card-styles"
 import { overviewCardPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
+import type { TrafficReferrerRow } from "@/features/traffic/model/traffic"
 
 type TrafficSourcesCardProps = {
-  sources: TrafficSourcesData
+  referrers: TrafficReferrerRow[]
+  utmParameters: TrafficReferrerRow[]
 }
 
-const tabsListClassName =
-  "h-auto w-auto shrink-0 justify-end gap-1 overflow-x-auto border-0 bg-transparent p-0"
+type SourcesTab = "referrers" | "utm"
 
-const tabsTriggerClassName =
-  "h-7 rounded-md border-0 px-2 py-1 text-xs font-medium data-[state=active]:bg-muted data-[state=active]:shadow-none"
+const tabButtonClassName = "pb-3 text-sm transition-colors outline-none"
 
-type TrafficSourcesTabsProps = {
-  sources: TrafficSourcesData
-}
-
-function TrafficSourcesExpanded({ sources }: TrafficSourcesTabsProps) {
+function SourcesTabButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean
+  label: string
+  onClick: () => void
+}) {
   return (
-    <Tabs defaultValue="referrers" className="gap-0">
-      <div className="flex justify-end border-b border-border px-6 py-3">
-        <TabsList className={tabsListClassName}>
-          <TabsTrigger value="referrers" className={tabsTriggerClassName}>
-            Referrers
-          </TabsTrigger>
-          <TabsTrigger value="utm" className={tabsTriggerClassName}>
-            UTM Parameters
-          </TabsTrigger>
-        </TabsList>
-      </div>
-      <TabsContent
-        value="referrers"
-        className="mt-0 outline-none focus:outline-none focus-visible:outline-none data-[state=inactive]:hidden"
-      >
-        <TrafficBreakdownTableView
-          table={sources.referrers}
-          emptyMessage="No referrer data for this period."
-        />
-      </TabsContent>
-      <TabsContent
-        value="utm"
-        className="mt-0 outline-none focus:outline-none focus-visible:outline-none data-[state=inactive]:hidden"
-      >
-        <TrafficBreakdownTableView
-          table={sources.utmParameters}
-          emptyMessage="No UTM data for this period."
-        />
-      </TabsContent>
-    </Tabs>
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        tabButtonClassName,
+        "-mb-px border-b-2",
+        active
+          ? "border-neutral-950 font-semibold text-neutral-950"
+          : "border-transparent font-normal text-neutral-600 hover:text-neutral-900"
+      )}
+    >
+      {label}
+    </button>
   )
 }
 
-function TrafficSourcesCardBody({ sources }: TrafficSourcesCardProps) {
+export function TrafficSourcesCard({
+  referrers,
+  utmParameters,
+}: TrafficSourcesCardProps) {
+  const [activeTab, setActiveTab] = useState<SourcesTab>("referrers")
+  const rows = activeTab === "referrers" ? referrers : utmParameters
+
   return (
     <Card
       className={cn(
         overviewCardPointerFocusResetClassName,
-        overviewAnalyticCardShellClassName,
-        "max-w-none pb-2"
+        trafficTableCardShellClassName
       )}
     >
-      <Tabs defaultValue="referrers" className="gap-0">
-        <CardHeader
-          className={cn(
-            overviewAnalyticCardHeaderClassName,
-            "flex-row items-center justify-between gap-3 space-y-0"
-          )}
-        >
-          <CardTitle className={overviewSectionHeadingClassName}>
-            Traffic Sources
-          </CardTitle>
-          <TabsList className={tabsListClassName}>
-            <TabsTrigger value="referrers" className={tabsTriggerClassName}>
-              Referrers
-            </TabsTrigger>
-            <TabsTrigger value="utm" className={tabsTriggerClassName}>
-              UTM Parameters
-            </TabsTrigger>
-          </TabsList>
-        </CardHeader>
-        <CardContent className="p-0 pb-2">
-          <TabsContent
-            value="referrers"
-            className="mt-0 outline-none focus:outline-none focus-visible:outline-none data-[state=inactive]:hidden"
-          >
-            <TrafficBreakdownTableView
-              table={sources.referrers}
-              emptyMessage="No referrer data for this period."
+      <CardHeader className={trafficSourcesTitleClassName}>
+        <CardTitle className={overviewSectionHeadingClassName}>
+          Traffic sources
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col p-0">
+        <div className={trafficSourcesTabBarClassName}>
+          <div className="flex gap-6 border-b border-border">
+            <SourcesTabButton
+              active={activeTab === "referrers"}
+              label="Referrers"
+              onClick={() => setActiveTab("referrers")}
             />
-          </TabsContent>
-          <TabsContent
-            value="utm"
-            className="mt-0 outline-none focus:outline-none focus-visible:outline-none data-[state=inactive]:hidden"
-          >
-            <TrafficBreakdownTableView
-              table={sources.utmParameters}
-              emptyMessage="No UTM data for this period."
+            <SourcesTabButton
+              active={activeTab === "utm"}
+              label="UTM Parameters"
+              onClick={() => setActiveTab("utm")}
             />
-          </TabsContent>
-        </CardContent>
-      </Tabs>
+          </div>
+          <span
+            className={cn(
+              tabButtonClassName,
+              "shrink-0 font-medium text-muted-foreground"
+            )}
+          >
+            Visitors
+          </span>
+        </div>
+        {rows.length === 0 ? (
+          <p className="px-5 py-3 text-sm text-muted-foreground sm:px-6">
+            No data for this period.
+          </p>
+        ) : (
+          rows.map((row, index) => (
+            <div
+              key={`${row.domain}-${index}`}
+              className={cn(
+                "flex items-center justify-between gap-3 px-5 py-3 sm:px-6",
+                index < rows.length - 1 && "border-b border-border/60"
+              )}
+            >
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span
+                  className="size-5 shrink-0 rounded-sm bg-neutral-200"
+                  aria-hidden
+                />
+                <span className="truncate text-sm font-medium text-foreground">
+                  {row.domain}
+                </span>
+              </div>
+              <span className="shrink-0 text-sm font-medium text-foreground tabular-nums">
+                {row.visitors}
+              </span>
+            </div>
+          ))
+        )}
+      </CardContent>
     </Card>
-  )
-}
-
-export function TrafficSourcesCard({ sources }: TrafficSourcesCardProps) {
-  return (
-    <TrafficExpandableCard
-      title="Traffic Sources"
-      expandedContent={<TrafficSourcesExpanded sources={sources} />}
-    >
-      <TrafficSourcesCardBody sources={sources} />
-    </TrafficExpandableCard>
   )
 }

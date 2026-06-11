@@ -333,6 +333,43 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
   }
 }
 
+const ALL_RANGES: RangeId[] = ['24h', '7d', '30d', '3m', '12m', '24m']
+
+const ZERO_KPIS: RangeKpis = {
+  visitors: 0,
+  sessions: 0,
+  pageViews: 0,
+  formSubmitted: 0,
+  bounceRate: 0,
+  fsr: 0,
+}
+
+export function emptyAnalyticsOverview(): AnalyticsOverview {
+  const now = new Date()
+  return {
+    kpis: Object.fromEntries(
+      ALL_RANGES.map((rangeId) => [rangeId, { ...ZERO_KPIS }]),
+    ) as Record<RangeId, RangeKpis>,
+    series: Object.fromEntries(
+      ALL_RANGES.map((rangeId) => [
+        rangeId,
+        buildSeries(rangeId, new Map(), new Map(), new Map(), new Map(), now),
+      ]),
+    ) as Record<RangeId, SeriesPoint[]>,
+    funnel: [
+      { label: 'Landing Page Visits', count: 0 },
+      { label: 'Interactions', count: 0 },
+      { label: 'Form Started', count: 0 },
+      { label: 'Form Submitted', count: 0 },
+    ],
+    uniqueVisitors7d: 0,
+    avgEngagedSecPerSession: 0,
+    topCity: '-',
+    bestDayLabel: '-',
+    hasEvents24h: false,
+  }
+}
+
 export interface LandingPageCardMetrics {
   activeUsers: number
   formSubmissions7d: number
@@ -393,5 +430,13 @@ export async function getLandingPageCardMetrics(
     activeUsers: n(row?.active_users),
     formSubmissions7d: n(row?.form_submissions_7d),
     bounceRate7d: bouncePct(n(bounceRow?.bounce_7d), ses7d),
+  }
+}
+
+export function emptyLandingPageCardMetrics(): LandingPageCardMetrics {
+  return {
+    activeUsers: 0,
+    formSubmissions7d: 0,
+    bounceRate7d: 0,
   }
 }

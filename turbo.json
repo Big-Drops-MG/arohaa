@@ -36,7 +36,11 @@
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
     "AWS_SES_FROM_EMAIL",
-    "AROHAA_INTERNAL_API_SECRET"
+    "AROHAA_INTERNAL_API_SECRET",
+    "REDIS_URL",
+    "UPSTASH_REDIS_URL",
+    "KV_URL",
+    "SENTRY_DSN"
   ],
   "tasks": {
     "build": {

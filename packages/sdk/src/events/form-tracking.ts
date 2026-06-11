@@ -1,4 +1,10 @@
 import { trackFormStart, trackFormSuccess } from "./form.events"
+import {
+  markFormSessionStarted,
+  markFormSessionSucceeded,
+  setupFormFieldTracking,
+} from "./form-field-tracking"
+import { setupFormStepTracking } from "./form-step-tracking"
 
 const startedForms = new WeakSet<HTMLFormElement>()
 let fetchTrackingInstalled = false
@@ -49,9 +55,13 @@ export function installFormFetchTracking(): void {
         }
         if (response.ok && data.success !== false && !data.rejected) {
           trackFormSuccess()
+          markFormSessionSucceeded()
         }
       } catch {
-        if (response.ok) trackFormSuccess()
+        if (response.ok) {
+          trackFormSuccess()
+          markFormSessionSucceeded()
+        }
       }
     }
 
@@ -70,6 +80,7 @@ export function setupFormDomTracking(): void {
       const form = target.closest("form")
       if (!form || startedForms.has(form)) return
       startedForms.add(form)
+      markFormSessionStarted(form)
       trackFormStart(formId(form))
     },
     true,
@@ -83,6 +94,7 @@ export function setupFormDomTracking(): void {
       const form = target.closest("form")
       if (!form || startedForms.has(form)) return
       startedForms.add(form)
+      markFormSessionStarted(form)
       trackFormStart(formId(form))
     },
     true,
@@ -93,4 +105,6 @@ export function setupFormDomTracking(): void {
 export function setupFormTracking(): void {
   installFormFetchTracking()
   setupFormDomTracking()
+  setupFormFieldTracking()
+  setupFormStepTracking()
 }

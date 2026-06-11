@@ -1,5 +1,3 @@
-"use client"
-
 import { cn } from "@workspace/ui/lib/utils"
 import {
   Card,
@@ -7,68 +5,78 @@ import {
   CardHeader,
   CardTitle,
 } from "@workspace/ui/components/card"
-import type { TrafficBreakdownTable } from "@/features/traffic/model/traffic"
-import { TrafficBreakdownTableView } from "@/features/traffic/view/TrafficBreakdownTableView"
-import { TrafficExpandableCard } from "@/features/traffic/view/TrafficExpandableCard"
+import { overviewSectionHeadingClassName } from "@/features/overview/view/overview-card-density"
 import {
-  overviewAnalyticCardHeaderClassName,
-  overviewAnalyticCardShellClassName,
-  overviewSectionHeadingClassName,
-} from "@/features/overview/view/overview-card-density"
+  trafficTableCardHeaderClassName,
+  trafficTableCardShellClassName,
+} from "@/features/traffic/view/traffic-card-styles"
 import { overviewCardPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
+import type { TrafficTableSection } from "@/features/traffic/model/traffic"
 
 type TrafficDataTableCardProps = {
-  title: string
-  table: TrafficBreakdownTable
-  emptyMessage?: string
+  section: TrafficTableSection
 }
 
-function TrafficTableCardBody({
-  title,
-  table,
-  emptyMessage,
-}: TrafficDataTableCardProps) {
+export function TrafficDataTableCard({ section }: TrafficDataTableCardProps) {
   return (
     <Card
       className={cn(
         overviewCardPointerFocusResetClassName,
-        overviewAnalyticCardShellClassName,
-        "max-w-none pb-2"
+        trafficTableCardShellClassName
       )}
     >
-      <CardHeader className={overviewAnalyticCardHeaderClassName}>
+      <CardHeader className={trafficTableCardHeaderClassName}>
         <CardTitle className={overviewSectionHeadingClassName}>
-          {title}
+          {section.title}
         </CardTitle>
       </CardHeader>
-      <CardContent className="overflow-x-auto p-0 pb-2">
-        <TrafficBreakdownTableView table={table} emptyMessage={emptyMessage} />
+      <CardContent className="p-0">
+        <div className="overflow-hidden rounded-b-[15px]">
+          <div
+            className="grid border-b border-border px-5 py-2.5 sm:px-6"
+            style={{
+              gridTemplateColumns: `repeat(${section.columns.length}, minmax(0, 1fr))`,
+            }}
+          >
+            {section.columns.map((col) => (
+              <span
+                key={col.key}
+                className={cn(
+                  "text-sm font-medium text-muted-foreground",
+                  col.align === "right" && "text-right"
+                )}
+              >
+                {col.label}
+              </span>
+            ))}
+          </div>
+          {section.rows.map((row, rowIndex) => (
+            <div
+              key={rowIndex}
+              className={cn(
+                "grid px-5 py-3 sm:px-6",
+                rowIndex < section.rows.length - 1 &&
+                  "border-b border-border/60"
+              )}
+              style={{
+                gridTemplateColumns: `repeat(${section.columns.length}, minmax(0, 1fr))`,
+              }}
+            >
+              {section.columns.map((col) => (
+                <span
+                  key={col.key}
+                  className={cn(
+                    "text-sm text-foreground tabular-nums",
+                    col.align === "right" && "text-right"
+                  )}
+                >
+                  {row[col.key]}
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
-  )
-}
-
-export function TrafficDataTableCard({
-  title,
-  table,
-  emptyMessage,
-}: TrafficDataTableCardProps) {
-  const body = (
-    <TrafficTableCardBody
-      title={title}
-      table={table}
-      emptyMessage={emptyMessage}
-    />
-  )
-
-  return (
-    <TrafficExpandableCard
-      title={title}
-      expandedContent={
-        <TrafficBreakdownTableView table={table} emptyMessage={emptyMessage} />
-      }
-    >
-      {body}
-    </TrafficExpandableCard>
   )
 }

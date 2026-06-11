@@ -1,6 +1,6 @@
 import type {
+  TrafficBreakdownColumn,
   TrafficBreakdownTable,
-  TrafficTableColumn,
 } from "@/features/traffic/model/traffic"
 
 export function parseTrafficNumericValue(raw: string | undefined): number {
@@ -26,7 +26,7 @@ export function parseTrafficNumericValue(raw: string | undefined): number {
   return Number.isFinite(n) ? n : 0
 }
 
-function sortColumnForTable(columns: TrafficTableColumn[]): string | null {
+function sortColumnForTable(columns: TrafficBreakdownColumn[]): string | null {
   if (columns.some((col) => col.id === "visitors")) return "visitors"
 
   const numericColumn = columns.find(

@@ -1,31 +1,38 @@
 import { notFound } from "next/navigation"
-import { getOverviewPlaceholderData } from "@/features/overview/controller/overview-placeholder-data"
+import { defaultAlertsByDateRange } from "@/features/alerts/controller/alerts-default-payload"
+import { defaultEventTrackingByDateRange } from "@/features/event-tracking/controller/event-tracking-default-payload"
+import { defaultEventTrackingKpiSegmentsByDateRange } from "@/features/event-tracking/controller/event-tracking-default-payload"
+import { defaultEventTrackingSubmissionByDateRange } from "@/features/event-tracking/controller/event-tracking-default-payload"
+import { defaultExperimentsByDateRange } from "@/features/experiments/controller/experiments-default-payload"
 import {
   defaultFormDropOffByField,
   defaultMultiStepFormTracking,
 } from "@/features/funnel/controller/funnel-default-payload"
-import { defaultTrafficTablesByDateRange } from "@/features/traffic/controller/traffic-default-payload"
-import {
-  defaultEventTrackingByDateRange,
-  defaultEventTrackingKpiSegmentsByDateRange,
-  defaultEventTrackingSubmissionByDateRange,
-} from "@/features/event-tracking/controller/event-tracking-default-payload"
-import { defaultAlertsByDateRange } from "@/features/alerts/controller/alerts-default-payload"
-import { defaultExperimentsByDateRange } from "@/features/experiments/controller/experiments-default-payload"
+import { getOverviewPlaceholderData } from "@/features/overview/controller/overview-placeholder-data"
 import { defaultSegmentsByDateRange } from "@/features/segments/controller/segments-default-payload"
 import { defaultSegmentsPerformanceByDateRange } from "@/features/segments/controller/segments-performance-default-payload"
+import { defaultTrafficTablesByDateRange } from "@/features/traffic/controller/traffic-default-payload"
 import type {
   OverviewAlert,
   OverviewDashboardData,
+  OverviewFunnelStep,
   OverviewKpiSeriesByDateRange,
   OverviewKpiValuesByDateRange,
   OverviewTrafficStat,
 } from "@/features/overview/model/overview"
-import type { FunnelStep } from "@/features/funnel/model/funnel"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
+import {
+  buildOverviewFunnelSteps,
+  fetchFunnelAnalytics,
+} from "@/lib/server/funnel-dashboard-load"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
+import { getActiveLandingPageInWorkspace } from "@/lib/server/landing-pages-store"
+import { getOrCreateOwnerWorkspace } from "@/lib/server/resolve-workspace"
 import type { AnalyticsOverview, RangeId } from "@/lib/server/analytics-types"
+import {
+  resolveIngestApiBase,
+  resolveInternalApiSecret,
+} from "@/lib/server/analytics-env"
 
 // ── formatters ────────────────────────────────────────────────────────────────
 
@@ -55,7 +62,9 @@ function fmtActiveUsers(count: number): string {
 
 function buildOverviewFromAnalytics(
   data: AnalyticsOverview,
-  formType: ReturnType<typeof parseOverviewLandingFormType>
+  formType: ReturnType<typeof parseOverviewLandingFormType>,
+  funnelSteps: OverviewFunnelStep[],
+  rangeId: RangeId
 ): OverviewDashboardData {
   const RANGES: RangeId[] = ["24h", "7d", "30d", "3m", "12m", "24m"]
 
@@ -80,16 +89,7 @@ function buildOverviewFromAnalytics(
     RANGES.map((rid) => [rid, { visitors: data.series[rid] }])
   ) as OverviewKpiSeriesByDateRange
 
-  const funnelTail =
-    formType === "zip"
-      ? (["Zip Started", "Zip Submitted"] as const)
-      : (["Form Started", "Form Submitted"] as const)
-  const funnelLabels = ["Landing Page Visits", "Interactions", ...funnelTail]
-
-  const funnel: FunnelStep[] = data.funnel.map((step, i) => ({
-    label: funnelLabels[i] ?? step.label,
-    value: fmtCount(step.count),
-  }))
+  const funnel: OverviewFunnelStep[] = funnelSteps
 
   const traffic: OverviewTrafficStat[] = [
     { label: "Unique Visitors", value: fmtCount(data.uniqueVisitors7d) },
@@ -125,7 +125,7 @@ function buildOverviewFromAnalytics(
       { id: "12m", label: "Last 12 months" },
       { id: "24m", label: "Last 24 months" },
     ],
-    defaultDateRangeId: "7d",
+    defaultDateRangeId: rangeId,
     kpisByDateRange,
     defaultKpiMetricId: "visitors",
     funnel,
@@ -153,20 +153,20 @@ function buildOverviewFromAnalytics(
 // ── loader ────────────────────────────────────────────────────────────────────
 
 export async function loadOverviewDashboardData(
-  landingPagePublicId: string
+  landingPagePublicId: string,
+  rangeId: RangeId = "7d"
 ): Promise<OverviewDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
 
-  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
+  const ws = await getOrCreateOwnerWorkspace(actor.id)
+  const row = await getActiveLandingPageInWorkspace(ws.id, landingPagePublicId)
   if (!row) notFound()
 
   const formType = parseOverviewLandingFormType(row.formType)
 
-  const apiBase =
-    process.env.INGEST_BASE_URL?.trim() ||
-    process.env.NEXT_PUBLIC_AROHAA_INGEST_API_BASE?.trim()
-  const secret = process.env.AROHAA_INTERNAL_API_SECRET?.trim()
+  const apiBase = resolveIngestApiBase()
+  const secret = resolveInternalApiSecret()
 
   if (!apiBase || !secret) {
     return getOverviewPlaceholderData(landingPagePublicId, formType)
@@ -176,28 +176,49 @@ export async function loadOverviewDashboardData(
   const timer = setTimeout(() => controller.abort(), 8_000)
 
   try {
-    const resp = await fetch(
-      `${apiBase}/v1/analytics/overview?workspace_id=${encodeURIComponent(row.id)}`,
-      {
-        headers: { "x-arohaa-internal": secret },
-        signal: controller.signal,
-        cache: "no-store",
-      }
-    )
+    const [overviewResp, funnelAnalytics] = await Promise.all([
+      fetch(
+        `${apiBase}/v1/analytics/overview?workspace_id=${encodeURIComponent(row.id)}`,
+        {
+          headers: { "x-arohaa-internal": secret },
+          signal: controller.signal,
+          cache: "no-store",
+        }
+      ),
+      fetchFunnelAnalytics(row.id, rangeId),
+    ])
 
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => "")
+    if (!overviewResp.ok) {
+      const body = await overviewResp.text().catch(() => "")
       if (process.env.NODE_ENV === "development") {
         console.error(
-          `[overview] analytics API ${resp.status} ${apiBase}/v1/analytics/overview`,
+          `[overview] analytics API ${overviewResp.status} ${apiBase}/v1/analytics/overview`,
           body.slice(0, 200)
         )
       }
       return getOverviewPlaceholderData(landingPagePublicId, formType)
     }
 
-    const data = (await resp.json()) as AnalyticsOverview
-    return buildOverviewFromAnalytics(data, formType)
+    const data = (await overviewResp.json()) as AnalyticsOverview
+    const funnelSteps = funnelAnalytics
+      ? buildOverviewFunnelSteps(funnelAnalytics, formType)
+      : data.funnel.map((step, i) => {
+          const funnelTail =
+            formType === "zip"
+              ? (["Zip Started", "Zip Submitted"] as const)
+              : (["Form Started", "Form Submitted"] as const)
+          const funnelLabels = [
+            "Landing Page Visits",
+            "Interactions",
+            ...funnelTail,
+          ]
+          return {
+            label: funnelLabels[i] ?? step.label,
+            value: fmtCount(step.count),
+          }
+        })
+
+    return buildOverviewFromAnalytics(data, formType, funnelSteps, rangeId)
   } catch (err) {
     if (process.env.NODE_ENV === "development") {
       console.error("[overview] analytics fetch failed", err)

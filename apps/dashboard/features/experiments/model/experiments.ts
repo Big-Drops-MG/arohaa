@@ -1,5 +1,6 @@
 import type { OverviewDateRangeId } from "@/features/overview/model/overview"
 import type { TrafficBreakdownTable } from "@/features/traffic/model/traffic"
+import type { OverviewDateRangeOption } from "@/features/overview/model/overview"
 
 export type ExperimentVariantId = string
 
@@ -11,7 +12,6 @@ export type ExperimentVariantRef = {
 export type ExperimentsTabTables = {
   variantPerformance: TrafficBreakdownTable
   performanceByLocation: TrafficBreakdownTable
-  /** When set, matching variant rows and FSR columns are emphasized. */
   winningVariantId: ExperimentVariantId | null
 }
 
@@ -41,4 +41,34 @@ export function experimentHighlightForTables(tables: ExperimentsTabTables): {
     variantPerformance: { boldRowVariantIds: [winner] },
     performanceByLocation: { boldColumnIds: [`${winner}-fsr`] },
   }
+}
+
+export type ExperimentListRow = {
+  id: string
+  name: string
+  status: string
+  variants: string
+  startDate: string
+  highlighted?: boolean
+}
+
+export type ExperimentsTableColumn = {
+  key: string
+  label: string
+}
+
+export type ExperimentsTableRow = Record<string, string>
+
+export type ExperimentsTableSection = {
+  title: string
+  columns: ExperimentsTableColumn[]
+  rows: ExperimentsTableRow[]
+}
+
+export type ExperimentsDashboardData = {
+  dateRangeOptions: OverviewDateRangeOption[]
+  defaultDateRangeId: OverviewDateRangeId
+  experiments: ExperimentListRow[]
+  variantPerformance: ExperimentsTableSection
+  performanceByLocation: ExperimentsTableSection
 }
