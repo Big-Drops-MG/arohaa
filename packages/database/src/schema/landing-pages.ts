@@ -6,8 +6,8 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import { users } from './auth';
-import { workspaces } from './workspace';
+import { users } from './auth.js';
+import { workspaces } from './workspace.js';
 
 export const landingPages = pgTable(
   'landing_page',

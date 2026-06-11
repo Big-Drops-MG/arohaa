@@ -41,6 +41,7 @@ export interface EventRow {
   device: string
   country: string
   city: string
+  variant: string
   metric_name: string
   metric_value: number
   properties: string
@@ -82,6 +83,7 @@ export function ingestBodyToEventRow(
     device: enrichment.device,
     country: enrichment.country,
     city: enrichment.city,
+    variant: body.variant ?? '',
     metric_name: body.metric_name ?? '',
     metric_value: typeof body.metric_value === 'number' && Number.isFinite(body.metric_value)
       ? body.metric_value

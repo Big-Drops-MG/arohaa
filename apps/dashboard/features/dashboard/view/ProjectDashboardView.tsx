@@ -91,13 +91,29 @@ export function ProjectDashboardView({
                   isActive={activeTab === "funnel"}
                 />
               ) : tab.value === "event-tracking" ? (
-                <EventTrackingDashboard data={eventTracking} />
+                <EventTrackingDashboard
+                  data={eventTracking}
+                  projectId={projectId}
+                  isActive={activeTab === "event-tracking"}
+                />
               ) : tab.value === "segments" ? (
-                <SegmentsDashboard data={segments} />
+                <SegmentsDashboard
+                  data={segments}
+                  projectId={projectId}
+                  isActive={activeTab === "segments"}
+                />
               ) : tab.value === "experiments" ? (
-                <ExperimentsDashboard data={experiments} />
+                <ExperimentsDashboard
+                  data={experiments}
+                  projectId={projectId}
+                  isActive={activeTab === "experiments"}
+                />
               ) : tab.value === "alerts" ? (
-                <AlertsDashboard data={alerts} />
+                <AlertsDashboard
+                  data={alerts}
+                  projectId={projectId}
+                  isActive={activeTab === "alerts"}
+                />
               ) : (
                 <p className="max-w-prose px-4 pt-6 text-sm text-muted-foreground sm:px-6 lg:px-8">
                   <span className="font-medium text-foreground">

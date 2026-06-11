@@ -18,8 +18,27 @@ import {
   getAnalyticsOverview,
   getLandingPageCardMetrics,
 } from '../services/analytics.service.js'
+import {
+  emptyAnalyticsEvents,
+  getAnalyticsEvents,
+} from '../services/analytics-events.service.js'
+import {
+  emptyAnalyticsSegments,
+  getAnalyticsSegments,
+} from '../services/analytics-segments.service.js'
+import {
+  emptyAnalyticsExperiments,
+  getAnalyticsExperiments,
+} from '../services/analytics-experiments.service.js'
+import {
+  emptyAnalyticsAlerts,
+  getAnalyticsAlerts,
+} from '../services/analytics-alerts.service.js'
 import { isFunnelRangeId } from '../types/analytics-funnel.js'
 import { isTrafficRangeId } from '../types/analytics-traffic.js'
+import { RangeId as EventsRangeId } from '../types/analytics-events.js'
+import { RangeId as SegmentsRangeId } from '../types/analytics-segments.js'
+import { RangeId as ExperimentsRangeId } from '../types/analytics-experiments.js'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -173,6 +192,88 @@ export async function analyticsRoutes(server: FastifyInstance) {
     },
   )
 
+  server.get<{ Querystring: { workspace_id: string; range_id?: string } }>(
+    '/v1/analytics/events',
+    { schema: rangeSchema },
+    async (request, reply) => {
+      const { workspace_id, range_id } = request.query
+      const rangeId = range_id?.trim() || DEFAULT_RANGE_ID
+
+      // Reusing traffic range IDs as they match the standard ranges
+      if (!isTrafficRangeId(rangeId)) {
+        return reply.code(400).send({ error: 'Invalid range_id' })
+      }
+
+      await sendAnalyticsQuery({
+        request,
+        reply,
+        workspaceId: workspace_id,
+        emptyValue: emptyAnalyticsEvents(),
+        run: () => getAnalyticsEvents({ workspaceId: workspace_id, rangeId: rangeId as EventsRangeId }),
+        logLabel: 'analytics events query ok',
+        logContext: { range_id: rangeId },
+      })
+    },
+  )
+
+  server.get<{ Querystring: { workspace_id: string; range_id?: string } }>(
+    '/v1/analytics/segments',
+    { schema: rangeSchema },
+    async (request, reply) => {
+      const { workspace_id, range_id } = request.query
+      const rangeId = range_id?.trim() || DEFAULT_RANGE_ID
+
+      if (!isTrafficRangeId(rangeId)) {
+        return reply.code(400).send({ error: 'Invalid range_id' })
+      }
+
+      await sendAnalyticsQuery({
+        request,
+        reply,
+        workspaceId: workspace_id,
+        emptyValue: emptyAnalyticsSegments(),
+        run: () => getAnalyticsSegments({ workspaceId: workspace_id, rangeId: rangeId as SegmentsRangeId }),
+        logLabel: 'analytics segments query ok',
+        logContext: { range_id: rangeId },
+      })
+    },
+  )
+
+  server.get<{ Querystring: { workspace_id: string; lp_public_id: string; range_id?: string } }>(
+    '/v1/analytics/experiments',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['workspace_id', 'lp_public_id'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            lp_public_id: { type: 'string', minLength: 1 },
+            range_id: { type: 'string', maxLength: 10 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { workspace_id, lp_public_id, range_id } = request.query
+      const rangeId = range_id?.trim() || DEFAULT_RANGE_ID
+
+      if (!isTrafficRangeId(rangeId)) {
+        return reply.code(400).send({ error: 'Invalid range_id' })
+      }
+
+      await sendAnalyticsQuery({
+        request,
+        reply,
+        workspaceId: workspace_id,
+        emptyValue: emptyAnalyticsExperiments(),
+        run: () => getAnalyticsExperiments({ workspaceId: workspace_id, lpPublicId: lp_public_id, rangeId: rangeId as ExperimentsRangeId }),
+        logLabel: 'analytics experiments query ok',
+        logContext: { range_id: rangeId, lp_public_id },
+      })
+    },
+  )
+
   server.get<{ Querystring: { workspace_id: string } }>(
     '/v1/analytics/landing-summary',
     { schema: workspaceSchema },
@@ -185,6 +286,41 @@ export async function analyticsRoutes(server: FastifyInstance) {
         emptyValue: emptyLandingPageCardMetrics(),
         run: () => getLandingPageCardMetrics(workspace_id),
         logLabel: 'landing summary query ok',
+      })
+    },
+  )
+
+  server.get<{ Querystring: { workspace_id: string; lp_public_id: string; range_id?: string } }>(
+    '/v1/analytics/alerts',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['workspace_id', 'lp_public_id'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            lp_public_id: { type: 'string', minLength: 1 },
+            range_id: { type: 'string', maxLength: 10 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { workspace_id, lp_public_id, range_id } = request.query
+      const rangeId = range_id?.trim() || DEFAULT_RANGE_ID
+
+      if (!isTrafficRangeId(rangeId)) {
+        return reply.code(400).send({ error: 'Invalid range_id' })
+      }
+
+      await sendAnalyticsQuery({
+        request,
+        reply,
+        workspaceId: workspace_id,
+        emptyValue: emptyAnalyticsAlerts(),
+        run: () => getAnalyticsAlerts({ workspaceId: workspace_id, lpPublicId: lp_public_id, rangeId: rangeId as any }),
+        logLabel: 'analytics alerts query ok',
+        logContext: { range_id: rangeId, lp_public_id },
       })
     },
   )

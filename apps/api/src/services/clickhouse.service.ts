@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS events (
     browser LowCardinality(String) DEFAULT '',
     os LowCardinality(String) DEFAULT '',
     device LowCardinality(String) DEFAULT 'desktop',
+    variant LowCardinality(String) DEFAULT '',
     country LowCardinality(String) DEFAULT 'Unknown',
     city LowCardinality(String) DEFAULT '',
     metric_name LowCardinality(String) DEFAULT '',
@@ -69,6 +70,10 @@ export async function ensureEventsTable(): Promise<void> {
   await ch.command({
     query:
       "ALTER TABLE events ADD COLUMN IF NOT EXISTS lp_public_id LowCardinality(String) DEFAULT ''",
+  })
+  await ch.command({
+    query:
+      "ALTER TABLE events ADD COLUMN IF NOT EXISTS variant LowCardinality(String) DEFAULT ''",
   })
 }
 
