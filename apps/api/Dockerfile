@@ -4,7 +4,7 @@
 # Run locally (env from dashboard .env.local mounted or -e flags):
 #   docker run --rm -p 3001:3001 --env-file apps/dashboard/.env.local -e NODE_ENV=production arohaa-api
 
-FROM node:20-bookworm-slim AS base
+FROM public.ecr.aws/docker/library/node:20-bookworm-slim AS base
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
