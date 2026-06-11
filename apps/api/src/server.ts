@@ -41,7 +41,7 @@ function buildLoggerConfig(): boolean | Record<string, unknown> {
         options: {
           group: '/arohaa/production/fastify-backend',
           stream: 'api-service',
-          aws_region: 'eu-north-1',
+          aws_region: process.env.AWS_REGION?.trim() || 'us-east-1',
           aws_access_key_id: awsKeyId,
           aws_secret_access_key: awsSecret,
           interval: 1_000,
@@ -153,7 +153,8 @@ const start = async () => {
 
     startBufferProcessor({ logger: server.log })
 
-    await server.listen({ port: 3001, host: '0.0.0.0' })
+    const port = Number(process.env.PORT) || 3001
+    await server.listen({ port, host: '0.0.0.0' })
   } catch (err) {
     server.log.error(err)
     Sentry.captureException(err)
