@@ -1,7 +1,47 @@
-import type {
+import type { OverviewDateRangeId } from "@/features/overview/model/overview"
+import type { TrafficBreakdownTable } from "@/features/traffic/model/traffic"
+import type { OverviewDateRangeOption } from "@/features/overview/model/overview"
+
+export type ExperimentVariantId = string
+
+export type ExperimentVariantRef = {
+  id: ExperimentVariantId
+  label: string
+}
+
+export type ExperimentsTabTables = {
+  variantPerformance: TrafficBreakdownTable
+  performanceByLocation: TrafficBreakdownTable
+  winningVariantId: ExperimentVariantId | null
+}
+
+export type ExperimentsByDateRange = Record<
   OverviewDateRangeId,
-  OverviewDateRangeOption,
-} from "@/features/overview/model/overview"
+  ExperimentsTabTables
+>
+
+export type ExperimentTableHighlight = {
+  boldRowVariantIds?: ExperimentVariantId[]
+  boldColumnIds?: string[]
+}
+
+export function experimentHighlightForTables(tables: ExperimentsTabTables): {
+  variantPerformance: ExperimentTableHighlight
+  performanceByLocation: ExperimentTableHighlight
+} {
+  const winner = tables.winningVariantId
+  if (!winner) {
+    return {
+      variantPerformance: {},
+      performanceByLocation: {},
+    }
+  }
+
+  return {
+    variantPerformance: { boldRowVariantIds: [winner] },
+    performanceByLocation: { boldColumnIds: [`${winner}-fsr`] },
+  }
+}
 
 export type ExperimentListRow = {
   id: string

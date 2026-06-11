@@ -1,8 +1,11 @@
 import { auth } from "@/auth"
 import { OnboardingPage } from "@/features/auth/view/OnboardingPage"
+import { pageMetadata } from "@/lib/site-metadata"
 import { db, normalizeUserEmail, whereUserEmail } from "@workspace/database"
 import { redirect } from "next/navigation"
 import { cookies } from "next/headers"
+
+export const metadata = pageMetadata("Complete Your Profile")
 
 export default async function OnboardingRoutePage() {
   const session = await auth()

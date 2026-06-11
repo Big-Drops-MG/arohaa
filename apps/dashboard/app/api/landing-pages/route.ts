@@ -89,14 +89,10 @@ export async function GET() {
   const limited = await enforceLandingApiRateLimit(actor.id)
   if (limited) return limited
 
-  const ws = await getOrCreateOwnerWorkspace(actor.id)
-
   const rows = await db
     .select()
     .from(landingPages)
-    .where(
-      and(eq(landingPages.workspaceId, ws.id), isNull(landingPages.deletedAt))
-    )
+    .where(isNull(landingPages.deletedAt))
     .orderBy(desc(landingPages.createdAt))
 
   return NextResponse.json({ landingPages: rows.map(toJson) })
@@ -268,7 +264,6 @@ export async function POST(request: NextRequest) {
         .from(landingPages)
         .where(
           and(
-            eq(landingPages.workspaceId, ws.id),
             eq(landingPages.normalizedUrl, nu.normalizedUrl),
             isNull(landingPages.deletedAt)
           )
@@ -277,8 +272,7 @@ export async function POST(request: NextRequest) {
       if (dup.length > 0) {
         return NextResponse.json(
           {
-            error:
-              "This landing page URL is already registered for this workspace",
+            error: "This landing page URL is already registered",
           },
           { status: 409 }
         )

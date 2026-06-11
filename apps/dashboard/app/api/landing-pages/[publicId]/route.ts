@@ -1,7 +1,6 @@
-import type { InferSelectModel } from "drizzle-orm"
-import { eq, isNull, and } from "drizzle-orm"
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
+import { eq, isNull, and } from "drizzle-orm"
 import {
   db,
   generateHtmlVerificationToken,
@@ -11,38 +10,18 @@ import {
   normalizedBrandName,
 } from "@workspace/database"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { getActiveLandingPageInWorkspace } from "@/lib/server/landing-pages-store"
+import { toLandingPageRecord } from "@/lib/server/landing-page-json"
+import {
+  parseLandingPageFormType,
+  parseOptionalFaviconUrl,
+  parseOptionalNotes,
+} from "@/lib/server/landing-page-validation"
+import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
 import { buildHtmlVerificationMetaTag } from "@/lib/server/landing-snippet"
 import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
-import { getOrCreateOwnerWorkspace } from "@/lib/server/resolve-workspace"
-
-type LandingRow = InferSelectModel<typeof landingPages>
 
 function traceIdFrom(request: NextRequest): string | null {
   return request.headers.get("x-trace-id")?.trim() || null
-}
-
-function toJson(row: LandingRow) {
-  return {
-    id: row.id,
-    workspaceId: row.workspaceId,
-    publicId: row.publicId,
-    brandName: row.brandName,
-    landingPageUrl: row.landingPageUrl,
-    normalizedUrl: row.normalizedUrl,
-    origin: row.origin,
-    hostname: row.hostname,
-    status: row.status,
-    sdkInstallStatus: row.sdkInstallStatus,
-    verificationMethod: row.verificationMethod,
-    verifiedAt: row.verifiedAt?.toISOString() ?? null,
-    lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
-    lastEventAt: row.lastEventAt?.toISOString() ?? null,
-    formType: row.formType,
-    faviconUrl: row.faviconUrl,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  }
 }
 
 function isUniqueViolation(err: unknown): boolean {
@@ -69,15 +48,13 @@ export async function GET(
   const limited = await enforceLandingApiRateLimit(actor.id)
   if (limited) return limited
 
-  const ws = await getOrCreateOwnerWorkspace(actor.id)
-
   const { publicId } = await context.params
-  const row = await getActiveLandingPageInWorkspace(ws.id, publicId)
+  const row = await getActiveLandingPageByPublicId(publicId)
   if (!row) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
 
-  return NextResponse.json({ landingPage: toJson(row) })
+  return NextResponse.json({ landingPage: toLandingPageRecord(row) })
 }
 
 export async function PATCH(
@@ -91,10 +68,8 @@ export async function PATCH(
   const limited = await enforceLandingApiRateLimit(actor.id)
   if (limited) return limited
 
-  const ws = await getOrCreateOwnerWorkspace(actor.id)
-
   const { publicId } = await context.params
-  const row = await getActiveLandingPageInWorkspace(ws.id, publicId)
+  const row = await getActiveLandingPageByPublicId(publicId)
   if (!row) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
@@ -106,6 +81,10 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
+  if (typeof body !== "object" || body === null) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
+  }
+
   const record = body as Record<string, unknown>
 
   const before = {
@@ -114,6 +93,9 @@ export async function PATCH(
     normalizedUrl: row.normalizedUrl,
     hostname: row.hostname,
     origin: row.origin,
+    formType: row.formType,
+    faviconUrl: row.faviconUrl,
+    notes: row.notes,
     verificationMethod: row.verificationMethod,
     htmlTokenRotated: false,
   }
@@ -154,6 +136,33 @@ export async function PATCH(
     urlChanged = nu.normalizedUrl !== row.normalizedUrl
   }
 
+  let nextFormType = row.formType
+  if ("formType" in record) {
+    const parsed = parseLandingPageFormType(record.formType)
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 })
+    }
+    nextFormType = parsed.value
+  }
+
+  let nextFaviconUrl = row.faviconUrl
+  if ("faviconUrl" in record) {
+    const parsed = parseOptionalFaviconUrl(String(record.faviconUrl))
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 })
+    }
+    nextFaviconUrl = parsed.value
+  }
+
+  let nextNotes = row.notes
+  if ("notes" in record) {
+    const parsed = parseOptionalNotes(record.notes)
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 })
+    }
+    nextNotes = parsed.value
+  }
+
   const nextHtmlVerificationToken =
     urlChanged || !row.htmlVerificationToken
       ? generateHtmlVerificationToken()
@@ -161,29 +170,37 @@ export async function PATCH(
 
   const now = new Date()
 
+  const verificationReset = urlChanged
+    ? {
+        sdkInstallStatus: "waiting" as const,
+        status: "pending_verification" as const,
+        verifiedAt: null as Date | null,
+        verificationMethod: null as string | null,
+        lastSeenAt: null as Date | null,
+        lastEventAt: null as Date | null,
+      }
+    : {}
+
   try {
     await db
       .update(landingPages)
       .set({
         brandName: nextBrand,
         ...urlFields,
+        formType: nextFormType,
+        faviconUrl: nextFaviconUrl,
+        notes: nextNotes,
         htmlVerificationToken: nextHtmlVerificationToken ?? null,
         updatedByUserId: actor.id,
         updatedAt: now,
-        sdkInstallStatus: "waiting",
-        status: "pending_verification",
-        verifiedAt: null,
-        verificationMethod: null,
-        lastSeenAt: null,
-        lastEventAt: null,
+        ...verificationReset,
       })
       .where(eq(landingPages.id, row.id))
   } catch (err) {
     if (isUniqueViolation(err)) {
       return NextResponse.json(
         {
-          error:
-            "This landing page URL is already registered for this workspace",
+          error: "This landing page URL is already registered",
         },
         { status: 409 }
       )
@@ -212,6 +229,9 @@ export async function PATCH(
       normalizedUrl: saved.normalizedUrl,
       hostname: saved.hostname,
       origin: saved.origin,
+      formType: saved.formType,
+      faviconUrl: saved.faviconUrl,
+      notes: saved.notes,
       verificationMethod: saved.verificationMethod,
       htmlTokenRotated: urlChanged,
     },
@@ -224,8 +244,9 @@ export async function PATCH(
       : undefined
 
   return NextResponse.json({
-    landingPage: toJson(saved),
+    landingPage: toLandingPageRecord(saved),
     ...(htmlVerificationMetaTag ? { htmlVerificationMetaTag } : {}),
+    urlChanged,
   })
 }
 
@@ -240,9 +261,8 @@ export async function DELETE(
   const limited = await enforceLandingApiRateLimit(actor.id)
   if (limited) return limited
 
-  const ws = await getOrCreateOwnerWorkspace(actor.id)
   const { publicId } = await context.params
-  const row = await getActiveLandingPageInWorkspace(ws.id, publicId)
+  const row = await getActiveLandingPageByPublicId(publicId)
   if (!row) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }

@@ -47,3 +47,32 @@ export type TrafficDashboardData = {
   referrers: TrafficReferrerRow[]
   utmParameters: TrafficReferrerRow[]
 }
+
+export type TrafficBreakdownColumn = {
+  id: string
+  label: string
+  align?: "left" | "right"
+}
+
+export type TrafficBreakdownTable = {
+  columns: TrafficBreakdownColumn[]
+  rows: TrafficTableRow[]
+}
+
+export type TrafficSourcesData = {
+  referrers: TrafficBreakdownTable
+  utmParameters: TrafficBreakdownTable
+}
+
+export type TrafficTabTables = {
+  byTime: TrafficBreakdownTable
+  byLocation: TrafficBreakdownTable
+  byDevice: TrafficBreakdownTable
+  sources: TrafficSourcesData
+  topPages: TrafficBreakdownTable
+}
+
+export type TrafficTablesByDateRange = Record<
+  OverviewDateRangeId,
+  TrafficTabTables
+>

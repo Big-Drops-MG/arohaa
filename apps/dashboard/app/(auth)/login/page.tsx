@@ -1,7 +1,10 @@
 import { auth } from "@/auth"
 import { LoginPage } from "@/features/auth/view/LoginPage"
+import { pageMetadata } from "@/lib/site-metadata"
 import { redirect } from "next/navigation"
 import { Suspense } from "react"
+
+export const metadata = pageMetadata("Sign In")
 
 export default async function AuthPage(props: {
   searchParams: Promise<{ requiresTwoFactor?: string }>

@@ -5,10 +5,24 @@ import type {
 } from "@/features/overview/model/overview"
 import {
   defaultAlerts,
-  defaultFunnelSteps,
   defaultSegmentStats,
   defaultTrafficStats,
 } from "@/features/overview/controller/overview-default-payload"
+import {
+  defaultFormDropOffByField,
+  defaultFunnelSteps,
+  defaultMultiStepFormTracking,
+} from "@/features/funnel/controller/funnel-default-payload"
+import { defaultTrafficTablesByDateRange } from "@/features/traffic/controller/traffic-default-payload"
+import {
+  defaultEventTrackingByDateRange,
+  defaultEventTrackingKpiSegmentsByDateRange,
+  defaultEventTrackingSubmissionByDateRange,
+} from "@/features/event-tracking/controller/event-tracking-default-payload"
+import { defaultAlertsByDateRange } from "@/features/alerts/controller/alerts-default-payload"
+import { defaultExperimentsByDateRange } from "@/features/experiments/controller/experiments-default-payload"
+import { defaultSegmentsByDateRange } from "@/features/segments/controller/segments-default-payload"
+import { defaultSegmentsPerformanceByDateRange } from "@/features/segments/controller/segments-performance-default-payload"
 
 const emptyKpisByDateRange: OverviewKpiValuesByDateRange = {
   "24h": {},
@@ -21,7 +35,18 @@ const emptyKpisByDateRange: OverviewKpiValuesByDateRange = {
 
 const overviewPlaceholderShell: Omit<
   OverviewDashboardData,
-  "formType" | "funnel"
+  | "formType"
+  | "funnel"
+  | "multiStepFormTracking"
+  | "formDropOffByField"
+  | "trafficTablesByDateRange"
+  | "eventTrackingByDateRange"
+  | "eventTrackingSubmissionByDateRange"
+  | "eventTrackingKpiSegmentsByDateRange"
+  | "segmentsByDateRange"
+  | "segmentsPerformanceByDateRange"
+  | "experimentsByDateRange"
+  | "alertsByDateRange"
 > = {
   dateRangeOptions: [
     { id: "24h", label: "Last 24 hours" },
@@ -37,6 +62,7 @@ const overviewPlaceholderShell: Omit<
   traffic: defaultTrafficStats(),
   segments: defaultSegmentStats(),
   alerts: defaultAlerts,
+  activeUsersNow: "0 Users",
 }
 
 export function getOverviewPlaceholderData(
@@ -48,5 +74,18 @@ export function getOverviewPlaceholderData(
     ...overviewPlaceholderShell,
     formType,
     funnel: defaultFunnelSteps(formType),
+    multiStepFormTracking: defaultMultiStepFormTracking(),
+    formDropOffByField: defaultFormDropOffByField(),
+    trafficTablesByDateRange: defaultTrafficTablesByDateRange(formType),
+    eventTrackingByDateRange: defaultEventTrackingByDateRange(),
+    eventTrackingSubmissionByDateRange:
+      defaultEventTrackingSubmissionByDateRange(),
+    eventTrackingKpiSegmentsByDateRange:
+      defaultEventTrackingKpiSegmentsByDateRange(),
+    segmentsByDateRange: defaultSegmentsByDateRange(),
+    segmentsPerformanceByDateRange:
+      defaultSegmentsPerformanceByDateRange(formType),
+    experimentsByDateRange: defaultExperimentsByDateRange(formType),
+    alertsByDateRange: defaultAlertsByDateRange(),
   }
 }

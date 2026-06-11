@@ -4,6 +4,14 @@ import type {
   OverviewFunnelChangeVariant,
 } from "@/features/overview/model/overview"
 
+export type FunnelChangeVariant = OverviewFunnelChangeVariant
+
+export type FunnelFieldDropOff = {
+  fieldName: string
+  dropOffs: string
+  dropPercent: string
+}
+
 export type FunnelKpiMetricId =
   | "landing-page-visits"
   | "interactions"

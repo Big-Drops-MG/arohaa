@@ -1,5 +1,17 @@
 import { notFound } from "next/navigation"
+import { defaultAlertsByDateRange } from "@/features/alerts/controller/alerts-default-payload"
+import { defaultEventTrackingByDateRange } from "@/features/event-tracking/controller/event-tracking-default-payload"
+import { defaultEventTrackingKpiSegmentsByDateRange } from "@/features/event-tracking/controller/event-tracking-default-payload"
+import { defaultEventTrackingSubmissionByDateRange } from "@/features/event-tracking/controller/event-tracking-default-payload"
+import { defaultExperimentsByDateRange } from "@/features/experiments/controller/experiments-default-payload"
+import {
+  defaultFormDropOffByField,
+  defaultMultiStepFormTracking,
+} from "@/features/funnel/controller/funnel-default-payload"
 import { getOverviewPlaceholderData } from "@/features/overview/controller/overview-placeholder-data"
+import { defaultSegmentsByDateRange } from "@/features/segments/controller/segments-default-payload"
+import { defaultSegmentsPerformanceByDateRange } from "@/features/segments/controller/segments-performance-default-payload"
+import { defaultTrafficTablesByDateRange } from "@/features/traffic/controller/traffic-default-payload"
 import type {
   OverviewAlert,
   OverviewDashboardData,
@@ -39,6 +51,11 @@ function fmtDuration(secs: number): string {
   if (!secs || secs < 1) return "-"
   if (secs < 60) return `${Math.round(secs)}s`
   return `${Math.floor(secs / 60)}m ${Math.round(secs % 60)}s`
+}
+
+function fmtActiveUsers(count: number): string {
+  const n = Math.max(0, Math.floor(count))
+  return `${n.toLocaleString("en-US")} User${n === 1 ? "" : "s"}`
 }
 
 // ── transform ─────────────────────────────────────────────────────────────────
@@ -112,9 +129,23 @@ function buildOverviewFromAnalytics(
     kpisByDateRange,
     defaultKpiMetricId: "visitors",
     funnel,
+    multiStepFormTracking: defaultMultiStepFormTracking(),
+    formDropOffByField: defaultFormDropOffByField(),
     traffic,
     segments,
     alerts,
+    activeUsersNow: fmtActiveUsers(data.activeUsersNow),
+    trafficTablesByDateRange: defaultTrafficTablesByDateRange(formType),
+    eventTrackingByDateRange: defaultEventTrackingByDateRange(),
+    eventTrackingSubmissionByDateRange:
+      defaultEventTrackingSubmissionByDateRange(),
+    eventTrackingKpiSegmentsByDateRange:
+      defaultEventTrackingKpiSegmentsByDateRange(),
+    segmentsByDateRange: defaultSegmentsByDateRange(),
+    segmentsPerformanceByDateRange:
+      defaultSegmentsPerformanceByDateRange(formType),
+    experimentsByDateRange: defaultExperimentsByDateRange(formType),
+    alertsByDateRange: defaultAlertsByDateRange(),
     kpiSeriesByDateRange,
   }
 }

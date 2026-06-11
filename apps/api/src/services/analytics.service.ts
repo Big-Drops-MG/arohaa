@@ -30,6 +30,7 @@ export interface AnalyticsOverview {
   topCity: string
   bestDayLabel: string
   hasEvents24h: boolean
+  activeUsersNow: number
 }
 
 type CHJson<T> = { data: T[] }
@@ -155,7 +156,12 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
             uniqExactIf(user_id, event_name = 'page_view') AS vis_24m,
             uniqExact(session_id) AS ses_24m,
             countIf(event_name = 'page_view') AS pv_24m,
-            uniqExactIf(session_id, event_name = 'form_success') AS fs_24m
+            uniqExactIf(session_id, event_name = 'form_success') AS fs_24m,
+            uniqExactIf(
+              user_id,
+              created_at >= now() - INTERVAL 5 MINUTE
+                AND event_name IN ('heartbeat', 'page_view')
+            ) AS active_users_now
           FROM events
           WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 24 MONTH
         `,
@@ -323,6 +329,7 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
     topCity: cityRow?.city ?? '-',
     bestDayLabel: DOW[dowRow?.dow ?? ''] ?? '-',
     hasEvents24h: n(kd.ses_24h) > 0,
+    activeUsersNow: n(kd.active_users_now),
   }
 }
 

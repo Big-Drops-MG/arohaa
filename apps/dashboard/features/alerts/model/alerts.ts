@@ -1,7 +1,10 @@
 import type {
+  OverviewAlert,
   OverviewDateRangeId,
   OverviewDateRangeOption,
 } from "@/features/overview/model/overview"
+
+export type AlertsByDateRange = Record<OverviewDateRangeId, OverviewAlert[]>
 
 export type AlertsListItemSeverity = "warning" | "info"
 

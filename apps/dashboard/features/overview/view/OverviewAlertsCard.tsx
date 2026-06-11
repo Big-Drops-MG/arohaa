@@ -3,6 +3,7 @@
 import { useMemo } from "react"
 import { AlertTriangle, Bell, CircleAlert } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
+import { AlertSeverityIcon } from "@/features/alerts/view/AlertSeverityIcon"
 import {
   Card,
   CardContent,
@@ -74,19 +75,8 @@ function rowClassName(severity: OverviewAlertSeverity) {
 }
 
 function RowIcon({ severity }: { severity: OverviewAlertSeverity }) {
-  if (severity === "warning") {
-    return (
-      <AlertTriangle
-        className="mt-0.5 size-4 shrink-0 text-orange-600"
-        aria-hidden
-      />
-    )
-  }
-  if (severity === "alert") {
-    return <Bell className="mt-0.5 size-4 shrink-0 text-sky-600" aria-hidden />
-  }
   return (
-    <CircleAlert className="mt-0.5 size-4 shrink-0 text-red-600" aria-hidden />
+    <AlertSeverityIcon severity={severity} className="mt-0.5 size-4 shrink-0" />
   )
 }
 

@@ -1,4 +1,7 @@
 import { ForgotPasswordMessageScreen } from "@/features/auth/view/ForgotPasswordMessageScreen"
+import { pageMetadata } from "@/lib/site-metadata"
+
+export const metadata = pageMetadata("Check Your Email")
 
 export default async function MessageScreenPage({
   searchParams,
