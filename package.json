@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "turbo build",
-    "kill:dev": "powershell -NoProfile -Command \"$ErrorActionPreference='SilentlyContinue'; Get-NetTCPConnection -LocalPort 3000,3001,3002 | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force }; exit 0\"",
+    "kill:dev": "node scripts/kill-dev-ports.mjs",
     "predev": "pnpm kill:dev",
     "predev:web": "pnpm kill:dev",
     "dev": "turbo dev --continue",
