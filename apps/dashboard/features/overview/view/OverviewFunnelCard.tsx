@@ -5,26 +5,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@workspace/ui/components/card"
+import { FunnelTrendBadge } from "@/features/funnel/view/FunnelTrendBadge"
 import {
   overviewAnalyticCardHeaderClassName,
   overviewAnalyticCardShellClassName,
   overviewSectionHeadingClassName,
 } from "@/features/overview/view/overview-card-density"
 import { overviewCardPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
-import type {
-  OverviewFunnelChangeVariant,
-  OverviewFunnelStep,
-} from "@/features/overview/model/overview"
-
-function changeBadgeClass(variant: OverviewFunnelChangeVariant | undefined) {
-  if (variant === "positive") {
-    return "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-600/15"
-  }
-  if (variant === "negative") {
-    return "bg-red-50 text-red-800 ring-1 ring-red-600/15"
-  }
-  return "bg-muted text-muted-foreground ring-1 ring-border"
-}
+import type { OverviewFunnelStep } from "@/features/overview/model/overview"
 
 type OverviewFunnelCardProps = {
   steps: OverviewFunnelStep[]
@@ -62,14 +50,10 @@ export function OverviewFunnelCard({ steps }: OverviewFunnelCardProps) {
               </p>
             </div>
             {step.change ? (
-              <span
-                className={cn(
-                  "shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums",
-                  changeBadgeClass(step.changeVariant)
-                )}
-              >
-                {step.change}
-              </span>
+              <FunnelTrendBadge
+                change={step.change}
+                variant={step.changeVariant}
+              />
             ) : null}
           </div>
         ))}

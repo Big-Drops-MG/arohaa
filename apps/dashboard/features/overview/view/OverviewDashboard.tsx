@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { cn } from "@workspace/ui/lib/utils"
+import type { FunnelDashboardData } from "@/features/funnel/model/funnel"
 import {
   overviewKpiLabelsForFormType,
   type OverviewDashboardData,
-  type OverviewDateRangeId,
+  type OverviewFunnelStep,
   type OverviewKpiMetricId,
 } from "@/features/overview/model/overview"
 import { overviewChartPointsForRange } from "@/features/overview/utils/overview-chart-buckets"
@@ -18,9 +19,11 @@ import { OverviewKpiRow } from "@/features/overview/view/OverviewKpiRow"
 import { OverviewPerformanceChart } from "@/features/overview/view/OverviewPerformanceChart"
 import { OverviewSegmentsCard } from "@/features/overview/view/OverviewSegmentsCard"
 import { OverviewTrafficCard } from "@/features/overview/view/OverviewTrafficCard"
+import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
 type OverviewDashboardProps = {
   data: OverviewDashboardData
+  projectId: string
 }
 
 function valueSuffixForMetric(id: OverviewKpiMetricId): string | undefined {
@@ -28,14 +31,26 @@ function valueSuffixForMetric(id: OverviewKpiMetricId): string | undefined {
   return undefined
 }
 
-export function OverviewDashboard({ data }: OverviewDashboardProps) {
-  const [dateRangeId, setDateRangeId] = useState<OverviewDateRangeId>(
-    data.defaultDateRangeId
-  )
+function funnelStepsFromApiPayload(
+  payload: FunnelDashboardData
+): OverviewFunnelStep[] {
+  return payload.metrics.map((metric) => ({
+    label: metric.label,
+    value: metric.value,
+    change: metric.change,
+    changeVariant: metric.changeVariant,
+  }))
+}
+
+export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
+  const { dateRangeId, setDateRangeId } = useDashboardDateRange()
   const [activeKpiId, setActiveKpiId] = useState<OverviewKpiMetricId>(
     data.defaultKpiMetricId
   )
-
+  const [funnelSteps, setFunnelSteps] = useState<OverviewFunnelStep[]>(
+    data.funnel
+  )
+  const [isFunnelLoading, setIsFunnelLoading] = useState(false)
   const [chartNowNonce, setChartNowNonce] = useState(0)
 
   useEffect(() => {
@@ -44,6 +59,42 @@ export function OverviewDashboard({ data }: OverviewDashboardProps) {
     }, 60_000)
     return () => window.clearInterval(id)
   }, [])
+
+  const fetchFunnelForRange = useCallback(
+    async (rangeId: typeof dateRangeId, signal?: AbortSignal) => {
+      setIsFunnelLoading(true)
+
+      const url = `/api/landing-pages/${encodeURIComponent(projectId)}/funnel?range_id=${encodeURIComponent(rangeId)}`
+      try {
+        const res = await fetch(url, { cache: "no-store", signal })
+        if (!res.ok) return
+        const payload = (await res.json()) as FunnelDashboardData
+        setFunnelSteps(funnelStepsFromApiPayload(payload))
+      } catch (err) {
+        if (signal?.aborted) return
+        if (process.env.NODE_ENV === "development") {
+          console.error("[overview] funnel fetch failed", err)
+        }
+      } finally {
+        if (!signal?.aborted) {
+          setIsFunnelLoading(false)
+        }
+      }
+    },
+    [projectId]
+  )
+
+  useEffect(() => {
+    if (dateRangeId === data.defaultDateRangeId) {
+      setFunnelSteps(data.funnel)
+      setIsFunnelLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+    void fetchFunnelForRange(dateRangeId, controller.signal)
+    return () => controller.abort()
+  }, [dateRangeId, data, fetchFunnelForRange])
 
   const chartPoints = useMemo(() => {
     void chartNowNonce
@@ -84,7 +135,12 @@ export function OverviewDashboard({ data }: OverviewDashboardProps) {
       />
 
       <div className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-[3fr_7fr] lg:items-stretch lg:[&>*]:min-h-0">
-        <OverviewFunnelCard steps={data.funnel} />
+        <div
+          className={cn(isFunnelLoading && "pointer-events-none opacity-60")}
+          aria-busy={isFunnelLoading}
+        >
+          <OverviewFunnelCard steps={funnelSteps} />
+        </div>
         <OverviewPerformanceChart
           points={chartPoints}
           metricLabel={activeKpiLabel}

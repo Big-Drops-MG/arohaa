@@ -35,3 +35,84 @@ export interface LandingPageCardMetrics {
   formSubmissions7d: number
   bounceRate7d: number
 }
+
+export interface AnalyticsTrafficKpis {
+  activeUsersNow: number
+  visitors: number
+  sessions: number
+  pageViews: number
+  bounceRate: number
+}
+
+export interface AnalyticsTrafficByTimeRow {
+  date: string
+  visitors: number
+  sessions: number
+  formSubmitted: number
+}
+
+export interface AnalyticsTrafficByDeviceRow {
+  device: string
+  visitors: number
+  formSubmitted: number
+  fsr: number
+}
+
+export interface AnalyticsTopPageRow {
+  page: string
+  visitors: number
+}
+
+export interface AnalyticsTrafficByLocationRow {
+  city: string
+  visitors: number
+  formSubmitted: number
+  fsr: number
+}
+
+export interface AnalyticsTrafficReferrerRow {
+  domain: string
+  visitors: number
+}
+
+export interface AnalyticsTrafficUtmRow {
+  domain: string
+  visitors: number
+}
+
+export interface AnalyticsTraffic {
+  rangeId: RangeId
+  kpis: AnalyticsTrafficKpis
+  trafficByTime: AnalyticsTrafficByTimeRow[]
+  trafficByDevice: AnalyticsTrafficByDeviceRow[]
+  topPages: AnalyticsTopPageRow[]
+  trafficByLocation: AnalyticsTrafficByLocationRow[]
+  referrers: AnalyticsTrafficReferrerRow[]
+  utmParameters: AnalyticsTrafficUtmRow[]
+}
+
+export interface AnalyticsFunnelMetric {
+  label: string
+  count: number
+  changePct: number | null
+}
+
+export interface AnalyticsFunnelStep {
+  label: string
+  count: number
+  changePct: number | null
+}
+
+export interface AnalyticsFunnelDropOffRow {
+  fieldName: string
+  dropOffs: number
+  percentDrop: number
+  emphasized: boolean
+}
+
+export interface AnalyticsFunnel {
+  rangeId: RangeId
+  metrics: AnalyticsFunnelMetric[]
+  multiStepSteps: AnalyticsFunnelStep[]
+  dropOffRows: AnalyticsFunnelDropOffRow[]
+}

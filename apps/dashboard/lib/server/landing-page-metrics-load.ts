@@ -1,6 +1,10 @@
 import type { LandingPageMetric } from "@/features/dashboard/model/landing-page"
 import { emptyLandingPageMetrics } from "@/features/dashboard/model/landing-page"
 import type { LandingPageCardMetrics } from "@/lib/server/analytics-types"
+import {
+  resolveIngestApiBase,
+  resolveInternalApiSecret,
+} from "@/lib/server/analytics-env"
 
 function fmtCount(v: number): string {
   if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`
@@ -26,10 +30,8 @@ export function buildLandingPageMetrics(
 export async function fetchLandingPageCardMetrics(
   landingPageId: string
 ): Promise<LandingPageMetric[]> {
-  const apiBase =
-    process.env.INGEST_BASE_URL?.trim() ||
-    process.env.NEXT_PUBLIC_AROHAA_INGEST_API_BASE?.trim()
-  const secret = process.env.AROHAA_INTERNAL_API_SECRET?.trim()
+  const apiBase = resolveIngestApiBase()
+  const secret = resolveInternalApiSecret()
 
   if (!apiBase || !secret) {
     return emptyLandingPageMetrics

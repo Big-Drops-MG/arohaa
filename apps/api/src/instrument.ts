@@ -32,6 +32,8 @@ function loadLocalEnv(): void {
   const candidates = [
     path.join(apiRoot, '.env.local'),
     path.join(apiRoot, '.env'),
+    path.join(repoRoot, '.env.local'),
+    path.join(repoRoot, '.env'),
     path.join(repoRoot, 'apps', 'dashboard', '.env.local'),
     path.join(repoRoot, 'apps', 'dashboard', '.env'),
   ]

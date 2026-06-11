@@ -1,16 +1,18 @@
 import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
-import { bootstrapDatabaseEnv } from './config/env';
-import * as authSchema from './schema/auth';
-import * as landingSchema from './schema/landing-pages';
-import * as tokenSchema from './schema/tokens';
-import * as workspaceSchema from './schema/workspace';
+import { bootstrapDatabaseEnv } from './config/env.js';
+import * as authSchema from './schema/auth.js';
+import * as landingSchema from './schema/landing-pages.js';
+import * as tokenSchema from './schema/tokens.js';
+import * as workspaceSchema from './schema/workspace.js';
+import * as experimentsSchema from './schema/experiments.js';
 
 const schema = {
   ...authSchema,
   ...landingSchema,
   ...workspaceSchema,
   ...tokenSchema,
+  ...experimentsSchema,
 };
 
 bootstrapDatabaseEnv(import.meta.url);
@@ -31,13 +33,16 @@ function resolveDatabaseUrl(): string {
 const sql = neon(resolveDatabaseUrl());
 export const db = drizzle(sql, { schema });
 
-export * from './schema/auth';
-export * from './schema/landing-pages';
-export * from './schema/workspace';
-export * from './schema/tokens';
-export * from './email';
-export * from './landing/normalizeLandingPageUrl';
-export * from './landing/generatePublicLandingId';
-export * from './landing/htmlVerificationToken';
+export * from './schema/auth.js';
+export * from './schema/landing-pages.js';
+export * from './schema/workspace.js';
+export * from './schema/tokens.js';
+export * from './schema/experiments.js';
+export * from './email.js';
+export * from './landing/normalizeLandingPageUrl.js';
+export * from './landing/generatePublicLandingId.js';
+export * from './landing/htmlVerificationToken.js';
+
+export * from 'drizzle-orm';
 
 export const clickhouse = null;
