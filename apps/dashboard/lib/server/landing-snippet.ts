@@ -25,7 +25,9 @@ export function buildLandingSdkScriptTag(
   const page = escapeHtmlAttribute(options.pageHostname)
   const formType = options.formType ?? "single"
   const ft = escapeHtmlAttribute(formType)
-  return `<script src="${src}" async data-wid="${wid}" data-api="${api}" data-lp-id="${lp}" data-page="${page}" data-formtype="${ft}"></script>`
+  const stub = `<script>!function(w){if(w.arohaa)return;var a=function(){(a.q=a.q||[]).push(arguments)};a.q=[];a.l=Date.now();w.arohaa=a}(window);</script>`
+  const tag = `<script src="${src}" async data-wid="${wid}" data-api="${api}" data-lp-id="${lp}" data-page="${page}" data-formtype="${ft}"></script>`
+  return `${stub}\n${tag}`
 }
 
 export function buildHtmlVerificationMetaTag(

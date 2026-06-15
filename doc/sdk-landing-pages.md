@@ -8,7 +8,7 @@ The browser SDK:
 
 - Loads asynchronously so it does not block rendering.
 - Queues calls made before the main bundle finishes loading (snippet + command queue).
-- Sends events to your ingestion API at `{apiBase}/v1/ingest` using `fetch` (with `keepalive` where appropriate) and `sendBeacon` when the page is hidden.
+- Sends events to your ingestion API at `{apiBase}/v1/ingest` using `fetch` (with `keepalive` where appropriate). Conversion events (`form_success`, `form_submit`, `zip_submit`, `call_click`) and any send while the page is hidden use `sendBeacon`, so a conversion fired right before a redirect still reaches the API.
 - Persists a durable anonymous `uid`, a sliding session `sid`, and a lightweight `fp` fingerprint in `localStorage` (privacy-oriented, no invasive cookies for identity).
 - Attaches marketing fields from the current URL (UTM parameters) and `document.referrer` on every event.
 - Optionally records Core Web Vitals (LCP, CLS, INP) and periodic visibility-aware heartbeats for engagement metrics.
@@ -202,7 +202,7 @@ if (typeof window !== "undefined" && window.arohaa) {
 ```
 
 - **Buttons:** `click` listener on `document` (event delegation) or per-element `addEventListener` after `DOMContentLoaded`.
-- **Forms:** `form.addEventListener("submit", …)` — call `window.arohaa` before or after `preventDefault` depending on whether you handle AJAX yourself; the SDK does not auto-track forms.
+- **Forms:** the SDK auto-tracks real `<form>` elements (start, field focus/abandon, and `form_success` on a same-origin `/api/submit-form` POST). For custom/div-based, multi-step, or off-site-submitting forms, fire the events in [Conversion and funnel events](#conversion-and-funnel-events) yourself.
 - **Outbound links:** on `click`, fire `window.arohaa` then allow default navigation (the browser may use `sendBeacon` when the page unloads).
 
 ### Calling the SDK
@@ -220,6 +220,34 @@ window.arohaa.track("checkout_started", { step: 1 })
 ```
 
 Queued stub calls are replayed automatically when the full SDK initializes.
+
+### Conversion and funnel events
+
+The dashboard's Funnel and Event Tracking screens count specific event names. Auto-tracking only fires these on pages that use a real `<form>` element and submit same-origin to `/api/submit-form`. On sites built without a `<form>` (custom/div-based or multi-step funnels) or that submit off-site and redirect, fire these events yourself so the funnel populates:
+
+```javascript
+// when the user begins the form/funnel
+window.arohaa("form_start")
+
+// multi-step funnels: once per step (stepIndex is a number >= 1)
+window.arohaa("form_step_view", { stepIndex: 1 })
+
+// single/multi forms: optional, powers Form Drop-off by Field
+window.arohaa("form_field_focus", { fieldName: "email" })
+
+// on successful submit, immediately before any redirect
+window.arohaa("form_success")
+```
+
+Which events matter per `data-formtype`:
+
+| `data-formtype` | Funnel labels                 | Fire these                                                                           |
+| --------------- | ----------------------------- | ------------------------------------------------------------------------------------ |
+| `zip`           | Zip Started / Zip Submitted   | `form_start`, `form_success`, plus `zip_submit` (Event Tracking)                     |
+| `single`        | Form Started / Form Submitted | `form_start`, `form_success`, optional `form_field_focus`                            |
+| `multiple`      | Form Started / Form Submitted | `form_start`, `form_step_view` per step, `form_success`, optional `form_field_focus` |
+
+Event Tracking also counts `zip_submit` and `call_click` (e.g. fire `call_click` on a click-to-call link). `form_success` is the canonical "submitted" event used across Overview, Funnel, Traffic, Segments, and Experiments.
 
 ## Alternative: single script tag (no snippet)
 

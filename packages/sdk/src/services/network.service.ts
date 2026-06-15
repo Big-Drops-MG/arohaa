@@ -2,6 +2,13 @@ import type { EventPayload } from "../types"
 import { getConfig } from "../model/config"
 import { saveToOutbox, type SendOutcome } from "../network/retry"
 
+const CONVERSION_EVENTS = new Set([
+  "form_success",
+  "form_submit",
+  "zip_submit",
+  "call_click",
+])
+
 function getIngestUrl(): string | null {
   const { apiBase } = getConfig()
   if (!apiBase) {
@@ -17,16 +24,23 @@ function isPageHidden(): boolean {
   )
 }
 
+function preferBeacon(payload: EventPayload): boolean {
+  return isPageHidden() || CONVERSION_EVENTS.has(payload.ev)
+}
+
 export async function attemptSend(payload: EventPayload): Promise<SendOutcome> {
   const url = getIngestUrl()
   if (!url) return "permanent"
 
   const body = JSON.stringify(payload)
 
-  if (isPageHidden() && typeof navigator !== "undefined" && navigator.sendBeacon) {
+  if (
+    preferBeacon(payload) &&
+    typeof navigator !== "undefined" &&
+    navigator.sendBeacon
+  ) {
     const blob = new Blob([body], { type: "application/json" })
-    const queued = navigator.sendBeacon(url, blob)
-    return queued ? "ok" : "transient"
+    if (navigator.sendBeacon(url, blob)) return "ok"
   }
 
   try {
