@@ -7,8 +7,7 @@ import {
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { getActiveLandingPageInWorkspace } from "@/lib/server/landing-pages-store"
-import { getOrCreateOwnerWorkspace } from "@/lib/server/resolve-workspace"
+import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
 
 interface AnalyticsAlertItem {
   id: string
@@ -96,12 +95,11 @@ export async function loadAlertsDashboardData({
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
 
-  const ws = await getOrCreateOwnerWorkspace(actor.id)
-  const row = await getActiveLandingPageInWorkspace(ws.id, landingPagePublicId)
+  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
   if (!row) notFound()
 
   const analytics = await fetchAlertsAnalytics(
-    ws.id,
+    row.id,
     landingPagePublicId,
     rangeId
   )
@@ -129,14 +127,13 @@ export async function loadAlertsDashboardDataForApi(
     return { ok: false, status: 401, error: "Unauthorized" }
   }
 
-  const ws = await getOrCreateOwnerWorkspace(actor.id)
-  const row = await getActiveLandingPageInWorkspace(ws.id, landingPagePublicId)
+  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
   if (!row) {
     return { ok: false, status: 404, error: "Not found" }
   }
 
   const analytics = await fetchAlertsAnalytics(
-    ws.id,
+    row.id,
     landingPagePublicId,
     rangeId
   )

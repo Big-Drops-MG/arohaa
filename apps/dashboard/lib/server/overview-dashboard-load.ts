@@ -26,8 +26,7 @@ import {
   fetchFunnelAnalytics,
 } from "@/lib/server/funnel-dashboard-load"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { getActiveLandingPageInWorkspace } from "@/lib/server/landing-pages-store"
-import { getOrCreateOwnerWorkspace } from "@/lib/server/resolve-workspace"
+import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
 import type { AnalyticsOverview, RangeId } from "@/lib/server/analytics-types"
 import {
   resolveIngestApiBase,
@@ -159,8 +158,7 @@ export async function loadOverviewDashboardData(
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
 
-  const ws = await getOrCreateOwnerWorkspace(actor.id)
-  const row = await getActiveLandingPageInWorkspace(ws.id, landingPagePublicId)
+  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
   if (!row) notFound()
 
   const formType = parseOverviewLandingFormType(row.formType)

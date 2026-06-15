@@ -21,8 +21,7 @@ import {
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { getActiveLandingPageInWorkspace } from "@/lib/server/landing-pages-store"
-import { getOrCreateOwnerWorkspace } from "@/lib/server/resolve-workspace"
+import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
 
 export { parseTrafficRangeId as parseFunnelRangeId } from "@/features/traffic/model/traffic-range"
 
@@ -161,8 +160,7 @@ export async function loadFunnelDashboardData({
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
 
-  const ws = await getOrCreateOwnerWorkspace(actor.id)
-  const row = await getActiveLandingPageInWorkspace(ws.id, landingPagePublicId)
+  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
   if (!row) notFound()
 
   const formType = parseOverviewLandingFormType(row.formType)
@@ -189,8 +187,7 @@ export async function loadFunnelDashboardDataForApi(
     return { ok: false, status: 401, error: "Unauthorized" }
   }
 
-  const ws = await getOrCreateOwnerWorkspace(actor.id)
-  const row = await getActiveLandingPageInWorkspace(ws.id, landingPagePublicId)
+  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
   if (!row) {
     return { ok: false, status: 404, error: "Not found" }
   }
@@ -218,8 +215,7 @@ export async function loadOverviewFunnelSteps({
   const actor = await requireLandingPageActor()
   if (!actor) return null
 
-  const ws = await getOrCreateOwnerWorkspace(actor.id)
-  const row = await getActiveLandingPageInWorkspace(ws.id, landingPagePublicId)
+  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
   if (!row) return null
 
   const formType = parseOverviewLandingFormType(row.formType)
