@@ -23,6 +23,27 @@ COPY packages/eslint-config/package.json packages/eslint-config/
 
 RUN pnpm install --frozen-lockfile --filter @workspace/api...
 
+# Download the free DB-IP City Lite GeoIP database (mmdb). No account/key required.
+# Tries the current month, then falls back to the previous month near month boundaries.
+FROM base AS geoip
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl ca-certificates gzip \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /geoip
+RUN set -eux; \
+  CUR="$(date -u +%Y-%m)"; \
+  PREV="$(date -u -d "$(date -u +%Y-%m-01) -1 day" +%Y-%m)"; \
+  ok=0; \
+  for M in "$CUR" "$PREV"; do \
+    if curl -fSL "https://download.db-ip.com/free/dbip-city-lite-${M}.mmdb.gz" -o dbip.mmdb.gz; then ok=1; break; fi; \
+  done; \
+  test "$ok" = "1"; \
+  gunzip -c dbip.mmdb.gz > dbip-city-lite.mmdb; \
+  rm -f dbip.mmdb.gz; \
+  ls -la dbip-city-lite.mmdb
+
 FROM base AS runner
 
 WORKDIR /app
@@ -40,6 +61,8 @@ COPY apps/api/src apps/api/src
 COPY packages/database/package.json packages/database/
 COPY packages/database/src packages/database/src
 COPY packages/typescript-config packages/typescript-config
+
+COPY --from=geoip /geoip/dbip-city-lite.mmdb apps/api/geoip/dbip-city-lite.mmdb
 
 WORKDIR /app/apps/api
 

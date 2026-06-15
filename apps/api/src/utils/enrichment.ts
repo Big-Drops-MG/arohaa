@@ -1,15 +1,13 @@
 import { UAParser } from 'ua-parser-js'
 import type { FastifyRequest } from 'fastify'
+import { lookupGeoIp, type GeoInfo } from '../services/geo.service.js'
+
+export type { GeoInfo }
 
 export interface UserAgentInfo {
   browser: string
   os: string
   device: string
-}
-
-export interface GeoInfo {
-  country: string
-  city: string
 }
 
 export interface EnrichmentContext {
@@ -47,16 +45,12 @@ export function extractClientIp(request: FastifyRequest): string {
   return ip
 }
 
-export function lookupGeo(_ip: string): GeoInfo {
-  return { country: 'Unknown', city: '' }
-}
-
 export function buildEnrichmentContext(
   request: FastifyRequest,
 ): EnrichmentContext {
   const ip = extractClientIp(request)
   const uaHeader = request.headers['user-agent']
   const ua = parseUserAgent(typeof uaHeader === 'string' ? uaHeader : undefined)
-  const geo = lookupGeo(ip)
+  const geo = lookupGeoIp(ip)
   return { ip, ua, geo }
 }

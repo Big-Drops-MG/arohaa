@@ -34,3 +34,6 @@ npm-debug.log*
 # Misc
 .DS_Store
 *.pem
+
+# GeoIP databases (downloaded at build time / locally; never commit)
+*.mmdb

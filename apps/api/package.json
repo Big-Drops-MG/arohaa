@@ -9,7 +9,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "dotenv": "^16.6.1",
     "@clickhouse/client": "^1.14.0",
     "@fastify/cors": "^11.2.0",
     "@fastify/rate-limit": "^10.3.0",
@@ -17,9 +16,11 @@
     "@neondatabase/serverless": "^1.1.0",
     "@sentry/node": "^10.51.0",
     "@workspace/database": "workspace:*",
+    "dotenv": "^16.6.1",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.2.1",
     "ioredis": "^5.10.1",
+    "maxmind": "^5.0.6",
     "pino-cloudwatch": "^0.7.0",
     "tsx": "^4.21.0",
     "ua-parser-js": "^2.0.9"

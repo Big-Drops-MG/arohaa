@@ -367,6 +367,7 @@ export function emptyAnalyticsOverview(): AnalyticsOverview {
     topCity: '-',
     bestDayLabel: '-',
     hasEvents24h: false,
+    activeUsersNow: 0,
   }
 }
 

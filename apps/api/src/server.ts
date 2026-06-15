@@ -15,6 +15,7 @@ import {
   closeClickHouseClient,
   ensureEventsTable,
 } from './services/clickhouse.service.js'
+import { initGeo } from './services/geo.service.js'
 import {
   startBufferProcessor,
   stopBufferProcessor,
@@ -150,6 +151,8 @@ const start = async () => {
         'clickhouse schema setup failed; API will start but ingest/analytics may fail until ClickHouse is reachable',
       )
     }
+
+    await initGeo(server.log)
 
     startBufferProcessor({ logger: server.log })
 

@@ -22,3 +22,9 @@ docs
 scripts
 *.md
 !apps/api/Dockerfile
+
+# GeoIP DB is downloaded inside the image build; never ship the local copy
+**/geoip
+*.mmdb
+# Local scratch/validation file, not part of the API
+apps/api/src/_geo-check.ts
