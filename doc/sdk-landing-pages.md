@@ -252,6 +252,29 @@ The SDK fires these without manual `window.arohaa` calls when markup matches the
 
 Set `data-formtype="zip"` on the SDK script. On submit, the SDK fires `form_submit`, `form_success`, and `zip_submit` before the browser navigates away.
 
+**Do not navigate synchronously right after a conversion (important)**
+
+Conversion events (`form_success`, `form_submit`, `zip_submit`, `call_click`) are sent with `navigator.sendBeacon` using an `application/json` body. Cross-origin, that body is **not** a CORS-safelisted content type, so the beacon triggers a CORS preflight. If your handler redirects in the same tick (for example `e.preventDefault()` then an immediate `window.location.href = ...`), the navigation can **cancel the in-flight preflighted beacon before it reaches the API**. The symptom is `form_start` showing up in the dashboard while `form_success` / `zip_submit` stay at zero, because `form_start` fires earlier (on focus) with nothing navigating right after it.
+
+This is the most common reason zip submissions are tracked as started but never submitted. Two safe patterns:
+
+1. **Let the real `<form>` navigate natively.** Put the destination on the form (`action` + `method`) and do not call `preventDefault()`. The SDK fires the conversion beacons on the `submit` event (capture phase) and the browser then navigates.
+2. **If you must build the redirect URL in JS, defer the navigation a moment** so the beacon can flush. The SDK already dispatched the beacon on the `submit` event before your handler runs; a short delay just keeps the page alive long enough for it to complete:
+
+```javascript
+function handleSubmit(e) {
+  e.preventDefault()
+  const redirectUrl = buildRedirectUrl() // your params, UTM, zip, etc.
+  // SDK already fired form_submit / form_success / zip_submit on this submit event.
+  // Give the beacon ~300ms to flush before unloading the page.
+  setTimeout(() => {
+    window.location.href = redirectUrl
+  }, 300)
+}
+```
+
+Do **not** add a manual `window.arohaa("form_success")` in the same handler when the SDK already auto-tracks the `<form>` submit — it produces a duplicate `form_success`. Rely on the auto-tracking, or fire manual events only for div/JS-based funnels the SDK cannot see (see [Manual conversion events](#manual-conversion-events)).
+
 ### Manual conversion events
 
 Fire these yourself when auto-tracking cannot see the interaction:
@@ -320,12 +343,13 @@ Browser `POST` requests to the API are cross-origin unless the page is served fr
 
 ## Troubleshooting
 
-| Symptom                                  | Likely cause                                                                                                     |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Console: missing `data-wid` / `data-api` | Attributes not on the script that loads `sdk.js`, or snippet did not pass `apiBase` so `data-api` was never set. |
-| CORS errors in Network tab               | API `Access-Control-Allow-Origin` does not include the page origin.                                              |
-| Events only appear after reconnect       | Working as designed: outbox drains on `online` / visibility / load after transient failures.                     |
-| 400 from API                             | Body failed JSON schema validation (event name pattern, UUID format for `wid`, etc.).                            |
+| Symptom                                                         | Likely cause                                                                                                                                                                                             |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Console: missing `data-wid` / `data-api`                        | Attributes not on the script that loads `sdk.js`, or snippet did not pass `apiBase` so `data-api` was never set.                                                                                         |
+| CORS errors in Network tab                                      | API `Access-Control-Allow-Origin` does not include the page origin.                                                                                                                                      |
+| Events only appear after reconnect                              | Working as designed: outbox drains on `online` / visibility / load after transient failures.                                                                                                             |
+| `form_start` tracked but `form_success` / `zip_submit` are zero | Page redirects synchronously after submit and cancels the conversion beacon. Let the form navigate natively or defer the redirect ~300ms (see "Do not navigate synchronously right after a conversion"). |
+| 400 from API                                                    | Body failed JSON schema validation (event name pattern, UUID format for `wid`, etc.).                                                                                                                    |
 
 ## Further reading (code)
 
