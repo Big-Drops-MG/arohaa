@@ -202,8 +202,9 @@ if (typeof window !== "undefined" && window.arohaa) {
 ```
 
 - **Buttons:** `click` listener on `document` (event delegation) or per-element `addEventListener` after `DOMContentLoaded`.
-- **Forms:** the SDK auto-tracks real `<form>` elements (start, field focus/abandon, and `form_success` on a same-origin `/api/submit-form` POST). For custom/div-based, multi-step, or off-site-submitting forms, fire the events in [Conversion and funnel events](#conversion-and-funnel-events) yourself.
-- **Outbound links:** on `click`, fire `window.arohaa` then allow default navigation (the browser may use `sendBeacon` when the page unloads).
+- **Forms:** the SDK auto-tracks most real `<form>` flows and common zip patterns (see [Auto-tracked conversion events](#auto-tracked-conversion-events)). For custom/div-based funnels, iframe submits, or non-standard markup, fire events manually (see [Manual conversion events](#manual-conversion-events)).
+- **Phone links:** `tel:` anchors fire `call_click` automatically.
+- **Outbound links:** non-`tel:` links fire `link_click` on click.
 
 ### Calling the SDK
 
@@ -221,33 +222,69 @@ window.arohaa.track("checkout_started", { step: 1 })
 
 Queued stub calls are replayed automatically when the full SDK initializes.
 
-### Conversion and funnel events
+### Auto-tracked conversion events
 
-The dashboard's Funnel and Event Tracking screens count specific event names. Auto-tracking only fires these on pages that use a real `<form>` element and submit same-origin to `/api/submit-form`. On sites built without a `<form>` (custom/div-based or multi-step funnels) or that submit off-site and redirect, fire these events yourself so the funnel populates:
+The SDK fires these without manual `window.arohaa` calls when markup matches the patterns below.
 
-```javascript
-// when the user begins the form/funnel
-window.arohaa("form_start")
+| Event              | When it fires                                                                                                                                                                                                    |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `call_click`       | Click on an `<a href="tel:…">` link (uses `sendBeacon`).                                                                                                                                                         |
+| `form_start`       | First focus or click inside a `<form>`, or first interaction with a zip / `data-arohaa-field` input outside a form.                                                                                              |
+| `form_field_focus` | Focus on inputs inside a `<form>`, or on fields marked with `data-arohaa-field` / zip markers (see below).                                                                                                       |
+| `form_submit`      | Native `<form>` `submit` event (capture phase).                                                                                                                                                                  |
+| `form_success`     | On `<form>` submit when the form does **not** POST to same-origin `/api/submit-form` (external redirect, GET, etc.), **or** after a successful POST to `/api/submit-form` via `fetch`. Deduplicated per session. |
+| `zip_submit`       | Same moment as `form_success` when `data-formtype="zip"` on the SDK script.                                                                                                                                      |
 
-// multi-step funnels: once per step (stepIndex is a number >= 1)
-window.arohaa("form_step_view", { stepIndex: 1 })
+**Zip / field markup the SDK recognizes**
 
-// single/multi forms: optional, powers Form Drop-off by Field
-window.arohaa("form_field_focus", { fieldName: "email" })
+- Zip input: `data-arohaa-zip`, `data-arohaa-field="zip"`, `name="zip"`, or input inside `[data-slot="zip-code-input"]`.
+- Standalone zip submit (no `<form>`): put `data-arohaa-zip-submit` on the CTA and optional `data-arohaa-zip-form` on a wrapper; fires `form_submit`, `form_success`, and `zip_submit` when the zip value is 5 digits.
+- Other fields: `data-arohaa-field="email"` (etc.) on inputs, with optional `data-arohaa-form` wrapper for `form_start` grouping.
 
-// on successful submit, immediately before any redirect
-window.arohaa("form_success")
+**Real `<form>` external redirect (zip landings)**
+
+```html
+<form method="get" action="https://partner.example/quote">
+  <input data-arohaa-zip name="zip" maxlength="5" inputmode="numeric" />
+  <button type="submit">Check availability</button>
+</form>
 ```
 
-Which events matter per `data-formtype`:
+Set `data-formtype="zip"` on the SDK script. On submit, the SDK fires `form_submit`, `form_success`, and `zip_submit` before the browser navigates away.
 
-| `data-formtype` | Funnel labels                 | Fire these                                                                           |
+### Manual conversion events
+
+Fire these yourself when auto-tracking cannot see the interaction:
+
+```javascript
+// when the user begins a custom/div-based funnel (no <form> / no recognized markers)
+window.arohaa("form_start")
+
+// multi-step funnels without data-arohaa-step on each step container
+window.arohaa("form_step_view", { stepIndex: 1 })
+
+// custom fields in div-based UIs (no data-arohaa-field on inputs)
+window.arohaa("form_field_focus", { fieldName: "email" })
+
+// success only via JS (fetch to a third-party API, iframe postMessage, etc.)
+window.arohaa("form_success")
+
+// zip landings built without <form> and without data-arohaa-zip-submit
+window.arohaa("zip_submit")
+
+// phone CTAs that are buttons/divs instead of tel: links
+window.arohaa("call_click", { href: "tel:+15551234567" })
+```
+
+Which events matter per `data-formtype` (auto-tracked when markup matches above):
+
+| `data-formtype` | Funnel labels                 | Expected events                                                                      |
 | --------------- | ----------------------------- | ------------------------------------------------------------------------------------ |
-| `zip`           | Zip Started / Zip Submitted   | `form_start`, `form_success`, plus `zip_submit` (Event Tracking)                     |
+| `zip`           | Zip Started / Zip Submitted   | `form_start`, `form_success`, `zip_submit` (auto); `form_step_view` if multi-step    |
 | `single`        | Form Started / Form Submitted | `form_start`, `form_success`, optional `form_field_focus`                            |
 | `multiple`      | Form Started / Form Submitted | `form_start`, `form_step_view` per step, `form_success`, optional `form_field_focus` |
 
-Event Tracking also counts `zip_submit` and `call_click` (e.g. fire `call_click` on a click-to-call link). `form_success` is the canonical "submitted" event used across Overview, Funnel, Traffic, Segments, and Experiments.
+`form_step_view` is auto-tracked when step containers use `data-arohaa-step` (see `form-step-tracking.ts`). `form_success` is the canonical "submitted" event used across Overview, Funnel, Traffic, Segments, and Experiments.
 
 ## Alternative: single script tag (no snippet)
 

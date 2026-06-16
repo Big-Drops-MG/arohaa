@@ -1,4 +1,10 @@
 import { track } from "../core/tracker"
+import {
+  formIdFromForm,
+  isMarkedArohaaField,
+  isZipInput,
+  resolveMarkedFieldName,
+} from "./form-dom.utils"
 
 type FormSessionState = {
   formId?: string
@@ -8,54 +14,14 @@ type FormSessionState = {
 }
 
 const sessions = new Map<string, FormSessionState>()
+const STANDALONE_ZIP_KEY = "standalone-zip"
 let fieldTrackingInstalled = false
 
 function sessionKey(form: HTMLFormElement): string {
-  return formId(form) ?? "default-form"
+  return formIdFromForm(form) ?? "default-form"
 }
 
-function formId(form: HTMLFormElement): string | undefined {
-  const id = form.id?.trim()
-  if (id) return id
-  const name = form.getAttribute("name")?.trim()
-  return name || undefined
-}
-
-function resolveFieldName(input: HTMLElement): string {
-  const aria = input.getAttribute("aria-label")?.trim()
-  if (aria) return aria
-
-  const id = input.id?.trim()
-  if (id && typeof document !== "undefined") {
-    const label = document.querySelector(`label[for="${CSS.escape(id)}"]`)
-    if (label?.textContent?.trim()) return label.textContent.trim()
-  }
-
-  if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
-    const placeholder = input.placeholder?.trim()
-    if (placeholder) return placeholder
-    const name = input.name?.trim()
-    if (name) return name
-    if (input.id?.trim()) return input.id.trim()
-    if (input.type) return input.type
-  }
-
-  return input.tagName.toLowerCase()
-}
-
-function isTrackableField(target: EventTarget | null): target is HTMLElement {
-  if (!(target instanceof HTMLElement)) return false
-  if (target instanceof HTMLInputElement) {
-    const type = target.type.toLowerCase()
-    return type !== "hidden" && type !== "submit" && type !== "button"
-  }
-  return (
-    target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
-  )
-}
-
-function getSession(form: HTMLFormElement): FormSessionState {
-  const key = sessionKey(form)
+function getSession(key: string): FormSessionState {
   let state = sessions.get(key)
   if (!state) {
     state = { started: false, succeeded: false }
@@ -64,10 +30,20 @@ function getSession(form: HTMLFormElement): FormSessionState {
   return state
 }
 
+function getFormSession(form: HTMLFormElement): FormSessionState {
+  return getSession(sessionKey(form))
+}
+
 export function markFormSessionStarted(form: HTMLFormElement): void {
-  const state = getSession(form)
+  const state = getFormSession(form)
   state.started = true
-  state.formId = formId(form)
+  state.formId = formIdFromForm(form)
+}
+
+export function markStandaloneZipStarted(): void {
+  const state = getSession(STANDALONE_ZIP_KEY)
+  state.started = true
+  state.formId = "zip"
 }
 
 export function markFormSessionSucceeded(formIdValue?: string): void {
@@ -78,17 +54,42 @@ export function markFormSessionSucceeded(formIdValue?: string): void {
   }
 }
 
+export function hasFormSessionSucceeded(formIdValue?: string): boolean {
+  for (const state of sessions.values()) {
+    if (state.succeeded && (!formIdValue || state.formId === formIdValue)) {
+      return true
+    }
+  }
+  return false
+}
+
 export function trackFormFieldFocus(
   form: HTMLFormElement,
   field: HTMLElement,
 ): void {
-  const state = getSession(form)
+  const state = getFormSession(form)
   if (!state.started) {
     state.started = true
-    state.formId = formId(form)
+    state.formId = formIdFromForm(form)
   }
 
-  const fieldName = resolveFieldName(field)
+  const fieldName = resolveMarkedFieldName(field)
+  state.lastField = fieldName
+  track("form_field_focus", {
+    fieldName,
+    ...(state.formId ? { formId: state.formId } : {}),
+  })
+}
+
+export function trackStandaloneFieldFocus(field: HTMLElement): void {
+  const key = isZipInput(field) ? STANDALONE_ZIP_KEY : `standalone:${resolveMarkedFieldName(field)}`
+  const state = getSession(key)
+  if (!state.started) {
+    state.started = true
+    state.formId = isZipInput(field) ? "zip" : undefined
+  }
+
+  const fieldName = resolveMarkedFieldName(field)
   state.lastField = fieldName
   track("form_field_focus", {
     fieldName,
@@ -115,10 +116,35 @@ export function setupFormFieldTracking(): void {
     "focusin",
     (e) => {
       const target = e.target
-      if (!isTrackableField(target)) return
+      if (!(target instanceof HTMLElement)) return
+
       const form = target.closest("form")
-      if (!form) return
-      trackFormFieldFocus(form, target)
+      if (form) {
+        if (!isMarkedArohaaField(target) && !isZipInput(target)) {
+          const isGenericField =
+            target instanceof HTMLInputElement ||
+            target instanceof HTMLTextAreaElement ||
+            target instanceof HTMLSelectElement
+          if (!isGenericField) return
+          const type =
+            target instanceof HTMLInputElement
+              ? target.type.toLowerCase()
+              : ""
+          if (
+            type === "hidden" ||
+            type === "submit" ||
+            type === "button"
+          ) {
+            return
+          }
+        }
+        trackFormFieldFocus(form, target)
+        return
+      }
+
+      if (isMarkedArohaaField(target)) {
+        trackStandaloneFieldFocus(target)
+      }
     },
     true,
   )
