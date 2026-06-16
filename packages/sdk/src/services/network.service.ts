@@ -34,20 +34,19 @@ export async function attemptSend(payload: EventPayload): Promise<SendOutcome> {
 
   const body = JSON.stringify(payload)
 
-
   if (
     preferBeacon(payload) &&
     typeof navigator !== "undefined" &&
     navigator.sendBeacon
   ) {
-    const blob = new Blob([body], { type: "text/plain" })
+    const blob = new Blob([body], { type: "application/json" })
     if (navigator.sendBeacon(url, blob)) return "ok"
   }
 
   try {
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "text/plain" },
+      headers: { "Content-Type": "application/json" },
       body,
       keepalive: true,
     })
