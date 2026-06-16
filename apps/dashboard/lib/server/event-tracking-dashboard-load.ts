@@ -16,20 +16,20 @@ import { notFound } from "next/navigation"
 
 interface AnalyticsEventsKpis {
   totalEvents: number
-  zipSubmit: number
-  callClicks: number
-  formStarted: number
-  formSubmitted: number
-  fsr: number
-  zsr: number
+  zipSubmit?: number
+  callClicks?: number
+  formStarted?: number
+  formSubmitted?: number
+  fsr?: number
+  zsr?: number
 }
 
 interface AnalyticsEventsSubmissionRow {
   date: string
-  zipSubmitted: number
-  formSubmitted: number
-  fsr: number
-  zsr: number
+  zipSubmitted?: number
+  formSubmitted?: number
+  fsr?: number
+  zsr?: number
 }
 
 interface AnalyticsEvents {
@@ -37,8 +37,16 @@ interface AnalyticsEvents {
   submissionRows: AnalyticsEventsSubmissionRow[]
 }
 
-function fmtCount(v: number): string {
-  const n = Number.isFinite(v) ? v : 0
+function safeNum(value: number | undefined): number {
+  return Number.isFinite(value) ? (value as number) : 0
+}
+
+function fmtPct(value: number | undefined): string {
+  return `${safeNum(value).toFixed(1)}%`
+}
+
+function fmtCount(v: number | undefined): string {
+  const n = safeNum(v)
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 10_000) return `${(n / 1_000).toFixed(1)}K`
   if (n >= 1_000) return n.toLocaleString("en-US")
@@ -53,15 +61,15 @@ function buildKpiSegments(
 
   return order.map((id) => {
     if (id === "call-clicks") {
-      return { id, value: kpis.callClicks }
+      return { id, value: safeNum(kpis.callClicks) }
     }
     if (id === "form-start") {
-      return { id, value: kpis.formStarted }
+      return { id, value: safeNum(kpis.formStarted) }
     }
     if (formType === "zip") {
-      return { id, value: kpis.zipSubmit }
+      return { id, value: safeNum(kpis.zipSubmit) }
     }
-    return { id, value: kpis.formSubmitted }
+    return { id, value: safeNum(kpis.formSubmitted) }
   })
 }
 
@@ -71,15 +79,24 @@ export function buildEventTrackingDashboardData(
   rangeId: RangeId
 ): EventTrackingDashboardData {
   const { kpis } = data
-  const kpiList = eventTrackingKpisForFormType(formType, kpis)
+  const kpiSource = {
+    totalEvents: safeNum(kpis.totalEvents),
+    callClicks: safeNum(kpis.callClicks),
+    formStarted: safeNum(kpis.formStarted),
+    zipSubmit: safeNum(kpis.zipSubmit),
+    formSubmitted: safeNum(kpis.formSubmitted),
+    fsr: safeNum(kpis.fsr),
+    zsr: safeNum(kpis.zsr),
+  }
+  const kpiList = eventTrackingKpisForFormType(formType, kpiSource)
 
   const submissionRows = withSubmissionShare(
-    data.submissionRows.map((row) => ({
+    (data.submissionRows ?? []).map((row) => ({
       date: row.date,
       formSubmitted: fmtCount(
         formType === "zip" ? row.zipSubmitted : row.formSubmitted
       ),
-      fsr: `${(formType === "zip" ? row.zsr : row.fsr).toFixed(1)}%`,
+      fsr: fmtPct(formType === "zip" ? row.zsr : row.fsr),
     }))
   )
 
