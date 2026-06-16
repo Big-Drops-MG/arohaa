@@ -74,6 +74,27 @@ server.register(cors, {
   methods: ['GET', 'POST', 'OPTIONS'],
 })
 
+
+server.removeContentTypeParser('text/plain')
+server.addContentTypeParser(
+  'text/plain',
+  { parseAs: 'string' },
+  (_request, body, done) => {
+    const raw = typeof body === 'string' ? body.trim() : ''
+    if (raw === '') {
+      done(null, undefined)
+      return
+    }
+    try {
+      done(null, JSON.parse(raw))
+    } catch {
+      const err = new Error('Invalid JSON body') as FastifyError
+      err.statusCode = 400
+      done(err, undefined)
+    }
+  },
+)
+
 server.register(fastifyRedis, { client: redis })
 
 server.register(rateLimit, {
