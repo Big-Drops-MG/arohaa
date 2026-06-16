@@ -1,8 +1,9 @@
 import { eq } from "drizzle-orm"
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
-import { db, landingPageAuditLogs, landingPages } from "@workspace/database"
+import { db, landingPages } from "@workspace/database"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { writeLandingPageAuditLog } from "@/lib/server/landing-audit-log"
 import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
 import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
 
@@ -39,13 +40,14 @@ export async function POST(
     })
     .where(eq(landingPages.id, row.id))
 
-  await db.insert(landingPageAuditLogs).values({
+  await writeLandingPageAuditLog({
     actorUserId: actor.id,
     landingPageId: row.id,
     action: "archive",
     beforePayload: {
       deletedAt: null,
       status: row.status,
+      brandName: row.brandName,
       workspaceId: row.workspaceId,
     },
     afterPayload: {

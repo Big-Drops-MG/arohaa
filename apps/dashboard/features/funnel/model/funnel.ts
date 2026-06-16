@@ -2,6 +2,7 @@ import type {
   OverviewDateRangeId,
   OverviewDateRangeOption,
   OverviewFunnelChangeVariant,
+  OverviewLandingFormType,
 } from "@/features/overview/model/overview"
 
 export type FunnelChangeVariant = OverviewFunnelChangeVariant
@@ -55,6 +56,7 @@ export type FunnelDropOffRow = {
 }
 
 export type FunnelDashboardData = {
+  formType: OverviewLandingFormType
   dateRangeOptions: OverviewDateRangeOption[]
   defaultDateRangeId: OverviewDateRangeId
   defaultKpiMetricId: FunnelKpiMetricId

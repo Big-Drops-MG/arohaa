@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { motion, useReducedMotion } from "motion/react"
 import { cn } from "@workspace/ui/lib/utils"
 import type { FunnelDashboardData } from "@/features/funnel/model/funnel"
 import {
@@ -19,6 +20,10 @@ import { OverviewKpiRow } from "@/features/overview/view/OverviewKpiRow"
 import { OverviewPerformanceChart } from "@/features/overview/view/OverviewPerformanceChart"
 import { OverviewSegmentsCard } from "@/features/overview/view/OverviewSegmentsCard"
 import { OverviewTrafficCard } from "@/features/overview/view/OverviewTrafficCard"
+import {
+  overviewStaggerContainer,
+  overviewStaggerItem,
+} from "@/features/overview/view/overview-motion"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
 type OverviewDashboardProps = {
@@ -43,6 +48,7 @@ function funnelStepsFromApiPayload(
 }
 
 export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
+  const reduceMotion = useReducedMotion()
   const { dateRangeId, setDateRangeId } = useDashboardDateRange()
   const [activeKpiId, setActiveKpiId] = useState<OverviewKpiMetricId>(
     data.defaultKpiMetricId
@@ -114,47 +120,65 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
     return overviewKpiLabelsForFormType(data.formType)[activeKpiId]
   }, [data.formType, activeKpiId])
 
+  const chartKey = `${dateRangeId}-${activeKpiId}`
+
   return (
-    <div
+    <motion.div
+      variants={overviewStaggerContainer}
+      initial={reduceMotion ? false : "hidden"}
+      animate="visible"
       className={cn(
-        "flex flex-col gap-4",
+        "flex flex-col gap-5 px-6 pb-6 lg:px-8",
         overviewRechartsPointerFocusResetClassName
       )}
     >
-      <OverviewHeader
-        title="Overview"
-        dateRangeOptions={data.dateRangeOptions}
-        dateRangeId={dateRangeId}
-        onDateRangeChange={setDateRangeId}
-      />
+      <motion.div variants={overviewStaggerItem}>
+        <OverviewHeader
+          title="Overview"
+          dateRangeOptions={data.dateRangeOptions}
+          dateRangeId={dateRangeId}
+          onDateRangeChange={setDateRangeId}
+        />
+      </motion.div>
 
-      <OverviewKpiRow
-        kpis={kpis}
-        activeKpiId={activeKpiId}
-        onKpiSelect={setActiveKpiId}
-      />
+      <motion.div variants={overviewStaggerItem}>
+        <OverviewKpiRow
+          kpis={kpis}
+          activeKpiId={activeKpiId}
+          onKpiSelect={setActiveKpiId}
+        />
+      </motion.div>
 
-      <div className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-[3fr_7fr] lg:items-stretch lg:[&>*]:min-h-0">
-        <div
-          className={cn(isFunnelLoading && "pointer-events-none opacity-60")}
+      <motion.div
+        variants={overviewStaggerItem}
+        className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-[3fr_7fr] lg:items-stretch lg:[&>*]:min-h-0"
+      >
+        <motion.div
+          animate={{ opacity: isFunnelLoading ? 0.55 : 1 }}
+          transition={{ duration: 0.2 }}
+          className={cn("min-h-0", isFunnelLoading && "pointer-events-none")}
           aria-busy={isFunnelLoading}
         >
           <OverviewFunnelCard steps={funnelSteps} />
-        </div>
+        </motion.div>
         <OverviewPerformanceChart
           points={chartPoints}
           metricLabel={activeKpiLabel}
           valueSuffix={valueSuffixForMetric(activeKpiId)}
+          chartKey={chartKey}
         />
-      </div>
+      </motion.div>
 
-      <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
+      <motion.div
+        variants={overviewStaggerItem}
+        className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0"
+      >
         <div className="flex min-h-0 flex-col gap-4">
           <OverviewTrafficCard stats={data.traffic} />
           <OverviewSegmentsCard segments={data.segments} />
         </div>
         <OverviewAlertsCard alerts={data.alerts} />
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }

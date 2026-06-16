@@ -2,7 +2,6 @@
   "files": [],
   "references": [
     { "path": "./apps/api" },
-    { "path": "./apps/auto-assuritii" },
     { "path": "./apps/dashboard" },
     { "path": "./packages/bdmg-component" },
     { "path": "./packages/database" },

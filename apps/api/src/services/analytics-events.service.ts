@@ -40,6 +40,7 @@ export async function getAnalyticsEvents({
           count() AS total_events,
           countIf(event_name = 'zip_submit') AS zip_submit,
           countIf(event_name = 'call_click') AS call_click,
+          countIf(event_name = 'form_start') AS form_started,
           countIf(event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS total_sessions
         FROM events
@@ -52,6 +53,7 @@ export async function getAnalyticsEvents({
       query: `
         SELECT 
           toDate(created_at) AS date_label,
+          countIf(event_name = 'zip_submit') AS zip_submitted,
           countIf(event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS total_sessions
         FROM events
@@ -66,12 +68,14 @@ export async function getAnalyticsEvents({
     total_events: string
     zip_submit: string
     call_click: string
+    form_started: string
     form_submitted: string
     total_sessions: string
   }
   
   type DateRow = {
     date_label: string
+    zip_submitted: string
     form_submitted: string
     total_sessions: string
   }
@@ -82,16 +86,20 @@ export async function getAnalyticsEvents({
   const totalEvents = n(kpiData.total_events)
   const zipSubmit = n(kpiData.zip_submit)
   const callClicks = n(kpiData.call_click)
+  const formStarted = n(kpiData.form_started)
   const formSubmitted = n(kpiData.form_submitted)
   const totalSessions = n(kpiData.total_sessions)
 
-  const submissionRows = dateData.map(row => {
-    const fs = n(row.form_submitted)
-    const ses = n(row.total_sessions)
+  const submissionRows = dateData.map((row) => {
+    const zipSubmitted = n(row.zip_submitted)
+    const formSubmittedCount = n(row.form_submitted)
+    const sessions = n(row.total_sessions)
     return {
       date: row.date_label,
-      formSubmitted: fs,
-      fsr: fsrPct(fs, ses),
+      zipSubmitted,
+      formSubmitted: formSubmittedCount,
+      fsr: fsrPct(formSubmittedCount, sessions),
+      zsr: fsrPct(zipSubmitted, sessions),
     }
   })
 
@@ -110,8 +118,10 @@ export async function getAnalyticsEvents({
       totalEvents,
       zipSubmit,
       callClicks,
+      formStarted,
       formSubmitted,
       fsr: fsrPct(formSubmitted, totalSessions),
+      zsr: fsrPct(zipSubmit, totalSessions),
     },
     submissionRows: formattedSubmissionRows,
     pieSegments: [
@@ -128,8 +138,10 @@ export function emptyAnalyticsEvents(): AnalyticsEvents {
       totalEvents: 0,
       zipSubmit: 0,
       callClicks: 0,
+      formStarted: 0,
       formSubmitted: 0,
       fsr: 0,
+      zsr: 0,
     },
     submissionRows: [],
     pieSegments: [

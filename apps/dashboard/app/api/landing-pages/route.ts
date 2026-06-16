@@ -7,12 +7,12 @@ import {
   db,
   generateHtmlVerificationToken,
   generatePublicLandingId,
-  landingPageAuditLogs,
   landingPages,
   normalizeLandingPageUrl,
   normalizedBrandName,
 } from "@workspace/database"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { writeLandingPageAuditLog } from "@/lib/server/landing-audit-log"
 import {
   buildHtmlVerificationMetaTag,
   buildLandingSdkScriptTag,
@@ -220,7 +220,7 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      await db.insert(landingPageAuditLogs).values({
+      await writeLandingPageAuditLog({
         actorUserId: actor.id,
         landingPageId: id,
         action: "create",
@@ -228,6 +228,7 @@ export async function POST(request: NextRequest) {
         afterPayload: {
           workspaceId: ws.id,
           publicId,
+          brandName: bn.brandName,
           normalizedUrl: nu.normalizedUrl,
           hostname: nu.hostname,
         },

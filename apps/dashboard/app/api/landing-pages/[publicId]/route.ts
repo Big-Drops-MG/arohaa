@@ -4,7 +4,6 @@ import { eq, isNull, and } from "drizzle-orm"
 import {
   db,
   generateHtmlVerificationToken,
-  landingPageAuditLogs,
   landingPages,
   normalizeLandingPageUrl,
   normalizedBrandName,
@@ -18,6 +17,11 @@ import {
 } from "@/lib/server/landing-page-validation"
 import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
 import { buildHtmlVerificationMetaTag } from "@/lib/server/landing-snippet"
+import { writeLandingPageAuditLog } from "@/lib/server/landing-audit-log"
+import {
+  isLandingPageLive,
+  resolveLiveStatusChange,
+} from "@/lib/server/landing-page-live"
 import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
 
 function traceIdFrom(request: NextRequest): string | null {
@@ -163,6 +167,26 @@ export async function PATCH(
     nextNotes = parsed.value
   }
 
+  let nextStatus = row.status
+  let nextMetadata = row.metadata as Record<string, unknown> | null
+  let liveStatusChanged = false
+
+  if ("isLive" in record) {
+    if (typeof record.isLive !== "boolean") {
+      return NextResponse.json(
+        { error: "isLive must be a boolean" },
+        { status: 400 }
+      )
+    }
+
+    const liveChange = resolveLiveStatusChange(row, record.isLive)
+    if (liveChange) {
+      nextStatus = liveChange.status
+      nextMetadata = liveChange.metadata
+      liveStatusChanged = true
+    }
+  }
+
   const nextHtmlVerificationToken =
     urlChanged || !row.htmlVerificationToken
       ? generateHtmlVerificationToken()
@@ -178,8 +202,17 @@ export async function PATCH(
         verificationMethod: null as string | null,
         lastSeenAt: null as Date | null,
         lastEventAt: null as Date | null,
+        metadata: null as Record<string, unknown> | null,
       }
     : {}
+
+  const statusForUpdate = urlChanged
+    ? "pending_verification"
+    : liveStatusChanged
+      ? nextStatus
+      : row.status
+
+  const metadataForUpdate = urlChanged ? null : nextMetadata
 
   try {
     await db
@@ -191,6 +224,8 @@ export async function PATCH(
         faviconUrl: nextFaviconUrl,
         notes: nextNotes,
         htmlVerificationToken: nextHtmlVerificationToken ?? null,
+        status: statusForUpdate,
+        metadata: metadataForUpdate,
         updatedByUserId: actor.id,
         updatedAt: now,
         ...verificationReset,
@@ -218,25 +253,51 @@ export async function PATCH(
     return NextResponse.json({ error: "Update failed" }, { status: 500 })
   }
 
-  await db.insert(landingPageAuditLogs).values({
-    actorUserId: actor.id,
-    landingPageId: row.id,
-    action: "update",
-    beforePayload: before,
-    afterPayload: {
-      brandName: saved.brandName,
-      landingPageUrl: saved.landingPageUrl,
-      normalizedUrl: saved.normalizedUrl,
-      hostname: saved.hostname,
-      origin: saved.origin,
-      formType: saved.formType,
-      faviconUrl: saved.faviconUrl,
-      notes: saved.notes,
-      verificationMethod: saved.verificationMethod,
-      htmlTokenRotated: urlChanged,
-    },
-    traceId: traceIdFrom(request),
-  })
+  if (liveStatusChanged) {
+    await writeLandingPageAuditLog({
+      actorUserId: actor.id,
+      landingPageId: row.id,
+      action: "live_toggle",
+      beforePayload: {
+        status: row.status,
+        isLive: isLandingPageLive(row.status),
+      },
+      afterPayload: {
+        status: saved.status,
+        isLive: isLandingPageLive(saved.status),
+      },
+      traceId: traceIdFrom(request),
+    })
+  }
+
+  const generalFieldsChanged =
+    nextBrand !== row.brandName ||
+    urlChanged ||
+    nextFormType !== row.formType ||
+    nextFaviconUrl !== row.faviconUrl ||
+    nextNotes !== row.notes
+
+  if (generalFieldsChanged) {
+    await writeLandingPageAuditLog({
+      actorUserId: actor.id,
+      landingPageId: row.id,
+      action: "update",
+      beforePayload: before,
+      afterPayload: {
+        brandName: saved.brandName,
+        landingPageUrl: saved.landingPageUrl,
+        normalizedUrl: saved.normalizedUrl,
+        hostname: saved.hostname,
+        origin: saved.origin,
+        formType: saved.formType,
+        faviconUrl: saved.faviconUrl,
+        notes: saved.notes,
+        verificationMethod: saved.verificationMethod,
+        htmlTokenRotated: urlChanged,
+      },
+      traceId: traceIdFrom(request),
+    })
+  }
 
   const htmlVerificationMetaTag =
     urlChanged && saved.htmlVerificationToken
@@ -279,7 +340,7 @@ export async function DELETE(
     })
     .where(and(eq(landingPages.id, row.id), isNull(landingPages.deletedAt)))
 
-  await db.insert(landingPageAuditLogs).values({
+  await writeLandingPageAuditLog({
     actorUserId: actor.id,
     landingPageId: row.id,
     action: "delete",

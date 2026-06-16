@@ -38,6 +38,10 @@ export function SettingsProjectDetailsSection({
           value={formatLandingPageStatus(landingPage.status)}
         />
         <SettingsReadOnlyRow
+          label="Live tracking"
+          value={landingPage.isLive ? "Live" : "Not live"}
+        />
+        <SettingsReadOnlyRow
           label="SDK install status"
           value={formatSdkInstallStatus(landingPage.sdkInstallStatus)}
         />

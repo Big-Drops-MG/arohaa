@@ -1,5 +1,13 @@
+"use client"
+
+import { motion, useReducedMotion } from "motion/react"
 import { cn } from "@workspace/ui/lib/utils"
 import type { SegmentsSummaryKpi } from "@/features/segments/model/segments"
+import {
+  overviewSpring,
+  overviewStaggerContainer,
+  overviewStaggerItem,
+} from "@/features/overview/view/overview-motion"
 
 type SegmentsSummaryKpiRowProps = {
   kpis: SegmentsSummaryKpi[]
@@ -12,42 +20,69 @@ export function SegmentsSummaryKpiRow({
   activeKpiId,
   onKpiSelect,
 }: SegmentsSummaryKpiRowProps) {
+  const reduceMotion = useReducedMotion()
+
   return (
-    <div className="grid grid-cols-5 gap-4">
+    <motion.div
+      variants={overviewStaggerContainer}
+      initial={reduceMotion ? false : "hidden"}
+      animate="visible"
+      className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5"
+    >
       {kpis.map((kpi) => {
         const active = kpi.label === activeKpiId
         return (
-          <button
+          <motion.button
             key={kpi.label}
             type="button"
+            variants={overviewStaggerItem}
             onClick={() => onKpiSelect(kpi.label)}
             aria-pressed={active}
+            whileHover={
+              reduceMotion || active
+                ? undefined
+                : { y: -2, transition: overviewSpring }
+            }
+            whileTap={reduceMotion ? undefined : { scale: 0.985 }}
             className={cn(
-              "rounded-[15px] border px-4 py-4 text-left shadow-xs transition-colors outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              "relative overflow-hidden rounded-2xl border px-4 py-4 text-left shadow-xs transition-shadow outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
               active
-                ? "border-black bg-black text-white"
-                : "border-foreground/10 bg-card text-foreground hover:border-neutral-300 hover:bg-neutral-50/80"
+                ? "border-neutral-950 shadow-md"
+                : "border-foreground/10 bg-card hover:border-foreground/20 hover:shadow-sm"
             )}
           >
-            <p
-              className={cn(
-                "text-xs font-medium",
-                active ? "text-white/80" : "text-muted-foreground"
-              )}
-            >
-              {kpi.label}
-            </p>
-            <p
-              className={cn(
-                "mt-2 font-heading text-xl font-semibold tracking-tight",
-                active ? "text-white" : "text-foreground"
-              )}
-            >
-              {kpi.value}
-            </p>
-          </button>
+            {active ? (
+              <motion.div
+                layoutId="segments-summary-kpi-active"
+                className="absolute inset-0 bg-neutral-950"
+                transition={reduceMotion ? { duration: 0 } : overviewSpring}
+              />
+            ) : null}
+            <div className="relative z-10">
+              <p
+                className={cn(
+                  "text-xs leading-snug font-medium",
+                  active ? "text-white/75" : "text-muted-foreground"
+                )}
+              >
+                {kpi.label}
+              </p>
+              <motion.p
+                key={kpi.value}
+                initial={reduceMotion ? false : { opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+                className={cn(
+                  "mt-2 font-heading text-xl font-semibold tracking-tight tabular-nums",
+                  active ? "text-white" : "text-foreground"
+                )}
+              >
+                {kpi.value}
+              </motion.p>
+            </div>
+          </motion.button>
         )
       })}
-    </div>
+    </motion.div>
   )
 }

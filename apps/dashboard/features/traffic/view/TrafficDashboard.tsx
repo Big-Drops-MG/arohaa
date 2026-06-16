@@ -11,6 +11,7 @@ import type {
 import { TrafficDataTableCard } from "@/features/traffic/view/TrafficDataTableCard"
 import { TrafficKpiRow } from "@/features/traffic/view/TrafficKpiRow"
 import { TrafficSourcesCard } from "@/features/traffic/view/TrafficSourcesCard"
+import { TRAFFIC_PREVIEW_ROW_LIMIT } from "@/features/traffic/view/traffic-card-layout"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
 const TRAFFIC_REFETCH_MS = 30_000
@@ -117,18 +118,43 @@ export function TrafficDashboard({
           onKpiSelect={setActiveKpiId}
         />
 
-        <div className="grid grid-cols-2 items-start gap-4">
-          <div className="flex flex-col gap-4">
-            <TrafficDataTableCard section={dashboardData.trafficByTime} />
-            <TrafficDataTableCard section={dashboardData.trafficByDevice} />
-            <TrafficDataTableCard section={dashboardData.topPages} />
+        <div className="flex flex-col gap-4">
+          <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
+            <TrafficDataTableCard
+              section={dashboardData.trafficByTime}
+              expandable
+              previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
+              sortByColumnId=""
+            />
+            <TrafficDataTableCard
+              section={dashboardData.trafficByLocation}
+              expandable
+              previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
+            />
           </div>
-          <div className="flex flex-col gap-4">
-            <TrafficDataTableCard section={dashboardData.trafficByLocation} />
+
+          <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
+            <TrafficDataTableCard
+              section={dashboardData.trafficByDevice}
+              expandable
+              previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
+            />
             <TrafficSourcesCard
               referrers={dashboardData.referrers}
               utmParameters={dashboardData.utmParameters}
+              expandable
+              previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
             />
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
+            <div className="lg:col-span-2">
+              <TrafficDataTableCard
+                section={dashboardData.topPages}
+                expandable
+                previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
+              />
+            </div>
           </div>
         </div>
       </div>

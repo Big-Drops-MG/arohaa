@@ -4,14 +4,18 @@ export interface AnalyticsEventsKpis {
   totalEvents: number
   zipSubmit: number
   callClicks: number
+  formStarted: number
   formSubmitted: number
   fsr: number
+  zsr: number
 }
 
 export interface AnalyticsEventsSubmissionRow {
   date: string
+  zipSubmitted: number
   formSubmitted: number
   fsr: number
+  zsr: number
 }
 
 export interface AnalyticsEventsPieSegment {

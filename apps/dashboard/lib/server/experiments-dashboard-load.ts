@@ -1,6 +1,11 @@
 import { notFound } from "next/navigation"
 import { getExperimentsEmptyDashboardData } from "@/features/experiments/controller/experiments-empty-data"
 import type { ExperimentsDashboardData } from "@/features/experiments/model/experiments"
+import {
+  experimentVariantPerformanceRateLabel,
+  experimentVariantPerformanceSubmitLabel,
+} from "@/features/experiments/utils/experiment-table-columns"
+import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
 import type { RangeId } from "@/lib/server/analytics-types"
 import {
   resolveIngestApiBase,
@@ -54,17 +59,23 @@ function fmtPct(v: number): string {
 
 export function buildExperimentsDashboardData(
   data: AnalyticsExperiments,
+  formType: ReturnType<typeof parseOverviewLandingFormType>,
   rangeId: RangeId
 ): ExperimentsDashboardData {
   const { experiments, variantPerformance, performanceByLocation } = data
 
   const variants = variantPerformance.map((v) => v.variant)
+  const rateLabel = experimentVariantPerformanceRateLabel(formType)
   const locationColumns = [
     { key: "city", label: "City" },
-    ...variants.map((v) => ({ key: `variant${v}`, label: `Variant ${v} FSR` })),
+    ...variants.map((v) => ({
+      key: `variant${v}`,
+      label: `Variant ${v} ${rateLabel}`,
+    })),
   ]
 
   return {
+    formType,
     dateRangeOptions: [
       { id: "24h", label: "Last 24 hours" },
       { id: "7d", label: "Last 7 days" },
@@ -80,8 +91,11 @@ export function buildExperimentsDashboardData(
       columns: [
         { key: "variant", label: "Variant" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
-        { key: "fsr", label: "FSR" },
+        {
+          key: "formSubmitted",
+          label: experimentVariantPerformanceSubmitLabel(formType),
+        },
+        { key: "fsr", label: experimentVariantPerformanceRateLabel(formType) },
       ],
       rows: variantPerformance.map((row) => ({
         variant: row.variant,
@@ -164,16 +178,22 @@ export async function loadExperimentsDashboardData({
   const row = await getActiveLandingPageByPublicId(landingPagePublicId)
   if (!row) notFound()
 
+  const formType = parseOverviewLandingFormType(row.formType)
+
   const analytics = await fetchExperimentsAnalytics(
     row.id,
     landingPagePublicId,
     rangeId
   )
   if (!analytics) {
-    return getExperimentsEmptyDashboardData(landingPagePublicId, rangeId as any)
+    return getExperimentsEmptyDashboardData(
+      landingPagePublicId,
+      rangeId as any,
+      formType
+    )
   }
 
-  return buildExperimentsDashboardData(analytics, rangeId)
+  return buildExperimentsDashboardData(analytics, formType, rangeId)
 }
 
 export async function loadExperimentsDashboardDataForApi(
@@ -198,6 +218,8 @@ export async function loadExperimentsDashboardDataForApi(
     return { ok: false, status: 404, error: "Not found" }
   }
 
+  const formType = parseOverviewLandingFormType(row.formType)
+
   const analytics = await fetchExperimentsAnalytics(
     row.id,
     landingPagePublicId,
@@ -208,10 +230,14 @@ export async function loadExperimentsDashboardDataForApi(
       ok: true,
       data: getExperimentsEmptyDashboardData(
         landingPagePublicId,
-        rangeId as any
+        rangeId as any,
+        formType
       ),
     }
   }
 
-  return { ok: true, data: buildExperimentsDashboardData(analytics, rangeId) }
+  return {
+    ok: true,
+    data: buildExperimentsDashboardData(analytics, formType, rangeId),
+  }
 }

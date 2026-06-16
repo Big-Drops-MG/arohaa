@@ -5,9 +5,8 @@ import { cn } from "@workspace/ui/lib/utils"
 import { getFunnelEmptyDashboardData } from "@/features/funnel/controller/funnel-empty-data"
 import type { FunnelDashboardData } from "@/features/funnel/model/funnel"
 import { FUNNEL_DEFAULT_KPI_METRIC_ID } from "@/features/funnel/model/funnel"
-import { FunnelDropOffCard } from "@/features/funnel/view/FunnelDropOffCard"
+import { FunnelDetailCards } from "@/features/funnel/view/FunnelDetailCards"
 import { FunnelKpiRow } from "@/features/funnel/view/FunnelKpiRow"
-import { FunnelMultiStepCard } from "@/features/funnel/view/FunnelMultiStepCard"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
@@ -44,7 +43,9 @@ export function FunnelDashboard({
               body.slice(0, 200)
             )
           }
-          setDashboardData(getFunnelEmptyDashboardData(projectId, rangeId))
+          setDashboardData((prev) =>
+            getFunnelEmptyDashboardData(projectId, rangeId, prev.formType)
+          )
           return
         }
         const next = (await res.json()) as FunnelDashboardData
@@ -54,7 +55,9 @@ export function FunnelDashboard({
         if (process.env.NODE_ENV === "development") {
           console.error("[funnel] client fetch failed", err)
         }
-        setDashboardData(getFunnelEmptyDashboardData(projectId, rangeId))
+        setDashboardData((prev) =>
+          getFunnelEmptyDashboardData(projectId, rangeId, prev.formType)
+        )
       } finally {
         if (!signal?.aborted) {
           setIsLoading(false)
@@ -121,10 +124,11 @@ export function FunnelDashboard({
           onKpiSelect={setActiveKpiId}
         />
 
-        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-stretch gap-4">
-          <FunnelMultiStepCard steps={dashboardData.multiStepSteps} />
-          <FunnelDropOffCard rows={dashboardData.dropOffRows} />
-        </div>
+        <FunnelDetailCards
+          formType={dashboardData.formType}
+          multiStepSteps={dashboardData.multiStepSteps}
+          dropOffRows={dashboardData.dropOffRows}
+        />
       </div>
     </div>
   )

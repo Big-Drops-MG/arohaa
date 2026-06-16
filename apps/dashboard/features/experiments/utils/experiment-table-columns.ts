@@ -2,6 +2,18 @@ import type { ExperimentVariantRef } from "@/features/experiments/model/experime
 import type { OverviewLandingFormType } from "@/features/overview/model/overview"
 import type { TrafficBreakdownTable } from "@/features/traffic/model/traffic"
 
+export function experimentVariantPerformanceSubmitLabel(
+  formType: OverviewLandingFormType
+): string {
+  return formType === "zip" ? "Zip Submit" : "Form Submit"
+}
+
+export function experimentVariantPerformanceRateLabel(
+  formType: OverviewLandingFormType
+): string {
+  return formType === "zip" ? "ZSR" : "FSR"
+}
+
 function formSubmittedLabel(formType: OverviewLandingFormType): string {
   return formType === "zip" ? "Zip Submitted" : "Form Submitted"
 }

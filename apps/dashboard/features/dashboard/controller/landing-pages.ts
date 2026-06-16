@@ -5,6 +5,7 @@ import type {
   LandingPageNavItem,
 } from "@/features/dashboard/model/landing-page"
 import { fetchLandingPageCardMetrics } from "@/lib/server/landing-page-metrics-load"
+import { isLandingPageLive } from "@/lib/server/landing-page-live"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 
 export async function getLandingPageNavItems(): Promise<LandingPageNavItem[]> {
@@ -33,6 +34,7 @@ export async function getLandingPageList(): Promise<LandingPageListItem[]> {
       brandName: landingPages.brandName,
       landingPageUrl: landingPages.landingPageUrl,
       faviconUrl: landingPages.faviconUrl,
+      status: landingPages.status,
     })
     .from(landingPages)
     .where(isNull(landingPages.deletedAt))
@@ -47,6 +49,7 @@ export async function getLandingPageList(): Promise<LandingPageListItem[]> {
     brandName: row.brandName,
     landingPageUrl: row.landingPageUrl,
     faviconUrl: row.faviconUrl,
+    isLive: isLandingPageLive(row.status),
     metrics: metricsList[index]!,
   }))
 }

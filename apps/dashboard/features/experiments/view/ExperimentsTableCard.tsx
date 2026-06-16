@@ -1,5 +1,6 @@
 "use client"
 
+import { motion, useReducedMotion } from "motion/react"
 import { cn } from "@workspace/ui/lib/utils"
 import {
   Card,
@@ -17,10 +18,11 @@ import {
   overviewSectionHeadingClassName,
 } from "@/features/overview/view/overview-card-density"
 import { overviewCardPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
-
-const experimentsCardShellClassName = "flex h-full max-w-none flex-col pb-2"
-
-const experimentsCardContentClassName = "flex-1 overflow-x-auto p-0 pb-2"
+import { overviewScaleIn } from "@/features/overview/view/overview-motion"
+import {
+  experimentsCardContentClassName,
+  experimentsCardShellClassName,
+} from "@/features/experiments/view/experiments-card-layout"
 
 type ExperimentsTableCardProps = {
   title: string
@@ -47,27 +49,38 @@ function ExperimentsTableCardBody({
   emptyMessage,
   highlight,
 }: ExperimentsTableCardProps) {
+  const reduceMotion = useReducedMotion()
+
   return (
-    <Card
-      className={cn(
-        overviewCardPointerFocusResetClassName,
-        overviewAnalyticCardShellClassName,
-        experimentsCardShellClassName
-      )}
+    <motion.div
+      variants={overviewScaleIn}
+      initial={reduceMotion ? false : "hidden"}
+      animate="visible"
+      className="h-full min-h-0"
     >
-      <CardHeader className={overviewAnalyticCardHeaderClassName}>
-        <CardTitle className={overviewSectionHeadingClassName}>
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className={experimentsCardContentClassName}>
-        <ExperimentsBreakdownTableView
-          table={table}
-          emptyMessage={emptyMessage}
-          highlight={highlight}
-        />
-      </CardContent>
-    </Card>
+      <Card
+        className={cn(
+          overviewCardPointerFocusResetClassName,
+          overviewAnalyticCardShellClassName,
+          experimentsCardShellClassName
+        )}
+      >
+        <CardHeader className={overviewAnalyticCardHeaderClassName}>
+          <CardTitle className={overviewSectionHeadingClassName}>
+            {title}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className={experimentsCardContentClassName}>
+          <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
+            <ExperimentsBreakdownTableView
+              table={table}
+              emptyMessage={emptyMessage}
+              highlight={highlight}
+            />
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
   )
 }
 
@@ -98,7 +111,7 @@ export function ExperimentsTableCard({
   return (
     <TrafficExpandableCard
       title={title}
-      className="h-full"
+      className="h-full min-h-0"
       expandedContent={
         <ExperimentsBreakdownTableView
           table={table}

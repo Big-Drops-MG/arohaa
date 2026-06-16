@@ -1,3 +1,5 @@
+"use client"
+
 import { cn } from "@workspace/ui/lib/utils"
 import {
   Card,
@@ -5,78 +7,118 @@ import {
   CardHeader,
   CardTitle,
 } from "@workspace/ui/components/card"
-import { overviewSectionHeadingClassName } from "@/features/overview/view/overview-card-density"
+import type {
+  TrafficBreakdownTable,
+  TrafficTableSection,
+} from "@/features/traffic/model/traffic"
+import { sortTrafficTableRows } from "@/features/traffic/utils/sort-traffic-table-rows"
+import { trafficSectionToBreakdownTable } from "@/features/traffic/utils/traffic-section-to-table"
+import { TrafficBreakdownTableView } from "@/features/traffic/view/TrafficBreakdownTableView"
+import { TrafficExpandableCard } from "@/features/traffic/view/TrafficExpandableCard"
 import {
-  trafficTableCardHeaderClassName,
-  trafficTableCardShellClassName,
-} from "@/features/traffic/view/traffic-card-styles"
+  overviewAnalyticCardHeaderClassName,
+  overviewAnalyticCardShellClassName,
+  overviewSectionHeadingClassName,
+} from "@/features/overview/view/overview-card-density"
 import { overviewCardPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
-import type { TrafficTableSection } from "@/features/traffic/model/traffic"
+import {
+  trafficBreakdownCardContentClassName,
+  trafficBreakdownCardShellClassName,
+} from "@/features/traffic/view/traffic-card-layout"
 
 type TrafficDataTableCardProps = {
   section: TrafficTableSection
+  expandable?: boolean
+  previewRowLimit?: number
+  sortByColumnId?: string | null
+  emptyMessage?: string
 }
 
-export function TrafficDataTableCard({ section }: TrafficDataTableCardProps) {
+function limitTableRows(
+  table: TrafficBreakdownTable,
+  limit: number
+): TrafficBreakdownTable {
+  return {
+    ...table,
+    rows: table.rows.slice(0, limit),
+  }
+}
+
+function TrafficDataTableCardBody({
+  title,
+  table,
+  emptyMessage,
+  sortByColumnId,
+}: {
+  title: string
+  table: TrafficBreakdownTable
+  emptyMessage: string
+  sortByColumnId?: string | null
+}) {
   return (
     <Card
       className={cn(
         overviewCardPointerFocusResetClassName,
-        trafficTableCardShellClassName
+        overviewAnalyticCardShellClassName,
+        trafficBreakdownCardShellClassName
       )}
     >
-      <CardHeader className={trafficTableCardHeaderClassName}>
+      <CardHeader className={overviewAnalyticCardHeaderClassName}>
         <CardTitle className={overviewSectionHeadingClassName}>
-          {section.title}
+          {title}
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-0">
-        <div className="overflow-hidden rounded-b-[15px]">
-          <div
-            className="grid border-b border-border px-5 py-2.5 sm:px-6"
-            style={{
-              gridTemplateColumns: `repeat(${section.columns.length}, minmax(0, 1fr))`,
-            }}
-          >
-            {section.columns.map((col) => (
-              <span
-                key={col.key}
-                className={cn(
-                  "text-sm font-medium text-muted-foreground",
-                  col.align === "right" && "text-right"
-                )}
-              >
-                {col.label}
-              </span>
-            ))}
-          </div>
-          {section.rows.map((row, rowIndex) => (
-            <div
-              key={rowIndex}
-              className={cn(
-                "grid px-5 py-3 sm:px-6",
-                rowIndex < section.rows.length - 1 &&
-                  "border-b border-border/60"
-              )}
-              style={{
-                gridTemplateColumns: `repeat(${section.columns.length}, minmax(0, 1fr))`,
-              }}
-            >
-              {section.columns.map((col) => (
-                <span
-                  key={col.key}
-                  className={cn(
-                    "text-sm text-foreground tabular-nums",
-                    col.align === "right" && "text-right"
-                  )}
-                >
-                  {row[col.key]}
-                </span>
-              ))}
-            </div>
-          ))}
-        </div>
+      <CardContent className={trafficBreakdownCardContentClassName}>
+        <TrafficBreakdownTableView
+          table={table}
+          emptyMessage={emptyMessage}
+          sortByColumnId={sortByColumnId}
+        />
       </CardContent>
     </Card>
+  )
+}
+
+export function TrafficDataTableCard({
+  section,
+  expandable = false,
+  previewRowLimit,
+  sortByColumnId,
+  emptyMessage = "No data for this period.",
+}: TrafficDataTableCardProps) {
+  const table = trafficSectionToBreakdownTable(section)
+  const sortedTable = sortTrafficTableRows(table, sortByColumnId)
+  const previewTable =
+    previewRowLimit != null
+      ? limitTableRows(sortedTable, previewRowLimit)
+      : sortedTable
+
+  const body = (
+    <TrafficDataTableCardBody
+      title={section.title}
+      table={previewTable}
+      emptyMessage={emptyMessage}
+      sortByColumnId={expandable ? "" : sortByColumnId}
+    />
+  )
+
+  if (!expandable) {
+    return body
+  }
+
+  return (
+    <TrafficExpandableCard
+      title={section.title}
+      className="h-full min-h-0"
+      expandedContent={
+        <TrafficBreakdownTableView
+          table={table}
+          emptyMessage={emptyMessage}
+          sortByColumnId={sortByColumnId}
+        />
+      }
+    >
+      {body}
+    </TrafficExpandableCard>
   )
 }

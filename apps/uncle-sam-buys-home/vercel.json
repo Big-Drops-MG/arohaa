@@ -1,4 +1,0 @@
-{
-  "buildCommand": "cd ../.. && pnpm exec turbo run build --filter=uncle-sam-buys-home",
-  "outputDirectory": ".next"
-}

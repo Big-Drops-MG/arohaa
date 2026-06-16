@@ -1,6 +1,10 @@
-import { notFound } from "next/navigation"
 import { getEventTrackingEmptyDashboardData } from "@/features/event-tracking/controller/event-tracking-empty-data"
 import type { EventTrackingDashboardData } from "@/features/event-tracking/model/event-tracking"
+import type { EventTrackingKpiSegment } from "@/features/event-tracking/model/event-tracking"
+import { eventTrackingKpisForFormType } from "@/features/event-tracking/utils/event-tracking-kpis-for-form-type"
+import { eventTrackingKpiSegmentOrder } from "@/features/event-tracking/utils/event-tracking-segment-labels"
+import { withSubmissionShare } from "@/features/event-tracking/utils/event-tracking-submission-share"
+import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
 import type { RangeId } from "@/lib/server/analytics-types"
 import {
   resolveIngestApiBase,
@@ -8,56 +12,81 @@ import {
 } from "@/lib/server/analytics-env"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
+import { notFound } from "next/navigation"
 
-// Duplicating type definition to avoid importing from api directly into dashboard
 interface AnalyticsEventsKpis {
   totalEvents: number
   zipSubmit: number
   callClicks: number
+  formStarted: number
   formSubmitted: number
   fsr: number
+  zsr: number
 }
 
 interface AnalyticsEventsSubmissionRow {
   date: string
+  zipSubmitted: number
   formSubmitted: number
   fsr: number
-}
-
-interface AnalyticsEventsPieSegment {
-  name: string
-  value: number
+  zsr: number
 }
 
 interface AnalyticsEvents {
   kpis: AnalyticsEventsKpis
   submissionRows: AnalyticsEventsSubmissionRow[]
-  pieSegments: AnalyticsEventsPieSegment[]
-}
-
-function safeNum(value: number): number {
-  return Number.isFinite(value) ? value : 0
 }
 
 function fmtCount(v: number): string {
-  const n = safeNum(v)
+  const n = Number.isFinite(v) ? v : 0
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 10_000) return `${(n / 1_000).toFixed(1)}K`
   if (n >= 1_000) return n.toLocaleString("en-US")
   return String(n)
 }
 
-function fmtPct(v: number): string {
-  return `${safeNum(v).toFixed(1)}%`
+function buildKpiSegments(
+  formType: ReturnType<typeof parseOverviewLandingFormType>,
+  kpis: AnalyticsEventsKpis
+): EventTrackingKpiSegment[] {
+  const order = eventTrackingKpiSegmentOrder(formType)
+
+  return order.map((id) => {
+    if (id === "call-clicks") {
+      return { id, value: kpis.callClicks }
+    }
+    if (id === "form-start") {
+      return { id, value: kpis.formStarted }
+    }
+    if (formType === "zip") {
+      return { id, value: kpis.zipSubmit }
+    }
+    return { id, value: kpis.formSubmitted }
+  })
 }
 
 export function buildEventTrackingDashboardData(
   data: AnalyticsEvents,
+  formType: ReturnType<typeof parseOverviewLandingFormType>,
   rangeId: RangeId
 ): EventTrackingDashboardData {
   const { kpis } = data
+  const kpiList = eventTrackingKpisForFormType(formType, kpis)
+
+  const submissionRows = withSubmissionShare(
+    data.submissionRows.map((row) => ({
+      date: row.date,
+      formSubmitted: fmtCount(
+        formType === "zip" ? row.zipSubmitted : row.formSubmitted
+      ),
+      fsr: `${(formType === "zip" ? row.zsr : row.fsr).toFixed(1)}%`,
+    }))
+  )
+
+  const kpiSegments = buildKpiSegments(formType, kpis)
 
   return {
+    formType,
     dateRangeOptions: [
       { id: "24h", label: "Last 24 hours" },
       { id: "7d", label: "Last 7 days" },
@@ -66,31 +95,11 @@ export function buildEventTrackingDashboardData(
       { id: "12m", label: "Last 12 months" },
       { id: "24m", label: "Last 24 months" },
     ],
-    defaultDateRangeId: rangeId as any,
-    kpis: [
-      { label: "Total Events", value: fmtCount(kpis.totalEvents) },
-      { label: "ZIP Submit", value: fmtCount(kpis.zipSubmit) },
-      { label: "Call Clicks", value: fmtCount(kpis.callClicks) },
-      { label: "Form Submitted", value: fmtCount(kpis.formSubmitted) },
-      { label: "FSR", value: fmtPct(kpis.fsr) },
-    ],
-    submissionRows: data.submissionRows.map((row) => ({
-      date: row.date,
-      formSubmitted: fmtCount(row.formSubmitted),
-      fsr: fmtPct(row.fsr),
-    })),
-    pieSegments: data.pieSegments
-      .map((s) => ({
-        name: s.name,
-        value: s.value,
-        color:
-          s.name === "ZIP Submit"
-            ? "#111827"
-            : s.name === "Call Clicks"
-              ? "#6B7280"
-              : "#D1D5DB",
-      }))
-      .filter((s) => s.value > 0),
+    defaultDateRangeId: rangeId,
+    kpis: kpiList,
+    submissionRows,
+    kpiSegments,
+    pieSegments: [],
   }
 }
 
@@ -152,15 +161,18 @@ export async function loadEventTrackingDashboardData({
   const row = await getActiveLandingPageByPublicId(landingPagePublicId)
   if (!row) notFound()
 
+  const formType = parseOverviewLandingFormType(row.formType)
+
   const analytics = await fetchEventTrackingAnalytics(row.id, rangeId)
   if (!analytics) {
     return getEventTrackingEmptyDashboardData(
       landingPagePublicId,
-      rangeId as any
+      rangeId,
+      formType
     )
   }
 
-  return buildEventTrackingDashboardData(analytics, rangeId)
+  return buildEventTrackingDashboardData(analytics, formType, rangeId)
 }
 
 export async function loadEventTrackingDashboardDataForApi(
@@ -185,16 +197,22 @@ export async function loadEventTrackingDashboardDataForApi(
     return { ok: false, status: 404, error: "Not found" }
   }
 
+  const formType = parseOverviewLandingFormType(row.formType)
+
   const analytics = await fetchEventTrackingAnalytics(row.id, rangeId)
   if (!analytics) {
     return {
       ok: true,
       data: getEventTrackingEmptyDashboardData(
         landingPagePublicId,
-        rangeId as any
+        rangeId,
+        formType
       ),
     }
   }
 
-  return { ok: true, data: buildEventTrackingDashboardData(analytics, rangeId) }
+  return {
+    ok: true,
+    data: buildEventTrackingDashboardData(analytics, formType, rangeId),
+  }
 }

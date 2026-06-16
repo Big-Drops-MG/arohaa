@@ -1,4 +1,0 @@
-{
-  "buildCommand": "cd ../.. && pnpm exec turbo run build --filter=united-roofing-experts",
-  "outputDirectory": ".next"
-}

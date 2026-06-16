@@ -4,10 +4,15 @@ import { useCallback, useEffect, useState } from "react"
 import { cn } from "@workspace/ui/lib/utils"
 import { getEventTrackingEmptyDashboardData } from "@/features/event-tracking/controller/event-tracking-empty-data"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
-import type { EventTrackingDashboardData } from "@/features/event-tracking/model/event-tracking"
-import { EventTrackingKpiPieChart } from "@/features/event-tracking/view/EventTrackingKpiPieChart"
+import type {
+  EventTrackingDashboardData,
+  EventTrackingMetricId,
+} from "@/features/event-tracking/model/event-tracking"
+import { eventTrackingMetricOrder } from "@/features/event-tracking/model/event-tracking"
+import { EVENT_TRACKING_PREVIEW_ROW_LIMIT } from "@/features/event-tracking/view/event-tracking-card-layout"
+import { EventTrackingKpiPerformanceCard } from "@/features/event-tracking/view/EventTrackingKpiPerformanceCard"
 import { EventTrackingKpiRow } from "@/features/event-tracking/view/EventTrackingKpiRow"
-import { EventTrackingSubmissionTableCard } from "@/features/event-tracking/view/EventTrackingSubmissionTableCard"
+import { EventTrackingSubmissionOverTimeCard } from "@/features/event-tracking/view/EventTrackingSubmissionOverTimeCard"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
 const EVENTS_REFETCH_MS = 30_000
@@ -18,6 +23,16 @@ type EventTrackingDashboardProps = {
   isActive?: boolean
 }
 
+function defaultActiveKpiId(
+  data: EventTrackingDashboardData
+): EventTrackingMetricId {
+  return (
+    data.kpis[0]?.id ??
+    eventTrackingMetricOrder(data.formType)[0] ??
+    "total-events"
+  )
+}
+
 export function EventTrackingDashboard({
   data: initialData,
   projectId,
@@ -26,8 +41,8 @@ export function EventTrackingDashboard({
   const { dateRangeId, setDateRangeId } = useDashboardDateRange()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isLoading, setIsLoading] = useState(false)
-  const [activeKpiId, setActiveKpiId] = useState<string>(
-    initialData.kpis[0]?.label ?? ""
+  const [activeKpiId, setActiveKpiId] = useState<EventTrackingMetricId>(
+    defaultActiveKpiId(initialData)
   )
 
   const fetchEventsForRange = useCallback(
@@ -45,22 +60,30 @@ export function EventTrackingDashboard({
               body.slice(0, 200)
             )
           }
-          setDashboardData(
-            getEventTrackingEmptyDashboardData(projectId, rangeId)
+          setDashboardData((prev) =>
+            getEventTrackingEmptyDashboardData(
+              projectId,
+              rangeId,
+              prev.formType
+            )
           )
           return
         }
         const next = (await res.json()) as EventTrackingDashboardData
         setDashboardData(next)
-        if (!next.kpis.find((k) => k.label === activeKpiId)) {
-          setActiveKpiId(next.kpis[0]?.label ?? "")
-        }
+        setActiveKpiId((current) =>
+          next.kpis.some((kpi) => kpi.id === current)
+            ? current
+            : defaultActiveKpiId(next)
+        )
       } catch (err) {
         if (signal?.aborted) return
         if (process.env.NODE_ENV === "development") {
           console.error("[events] client fetch failed", err)
         }
-        setDashboardData(getEventTrackingEmptyDashboardData(projectId, rangeId))
+        setDashboardData((prev) =>
+          getEventTrackingEmptyDashboardData(projectId, rangeId, prev.formType)
+        )
       } finally {
         if (!signal?.aborted) {
           setIsLoading(false)
@@ -73,6 +96,7 @@ export function EventTrackingDashboard({
   useEffect(() => {
     if (dateRangeId === initialData.defaultDateRangeId) {
       setDashboardData(initialData)
+      setActiveKpiId(defaultActiveKpiId(initialData))
       setIsLoading(false)
       return
     }
@@ -119,11 +143,18 @@ export function EventTrackingDashboard({
           onKpiSelect={setActiveKpiId}
         />
 
-        <div className="grid grid-cols-2 items-stretch gap-4">
-          <EventTrackingSubmissionTableCard
+        <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:*:min-h-0">
+          <EventTrackingSubmissionOverTimeCard
+            formType={dashboardData.formType}
             rows={dashboardData.submissionRows}
+            expandable
+            previewRowLimit={EVENT_TRACKING_PREVIEW_ROW_LIMIT}
           />
-          <EventTrackingKpiPieChart segments={dashboardData.pieSegments} />
+          <EventTrackingKpiPerformanceCard
+            formType={dashboardData.formType}
+            segments={dashboardData.kpiSegments}
+            expandable
+          />
         </div>
       </div>
     </div>

@@ -1,6 +1,10 @@
 import { notFound } from "next/navigation"
 import { getAlertsEmptyDashboardData } from "@/features/alerts/controller/alerts-empty-data"
 import type { AlertsDashboardData } from "@/features/alerts/model/alerts"
+import type {
+  OverviewAlert,
+  OverviewAlertSeverity,
+} from "@/features/overview/model/overview"
 import type { RangeId } from "@/lib/server/analytics-types"
 import {
   resolveIngestApiBase,
@@ -20,6 +24,22 @@ interface AnalyticsAlertsResponse {
   items: AnalyticsAlertItem[]
 }
 
+function mapAlertSeverity(
+  severity: AnalyticsAlertItem["severity"]
+): OverviewAlertSeverity {
+  if (severity === "info") return "alert"
+  return "warning"
+}
+
+function mapAnalyticsAlerts(items: AnalyticsAlertItem[]): OverviewAlert[] {
+  return items.map((item) => ({
+    id: item.id,
+    message: item.message,
+    severity: mapAlertSeverity(item.severity),
+    dateLabel: item.date,
+  }))
+}
+
 export function buildAlertsDashboardData(
   data: AnalyticsAlertsResponse,
   rangeId: RangeId
@@ -34,7 +54,7 @@ export function buildAlertsDashboardData(
       { id: "24m", label: "Last 24 months" },
     ],
     defaultDateRangeId: rangeId as any,
-    items: data.items,
+    items: mapAnalyticsAlerts(data.items),
   }
 }
 

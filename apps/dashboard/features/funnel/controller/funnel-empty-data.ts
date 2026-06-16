@@ -1,29 +1,28 @@
-import type { OverviewDateRangeId } from "@/features/overview/model/overview"
+import type {
+  OverviewDateRangeId,
+  OverviewLandingFormType,
+} from "@/features/overview/model/overview"
 import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-range"
 import type { FunnelDashboardData } from "@/features/funnel/model/funnel"
+import {
+  defaultFunnelMetricKpis,
+  defaultMultiStepFormTracking,
+} from "@/features/funnel/controller/funnel-default-payload"
 
 export function getFunnelEmptyDashboardData(
   _landingPagePublicId: string,
-  rangeId: OverviewDateRangeId = "7d"
+  rangeId: OverviewDateRangeId = "7d",
+  formType: OverviewLandingFormType = "single"
 ): FunnelDashboardData {
   void _landingPagePublicId
 
   return {
+    formType,
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: rangeId,
     defaultKpiMetricId: "landing-page-visits",
-    metrics: [
-      { id: "landing-page-visits", label: "Landing Page Visits", value: "0" },
-      { id: "interactions", label: "Interactions", value: "0" },
-      { id: "form-started", label: "Form Started", value: "0" },
-      { id: "form-submitted", label: "Form Submitted", value: "0" },
-    ],
-    multiStepSteps: [
-      { label: "Step 1", value: "0" },
-      { label: "Step 2", value: "0" },
-      { label: "Step 3", value: "0" },
-      { label: "Final Submit", value: "0" },
-    ],
+    metrics: defaultFunnelMetricKpis(formType),
+    multiStepSteps: defaultMultiStepFormTracking(),
     dropOffRows: [],
   }
 }

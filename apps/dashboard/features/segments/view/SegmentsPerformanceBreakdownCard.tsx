@@ -1,5 +1,6 @@
 "use client"
 
+import { motion, useReducedMotion } from "motion/react"
 import { cn } from "@workspace/ui/lib/utils"
 import {
   Card,
@@ -17,6 +18,7 @@ import {
   overviewSectionHeadingClassName,
 } from "@/features/overview/view/overview-card-density"
 import { overviewCardPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
+import { overviewScaleIn } from "@/features/overview/view/overview-motion"
 import {
   segmentsPerformanceCardContentClassName,
   segmentsPerformanceCardShellClassName,
@@ -48,29 +50,40 @@ function SegmentsPerformanceBreakdownCardBody({
   table,
   emptyMessage,
   sortByColumnId,
-  size = "tall",
+  size = "compact",
 }: SegmentsPerformanceBreakdownCardProps) {
+  const reduceMotion = useReducedMotion()
+
   return (
-    <Card
-      className={cn(
-        overviewCardPointerFocusResetClassName,
-        overviewAnalyticCardShellClassName,
-        segmentsPerformanceCardShellClassName
-      )}
+    <motion.div
+      variants={overviewScaleIn}
+      initial={reduceMotion ? false : "hidden"}
+      animate="visible"
+      className="h-full min-h-0"
     >
-      <CardHeader className={overviewAnalyticCardHeaderClassName}>
-        <CardTitle className={overviewSectionHeadingClassName}>
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className={segmentsPerformanceCardContentClassName(size)}>
-        <TrafficBreakdownTableView
-          table={table}
-          emptyMessage={emptyMessage}
-          sortByColumnId={sortByColumnId}
-        />
-      </CardContent>
-    </Card>
+      <Card
+        className={cn(
+          overviewCardPointerFocusResetClassName,
+          overviewAnalyticCardShellClassName,
+          segmentsPerformanceCardShellClassName
+        )}
+      >
+        <CardHeader className={overviewAnalyticCardHeaderClassName}>
+          <CardTitle className={overviewSectionHeadingClassName}>
+            {title}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className={segmentsPerformanceCardContentClassName(size)}>
+          <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
+            <TrafficBreakdownTableView
+              table={table}
+              emptyMessage={emptyMessage}
+              sortByColumnId={sortByColumnId}
+            />
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
   )
 }
 
@@ -81,7 +94,7 @@ export function SegmentsPerformanceBreakdownCard({
   sortByColumnId = "visitors",
   expandable = false,
   previewRowLimit,
-  size = "tall",
+  size = "compact",
 }: SegmentsPerformanceBreakdownCardProps) {
   const sortedTable = sortTrafficTableRows(table, sortByColumnId)
   const previewTable =
@@ -106,7 +119,7 @@ export function SegmentsPerformanceBreakdownCard({
   return (
     <TrafficExpandableCard
       title={title}
-      className="h-full"
+      className="h-full min-h-0"
       expandedContent={
         <TrafficBreakdownTableView
           table={table}

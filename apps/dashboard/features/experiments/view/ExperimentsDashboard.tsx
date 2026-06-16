@@ -5,8 +5,7 @@ import { cn } from "@workspace/ui/lib/utils"
 import { getExperimentsEmptyDashboardData } from "@/features/experiments/controller/experiments-empty-data"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import type { ExperimentsDashboardData } from "@/features/experiments/model/experiments"
-import { ExperimentsListCard } from "@/features/experiments/view/ExperimentsListCard"
-import { ExperimentsPerformanceTableCard } from "@/features/experiments/view/ExperimentsPerformanceTableCard"
+import { ExperimentsCards } from "@/features/experiments/view/ExperimentsCards"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
 const EXPERIMENTS_REFETCH_MS = 30_000
@@ -41,7 +40,9 @@ export function ExperimentsDashboard({
               body.slice(0, 200)
             )
           }
-          setDashboardData(getExperimentsEmptyDashboardData(projectId, rangeId))
+          setDashboardData((prev) =>
+            getExperimentsEmptyDashboardData(projectId, rangeId, prev.formType)
+          )
           return
         }
         const next = (await res.json()) as ExperimentsDashboardData
@@ -51,7 +52,9 @@ export function ExperimentsDashboard({
         if (process.env.NODE_ENV === "development") {
           console.error("[experiments] client fetch failed", err)
         }
-        setDashboardData(getExperimentsEmptyDashboardData(projectId, rangeId))
+        setDashboardData((prev) =>
+          getExperimentsEmptyDashboardData(projectId, rangeId, prev.formType)
+        )
       } finally {
         if (!signal?.aborted) {
           setIsLoading(false)
@@ -104,16 +107,7 @@ export function ExperimentsDashboard({
         )}
         aria-busy={isLoading}
       >
-        <ExperimentsListCard experiments={dashboardData.experiments} />
-
-        <div className="grid grid-cols-2 items-stretch gap-4">
-          <ExperimentsPerformanceTableCard
-            section={dashboardData.variantPerformance}
-          />
-          <ExperimentsPerformanceTableCard
-            section={dashboardData.performanceByLocation}
-          />
-        </div>
+        <ExperimentsCards data={dashboardData} />
       </div>
     </div>
   )

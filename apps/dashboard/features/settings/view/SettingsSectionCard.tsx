@@ -7,6 +7,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@workspace/ui/components/card"
+import {
+  overviewAnalyticCardShellClassName,
+  overviewSectionHeadingClassName,
+} from "@/features/overview/view/overview-card-density"
 import { overviewCardPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
 
 type SettingsSectionCardProps = {
@@ -26,12 +30,18 @@ export function SettingsSectionCard({
     <Card
       className={cn(
         overviewCardPointerFocusResetClassName,
-        "max-w-none gap-4",
+        overviewAnalyticCardShellClassName,
+        "h-full min-h-0 flex-col",
         className
       )}
     >
-      <CardHeader className="gap-1 px-5 pt-5 pb-0 sm:px-6">
-        <CardTitle className="text-base font-semibold text-foreground">
+      <CardHeader className="gap-1 px-5 pt-0 pb-0 sm:px-6">
+        <CardTitle
+          className={cn(
+            overviewSectionHeadingClassName,
+            "text-base tracking-normal text-foreground normal-case"
+          )}
+        >
           {title}
         </CardTitle>
         {description ? (

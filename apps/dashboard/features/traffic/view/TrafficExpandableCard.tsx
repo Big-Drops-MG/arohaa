@@ -33,7 +33,7 @@ export function TrafficExpandableCard({
     <>
       <div className={cn("group/card relative max-w-none", className)}>
         {children}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-3 opacity-0 transition-opacity group-focus-within/card:opacity-100 group-hover/card:opacity-100">
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-end p-3 opacity-0 transition-opacity group-focus-within/card:opacity-100 group-hover/card:opacity-100">
           <button
             type="button"
             onClick={() => setOpen(true)}

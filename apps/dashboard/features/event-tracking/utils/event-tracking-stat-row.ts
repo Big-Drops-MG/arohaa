@@ -1,5 +1,5 @@
 import {
-  EVENT_TRACKING_METRIC_ORDER,
+  eventTrackingMetricOrder,
   type EventTrackingKpi,
   type EventTrackingMetricId,
 } from "@/features/event-tracking/model/event-tracking"
@@ -16,6 +16,7 @@ export function eventTrackingLabelsForFormType(
   return {
     "total-events": "Total Events",
     "call-clicks": "Call Clicks",
+    "form-started": "Form Started",
     "form-submitted": isZip ? "Zip Submitted" : "Form Submitted",
     "success-rate": isZip ? "ZSR" : "FSR",
   }
@@ -37,12 +38,20 @@ function resolveEventTrackingValue(
   const direct = eventValues[id]?.trim()
   if (direct) return direct
 
+  if (id === "form-started") {
+    const fromEvent = eventValues["form-started"]?.trim()
+    if (fromEvent) return fromEvent
+  }
+
   if (id === "form-submitted") {
     const fromKpi = kpiValues["form-submitted"]?.trim()
     if (fromKpi) return fromKpi
   }
 
   if (id === "success-rate") {
+    const rateKey = data.formType === "zip" ? "zsr" : "fsr"
+    const fromEvent = eventValues[rateKey]?.trim()
+    if (fromEvent) return fromEvent
     const fromKpi = kpiValues.fsr?.trim()
     if (fromKpi) return fromKpi
   }
@@ -56,7 +65,7 @@ export function eventTrackingKpisForDateRange(
 ): EventTrackingKpi[] {
   const labels = eventTrackingLabelsForFormType(data.formType)
 
-  return EVENT_TRACKING_METRIC_ORDER.map((id) => {
+  return eventTrackingMetricOrder(data.formType).map((id) => {
     const raw = resolveEventTrackingValue(data, rangeId, id)
     return {
       id,

@@ -18,6 +18,7 @@ export type LandingPageRecord = {
   formType: OverviewLandingFormType
   faviconUrl: string | null
   notes: string | null
+  isLive: boolean
   createdAt: string
   updatedAt: string
 }

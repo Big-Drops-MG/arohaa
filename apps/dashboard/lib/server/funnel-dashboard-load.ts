@@ -71,6 +71,7 @@ export function buildFunnelDashboardData(
   const metrics = relabelMetrics(data.metrics, formType)
 
   return {
+    formType,
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: data.rangeId,
     defaultKpiMetricId: "landing-page-visits",
@@ -167,7 +168,7 @@ export async function loadFunnelDashboardData({
 
   const analytics = await fetchFunnelAnalytics(row.id, rangeId)
   if (!analytics) {
-    return getFunnelEmptyDashboardData(landingPagePublicId, rangeId)
+    return getFunnelEmptyDashboardData(landingPagePublicId, rangeId, formType)
   }
 
   return buildFunnelDashboardData(analytics, formType)
@@ -198,7 +199,7 @@ export async function loadFunnelDashboardDataForApi(
   if (!analytics) {
     return {
       ok: true,
-      data: getFunnelEmptyDashboardData(landingPagePublicId, rangeId),
+      data: getFunnelEmptyDashboardData(landingPagePublicId, rangeId, formType),
     }
   }
 

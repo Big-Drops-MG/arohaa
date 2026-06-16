@@ -1,16 +1,14 @@
 import Image from "next/image"
-import { Bell, CircleUserRound, LogOut, User } from "lucide-react"
+import { CircleUserRound, LogOut, User } from "lucide-react"
 import Link from "next/link"
 import { logout } from "@/actions/auth.actions"
 import type { LandingPageNavItem } from "@/features/dashboard/model/landing-page"
 import { LandingPageProjectDropdown } from "@/features/dashboard/view/LandingPageProjectDropdown"
+import { NotificationBell } from "@/features/notifications/view/NotificationBell"
 import { Button } from "@workspace/ui/components/button"
 import {
   Popover,
   PopoverContent,
-  PopoverDescription,
-  PopoverHeader,
-  PopoverTitle,
   PopoverTrigger,
 } from "@workspace/ui/components/popover"
 
@@ -57,27 +55,7 @@ export function Navbar({
           <LandingPageProjectDropdown pages={landingPageNavItems} />
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="size-9 rounded-full border-border"
-                aria-label="Notifications"
-              >
-                <Bell className="size-4" aria-hidden />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-72 p-4">
-              <PopoverHeader className="gap-1 p-0">
-                <PopoverTitle className="text-sm">Notifications</PopoverTitle>
-                <PopoverDescription>
-                  No new notifications right now.
-                </PopoverDescription>
-              </PopoverHeader>
-            </PopoverContent>
-          </Popover>
+          <NotificationBell />
           <Popover>
             <PopoverTrigger asChild>
               <button

@@ -1,13 +1,18 @@
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { writeLandingPageAuditLog } from "@/lib/server/landing-audit-log"
 import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
 import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
 
 const RECENT_MS = 2 * 60 * 1000
 
+function traceIdFrom(request: NextRequest): string | null {
+  return request.headers.get("x-trace-id")?.trim() || null
+}
+
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   context: { params: Promise<{ publicId: string }> }
 ) {
   const actor = await requireLandingPageActor()
@@ -30,6 +35,24 @@ export async function POST(
     row.sdkInstallStatus === "detected" ||
     row.status === "verified" ||
     (lastSeen > 0 && now - lastSeen <= RECENT_MS)
+
+  await writeLandingPageAuditLog({
+    actorUserId: actor.id,
+    landingPageId: row.id,
+    action: "check_connection",
+    beforePayload: {
+      sdkInstallStatus: row.sdkInstallStatus,
+      status: row.status,
+      lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
+    },
+    afterPayload: {
+      connected,
+      sdkInstallStatus: row.sdkInstallStatus,
+      status: row.status,
+      lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
+    },
+    traceId: traceIdFrom(request),
+  })
 
   return NextResponse.json({
     connected,

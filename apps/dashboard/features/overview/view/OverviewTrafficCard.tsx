@@ -1,3 +1,7 @@
+"use client"
+
+import { Clock, Users } from "lucide-react"
+import { motion, useReducedMotion } from "motion/react"
 import { cn } from "@workspace/ui/lib/utils"
 import {
   Card,
@@ -12,45 +16,53 @@ import {
   overviewSectionHeadingClassName,
 } from "@/features/overview/view/overview-card-density"
 import { overviewCardPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
+import { overviewScaleIn } from "@/features/overview/view/overview-motion"
+import { OverviewStatTile } from "@/features/overview/view/OverviewStatTile"
 import type { OverviewTrafficStat } from "@/features/overview/model/overview"
 
 type OverviewTrafficCardProps = {
   stats: OverviewTrafficStat[]
 }
 
+const trafficIcons = [Users, Clock] as const
+
 export function OverviewTrafficCard({ stats }: OverviewTrafficCardProps) {
+  const reduceMotion = useReducedMotion()
+
   return (
-    <Card
-      className={cn(
-        overviewCardPointerFocusResetClassName,
-        overviewAnalyticCardShellClassName
-      )}
+    <motion.div
+      variants={overviewScaleIn}
+      initial={reduceMotion ? false : "hidden"}
+      animate="visible"
     >
-      <CardHeader className={overviewAnalyticCardHeaderClassName}>
-        <CardTitle className={overviewSectionHeadingClassName}>
-          Traffic
-        </CardTitle>
-      </CardHeader>
-      <CardContent
+      <Card
         className={cn(
-          "grid gap-3 sm:grid-cols-2",
-          overviewAnalyticCardContentPaddingClassName
+          overviewCardPointerFocusResetClassName,
+          overviewAnalyticCardShellClassName
         )}
       >
-        {stats.map((s) => (
-          <div
-            key={s.label}
-            className="rounded-xl bg-muted/50 px-4 py-4 ring-1 ring-border/60"
-          >
-            <p className="text-xs font-medium text-muted-foreground">
-              {s.label}
-            </p>
-            <p className="mt-2 font-heading text-xl font-semibold text-foreground tabular-nums">
-              {s.value}
-            </p>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
+        <CardHeader className={overviewAnalyticCardHeaderClassName}>
+          <CardTitle className={overviewSectionHeadingClassName}>
+            Traffic
+          </CardTitle>
+        </CardHeader>
+        <CardContent
+          className={cn(
+            "grid gap-3 sm:grid-cols-2",
+            overviewAnalyticCardContentPaddingClassName
+          )}
+        >
+          {stats.map((stat, index) => (
+            <OverviewStatTile
+              key={stat.label}
+              label={stat.label}
+              value={stat.value}
+              icon={trafficIcons[index] ?? Users}
+              index={index}
+            />
+          ))}
+        </CardContent>
+      </Card>
+    </motion.div>
   )
 }

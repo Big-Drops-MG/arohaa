@@ -5,7 +5,7 @@ import { cn } from "@workspace/ui/lib/utils"
 import { getSegmentsEmptyDashboardData } from "@/features/segments/controller/segments-empty-data"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import type { SegmentsDashboardData } from "@/features/segments/model/segments"
-import { SegmentsPerformanceTableCard } from "@/features/segments/view/SegmentsPerformanceTableCard"
+import { SegmentsPerformanceCards } from "@/features/segments/view/SegmentsPerformanceCards"
 import { SegmentsSummaryKpiRow } from "@/features/segments/view/SegmentsSummaryKpiRow"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
@@ -49,9 +49,11 @@ export function SegmentsDashboard({
         }
         const next = (await res.json()) as SegmentsDashboardData
         setDashboardData(next)
-        if (!next.summaryKpis.find((k) => k.label === activeKpiId)) {
-          setActiveKpiId(next.summaryKpis[0]?.label ?? "")
-        }
+        setActiveKpiId((current) =>
+          next.summaryKpis.some((kpi) => kpi.label === current)
+            ? current
+            : (next.summaryKpis[0]?.label ?? "")
+        )
       } catch (err) {
         if (signal?.aborted) return
         if (process.env.NODE_ENV === "development") {
@@ -70,6 +72,7 @@ export function SegmentsDashboard({
   useEffect(() => {
     if (dateRangeId === initialData.defaultDateRangeId) {
       setDashboardData(initialData)
+      setActiveKpiId(initialData.summaryKpis[0]?.label ?? "")
       setIsLoading(false)
       return
     }
@@ -116,19 +119,7 @@ export function SegmentsDashboard({
           onKpiSelect={setActiveKpiId}
         />
 
-        <div className="grid grid-cols-2 items-start gap-4">
-          <div className="flex flex-col gap-4">
-            <SegmentsPerformanceTableCard
-              section={dashboardData.performanceByLocation}
-            />
-            <SegmentsPerformanceTableCard
-              section={dashboardData.performanceByTime}
-            />
-          </div>
-          <SegmentsPerformanceTableCard
-            section={dashboardData.performanceByDevice}
-          />
-        </div>
+        <SegmentsPerformanceCards data={dashboardData} />
       </div>
     </div>
   )

@@ -1,4 +1,7 @@
+"use client"
+
 import { useMemo } from "react"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import {
   CartesianGrid,
   Line,
@@ -23,6 +26,10 @@ import {
   overviewSectionHeadingClassName,
 } from "@/features/overview/view/overview-card-density"
 import { overviewCardPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
+import {
+  overviewChartSwap,
+  overviewScaleIn,
+} from "@/features/overview/view/overview-motion"
 
 function computeYAxisMax(points: OverviewTimeSeriesPoint[]): number {
   const max = Math.max(0, ...points.map((p) => p.value))
@@ -40,13 +47,17 @@ type OverviewPerformanceChartProps = {
   points: OverviewTimeSeriesPoint[]
   metricLabel: string
   valueSuffix?: string
+  chartKey?: string
 }
 
 export function OverviewPerformanceChart({
   points,
   metricLabel,
   valueSuffix,
+  chartKey,
 }: OverviewPerformanceChartProps) {
+  const reduceMotion = useReducedMotion()
+
   const chartMargins = useMemo(() => {
     const dense = points.length > 8
     return {
@@ -63,93 +74,123 @@ export function OverviewPerformanceChart({
 
   const yDomainMax = useMemo(() => computeYAxisMax(points), [points])
   const suffix = valueSuffix ?? ""
+  const animationKey = chartKey ?? metricLabel
 
   return (
-    <Card
-      className={cn(
-        "flex h-full min-h-0 flex-col",
-        overviewCardPointerFocusResetClassName,
-        overviewAnalyticCardShellClassName
-      )}
+    <motion.div
+      variants={overviewScaleIn}
+      initial={reduceMotion ? false : "hidden"}
+      animate="visible"
+      className="h-full min-h-0"
     >
-      <CardHeader
+      <Card
         className={cn(
-          overviewAnalyticCardHeaderClassName,
-          "flex-col items-stretch justify-center gap-1"
+          "flex h-full min-h-0 flex-col overflow-hidden",
+          overviewCardPointerFocusResetClassName,
+          overviewAnalyticCardShellClassName
         )}
       >
-        <CardTitle className={overviewSectionHeadingClassName}>
-          Performance over time
-        </CardTitle>
-      </CardHeader>
-      <CardContent
-        className={cn(
-          "relative flex min-h-0 flex-1 flex-col",
-          overviewAnalyticCardContentPaddingClassName
-        )}
-      >
-        <div className="relative min-h-0 w-full min-w-0 flex-1">
-          <div className="absolute inset-0 min-h-[320px]">
-            <ResponsiveContainer
-              className="outline-none **:outline-none"
-              width="100%"
-              height="100%"
-            >
-              <LineChart
-                className="outline-none [&_.recharts-surface]:outline-none"
-                data={points}
-                margin={chartMargins}
-                style={{ outline: "none" }}
+        <CardHeader
+          className={cn(
+            overviewAnalyticCardHeaderClassName,
+            "flex-col items-stretch justify-center gap-1"
+          )}
+        >
+          <CardTitle className={overviewSectionHeadingClassName}>
+            Performance over time
+          </CardTitle>
+          <p className="text-sm font-medium text-foreground">{metricLabel}</p>
+        </CardHeader>
+        <CardContent
+          className={cn(
+            "relative flex min-h-0 flex-1 flex-col",
+            overviewAnalyticCardContentPaddingClassName
+          )}
+        >
+          <div className="relative min-h-0 w-full min-w-0 flex-1">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={animationKey}
+                variants={overviewChartSwap}
+                initial={reduceMotion ? false : "initial"}
+                animate="animate"
+                exit={reduceMotion ? undefined : "exit"}
+                className="absolute inset-0 min-h-[320px]"
               >
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="#e5e5e5"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 12 }}
-                  tickLine={false}
-                  axisLine={false}
-                  angle={xAxisAngle}
-                  textAnchor={xAxisTextAnchor}
-                  height={points.length > 8 ? 52 : 28}
-                  className="text-muted-foreground"
-                />
-                <YAxis
-                  domain={[0, yDomainMax]}
-                  tickCount={5}
-                  tick={{ fontSize: 12 }}
-                  tickLine={false}
-                  axisLine={false}
-                  className="text-muted-foreground"
-                  width={52}
-                />
-                <Tooltip
-                  formatter={(value) => [
-                    `${String(value)}${suffix}`,
-                    metricLabel,
-                  ]}
-                  contentStyle={{
-                    borderRadius: 8,
-                    border: "1px solid hsl(var(--border))",
-                    fontSize: 12,
-                  }}
-                  labelStyle={{ fontWeight: 600 }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  stroke="#0f172a"
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: "#0f172a" }}
-                  activeDot={{ r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+                <ResponsiveContainer
+                  className="outline-none **:outline-none"
+                  width="100%"
+                  height="100%"
+                >
+                  <LineChart
+                    className="outline-none [&_.recharts-surface]:outline-none"
+                    data={points}
+                    margin={chartMargins}
+                    style={{ outline: "none" }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="oklch(0.922 0 0)"
+                      vertical={false}
+                    />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 12, fill: "oklch(0.556 0 0)" }}
+                      tickLine={false}
+                      axisLine={false}
+                      angle={xAxisAngle}
+                      textAnchor={xAxisTextAnchor}
+                      height={points.length > 8 ? 52 : 28}
+                    />
+                    <YAxis
+                      domain={[0, yDomainMax]}
+                      tickCount={5}
+                      tick={{ fontSize: 12, fill: "oklch(0.556 0 0)" }}
+                      tickLine={false}
+                      axisLine={false}
+                      width={52}
+                    />
+                    <Tooltip
+                      formatter={(value) => [
+                        `${String(value)}${suffix}`,
+                        metricLabel,
+                      ]}
+                      contentStyle={{
+                        borderRadius: 10,
+                        border: "1px solid oklch(0.922 0 0)",
+                        fontSize: 12,
+                        boxShadow: "0 4px 12px oklch(0 0 0 / 0.08)",
+                      }}
+                      labelStyle={{ fontWeight: 600, marginBottom: 4 }}
+                      cursor={{
+                        stroke: "oklch(0.556 0 0 / 0.35)",
+                        strokeWidth: 1,
+                        strokeDasharray: "4 4",
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="value"
+                      stroke="oklch(0.205 0 0)"
+                      strokeWidth={2.5}
+                      dot={{ r: 3, fill: "oklch(0.205 0 0)", strokeWidth: 0 }}
+                      activeDot={{
+                        r: 5,
+                        fill: "oklch(0.205 0 0)",
+                        stroke: "#fff",
+                        strokeWidth: 2,
+                      }}
+                      isAnimationActive={!reduceMotion}
+                      animationDuration={reduceMotion ? 0 : 700}
+                      animationEasing="ease-out"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </motion.div>
+            </AnimatePresence>
           </div>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </motion.div>
   )
 }

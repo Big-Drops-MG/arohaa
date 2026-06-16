@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { createNotification } from '@workspace/database'
 import { ingestHostnameMatchesLanding } from '@workspace/database/landing/normalizeLandingPageUrl'
 
 type LandingRowLite = {
@@ -6,6 +7,10 @@ type LandingRowLite = {
   hostname: string
   status: string
   verifiedAt: Date | null
+  publicId: string
+  brandName: string
+  sdkInstallStatus: string
+  ownerUserId: string
 }
 
 let sqlSingleton: ReturnType<typeof neon> | null = null
@@ -44,14 +49,27 @@ export async function reconcileLandingPageIngest(payload: {
   }
 
   const rows = (await sql`
-    SELECT id, hostname, status, "verifiedAt"
-    FROM landing_page
-    WHERE "publicId" = ${raw} AND "deletedAt" IS NULL
+    SELECT
+      lp.id,
+      lp.hostname,
+      lp.status,
+      lp."verifiedAt",
+      lp."publicId",
+      lp."brandName",
+      lp."sdkInstallStatus",
+      w."ownerUserId"
+    FROM landing_page lp
+    INNER JOIN workspace w ON w.id = lp."workspaceId"
+    WHERE lp."publicId" = ${raw} AND lp."deletedAt" IS NULL
     LIMIT 1
   `) as LandingRowLite[]
   const row = rows[0]
   if (!row) {
     return { outcome: 'reject', reason: 'UNKNOWN_LANDING_PAGE' }
+  }
+
+  if (row.status === 'inactive') {
+    return { outcome: 'reject', reason: 'LANDING_PAGE_INACTIVE' }
   }
 
   if (row.id !== payload.wid) {
@@ -66,6 +84,7 @@ export async function reconcileLandingPageIngest(payload: {
   const nextVerifiedAt =
     row.verifiedAt != null ? new Date(row.verifiedAt) : now
   const nextStatus = row.status === 'inactive' ? 'inactive' : 'verified'
+  const wasSdkDetected = row.sdkInstallStatus === 'detected'
 
   const faviconRaw =
     payload.ev === 'sdk_connected' && typeof payload.props?.favicon_url === 'string'
@@ -99,6 +118,25 @@ export async function reconcileLandingPageIngest(payload: {
         "updatedAt" = ${now}
       WHERE id = ${row.id}
     `
+  }
+
+  if (!wasSdkDetected) {
+    try {
+      await createNotification({
+        userId: row.ownerUserId,
+        type: 'connection',
+        title: 'SDK connected',
+        body: `${row.brandName} is now sending events.`,
+        severity: 'info',
+        landingPageId: row.id,
+        landingPagePublicId: row.publicId,
+        href: `/dashboard/${encodeURIComponent(row.publicId)}?tab=settings&section=tracking`,
+        sourceType: 'sdk_connected',
+        sourceId: row.id,
+      })
+    } catch {
+      // Notification failure must not block ingest.
+    }
   }
 
   return { outcome: 'ok' }

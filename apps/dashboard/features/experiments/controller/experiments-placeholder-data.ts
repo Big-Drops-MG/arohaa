@@ -1,11 +1,18 @@
 import type { ExperimentsDashboardData } from "@/features/experiments/model/experiments"
+import {
+  experimentVariantPerformanceRateLabel,
+  experimentVariantPerformanceSubmitLabel,
+} from "@/features/experiments/utils/experiment-table-columns"
 
 export function getExperimentsPlaceholderData(
   _landingPagePublicId: string
 ): ExperimentsDashboardData {
   void _landingPagePublicId
 
+  const formType = "single" as const
+
   return {
+    formType,
     dateRangeOptions: [
       { id: "24h", label: "Last 24 hours" },
       { id: "7d", label: "Last 7 days" },
@@ -44,8 +51,11 @@ export function getExperimentsPlaceholderData(
       columns: [
         { key: "variant", label: "Variant" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
-        { key: "fsr", label: "FSR" },
+        {
+          key: "formSubmitted",
+          label: experimentVariantPerformanceSubmitLabel(formType),
+        },
+        { key: "fsr", label: experimentVariantPerformanceRateLabel(formType) },
       ],
       rows: [
         { variant: "A", visitors: "2,000", formSubmitted: "300", fsr: "15%" },

@@ -1,8 +1,8 @@
-import { AlertTriangle, Bell, CircleAlert } from "lucide-react"
+import { AlertTriangle, Bell, CircleAlert, Info } from "lucide-react"
 import type { OverviewAlertSeverity } from "@/features/overview/model/overview"
 
 type AlertSeverityIconProps = {
-  severity: OverviewAlertSeverity
+  severity: OverviewAlertSeverity | "info"
   className?: string
 }
 
@@ -18,6 +18,10 @@ export function AlertSeverityIcon({
 
   if (severity === "alert") {
     return <Bell className={`${className} text-sky-600`} aria-hidden />
+  }
+
+  if (severity === "info") {
+    return <Info className={`${className} text-sky-600`} aria-hidden />
   }
 
   return <CircleAlert className={`${className} text-red-600`} aria-hidden />

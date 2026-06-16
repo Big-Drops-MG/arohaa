@@ -6,6 +6,7 @@ export function getFunnelPlaceholderData(
   void _landingPagePublicId
 
   return {
+    formType: "single",
     dateRangeOptions: [
       { id: "24h", label: "Last 24 hours" },
       { id: "7d", label: "Last 7 days" },

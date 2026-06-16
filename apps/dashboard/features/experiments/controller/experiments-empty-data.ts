@@ -1,13 +1,22 @@
 import type { ExperimentsDashboardData } from "@/features/experiments/model/experiments"
-import type { OverviewDateRangeId } from "@/features/overview/model/overview"
+import {
+  experimentVariantPerformanceRateLabel,
+  experimentVariantPerformanceSubmitLabel,
+} from "@/features/experiments/utils/experiment-table-columns"
+import type {
+  OverviewDateRangeId,
+  OverviewLandingFormType,
+} from "@/features/overview/model/overview"
 
 export function getExperimentsEmptyDashboardData(
   _landingPagePublicId: string,
-  rangeId: OverviewDateRangeId = "7d"
+  rangeId: OverviewDateRangeId = "7d",
+  formType: OverviewLandingFormType = "single"
 ): ExperimentsDashboardData {
   void _landingPagePublicId
 
   return {
+    formType,
     dateRangeOptions: [
       { id: "24h", label: "Last 24 hours" },
       { id: "7d", label: "Last 7 days" },
@@ -23,8 +32,11 @@ export function getExperimentsEmptyDashboardData(
       columns: [
         { key: "variant", label: "Variant" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
-        { key: "fsr", label: "FSR" },
+        {
+          key: "formSubmitted",
+          label: experimentVariantPerformanceSubmitLabel(formType),
+        },
+        { key: "fsr", label: experimentVariantPerformanceRateLabel(formType) },
       ],
       rows: [],
     },

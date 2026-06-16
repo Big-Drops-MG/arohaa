@@ -1,58 +1,48 @@
 "use client"
 
-import type { SegmentsPerformanceTables } from "@/features/segments/model/segments-performance"
-import {
-  segmentPerformancePeriodTitle,
-  showSegmentPerformancePeriodCard,
-} from "@/features/segments/utils/segment-performance-columns"
+import type { SegmentsDashboardData } from "@/features/segments/model/segments"
+import { segmentsSectionToBreakdownTable } from "@/features/segments/utils/segments-section-to-table"
 import { SegmentsPerformanceBreakdownCard } from "@/features/segments/view/SegmentsPerformanceBreakdownCard"
-import { SEGMENTS_LOCATION_PREVIEW_ROW_LIMIT } from "@/features/segments/view/segments-performance-card-layout"
-import type { OverviewDateRangeId } from "@/features/overview/model/overview"
+import { SEGMENTS_PREVIEW_ROW_LIMIT } from "@/features/segments/view/segments-performance-card-layout"
 
 type SegmentsPerformanceCardsProps = {
-  dateRangeId: OverviewDateRangeId
-  tables: SegmentsPerformanceTables
+  data: SegmentsDashboardData
 }
 
 export function SegmentsPerformanceCards({
-  dateRangeId,
-  tables,
+  data,
 }: SegmentsPerformanceCardsProps) {
-  const periodTitle = segmentPerformancePeriodTitle(dateRangeId)
-  const showPeriodCard = showSegmentPerformancePeriodCard(dateRangeId)
+  const byLocation = segmentsSectionToBreakdownTable(data.performanceByLocation)
+  const byDevice = segmentsSectionToBreakdownTable(data.performanceByDevice)
+  const byTime = segmentsSectionToBreakdownTable(data.performanceByTime)
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
+      <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:*:min-h-0">
         <SegmentsPerformanceBreakdownCard
-          title="Performance by Location"
-          table={tables.byLocation}
-          size="compact"
+          title={data.performanceByLocation.title}
+          table={byLocation}
           expandable
-          previewRowLimit={SEGMENTS_LOCATION_PREVIEW_ROW_LIMIT}
+          previewRowLimit={SEGMENTS_PREVIEW_ROW_LIMIT}
         />
         <SegmentsPerformanceBreakdownCard
-          title="Performance by Device"
-          table={tables.byDevice}
-          size="compact"
+          title={data.performanceByTime.title}
+          table={byTime}
+          expandable
+          previewRowLimit={SEGMENTS_PREVIEW_ROW_LIMIT}
+          sortByColumnId=""
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
-        <SegmentsPerformanceBreakdownCard
-          title="Performance by Time"
-          table={tables.byHour}
-          size="tall"
-          sortByColumnId=""
-        />
-        {showPeriodCard && periodTitle ? (
+      <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:*:min-h-0">
+        <div className="lg:col-span-2">
           <SegmentsPerformanceBreakdownCard
-            title={periodTitle}
-            table={tables.byPeriod}
-            size="tall"
-            sortByColumnId=""
+            title={data.performanceByDevice.title}
+            table={byDevice}
+            expandable
+            previewRowLimit={SEGMENTS_PREVIEW_ROW_LIMIT}
           />
-        ) : null}
+        </div>
       </div>
     </div>
   )

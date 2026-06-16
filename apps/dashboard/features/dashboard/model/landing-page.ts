@@ -14,6 +14,7 @@ export type LandingPageListItem = {
   brandName: string
   landingPageUrl: string
   faviconUrl: string | null
+  isLive: boolean
   metrics: LandingPageMetric[]
 }
 

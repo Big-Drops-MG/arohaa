@@ -1,20 +1,21 @@
-export const segmentsPerformanceCardShellClassName =
-  "flex h-full max-w-none flex-col pb-2"
+import {
+  trafficBreakdownCardContentClassName,
+  trafficBreakdownCardShellClassName,
+} from "@/features/traffic/view/traffic-card-layout"
 
-export const segmentsPerformanceCompactCardContentClassName =
-  "flex-1 overflow-x-auto p-0 pb-2"
+export const SEGMENTS_PREVIEW_ROW_LIMIT = 5
 
-export const segmentsPerformanceTallCardContentClassName =
-  "min-h-[23.5rem] flex-1 overflow-x-auto p-0 pb-2"
-
+/** @deprecated Use SEGMENTS_PREVIEW_ROW_LIMIT */
 export const SEGMENTS_LOCATION_PREVIEW_ROW_LIMIT = 3
+
+export const segmentsPerformanceCardShellClassName =
+  trafficBreakdownCardShellClassName
 
 export type SegmentsPerformanceCardSize = "compact" | "tall"
 
 export function segmentsPerformanceCardContentClassName(
-  size: SegmentsPerformanceCardSize
+  _size: SegmentsPerformanceCardSize = "compact"
 ): string {
-  return size === "compact"
-    ? segmentsPerformanceCompactCardContentClassName
-    : segmentsPerformanceTallCardContentClassName
+  void _size
+  return trafficBreakdownCardContentClassName
 }

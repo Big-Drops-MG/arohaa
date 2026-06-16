@@ -1,4 +1,5 @@
 import type { OverviewDateRangeId } from "@/features/overview/model/overview"
+import type { OverviewLandingFormType } from "@/features/overview/model/overview"
 import type { TrafficBreakdownTable } from "@/features/traffic/model/traffic"
 import type { OverviewDateRangeOption } from "@/features/overview/model/overview"
 
@@ -66,6 +67,7 @@ export type ExperimentsTableSection = {
 }
 
 export type ExperimentsDashboardData = {
+  formType: OverviewLandingFormType
   dateRangeOptions: OverviewDateRangeOption[]
   defaultDateRangeId: OverviewDateRangeId
   experiments: ExperimentListRow[]
