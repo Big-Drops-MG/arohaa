@@ -68,6 +68,24 @@ const rangeSchema = {
   },
 } as const
 
+const funnelSchema = {
+  querystring: {
+    type: 'object',
+    required: ['workspace_id'],
+    properties: {
+      workspace_id: { type: 'string', format: 'uuid' },
+      range_id: {
+        type: 'string',
+        enum: ['24h', '7d', '30d', '3m', '12m', '24m'],
+      },
+      form_type: {
+        type: 'string',
+        enum: ['zip', 'single', 'multiple'],
+      },
+    },
+  },
+} as const
+
 function guardAnalyticsRequest(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -169,25 +187,33 @@ export async function analyticsRoutes(server: FastifyInstance) {
     },
   )
 
-  server.get<{ Querystring: { workspace_id: string; range_id?: string } }>(
+  server.get<{
+    Querystring: { workspace_id: string; range_id?: string; form_type?: string }
+  }>(
     '/v1/analytics/funnel',
-    { schema: rangeSchema },
+    { schema: funnelSchema },
     async (request, reply) => {
-      const { workspace_id, range_id } = request.query
+      const { workspace_id, range_id, form_type } = request.query
       const rangeId = range_id?.trim() || DEFAULT_RANGE_ID
 
       if (!isFunnelRangeId(rangeId)) {
         return reply.code(400).send({ error: 'Invalid range_id' })
       }
 
+      const formType =
+        form_type === 'zip' || form_type === 'single' || form_type === 'multiple'
+          ? form_type
+          : 'single'
+
       await sendAnalyticsQuery({
         request,
         reply,
         workspaceId: workspace_id,
         emptyValue: emptyAnalyticsFunnel(rangeId),
-        run: () => getAnalyticsFunnel({ workspaceId: workspace_id, rangeId }),
+        run: () =>
+          getAnalyticsFunnel({ workspaceId: workspace_id, rangeId, formType }),
         logLabel: 'analytics funnel query ok',
-        logContext: { range_id: rangeId },
+        logContext: { range_id: rangeId, form_type: formType },
       })
     },
   )

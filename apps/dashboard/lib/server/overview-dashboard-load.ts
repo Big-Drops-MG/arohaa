@@ -183,7 +183,7 @@ export async function loadOverviewDashboardData(
           cache: "no-store",
         }
       ),
-      fetchFunnelAnalytics(row.id, rangeId),
+      fetchFunnelAnalytics(row.id, rangeId, formType),
     ])
 
     if (!overviewResp.ok) {

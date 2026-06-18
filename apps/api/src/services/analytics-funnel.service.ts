@@ -28,7 +28,11 @@ type CoreFunnelRow = {
   interactions: string
   form_started: string
   form_submitted: string
+  zip_started: string
+  zip_submitted: string
 }
+
+export type FunnelFormType = 'zip' | 'single' | 'multiple'
 
 function coreFunnelQuery(whereClause: string): string {
   return `
@@ -36,7 +40,9 @@ function coreFunnelQuery(whereClause: string): string {
       countIf(event_name = 'page_view') AS page_views,
       uniqExactIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth')) AS interactions,
       uniqExactIf(session_id, event_name = 'form_start') AS form_started,
-      uniqExactIf(session_id, event_name = 'form_success') AS form_submitted
+      uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
+      uniqExactIf(session_id, event_name = 'zip_start') AS zip_started,
+      uniqExactIf(session_id, event_name = 'zip_submit') AS zip_submitted
     FROM events
     WHERE ${whereClause}
   `
@@ -101,18 +107,37 @@ function parseCoreFunnel(row: CoreFunnelRow | undefined) {
     interactions: n(row?.interactions),
     formStarted: n(row?.form_started),
     formSubmitted: n(row?.form_submitted),
+    zipStarted: n(row?.zip_started),
+    zipSubmitted: n(row?.zip_submitted),
   }
 }
 
 function buildMetrics(
   current: ReturnType<typeof parseCoreFunnel>,
   previous: ReturnType<typeof parseCoreFunnel>,
+  formType: FunnelFormType,
 ): FunnelMetricRow[] {
+  const isZip = formType === 'zip'
+
+  const startedCur = isZip
+    ? current.zipStarted || current.formStarted
+    : current.formStarted
+  const startedPrev = isZip
+    ? previous.zipStarted || previous.formStarted
+    : previous.formStarted
+
+  const submittedCur = isZip
+    ? current.zipSubmitted || current.formSubmitted
+    : current.formSubmitted
+  const submittedPrev = isZip
+    ? previous.zipSubmitted || previous.formSubmitted
+    : previous.formSubmitted
+
   const defs = [
     { label: 'Landing Page Visits', cur: current.pageViews, prev: previous.pageViews },
     { label: 'Interactions', cur: current.interactions, prev: previous.interactions },
-    { label: 'Form Started', cur: current.formStarted, prev: previous.formStarted },
-    { label: 'Form Submitted', cur: current.formSubmitted, prev: previous.formSubmitted },
+    { label: 'Form Started', cur: startedCur, prev: startedPrev },
+    { label: 'Form Submitted', cur: submittedCur, prev: submittedPrev },
   ]
 
   return defs.map(({ label, cur, prev }) => ({
@@ -203,6 +228,7 @@ function buildDropOffRows(rows: DropOffAggRow[]): FunnelDropOffRow[] {
 export interface GetAnalyticsFunnelParams {
   workspaceId: string
   rangeId: AnalyticsRangeId
+  formType?: FunnelFormType
 }
 
 const FUNNEL_RESPONSE_CACHE = new TtlMemoryCache<FunnelDashboardResponse>(45_000)
@@ -210,8 +236,9 @@ const FUNNEL_RESPONSE_CACHE = new TtlMemoryCache<FunnelDashboardResponse>(45_000
 export async function getAnalyticsFunnel({
   workspaceId,
   rangeId,
+  formType = 'single',
 }: GetAnalyticsFunnelParams): Promise<FunnelDashboardResponse> {
-  const cacheKey = `${workspaceId}:${rangeId}`
+  const cacheKey = `${workspaceId}:${rangeId}:${formType}`
   const cached = FUNNEL_RESPONSE_CACHE.get(cacheKey)
   if (cached) return cached
 
@@ -251,7 +278,7 @@ export async function getAnalyticsFunnel({
 
   const response: FunnelDashboardResponse = {
     rangeId,
-    metrics: buildMetrics(currentCore, previousCore),
+    metrics: buildMetrics(currentCore, previousCore, formType),
     multiStepSteps: buildMultiStepSteps(
       currentSteps,
       previousSteps,

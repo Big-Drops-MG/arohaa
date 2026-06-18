@@ -19,11 +19,12 @@ import {
   setupFormFieldTracking,
 } from "./form-field-tracking"
 import { setupFormStepTracking } from "./form-step-tracking"
-import { trackZipSubmit } from "./zip.events"
+import { trackZipStart, trackZipSubmit } from "./zip.events"
 
 const startedForms = new WeakSet<HTMLFormElement>()
 const startedStandaloneZip = new WeakSet<HTMLElement>()
 const startedStandaloneFields = new WeakSet<HTMLElement>()
+let zipStartFired = false
 let fetchTrackingInstalled = false
 let submitTrackingInstalled = false
 let zipClickTrackingInstalled = false
@@ -33,6 +34,13 @@ export { isSubmitFormUrl }
 function fireZipSubmitIfApplicable(formId?: string): void {
   if (!isZipFormType()) return
   trackZipSubmit(formId)
+}
+
+function fireZipStartIfApplicable(formId?: string): void {
+  if (!isZipFormType()) return
+  if (zipStartFired) return
+  zipStartFired = true
+  trackZipStart(formId)
 }
 
 function fireFormSuccessOnSubmit(form: HTMLFormElement): void {
@@ -157,6 +165,7 @@ export function setupFormDomTracking(): void {
         if (!startedStandaloneZip.has(target)) {
           startedStandaloneZip.add(target)
           markStandaloneZipStarted()
+          fireZipStartIfApplicable("zip")
           trackFormStart("zip")
         }
         return
@@ -179,6 +188,7 @@ export function setupFormDomTracking(): void {
       if (!form || startedForms.has(form)) return
       startedForms.add(form)
       markFormSessionStarted(form)
+      if (isZipInput(target)) fireZipStartIfApplicable(formIdFromForm(form))
       trackFormStart(formIdFromForm(form))
     },
     true,
@@ -194,6 +204,7 @@ export function setupFormDomTracking(): void {
         if (!startedStandaloneZip.has(target)) {
           startedStandaloneZip.add(target)
           markStandaloneZipStarted()
+          fireZipStartIfApplicable("zip")
           trackFormStart("zip")
         }
         return
@@ -203,6 +214,7 @@ export function setupFormDomTracking(): void {
       if (!form || startedForms.has(form)) return
       startedForms.add(form)
       markFormSessionStarted(form)
+      if (isZipInput(target)) fireZipStartIfApplicable(formIdFromForm(form))
       trackFormStart(formIdFromForm(form))
     },
     true,

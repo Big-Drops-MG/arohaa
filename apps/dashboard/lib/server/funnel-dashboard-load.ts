@@ -108,7 +108,8 @@ export function buildOverviewFunnelSteps(
 
 export async function fetchFunnelAnalytics(
   workspaceId: string,
-  rangeId: RangeId
+  rangeId: RangeId,
+  formType?: OverviewLandingFormType
 ): Promise<AnalyticsFunnel | null> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
@@ -122,6 +123,7 @@ export async function fetchFunnelAnalytics(
     const url = new URL(`${apiBase}/v1/analytics/funnel`)
     url.searchParams.set("workspace_id", workspaceId)
     url.searchParams.set("range_id", rangeId)
+    if (formType) url.searchParams.set("form_type", formType)
 
     const resp = await fetch(url.toString(), {
       headers: { "x-arohaa-internal": secret },
@@ -166,7 +168,7 @@ export async function loadFunnelDashboardData({
 
   const formType = parseOverviewLandingFormType(row.formType)
 
-  const analytics = await fetchFunnelAnalytics(row.id, rangeId)
+  const analytics = await fetchFunnelAnalytics(row.id, rangeId, formType)
   if (!analytics) {
     return getFunnelEmptyDashboardData(landingPagePublicId, rangeId, formType)
   }
@@ -195,7 +197,7 @@ export async function loadFunnelDashboardDataForApi(
 
   const formType = parseOverviewLandingFormType(row.formType)
 
-  const analytics = await fetchFunnelAnalytics(row.id, rangeId)
+  const analytics = await fetchFunnelAnalytics(row.id, rangeId, formType)
   if (!analytics) {
     return {
       ok: true,
@@ -221,7 +223,7 @@ export async function loadOverviewFunnelSteps({
 
   const formType = parseOverviewLandingFormType(row.formType)
 
-  const analytics = await fetchFunnelAnalytics(row.id, rangeId)
+  const analytics = await fetchFunnelAnalytics(row.id, rangeId, formType)
   if (!analytics) return null
 
   return buildOverviewFunnelSteps(analytics, formType)
