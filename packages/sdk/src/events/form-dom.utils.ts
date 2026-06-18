@@ -51,6 +51,21 @@ export function isZipInput(el: HTMLElement): boolean {
   return false
 }
 
+export function isWithinZipForm(el: HTMLElement): boolean {
+  if (isZipInput(el)) return true
+  if (el.closest("[data-arohaa-zip-submit]")) return true
+  if (el.closest("[data-arohaa-zip-form]")) return true
+
+  const form = el.closest("form")
+  if (form && form.querySelector(
+    "input[data-arohaa-zip], input[data-arohaa-field='zip'], input[data-arohaa-field='zipcode'], input[name='zip'], input[name='zipCode'], [data-slot='zip-code-input'] input",
+  )) {
+    return true
+  }
+
+  return false
+}
+
 export function isMarkedArohaaField(el: HTMLElement): boolean {
   if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
     return false

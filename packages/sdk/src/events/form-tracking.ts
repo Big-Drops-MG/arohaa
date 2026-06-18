@@ -7,6 +7,7 @@ import {
   isMarkedArohaaField,
   isSubmitFormUrl,
   isValidZipValue,
+  isWithinZipForm,
   isZipFormType,
   isZipInput,
   readZipValue,
@@ -47,6 +48,8 @@ function fireFormSuccessOnSubmit(form: HTMLFormElement): void {
   const id = formIdFromForm(form)
   if (hasFormSessionSucceeded(id)) return
 
+
+  fireZipStartIfApplicable(id)
   trackFormSuccess(id)
   fireZipSubmitIfApplicable(id)
   markFormSessionSucceeded(id)
@@ -61,6 +64,7 @@ function handleZipControlSubmit(control: HTMLElement): void {
   const formId = form ? formIdFromForm(form) : "zip"
   if (hasFormSessionSucceeded(formId)) return
 
+  fireZipStartIfApplicable(formId)
   trackFormSubmit(formId)
   trackFormSuccess(formId)
   fireZipSubmitIfApplicable(formId)
@@ -97,6 +101,7 @@ export function installFormFetchTracking(): void {
         }
         if (response.ok && data.success !== false && !data.rejected) {
           if (!hasFormSessionSucceeded()) {
+            fireZipStartIfApplicable()
             trackFormSuccess()
             fireZipSubmitIfApplicable()
             markFormSessionSucceeded()
@@ -104,6 +109,7 @@ export function installFormFetchTracking(): void {
         }
       } catch {
         if (response.ok && !hasFormSessionSucceeded()) {
+          fireZipStartIfApplicable()
           trackFormSuccess()
           fireZipSubmitIfApplicable()
           markFormSessionSucceeded()
@@ -185,10 +191,11 @@ export function setupFormDomTracking(): void {
       }
 
       const form = target.closest("form")
-      if (!form || startedForms.has(form)) return
+      if (!form) return
+      if (isWithinZipForm(target)) fireZipStartIfApplicable(formIdFromForm(form))
+      if (startedForms.has(form)) return
       startedForms.add(form)
       markFormSessionStarted(form)
-      if (isZipInput(target)) fireZipStartIfApplicable(formIdFromForm(form))
       trackFormStart(formIdFromForm(form))
     },
     true,
@@ -211,10 +218,11 @@ export function setupFormDomTracking(): void {
       }
 
       const form = target.closest("form")
-      if (!form || startedForms.has(form)) return
+      if (!form) return
+      if (isWithinZipForm(target)) fireZipStartIfApplicable(formIdFromForm(form))
+      if (startedForms.has(form)) return
       startedForms.add(form)
       markFormSessionStarted(form)
-      if (isZipInput(target)) fireZipStartIfApplicable(formIdFromForm(form))
       trackFormStart(formIdFromForm(form))
     },
     true,

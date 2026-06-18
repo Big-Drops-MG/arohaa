@@ -119,19 +119,19 @@ function buildMetrics(
 ): FunnelMetricRow[] {
   const isZip = formType === 'zip'
 
-  const startedCur = isZip
-    ? current.zipStarted || current.formStarted
-    : current.formStarted
-  const startedPrev = isZip
-    ? previous.zipStarted || previous.formStarted
-    : previous.formStarted
-
   const submittedCur = isZip
     ? current.zipSubmitted || current.formSubmitted
     : current.formSubmitted
   const submittedPrev = isZip
     ? previous.zipSubmitted || previous.formSubmitted
     : previous.formSubmitted
+
+  const startedCur = isZip
+    ? Math.max(current.zipStarted, current.formStarted, submittedCur)
+    : current.formStarted
+  const startedPrev = isZip
+    ? Math.max(previous.zipStarted, previous.formStarted, submittedPrev)
+    : previous.formStarted
 
   const defs = [
     { label: 'Landing Page Visits', cur: current.pageViews, prev: previous.pageViews },
