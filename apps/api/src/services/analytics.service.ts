@@ -243,7 +243,7 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
         query: `
           SELECT city FROM events
           WHERE workspace_id = {wid:UUID} AND city != '' AND created_at >= now() - INTERVAL 7 DAY
-          GROUP BY city ORDER BY count() DESC LIMIT 1
+          GROUP BY city ORDER BY uniqExactIf(user_id, event_name = 'page_view') DESC LIMIT 1
         `,
       }),
 

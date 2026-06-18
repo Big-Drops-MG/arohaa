@@ -93,7 +93,7 @@ export async function getAnalyticsExperiments({
           AND lp_public_id = {lp:String}
           AND created_at >= now() - INTERVAL ${interval}
         GROUP BY city, variant_label
-        ORDER BY city ASC
+        ORDER BY sessions DESC
       `,
     }),
   ])
@@ -127,19 +127,35 @@ export async function getAnalyticsExperiments({
     }
   })
 
-  // Group location by city
-  const cityMap = new Map<string, Record<string, string | number>>()
+  // Group location by city, tracking totals so we can rank top-performing
+  // locations first instead of listing them alphabetically.
+  type CityAccumulator = {
+    row: Record<string, string | number>
+    conversions: number
+    sessions: number
+  }
+  const cityMap = new Map<string, CityAccumulator>()
   for (const row of locationRows) {
     if (!cityMap.has(row.city)) {
-      cityMap.set(row.city, { city: row.city })
+      cityMap.set(row.city, {
+        row: { city: row.city },
+        conversions: 0,
+        sessions: 0,
+      })
     }
-    const cityData = cityMap.get(row.city)!
+    const entry = cityMap.get(row.city)!
     const fs = n(row.form_submitted)
     const ses = n(row.sessions)
-    cityData[`variant${row.variant_label}`] = `${fsrPct(fs, ses)}%`
+    entry.row[`variant${row.variant_label}`] = `${fsrPct(fs, ses)}%`
+    entry.conversions += fs
+    entry.sessions += ses
   }
 
-  const performanceByLocation = Array.from(cityMap.values()) as any[]
+  const performanceByLocation = Array.from(cityMap.values())
+    .sort(
+      (a, b) => b.conversions - a.conversions || b.sessions - a.sessions,
+    )
+    .map((entry) => entry.row) as any[]
 
   return {
     experiments: formattedExperiments,
