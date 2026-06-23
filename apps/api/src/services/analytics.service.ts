@@ -1,4 +1,5 @@
 import { getClickHouseClient } from './clickhouse.service.js'
+import { formatDayOfWeek } from '../lib/day-of-week.js'
 
 export type RangeId = '24h' | '7d' | '30d' | '3m' | '12m' | '24m'
 
@@ -46,11 +47,6 @@ function bouncePct(bounces: number, sessions: number): number {
 
 function fsrPct(submitted: number, sessions: number): number {
   return sessions > 0 ? round1((submitted / sessions) * 100) : 0
-}
-
-const DOW: Record<string, string> = {
-  '1': 'Monday', '2': 'Tuesday', '3': 'Wednesday', '4': 'Thursday',
-  '5': 'Friday', '6': 'Saturday', '7': 'Sunday',
 }
 
 function getMonday(d: Date): string {
@@ -251,8 +247,10 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
         format: 'JSON', query_params: p,
         query: `
           SELECT toDayOfWeek(created_at, 1) AS dow FROM events
-          WHERE workspace_id = {wid:UUID} AND event_name = 'page_view' AND created_at >= now() - INTERVAL 7 DAY
-          GROUP BY dow ORDER BY count() DESC LIMIT 1
+          WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 7 DAY
+          GROUP BY dow
+          ORDER BY uniqExactIf(session_id, event_name = 'form_success') DESC
+          LIMIT 1
         `,
       }),
 
@@ -327,7 +325,8 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
     uniqueVisitors7d: n(kd.vis_7d),
     avgEngagedSecPerSession: n(engRow?.avg_sec),
     topCity: cityRow?.city ?? '-',
-    bestDayLabel: DOW[dowRow?.dow ?? ''] ?? '-',
+    bestDayLabel:
+      formatDayOfWeek(dowRow?.dow) === 'Unknown' ? '-' : formatDayOfWeek(dowRow?.dow),
     hasEvents24h: n(kd.ses_24h) > 0,
     activeUsersNow: n(kd.active_users_now),
   }

@@ -25,6 +25,10 @@ import {
   buildOverviewFunnelSteps,
   fetchFunnelAnalytics,
 } from "@/lib/server/funnel-dashboard-load"
+import {
+  fetchAlertsAnalytics,
+  mapAnalyticsAlerts,
+} from "@/lib/server/alerts-dashboard-load"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
 import type { AnalyticsOverview, RangeId } from "@/lib/server/analytics-types"
@@ -63,7 +67,8 @@ function buildOverviewFromAnalytics(
   data: AnalyticsOverview,
   formType: ReturnType<typeof parseOverviewLandingFormType>,
   funnelSteps: OverviewFunnelStep[],
-  rangeId: RangeId
+  rangeId: RangeId,
+  analyticsAlerts: OverviewAlert[] = []
 ): OverviewDashboardData {
   const RANGES: RangeId[] = ["24h", "7d", "30d", "3m", "12m", "24m"]
 
@@ -103,16 +108,19 @@ function buildOverviewFromAnalytics(
     { label: "Best Day", value: data.bestDayLabel },
   ]
 
-  const alerts: OverviewAlert[] = data.hasEvents24h
-    ? []
-    : [
-        {
-          id: "no-events-24h",
-          message:
-            "No events received in the last 24 hours. Verify the SDK snippet is installed.",
-          severity: "warning",
-        },
-      ]
+  const alerts: OverviewAlert[] = [
+    ...analyticsAlerts,
+    ...(!data.hasEvents24h
+      ? [
+          {
+            id: "no-events-24h",
+            message:
+              "No events received in the last 24 hours. Verify the SDK snippet is installed.",
+            severity: "warning" as const,
+          },
+        ]
+      : []),
+  ]
 
   return {
     formType,
@@ -174,7 +182,7 @@ export async function loadOverviewDashboardData(
   const timer = setTimeout(() => controller.abort(), 8_000)
 
   try {
-    const [overviewResp, funnelAnalytics] = await Promise.all([
+    const [overviewResp, funnelAnalytics, alertsAnalytics] = await Promise.all([
       fetch(
         `${apiBase}/v1/analytics/overview?workspace_id=${encodeURIComponent(row.id)}`,
         {
@@ -184,6 +192,7 @@ export async function loadOverviewDashboardData(
         }
       ),
       fetchFunnelAnalytics(row.id, rangeId, formType),
+      fetchAlertsAnalytics(row.id, landingPagePublicId, rangeId),
     ])
 
     if (!overviewResp.ok) {
@@ -216,7 +225,17 @@ export async function loadOverviewDashboardData(
           }
         })
 
-    return buildOverviewFromAnalytics(data, formType, funnelSteps, rangeId)
+    const analyticsAlerts = alertsAnalytics
+      ? mapAnalyticsAlerts(alertsAnalytics.items)
+      : []
+
+    return buildOverviewFromAnalytics(
+      data,
+      formType,
+      funnelSteps,
+      rangeId,
+      analyticsAlerts
+    )
   } catch (err) {
     if (process.env.NODE_ENV === "development") {
       console.error("[overview] analytics fetch failed", err)

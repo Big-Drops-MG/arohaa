@@ -31,7 +31,9 @@ function mapAlertSeverity(
   return "warning"
 }
 
-function mapAnalyticsAlerts(items: AnalyticsAlertItem[]): OverviewAlert[] {
+export function mapAnalyticsAlerts(
+  items: AnalyticsAlertItem[]
+): OverviewAlert[] {
   return items.map((item) => ({
     id: item.id,
     message: item.message,

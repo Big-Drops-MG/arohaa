@@ -19,6 +19,21 @@ function getIntervals(rangeId: RangeId): { current: string; previous: string } {
 const n = (v: string | number | null | undefined): number =>
   typeof v === 'number' ? v : Number(v ?? 0) || 0
 
+/** Minimum prior-period sessions to show a percentage (avoids +14228% from tiny baselines). */
+const MIN_SESSION_BASELINE = 50
+const MIN_FORM_BASELINE = 20
+const MAX_DISPLAY_PCT = 500
+
+function relativeChangePct(cur: number, prev: number): number | null {
+  if (prev < MIN_SESSION_BASELINE) return null
+  return Math.round(((cur - prev) / prev) * 100)
+}
+
+function formatSignedPct(pct: number): string {
+  const capped = Math.max(-MAX_DISPLAY_PCT, Math.min(MAX_DISPLAY_PCT, pct))
+  return capped >= 0 ? `+${capped}%` : `${capped}%`
+}
+
 export async function getAnalyticsAlerts({
   workspaceId,
   lpPublicId,
@@ -37,17 +52,15 @@ export async function getAnalyticsAlerts({
     query_params: p,
     query: `
       SELECT
-        -- Current Period
         uniqExactIf(session_id, created_at >= now() - INTERVAL ${current}) AS current_sessions,
         uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL ${current}) AS current_form_success,
         uniqExactIf(session_id, event_name = 'form_start' AND created_at >= now() - INTERVAL ${current}) AS current_form_starts,
-        
-        -- Previous Period
+
         uniqExactIf(session_id, created_at >= now() - INTERVAL ${previous} AND created_at < now() - INTERVAL ${current}) AS prev_sessions,
         uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL ${previous} AND created_at < now() - INTERVAL ${current}) AS prev_form_success,
         uniqExactIf(session_id, event_name = 'form_start' AND created_at >= now() - INTERVAL ${previous} AND created_at < now() - INTERVAL ${current}) AS prev_form_starts
       FROM events
-      WHERE workspace_id = {wid:UUID} 
+      WHERE workspace_id = {wid:UUID}
         AND lp_public_id = {lp:String}
         AND created_at >= now() - INTERVAL ${previous}
     `,
@@ -81,56 +94,88 @@ export async function getAnalyticsAlerts({
   const prevFSR = prevSess > 0 ? prevFS / prevSess : 0
 
   const items: AnalyticsAlertItem[] = []
-  
-  // Create a predictable ID generator
-  let idCounter = 1;
-  const nextId = () => String(idCounter++)
-  
-  // Helper to format date
-  const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
-  // 1. Traffic Spike / Drop (20% threshold)
-  if (prevSess > 10) {
-    const diff = (curSess - prevSess) / prevSess
-    if (diff > 0.2) {
+  let idCounter = 1
+  const nextId = () => String(idCounter++)
+
+  const today = new Date().toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  })
+
+  const sessPct = relativeChangePct(curSess, prevSess)
+  const sessDelta = curSess - prevSess
+
+  if (sessPct !== null && curSess > prevSess && sessPct >= 15) {
+    if (rangeId === '7d') {
       items.push({
         id: nextId(),
-        message: `Traffic spike detected (+${Math.round(diff * 100)}% sessions)`,
+        message: `Best weekly hike: ${formatSignedPct(sessPct)} sessions vs prior 7 days`,
         date: today,
-        severity: "info"
+        severity: 'info',
       })
-    } else if (diff < -0.2) {
+    } else if (sessPct >= 20) {
       items.push({
         id: nextId(),
-        message: `Traffic dropped significantly (-${Math.round(Math.abs(diff) * 100)}% sessions)`,
+        message: `Traffic increased (${formatSignedPct(sessPct)} sessions)`,
         date: today,
-        severity: "warning"
+        severity: 'info',
+      })
+    }
+  } else if (sessPct !== null && sessPct <= -20) {
+    items.push({
+      id: nextId(),
+      message: `Traffic dropped significantly (${formatSignedPct(sessPct)} sessions)`,
+      date: today,
+      severity: 'warning',
+    })
+  } else if (
+    prevSess > 0 &&
+    prevSess < MIN_SESSION_BASELINE &&
+    sessDelta >= 100
+  ) {
+    items.push({
+      id: nextId(),
+      message: `Traffic increased significantly (+${sessDelta.toLocaleString('en-US')} sessions vs prior period)`,
+      date: today,
+      severity: 'info',
+    })
+  }
+
+  if (rangeId === '30d' && prevFS >= MIN_FORM_BASELINE) {
+    const fsPct = Math.round(((curFS - prevFS) / prevFS) * 100)
+    if (fsPct >= 10 && curFS > prevFS) {
+      items.push({
+        id: nextId(),
+        message: `Best monthly hike: ${formatSignedPct(fsPct)} form submissions vs prior 30 days`,
+        date: today,
+        severity: 'info',
       })
     }
   }
 
-  // 2. FSR Drop (10% relative threshold)
-  if (prevFSR > 0.05) { // Only alert if previous FSR was at least 5%
+  // FSR drop (10% relative threshold)
+  if (prevFSR > 0.05) {
     const fsrDiff = (curFSR - prevFSR) / prevFSR
     if (fsrDiff < -0.1) {
       items.push({
         id: nextId(),
         message: `Form Submission Rate (FSR) dropped by ${Math.round(Math.abs(fsrDiff) * 100)}%`,
         date: today,
-        severity: "warning"
+        severity: 'warning',
       })
     }
   }
 
-  // 3. Form Starts Drop (15% relative threshold)
-  if (prevStarts > 5) {
+  // Form starts drop (15% relative threshold)
+  if (prevStarts >= MIN_FORM_BASELINE) {
     const startsDiff = (curStarts - prevStarts) / prevStarts
     if (startsDiff < -0.15) {
       items.push({
         id: nextId(),
         message: `Form starts decreased by ${Math.round(Math.abs(startsDiff) * 100)}%`,
         date: today,
-        severity: "warning"
+        severity: 'warning',
       })
     }
   }

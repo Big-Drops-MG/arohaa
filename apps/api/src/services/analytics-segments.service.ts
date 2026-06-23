@@ -1,4 +1,8 @@
 import { getClickHouseClient } from './clickhouse.service.js'
+import {
+  DAY_ORDER,
+  formatDayOfWeek,
+} from '../lib/day-of-week.js'
 import type { AnalyticsSegments, RangeId } from '../types/analytics-segments.js'
 
 type CHJson<T> = { data: T[] }
@@ -21,14 +25,49 @@ function getInterval(rangeId: RangeId): string {
   return '24 MONTH'
 }
 
-const DOW_LABELS: Record<string, string> = {
-  '1': 'Monday',
-  '2': 'Tuesday',
-  '3': 'Wednesday',
-  '4': 'Thursday',
-  '5': 'Friday',
-  '6': 'Saturday',
-  '7': 'Sunday',
+type SegmentRow = {
+  label: string
+  visitors: number
+  formSubmitted: number
+  fsr: number
+}
+
+function aggregateByDayOfWeek(
+  dayRows: Array<{
+    label: string
+    visitors: string
+    form_submitted: string
+    sessions: string
+  }>,
+): SegmentRow[] {
+  const byDay = new Map<
+    string,
+    { visitors: number; formSubmitted: number; sessions: number }
+  >()
+
+  for (const row of dayRows) {
+    const label = formatDayOfWeek(row.label)
+    if (label === 'Unknown') continue
+    const agg = byDay.get(label) ?? {
+      visitors: 0,
+      formSubmitted: 0,
+      sessions: 0,
+    }
+    agg.visitors += n(row.visitors)
+    agg.formSubmitted += n(row.form_submitted)
+    agg.sessions += n(row.sessions)
+    byDay.set(label, agg)
+  }
+
+  return DAY_ORDER.filter((day) => byDay.has(day)).map((label) => {
+    const agg = byDay.get(label)!
+    return {
+      label,
+      visitors: agg.visitors,
+      formSubmitted: agg.formSubmitted,
+      fsr: fsrPct(agg.formSubmitted, agg.sessions),
+    }
+  })
 }
 
 function formatHour(hourStr: string | undefined): string {
@@ -145,7 +184,7 @@ export async function getAnalyticsSegments({
 
   const performanceByLocation = locationRows.map(r => processRow(r))
   const performanceByDevice = deviceRows.map(r => processRow(r, formatDevice))
-  const performanceByTime = dayRows.map(r => processRow(r, val => DOW_LABELS[val] || 'Unknown'))
+  const performanceByTime = aggregateByDayOfWeek(dayRows)
 
   // Calculate Summary KPIs
   const topRegion = performanceByLocation[0]?.label ?? '-'
