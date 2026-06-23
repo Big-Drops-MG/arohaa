@@ -7,8 +7,8 @@ This document describes what the SDK does, which files to use, and how to embed 
 The browser SDK:
 
 - Loads asynchronously so it does not block rendering.
-- Queues calls made before the main bundle finishes loading (snippet + command queue).
-- Sends events to your ingestion API at `{apiBase}/v1/ingest` using `fetch` (with `keepalive` where appropriate). Conversion events (`form_success`, `form_submit`, `zip_submit`, `call_click`) and any send while the page is hidden use `sendBeacon`, so a conversion fired right before a redirect still reaches the API.
+- Queues calls made before the main bundle finishes loading (inline queue stub + `window.arohaa` command queue).
+- Sends events to your ingestion API at `{apiBase}/v1/ingest`. On a **visible** page, events use `fetch` with `keepalive: true` so conversions survive an immediate redirect. `sendBeacon` is used only when the page is already hidden/unloading.
 - Persists a durable anonymous `uid`, a sliding session `sid`, and a lightweight `fp` fingerprint in `localStorage` (privacy-oriented, no invasive cookies for identity).
 - Attaches marketing fields from the current URL (UTM parameters) and `document.referrer` on every event.
 - Optionally records Core Web Vitals (LCP, CLS, INP) and periodic visibility-aware heartbeats for engagement metrics.
@@ -32,32 +32,64 @@ Outputs under `packages/sdk/dist/`:
 | `sdk.js`          | Current major-version bundle (IIFE). Loaded by the snippet.                                                                                                                                |
 | `sdk.v{major}.js` | Same as `sdk.js` but pinned to the package’s semver major (e.g. `sdk.v1.js`). Use if you want stable major URLs without silent breaking changes across majors.                             |
 
+**Production CDN:** `https://cdn.arohaa.net/sdk.js` — deployed from `packages/sdk` on Vercel (`packages/sdk/vercel.json` rewrites `/sdk.js` → `/dist/sdk.js`). Rebuild with `pnpm --filter @workspace/sdk run build` and push `main` to publish.
+
 For local or dashboard-hosted copies, the team also copies built files into `apps/dashboard/public/` (e.g. `https://your-dashboard.example/sdk.js`) so they are served as static assets.
 
 ## Required configuration
 
 The main SDK script tag **must** include:
 
-| Attribute  | Required | Meaning                                                                                                                                                                   |
-| ---------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `data-wid` | Yes      | Workspace ID (UUID string your backend expects).                                                                                                                          |
-| `data-api` | Yes      | **Base URL only** for the ingestion API — no path suffix. The SDK appends `/v1/ingest`. Example: `https://ingest.example.com` not `https://ingest.example.com/v1/ingest`. |
+| Attribute    | Required | Meaning                                                                                                                      |
+| ------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `data-wid`   | Yes      | Workspace ID (UUID string your backend expects).                                                                             |
+| `data-api`   | Yes      | **Base URL only** for the ingestion API — no path suffix. The SDK appends `/v1/ingest`. Production: `https://api.arohaa.net` |
+| `data-lp-id` | Yes      | Landing page public ID (`lp_…`) from the Arohaa dashboard. Events without a matching `lp_id` are not attributed to the page. |
 
 Optional attributes (read from the same script element):
 
-| Attribute       | Default          | Meaning                             |
-| --------------- | ---------------- | ----------------------------------- |
-| `data-page`     | Current hostname | Logical page / site label.          |
-| `data-variant`  | `A`              | A/B variant label.                  |
-| `data-formtype` | `single`         | One of `single`, `zip`, `multiple`. |
+| Attribute       | Default          | Meaning                                                                                                                         |
+| --------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `data-page`     | Current hostname | Logical page hostname — **must match** the URL registered in the dashboard (including `www`). Used with ingest hostname checks. |
+| `data-variant`  | `A`              | A/B variant label.                                                                                                              |
+| `data-formtype` | `single`         | One of `single`, `zip`, `multiple`. Must match the form type selected when the landing page was created.                        |
 
-If `data-wid` or `data-api` is missing, initialization logs an error and tracking does not start.
+If `data-wid`, `data-api`, or `data-lp-id` is missing, initialization logs an error and tracking does not start reliably.
 
-## Recommended integration: snippet first
+## Recommended integration: queue stub + script tag
 
-Use the **snippet** in `<head>` so early user actions are queued until `sdk.js` loads.
+Use the **inline queue stub** plus the **main script** in `<head>` so early user actions are queued until `sdk.js` loads. This is the pattern generated by the dashboard wizard and used in production Next.js layouts.
 
-The built `snippet.js` contains three string placeholders you **must replace** with your real values before publishing:
+```html
+<head>
+  <meta name="arohaa-verify" content="YOUR_VERIFICATION_TOKEN" />
+
+  <script>
+    !(function (w) {
+      if (w.arohaa) return
+      var a = function () {
+        ;(a.q = a.q || []).push(arguments)
+      }
+      a.q = []
+      a.l = Date.now()
+      w.arohaa = a
+    })(window)
+  </script>
+
+  <script
+    id="arohaa-sdk"
+    src="https://cdn.arohaa.net/sdk.js"
+    async
+    data-wid="YOUR_WORKSPACE_UUID"
+    data-api="https://api.arohaa.net"
+    data-lp-id="lp_YOUR_PUBLIC_ID"
+    data-page="www.example.com"
+    data-formtype="zip"
+  ></script>
+</head>
+```
+
+The built `snippet.js` (optional) contains three string placeholders you **must replace** before publishing if you use that loader instead:
 
 - `__AROHAA_SDK_URL__` — full URL to `sdk.js` (or `sdk.v1.js`).
 - `__AROHAA_WID__` — workspace UUID.
@@ -162,11 +194,9 @@ Each product labels the field differently; look for “header”, “head”, or
 
 ### Next.js (App Router) — landing app in the monorepo or separate repo
 
-Use `next/script` so Next deduplicates and you keep `data-*` on the script that loads the bundle:
+Recommended pattern (matches production landings such as Quotifii and Nation One Debt Relief):
 
 ```tsx
-import Script from "next/script"
-
 export default function RootLayout({
   children,
 }: {
@@ -175,12 +205,22 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <Script
+        <meta name="arohaa-verify" content="YOUR_VERIFICATION_TOKEN" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "!function(w){if(w.arohaa)return;var a=function(){(a.q=a.q||[]).push(arguments)};a.q=[];a.l=Date.now();w.arohaa=a}(window);",
+          }}
+        />
+        <script
           id="arohaa-sdk"
-          src="https://your-cdn.example/arohaa/sdk.js"
-          strategy="afterInteractive"
-          data-wid="YOUR-WORKSPACE-UUID"
-          data-api="https://your-ingest.example.com"
+          src="https://cdn.arohaa.net/sdk.js"
+          async
+          data-wid="YOUR_WORKSPACE_UUID"
+          data-api="https://api.arohaa.net"
+          data-lp-id="lp_YOUR_PUBLIC_ID"
+          data-page="www.example.com"
+          data-formtype="single"
         />
       </head>
       <body>{children}</body>
@@ -189,7 +229,61 @@ export default function RootLayout({
 }
 ```
 
-For **early queueing** on a Next marketing site, either paste the **inline snippet** into a small `Script` with `strategy="beforeInteractive"` (dangerouslySetInnerHTML only if you trust the string), or add the minified snippet file via `src` on a static `snippet.js` you control.
+Use `data-formtype="zip"` for zip landings and `single` / `multiple` for full lead forms. Set `data-page` to the **canonical hostname** registered in the dashboard.
+
+You can also use `next/script` with `strategy="afterInteractive"`, but keep `id="arohaa-sdk"` and all `data-*` attributes on the tag that loads the bundle.
+
+### Single-step landing pages (`data-formtype="single"`)
+
+For a full lead form handled by your app API, point the form at your submit route so `form_success` only fires on a real successful response:
+
+```html
+<form method="POST" action="/api/submit-form">
+  <input name="firstName" data-arohaa-field="firstName" />
+  <input name="email" data-arohaa-field="email" />
+  <button type="submit">Submit</button>
+</form>
+```
+
+Phone CTAs use normal `tel:` links — no extra code:
+
+```html
+<a href="tel:+18664951543">Call us</a>
+```
+
+The SDK auto-fires `call_click` on any `<a href="tel:…">` click.
+
+### Zip landing pages (`data-formtype="zip"`)
+
+Zip funnels need the SDK script **and** zip widget markup. The SDK recognizes the whole zip widget (not only the input), which matters when the zip is **pre-filled** (e.g. geolocation) and the user's first action is clicking Submit.
+
+**Required / recommended markup**
+
+```html
+<form data-arohaa-zip-form onsubmit="handleSubmit">
+  <input data-arohaa-zip name="zip" maxlength="5" inputmode="numeric" />
+  <button type="submit" data-arohaa-zip-submit>Get quote</button>
+</form>
+```
+
+| Marker                   | Purpose                                                                                      |
+| ------------------------ | -------------------------------------------------------------------------------------------- |
+| `data-arohaa-zip-form`   | Wrapper — any click/focus inside counts as zip engagement                                    |
+| `data-arohaa-zip`        | Zip input (also: `name="zip"`, `data-arohaa-field="zip"`, or `[data-slot="zip-code-input"]`) |
+| `data-arohaa-zip-submit` | Submit control for standalone zip CTAs outside a `<form>`                                    |
+
+**Zip funnel events**
+
+| Event          | When                                                                                                                                                             |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `zip_start`    | First interaction anywhere in the zip widget (input, submit button, or container). Also fired before every `zip_submit` so Started ≥ Submitted in the dashboard. |
+| `zip_submit`   | Valid zip submitted (`data-formtype="zip"` on the SDK script)                                                                                                    |
+| `form_start`   | Generic form engagement (also fires for zip forms)                                                                                                               |
+| `form_success` | Successful conversion                                                                                                                                            |
+
+If you `preventDefault()` and redirect in React, defer navigation ~300ms so `keepalive` fetch can finish — see [Do not navigate synchronously](#do-not-navigate-synchronously-right-after-a-conversion).
+
+**Reference implementation:** `landing-pages` repo → `apps/auto-insurance-quotifii` (`Hero.tsx`, `Options.tsx`, `app/layout.tsx`).
 
 ### Tracking buttons, links, and forms
 
@@ -228,8 +322,9 @@ The SDK fires these without manual `window.arohaa` calls when markup matches the
 
 | Event              | When it fires                                                                                                                                                                                                    |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `call_click`       | Click on an `<a href="tel:…">` link (uses `sendBeacon`).                                                                                                                                                         |
+| `call_click`       | Click on an `<a href="tel:…">` link.                                                                                                                                                                             |
 | `form_start`       | First focus or click inside a `<form>`, or first interaction with a zip / `data-arohaa-field` input outside a form.                                                                                              |
+| `zip_start`        | First interaction anywhere in a zip widget (`data-arohaa-zip-form`, zip input, or `data-arohaa-zip-submit`). Idempotent per session; also ensured before `zip_submit`. Requires `data-formtype="zip"`.           |
 | `form_field_focus` | Focus on inputs inside a `<form>`, or on fields marked with `data-arohaa-field` / zip markers (see below).                                                                                                       |
 | `form_submit`      | Native `<form>` `submit` event (capture phase).                                                                                                                                                                  |
 | `form_success`     | On `<form>` submit when the form does **not** POST to same-origin `/api/submit-form` (external redirect, GET, etc.), **or** after a successful POST to `/api/submit-form` via `fetch`. Deduplicated per session. |
@@ -238,6 +333,7 @@ The SDK fires these without manual `window.arohaa` calls when markup matches the
 **Zip / field markup the SDK recognizes**
 
 - Zip input: `data-arohaa-zip`, `data-arohaa-field="zip"`, `name="zip"`, or input inside `[data-slot="zip-code-input"]`.
+- Zip container: `data-arohaa-zip-form` on the `<form>` or wrapper — clicks on the submit button count as zip engagement even when the zip was pre-filled.
 - Standalone zip submit (no `<form>`): put `data-arohaa-zip-submit` on the CTA and optional `data-arohaa-zip-form` on a wrapper; fires `form_submit`, `form_success`, and `zip_submit` when the zip value is 5 digits.
 - Other fields: `data-arohaa-field="email"` (etc.) on inputs, with optional `data-arohaa-form` wrapper for `form_start` grouping.
 
@@ -254,9 +350,9 @@ Set `data-formtype="zip"` on the SDK script. On submit, the SDK fires `form_subm
 
 **Do not navigate synchronously right after a conversion (important)**
 
-Conversion events (`form_success`, `form_submit`, `zip_submit`, `call_click`) are sent with `navigator.sendBeacon` using an `application/json` body. Cross-origin, that body is **not** a CORS-safelisted content type, so the beacon triggers a CORS preflight. If your handler redirects in the same tick (for example `e.preventDefault()` then an immediate `window.location.href = ...`), the navigation can **cancel the in-flight preflighted beacon before it reaches the API**. The symptom is `form_start` showing up in the dashboard while `form_success` / `zip_submit` stay at zero, because `form_start` fires earlier (on focus) with nothing navigating right after it.
+On a visible page, conversions are sent with `fetch(..., { keepalive: true })`, which survives navigation much more reliably than `sendBeacon` with `application/json`. Still, if you call `preventDefault()` and redirect in the same handler, give the request a moment to flush before unloading:
 
-This is the most common reason zip submissions are tracked as started but never submitted. Two safe patterns:
+This is the most common reason zip submissions show as started but not submitted when redirect timing is too aggressive. Two safe patterns:
 
 1. **Let the real `<form>` navigate natively.** Put the destination on the form (`action` + `method`) and do not call `preventDefault()`. The SDK fires the conversion beacons on the `submit` event (capture phase) and the browser then navigates.
 2. **If you must build the redirect URL in JS, defer the navigation a moment** so the beacon can flush. The SDK already dispatched the beacon on the `submit` event before your handler runs; a short delay just keeps the page alive long enough for it to complete:
@@ -301,25 +397,28 @@ window.arohaa("call_click", { href: "tel:+15551234567" })
 
 Which events matter per `data-formtype` (auto-tracked when markup matches above):
 
-| `data-formtype` | Funnel labels                 | Expected events                                                                      |
-| --------------- | ----------------------------- | ------------------------------------------------------------------------------------ |
-| `zip`           | Zip Started / Zip Submitted   | `form_start`, `form_success`, `zip_submit` (auto); `form_step_view` if multi-step    |
-| `single`        | Form Started / Form Submitted | `form_start`, `form_success`, optional `form_field_focus`                            |
-| `multiple`      | Form Started / Form Submitted | `form_start`, `form_step_view` per step, `form_success`, optional `form_field_focus` |
+| `data-formtype` | Funnel labels                 | Expected events                                                                         |
+| --------------- | ----------------------------- | --------------------------------------------------------------------------------------- |
+| `zip`           | Zip Started / Zip Submitted   | `zip_start`, `form_start`, `form_success`, `zip_submit` (auto when markup matches)      |
+| `single`        | Form Started / Form Submitted | `form_start`, `form_success`, `call_click` on `tel:` links, optional `form_field_focus` |
+| `multiple`      | Form Started / Form Submitted | `form_start`, `form_step_view` per step, `form_success`, optional `form_field_focus`    |
 
 `form_step_view` is auto-tracked when step containers use `data-arohaa-step` (see `form-step-tracking.ts`). `form_success` is the canonical "submitted" event used across Overview, Funnel, Traffic, Segments, and Experiments.
 
-## Alternative: single script tag (no snippet)
+## Alternative: single script tag (no queue stub)
 
-You can skip the snippet and load only the main bundle if you do not need early queuing:
+You can skip the inline queue stub if you do not need early queuing (not recommended for hero CTAs above the fold):
 
 ```html
 <script
   id="arohaa-sdk"
   async
-  src="https://cdn.example.com/arohaa/sdk.js"
+  src="https://cdn.arohaa.net/sdk.js"
   data-wid="00000000-0000-0000-0000-000000000000"
-  data-api="https://ingest.example.com"
+  data-api="https://api.arohaa.net"
+  data-lp-id="lp_YOUR_PUBLIC_ID"
+  data-page="www.example.com"
+  data-formtype="single"
 ></script>
 ```
 
@@ -337,19 +436,23 @@ Browser `POST` requests to the API are cross-origin unless the page is served fr
 ## Rebuilding and publishing
 
 1. Run `pnpm --filter @workspace/sdk run build`.
-2. Upload `dist/snippet.js` (with placeholders replaced or templated), `dist/sdk.js`, and optionally `dist/sdk.v1.js` to your CDN or static host.
-3. Confirm `GET` of `sdk.js` returns `200` and correct `Content-Type` (`application/javascript` or `text/javascript`).
-4. In browser devtools, verify `POST {apiBase}/v1/ingest` returns `202` and response headers include `x-trace-id` when testing.
+2. Push to `main` — Vercel rebuilds `https://cdn.arohaa.net/sdk.js` from `packages/sdk` (cache ~5–10 minutes).
+3. Or upload `dist/sdk.js` and `dist/sdk.v1.js` to your own CDN.
+4. Confirm `GET` of `sdk.js` returns `200` and correct `Content-Type` (`application/javascript` or `text/javascript`).
+5. In browser devtools, verify `POST {apiBase}/v1/ingest` returns `202` and response headers include `x-trace-id` when testing.
 
 ## Troubleshooting
 
-| Symptom                                                         | Likely cause                                                                                                                                                                                             |
-| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Console: missing `data-wid` / `data-api`                        | Attributes not on the script that loads `sdk.js`, or snippet did not pass `apiBase` so `data-api` was never set.                                                                                         |
-| CORS errors in Network tab                                      | API `Access-Control-Allow-Origin` does not include the page origin.                                                                                                                                      |
-| Events only appear after reconnect                              | Working as designed: outbox drains on `online` / visibility / load after transient failures.                                                                                                             |
-| `form_start` tracked but `form_success` / `zip_submit` are zero | Page redirects synchronously after submit and cancels the conversion beacon. Let the form navigate natively or defer the redirect ~300ms (see "Do not navigate synchronously right after a conversion"). |
-| 400 from API                                                    | Body failed JSON schema validation (event name pattern, UUID format for `wid`, etc.).                                                                                                                    |
+| Symptom                                                         | Likely cause                                                                                                                                                                 |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Console: missing `data-wid` / `data-api`                        | Attributes not on the script that loads `sdk.js`, or snippet did not pass `apiBase` so `data-api` was never set.                                                             |
+| SDK in Git but not on live site                                 | Production host has not deployed latest commit — view **page source**, not only DevTools.                                                                                    |
+| Connection / verify fails                                       | Dashboard URL hostname ≠ canonical live URL (`www` redirect). Update the registered URL to match where users land.                                                           |
+| CORS errors in Network tab                                      | API `Access-Control-Allow-Origin` does not include the page origin.                                                                                                          |
+| Events only appear after reconnect                              | Working as designed: outbox drains on `online` / visibility / load after transient failures.                                                                                 |
+| `form_start` tracked but `form_success` / `zip_submit` are zero | Page redirects too quickly after submit. Defer redirect ~300ms or let the form navigate natively (see above).                                                                |
+| Zip Started ≪ Zip Submitted (historical)                        | Old SDK only fired `zip_start` on input focus; upgrade `cdn.arohaa.net/sdk.js` and use `data-arohaa-zip-form` markup. API funnel also clamps using `form_start` as fallback. |
+| 400 from API                                                    | Body failed JSON schema validation (event name pattern, UUID format for `wid`, etc.).                                                                                        |
 
 ## Further reading (code)
 
@@ -357,4 +460,4 @@ Browser `POST` requests to the API are cross-origin unless the page is served fr
 - Global + queue drain: `packages/sdk/src/sdk.ts`
 - Config resolution: `packages/sdk/src/model/config.ts`
 - Transport and outbox: `packages/sdk/src/services/network.service.ts`, `packages/sdk/src/network/retry.ts`
-- Payload shape: `packages/sdk/src/model/event.ts`, `packages/sdk/src/types/index.ts`
+- Form + zip tracking: `packages/sdk/src/events/form-tracking.ts`, `packages/sdk/src/events/zip.events.ts`, `packages/sdk/src/events/form-dom.utils.ts`
