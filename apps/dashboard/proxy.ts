@@ -5,6 +5,6 @@ export const proxy: NextMiddleware = auth as unknown as NextMiddleware
 
 export const config = {
   matcher: [
-    "/((?!api/ingest|_next/static|_next/image|favicon.ico|.*\\.svg$).*)",
+    "/((?!api/ingest|_next/static|_next/image|favicon.ico|favicon.png|.*\\.svg$).*)",
   ],
 }
