@@ -19,7 +19,6 @@ function getIntervals(rangeId: RangeId): { current: string; previous: string } {
 const n = (v: string | number | null | undefined): number =>
   typeof v === 'number' ? v : Number(v ?? 0) || 0
 
-/** Minimum prior-period sessions to show a percentage (avoids +14228% from tiny baselines). */
 const MIN_SESSION_BASELINE = 50
 const MIN_FORM_BASELINE = 20
 const MAX_DISPLAY_PCT = 500
