@@ -87,7 +87,7 @@ const REFERRER_DOMAIN_EXPR = `
 
 const UTM_LABEL_EXPR = `
   arrayStringConcat(
-    arrayFilter(x -> x != '', [utm_source, utm_medium, utm_campaign]),
+    arrayFilter(x -> x != '', [utm_source, utm_medium, utm_campaign, utm_id, utm_s1]),
     ' / '
   )
 `
@@ -233,8 +233,8 @@ function utmParametersQuery(rangeId: TrafficRangeId): string {
     FROM events
     WHERE ${RANGE_FILTER(rangeId)}
       AND event_name = 'page_view'
-      AND (utm_source != '' OR utm_medium != '' OR utm_campaign != '')
-    GROUP BY utm_source, utm_medium, utm_campaign
+      AND (utm_source != '' OR utm_medium != '' OR utm_campaign != '' OR utm_id != '' OR utm_s1 != '')
+    GROUP BY utm_source, utm_medium, utm_campaign, utm_id, utm_s1
     HAVING domain != ''
     ORDER BY visitors DESC
     LIMIT ${TOP_N}

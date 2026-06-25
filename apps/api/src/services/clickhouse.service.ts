@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS events (
     utm_campaign String DEFAULT '',
     utm_term String DEFAULT '',
     utm_content String DEFAULT '',
+    utm_id LowCardinality(String) DEFAULT '',
+    utm_s1 LowCardinality(String) DEFAULT '',
     referrer String DEFAULT '',
     referrer_source LowCardinality(String) DEFAULT '',
     browser LowCardinality(String) DEFAULT '',
@@ -74,6 +76,14 @@ export async function ensureEventsTable(): Promise<void> {
   await ch.command({
     query:
       "ALTER TABLE events ADD COLUMN IF NOT EXISTS variant LowCardinality(String) DEFAULT ''",
+  })
+  await ch.command({
+    query:
+      "ALTER TABLE events ADD COLUMN IF NOT EXISTS utm_id LowCardinality(String) DEFAULT ''",
+  })
+  await ch.command({
+    query:
+      "ALTER TABLE events ADD COLUMN IF NOT EXISTS utm_s1 LowCardinality(String) DEFAULT ''",
   })
 }
 

@@ -21,6 +21,8 @@ try {
         utm_campaign,
         utm_term,
         utm_content,
+        utm_id,
+        utm_s1,
         referrer
       FROM events
       ORDER BY created_at ASC

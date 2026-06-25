@@ -15,6 +15,8 @@ export interface IngestEventBody {
   utm_campaign?: string
   utm_term?: string
   utm_content?: string
+  utm_id?: string
+  utm_s1?: string
   referrer?: string
   metric_name?: string
   metric_value?: number
@@ -34,6 +36,8 @@ export interface EventRow {
   utm_campaign: string
   utm_term: string
   utm_content: string
+  utm_id: string
+  utm_s1: string
   referrer: string
   referrer_source: string
   browser: string
@@ -76,6 +80,8 @@ export function ingestBodyToEventRow(
     utm_campaign: body.utm_campaign ?? '',
     utm_term: body.utm_term ?? '',
     utm_content: body.utm_content ?? '',
+    utm_id: body.utm_id ?? '',
+    utm_s1: body.utm_s1 ?? '',
     referrer: body.referrer ?? '',
     referrer_source: enrichment.referrerSource,
     browser: enrichment.browser,

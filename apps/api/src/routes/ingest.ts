@@ -30,6 +30,8 @@ const ingestSchema = {
       utm_campaign: { type: 'string', maxLength: 255 },
       utm_term: { type: 'string', maxLength: 500 },
       utm_content: { type: 'string', maxLength: 255 },
+      utm_id: { type: 'string', maxLength: 100 },
+      utm_s1: { type: 'string', maxLength: 100 },
       referrer: { type: 'string', maxLength: 2048 },
       metric_name: { type: 'string', maxLength: 50 },
       metric_value: { type: 'number' },
