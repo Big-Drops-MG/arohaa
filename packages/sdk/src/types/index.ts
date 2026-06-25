@@ -24,6 +24,8 @@ export interface EventPayload {
   utm_campaign: string
   utm_term: string
   utm_content: string
+  utm_id: string
+  utm_s1: string
   referrer: string
   metric_name: string
   metric_value: number

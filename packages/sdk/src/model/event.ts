@@ -29,6 +29,8 @@ export function buildEvent(
     utm_campaign: attribution.utm_campaign,
     utm_term: attribution.utm_term,
     utm_content: attribution.utm_content,
+    utm_id: attribution.utm_id,
+    utm_s1: attribution.utm_s1,
     referrer: attribution.referrer,
     metric_name: metric?.metric_name ?? "",
     metric_value: metric?.metric_value ?? 0,
