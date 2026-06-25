@@ -14,6 +14,8 @@ import type {
 type CHJson<T> = { data: T[] }
 
 const TOP_N = 20
+/** UTM combos are high-cardinality (source × medium × campaign × id × s1); return all rows for the range. */
+const UTM_PARAMETERS_LIMIT = 5000
 
 const n = (v: string | number | null | undefined): number =>
   typeof v === 'number' ? v : Number(v ?? 0) || 0
@@ -229,15 +231,26 @@ function utmParametersQuery(rangeId: TrafficRangeId): string {
   return `
     SELECT
       ${UTM_LABEL_EXPR} AS domain,
-      uniqExactIf(user_id, event_name = 'page_view') AS visitors
-    FROM events
-    WHERE ${RANGE_FILTER(rangeId)}
-      AND event_name = 'page_view'
-      AND (utm_source != '' OR utm_medium != '' OR utm_campaign != '' OR utm_id != '' OR utm_s1 != '')
+      uniqExact(user_id) AS visitors
+    FROM (
+      SELECT
+        session_id,
+        any(user_id) AS user_id,
+        anyIf(utm_source, utm_source != '') AS utm_source,
+        anyIf(utm_medium, utm_medium != '') AS utm_medium,
+        anyIf(utm_campaign, utm_campaign != '') AS utm_campaign,
+        anyIf(utm_id, utm_id != '') AS utm_id,
+        anyIf(utm_s1, utm_s1 != '') AS utm_s1
+      FROM events
+      WHERE ${RANGE_FILTER(rangeId)}
+      GROUP BY session_id
+      HAVING max(event_name = 'page_view') = 1
+    )
+    WHERE utm_source != '' OR utm_medium != '' OR utm_campaign != '' OR utm_id != '' OR utm_s1 != ''
     GROUP BY utm_source, utm_medium, utm_campaign, utm_id, utm_s1
     HAVING domain != ''
     ORDER BY visitors DESC
-    LIMIT ${TOP_N}
+    LIMIT ${UTM_PARAMETERS_LIMIT}
   `
 }
 
