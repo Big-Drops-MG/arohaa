@@ -209,6 +209,21 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  apps/worker:
+    dependencies:
+      '@clickhouse/client':
+        specifier: ^1.14.0
+        version: 1.18.3
+      '@sentry/node':
+        specifier: ^10.51.0
+        version: 10.51.0
+      dotenv:
+        specifier: ^16.6.1
+        version: 16.6.1
+      ioredis:
+        specifier: ^5.10.1
+        version: 5.10.1
+
   packages/bdmg-component:
     dependencies:
       lucide-react:

@@ -63,9 +63,15 @@ export async function fetchLandingPageCardMetrics(
 
     const data = (await resp.json()) as LandingPageCardMetrics
     return buildLandingPageMetrics(data)
-  } catch (err) {
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[landing-metrics] fetch timed out")
+      }
+      return emptyLandingPageMetrics
+    }
     if (process.env.NODE_ENV === "development") {
-      console.error("[landing-metrics] fetch failed", err)
+      console.error("[landing-metrics] fetch failed", err?.message || err)
     }
     return emptyLandingPageMetrics
   } finally {

@@ -1,0 +1,16 @@
+{
+  "name": "@workspace/worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "worker": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "@clickhouse/client": "^1.14.0",
+    "@sentry/node": "^10.51.0",
+    "dotenv": "^16.6.1",
+    "ioredis": "^5.10.1"
+  }
+}

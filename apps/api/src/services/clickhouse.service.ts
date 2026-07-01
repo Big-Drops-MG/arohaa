@@ -36,6 +36,20 @@ ORDER BY (workspace_id, toDate(created_at), event_name)
 `
 
 let client: ClickHouseClient | null = null
+let clickHouseBackoffUntil = 0
+const CLICKHOUSE_BACKOFF_MS = 30_000
+
+export function shouldSkipClickHouse(): boolean {
+  return Date.now() < clickHouseBackoffUntil
+}
+
+export function noteClickHouseFailure(): void {
+  clickHouseBackoffUntil = Date.now() + CLICKHOUSE_BACKOFF_MS
+}
+
+export function noteClickHouseSuccess(): void {
+  clickHouseBackoffUntil = 0
+}
 
 function getEnv(name: string): string | undefined {
   const value = process.env[name]
@@ -110,11 +124,17 @@ export async function insertEvents(rows: EventRow[]): Promise<void> {
   if (rows.length === 0) return
 
   const ch = getClickHouseClient()
-  await ch.insert({
-    table: 'events',
-    values: rows,
-    format: 'JSONEachRow',
-  })
+  try {
+    await ch.insert({
+      table: 'events',
+      values: rows,
+      format: 'JSONEachRow',
+    })
+    noteClickHouseSuccess()
+  } catch (err) {
+    noteClickHouseFailure()
+    throw err
+  }
 }
 
 export async function closeClickHouseClient(): Promise<void> {

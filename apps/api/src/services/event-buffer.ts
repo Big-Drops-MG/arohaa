@@ -1,6 +1,10 @@
 import * as Sentry from '@sentry/node'
 import type { FastifyBaseLogger } from 'fastify'
-import { insertEvents } from './clickhouse.service.js'
+import {
+  insertEvents,
+  shouldSkipClickHouse,
+} from './clickhouse.service.js'
+import { isClickHouseUnavailableError } from '../lib/is-clickhouse-unavailable.js'
 import type { EventRow } from '../types/event.js'
 
 const FLUSH_INTERVAL_MS = 5000
@@ -74,6 +78,12 @@ export async function flush(reason: string = 'manual'): Promise<void> {
 }
 
 async function doFlush(reason: string): Promise<void> {
+  if (buffer.length === 0) return
+
+  if (shouldSkipClickHouse()) {
+    return
+  }
+
   const batch = buffer
   buffer = []
 
@@ -93,6 +103,19 @@ async function doFlush(reason: string): Promise<void> {
     const requeue = batch.slice(0, Math.max(0, remainingHeadroom))
     const droppedRows = batch.length - requeue.length
     buffer = requeue.concat(buffer)
+
+    if (isClickHouseUnavailableError(err)) {
+      logger?.warn(
+        {
+          reason,
+          attemptedRows: batch.length,
+          requeuedRows: requeue.length,
+        },
+        'clickhouse unreachable; pausing event flushes',
+      )
+      return
+    }
+
     logger?.error(
       {
         err,
