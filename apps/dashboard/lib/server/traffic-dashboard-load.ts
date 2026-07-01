@@ -164,9 +164,15 @@ export async function fetchTrafficAnalytics(
     }
 
     return (await resp.json()) as AnalyticsTraffic
-  } catch (err) {
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[traffic] analytics fetch timed out")
+      }
+      return null
+    }
     if (process.env.NODE_ENV === "development") {
-      console.error("[traffic] analytics fetch failed", err)
+      console.error("[traffic] analytics fetch failed", err?.message || err)
     }
     return null
   } finally {

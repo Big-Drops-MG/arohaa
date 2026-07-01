@@ -152,9 +152,15 @@ export async function fetchSegmentsAnalytics(
     }
 
     return (await resp.json()) as AnalyticsSegments
-  } catch (err) {
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[segments] analytics fetch timed out")
+      }
+      return null
+    }
     if (process.env.NODE_ENV === "development") {
-      console.error("[segments] analytics fetch failed", err)
+      console.error("[segments] analytics fetch failed", err?.message || err)
     }
     return null
   } finally {

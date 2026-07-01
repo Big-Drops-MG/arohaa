@@ -155,9 +155,15 @@ export async function fetchExperimentsAnalytics(
     }
 
     return (await resp.json()) as AnalyticsExperiments
-  } catch (err) {
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[experiments] analytics fetch timed out")
+      }
+      return null
+    }
     if (process.env.NODE_ENV === "development") {
-      console.error("[experiments] analytics fetch failed", err)
+      console.error("[experiments] analytics fetch failed", err?.message || err)
     }
     return null
   } finally {
