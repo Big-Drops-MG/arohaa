@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
+import { createClient, ClickHouseClient } from '@clickhouse/client';
 import { bootstrapDatabaseEnv } from './config/env.js';
 import * as authSchema from './schema/auth.js';
 import * as landingSchema from './schema/landing-pages.js';
@@ -49,4 +50,13 @@ export * from './landing/htmlVerificationToken.js';
 
 export * from 'drizzle-orm';
 
-export const clickhouse = null;
+export let clickhouse: ClickHouseClient | null = null;
+if (process.env.CLICKHOUSE_URL) {
+  clickhouse = createClient({
+    url: process.env.CLICKHOUSE_URL,
+    username: process.env.CLICKHOUSE_USER || 'default',
+    password: process.env.CLICKHOUSE_PASSWORD || '',
+  });
+}
+
+export * from './queries/events.js';

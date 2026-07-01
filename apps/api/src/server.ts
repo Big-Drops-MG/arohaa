@@ -14,6 +14,7 @@ import { analyticsRoutes } from './routes/analytics.js'
 import {
   closeClickHouseClient,
   ensureEventsTable,
+  noteClickHouseFailure,
 } from './services/clickhouse.service.js'
 import { initGeo } from './services/geo.service.js'
 import {
@@ -167,6 +168,7 @@ const start = async () => {
       await ensureEventsTable()
       server.log.info('clickhouse events table verified')
     } catch (err) {
+      noteClickHouseFailure()
       server.log.warn(
         { err },
         'clickhouse schema setup failed; API will start but ingest/analytics may fail until ClickHouse is reachable',

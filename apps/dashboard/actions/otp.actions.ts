@@ -9,6 +9,7 @@ import {
 } from "@workspace/database"
 import { generateSecret, generateURI, verifySync } from "otplib"
 import QRCode from "qrcode"
+import { cookies } from "next/headers"
 
 export async function generateOTPSetup() {
   const session = await auth()
@@ -93,6 +94,12 @@ export async function verifyAndEnableOTP(
       pendingTwoFactorSecret: null,
     })
     .where(whereUserEmail(enrolledEmail))
+  ;(await cookies()).set("arohaa_2fa_verified", "true", {
+    secure: process.env.NODE_ENV === "production",
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+  })
 
   return { success: true }
 }

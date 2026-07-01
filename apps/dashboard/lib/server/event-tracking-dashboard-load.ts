@@ -155,9 +155,15 @@ export async function fetchEventTrackingAnalytics(
     }
 
     return (await resp.json()) as AnalyticsEvents
-  } catch (err) {
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[events] analytics fetch timed out")
+      }
+      return null
+    }
     if (process.env.NODE_ENV === "development") {
-      console.error("[events] analytics fetch failed", err)
+      console.error("[events] analytics fetch failed", err?.message || err)
     }
     return null
   } finally {

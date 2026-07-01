@@ -97,9 +97,15 @@ export async function fetchAlertsAnalytics(
     }
 
     return (await resp.json()) as AnalyticsAlertsResponse
-  } catch (err) {
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[alerts] analytics fetch timed out")
+      }
+      return null
+    }
     if (process.env.NODE_ENV === "development") {
-      console.error("[alerts] analytics fetch failed", err)
+      console.error("[alerts] analytics fetch failed", err?.message || err)
     }
     return null
   } finally {

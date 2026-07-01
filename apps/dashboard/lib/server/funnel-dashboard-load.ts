@@ -143,9 +143,15 @@ export async function fetchFunnelAnalytics(
     }
 
     return (await resp.json()) as AnalyticsFunnel
-  } catch (err) {
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[funnel] analytics fetch timed out")
+      }
+      return null
+    }
     if (process.env.NODE_ENV === "development") {
-      console.error("[funnel] analytics fetch failed", err)
+      console.error("[funnel] analytics fetch failed", err?.message || err)
     }
     return null
   } finally {
