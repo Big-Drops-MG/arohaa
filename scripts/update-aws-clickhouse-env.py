@@ -76,7 +76,7 @@ def main() -> None:
         print(f"  rollout={state} running={running}/{desired}")
         time.sleep(15)
     else:
-        print("Rollout still in progress — check ECS console.")
+        print("Rollout still in progress — check the AWS console.")
 
     result = subprocess.run(
         ["curl.exe", "-s", "https://api.arohaa.net/health"],
