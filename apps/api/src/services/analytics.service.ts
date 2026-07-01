@@ -1,5 +1,6 @@
 import { getClickHouseClient } from './clickhouse.service.js'
 import { formatDayOfWeek } from '../lib/day-of-week.js'
+import { TtlMemoryCache } from '../lib/ttl-memory-cache.js'
 
 export type RangeId = '24h' | '7d' | '30d' | '3m' | '12m' | '24m'
 
@@ -119,7 +120,12 @@ function buildSeries(
   return pts
 }
 
+const OVERVIEW_RESPONSE_CACHE = new TtlMemoryCache<AnalyticsOverview>(45_000)
+
 export async function getAnalyticsOverview(workspaceId: string): Promise<AnalyticsOverview> {
+  const cached = OVERVIEW_RESPONSE_CACHE.get(workspaceId)
+  if (cached) return cached
+
   const ch = getClickHouseClient()
   const p = { wid: workspaceId }
 
@@ -310,7 +316,7 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
     }
   }
 
-  return {
+  const result: AnalyticsOverview = {
     kpis: {
       '24h': mkKpis('24h'), '7d': mkKpis('7d'), '30d': mkKpis('30d'),
       '3m': mkKpis('3m'), '12m': mkKpis('12m'), '24m': mkKpis('24m'),
@@ -330,6 +336,9 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
     hasEvents24h: n(kd.ses_24h) > 0,
     activeUsersNow: n(kd.active_users_now),
   }
+
+  OVERVIEW_RESPONSE_CACHE.set(workspaceId, result)
+  return result
 }
 
 const ALL_RANGES: RangeId[] = ['24h', '7d', '30d', '3m', '12m', '24m']

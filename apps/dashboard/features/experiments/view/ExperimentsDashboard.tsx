@@ -8,7 +8,7 @@ import type { ExperimentsDashboardData } from "@/features/experiments/model/expe
 import { ExperimentsCards } from "@/features/experiments/view/ExperimentsCards"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
-const EXPERIMENTS_REFETCH_MS = 30_000
+const EXPERIMENTS_REFETCH_MS = 60_000
 
 type ExperimentsDashboardProps = {
   data: ExperimentsDashboardData

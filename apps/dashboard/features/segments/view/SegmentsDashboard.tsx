@@ -9,7 +9,7 @@ import { SegmentsPerformanceCards } from "@/features/segments/view/SegmentsPerfo
 import { SegmentsSummaryKpiRow } from "@/features/segments/view/SegmentsSummaryKpiRow"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
-const SEGMENTS_REFETCH_MS = 30_000
+const SEGMENTS_REFETCH_MS = 60_000
 
 type SegmentsDashboardProps = {
   data: SegmentsDashboardData

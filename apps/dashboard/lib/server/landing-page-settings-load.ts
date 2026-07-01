@@ -46,3 +46,23 @@ export async function loadLandingPageSettingsData(
     sdkScriptUrl,
   }
 }
+
+export async function loadLandingPageSettingsDataForApi(
+  landingPagePublicId: string
+): Promise<
+  | { ok: true; data: LandingPageSettingsData }
+  | { ok: false; status: number; error: string }
+> {
+  const actor = await requireLandingPageActor()
+  if (!actor) {
+    return { ok: false, status: 401, error: "Unauthorized" }
+  }
+
+  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
+  if (!row) {
+    return { ok: false, status: 404, error: "Not found" }
+  }
+
+  const data = await loadLandingPageSettingsData(landingPagePublicId)
+  return { ok: true, data }
+}

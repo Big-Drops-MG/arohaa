@@ -10,7 +10,7 @@ import { FunnelKpiRow } from "@/features/funnel/view/FunnelKpiRow"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
-const FUNNEL_REFETCH_MS = 30_000
+const FUNNEL_REFETCH_MS = 60_000
 
 type FunnelDashboardProps = {
   data: FunnelDashboardData

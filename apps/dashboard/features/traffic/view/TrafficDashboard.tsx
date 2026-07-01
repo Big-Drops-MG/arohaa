@@ -14,7 +14,7 @@ import { TrafficSourcesCard } from "@/features/traffic/view/TrafficSourcesCard"
 import { TRAFFIC_PREVIEW_ROW_LIMIT } from "@/features/traffic/view/traffic-card-layout"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
-const TRAFFIC_REFETCH_MS = 30_000
+const TRAFFIC_REFETCH_MS = 60_000
 
 type TrafficDashboardProps = {
   data: TrafficDashboardData

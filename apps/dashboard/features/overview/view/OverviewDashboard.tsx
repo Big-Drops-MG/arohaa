@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { cn } from "@workspace/ui/lib/utils"
+import type { AlertsDashboardData } from "@/features/alerts/model/alerts"
 import type { FunnelDashboardData } from "@/features/funnel/model/funnel"
 import {
   overviewKpiLabelsForFormType,
+  type OverviewAlert,
   type OverviewDashboardData,
   type OverviewFunnelStep,
   type OverviewKpiMetricId,
@@ -56,8 +58,34 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
   const [funnelSteps, setFunnelSteps] = useState<OverviewFunnelStep[]>(
     data.funnel
   )
+  const [alerts, setAlerts] = useState<OverviewAlert[]>(data.alerts)
   const [isFunnelLoading, setIsFunnelLoading] = useState(false)
   const [chartNowNonce, setChartNowNonce] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    const url = `/api/landing-pages/${encodeURIComponent(projectId)}/alerts?range_id=${encodeURIComponent(dateRangeId)}`
+
+    void fetch(url, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload) => {
+        if (cancelled || !payload) return
+        const apiAlerts = (payload as AlertsDashboardData).items
+        setAlerts((prev) => {
+          const builtIn = prev.filter((item) => item.id === "no-events-24h")
+          return [...apiAlerts, ...builtIn]
+        })
+      })
+      .catch((err) => {
+        if (process.env.NODE_ENV === "development") {
+          console.error("[overview] alerts fetch failed", err)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, dateRangeId])
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -177,7 +205,7 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
           <OverviewTrafficCard stats={data.traffic} />
           <OverviewSegmentsCard segments={data.segments} />
         </div>
-        <OverviewAlertsCard alerts={data.alerts} />
+        <OverviewAlertsCard alerts={alerts} />
       </motion.div>
     </motion.div>
   )

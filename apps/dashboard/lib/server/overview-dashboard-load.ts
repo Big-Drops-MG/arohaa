@@ -12,23 +12,17 @@ import { getOverviewPlaceholderData } from "@/features/overview/controller/overv
 import { defaultSegmentsByDateRange } from "@/features/segments/controller/segments-default-payload"
 import { defaultSegmentsPerformanceByDateRange } from "@/features/segments/controller/segments-performance-default-payload"
 import { defaultTrafficTablesByDateRange } from "@/features/traffic/controller/traffic-default-payload"
+import { parseTrafficRangeId } from "@/features/traffic/model/traffic-range"
 import type {
   OverviewAlert,
   OverviewDashboardData,
   OverviewFunnelStep,
   OverviewKpiSeriesByDateRange,
   OverviewKpiValuesByDateRange,
+  OverviewLandingFormType,
   OverviewTrafficStat,
 } from "@/features/overview/model/overview"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
-import {
-  buildOverviewFunnelSteps,
-  fetchFunnelAnalytics,
-} from "@/lib/server/funnel-dashboard-load"
-import {
-  fetchAlertsAnalytics,
-  mapAnalyticsAlerts,
-} from "@/lib/server/alerts-dashboard-load"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
 import type { AnalyticsOverview, RangeId } from "@/lib/server/analytics-types"
@@ -61,14 +55,28 @@ function fmtActiveUsers(count: number): string {
   return `${n.toLocaleString("en-US")} User${n === 1 ? "" : "s"}`
 }
 
+function funnelStepsFromOverviewApi(
+  data: AnalyticsOverview,
+  formType: OverviewLandingFormType
+): OverviewFunnelStep[] {
+  const funnelTail =
+    formType === "zip"
+      ? (["Zip Started", "Zip Submitted"] as const)
+      : (["Form Started", "Form Submitted"] as const)
+  const funnelLabels = ["Landing Page Visits", "Interactions", ...funnelTail]
+
+  return data.funnel.map((step, i) => ({
+    label: funnelLabels[i] ?? step.label,
+    value: fmtCount(step.count),
+  }))
+}
+
 // ── transform ─────────────────────────────────────────────────────────────────
 
 function buildOverviewFromAnalytics(
   data: AnalyticsOverview,
   formType: ReturnType<typeof parseOverviewLandingFormType>,
-  funnelSteps: OverviewFunnelStep[],
-  rangeId: RangeId,
-  analyticsAlerts: OverviewAlert[] = []
+  rangeId: RangeId
 ): OverviewDashboardData {
   const RANGES: RangeId[] = ["24h", "7d", "30d", "3m", "12m", "24m"]
 
@@ -93,7 +101,10 @@ function buildOverviewFromAnalytics(
     RANGES.map((rid) => [rid, { visitors: data.series[rid] }])
   ) as OverviewKpiSeriesByDateRange
 
-  const funnel: OverviewFunnelStep[] = funnelSteps
+  const funnel: OverviewFunnelStep[] = funnelStepsFromOverviewApi(
+    data,
+    formType
+  )
 
   const traffic: OverviewTrafficStat[] = [
     { label: "Unique Visitors", value: fmtCount(data.uniqueVisitors7d) },
@@ -108,19 +119,16 @@ function buildOverviewFromAnalytics(
     { label: "Best Day", value: data.bestDayLabel },
   ]
 
-  const alerts: OverviewAlert[] = [
-    ...analyticsAlerts,
-    ...(!data.hasEvents24h
-      ? [
-          {
-            id: "no-events-24h",
-            message:
-              "No events received in the last 24 hours. Verify the SDK snippet is installed.",
-            severity: "warning" as const,
-          },
-        ]
-      : []),
-  ]
+  const alerts: OverviewAlert[] = !data.hasEvents24h
+    ? [
+        {
+          id: "no-events-24h",
+          message:
+            "No events received in the last 24 hours. Verify the SDK snippet is installed.",
+          severity: "warning" as const,
+        },
+      ]
+    : []
 
   return {
     formType,
@@ -182,18 +190,14 @@ export async function loadOverviewDashboardData(
   const timer = setTimeout(() => controller.abort(), 8_000)
 
   try {
-    const [overviewResp, funnelAnalytics, alertsAnalytics] = await Promise.all([
-      fetch(
-        `${apiBase}/v1/analytics/overview?workspace_id=${encodeURIComponent(row.id)}`,
-        {
-          headers: { "x-arohaa-internal": secret },
-          signal: controller.signal,
-          cache: "no-store",
-        }
-      ),
-      fetchFunnelAnalytics(row.id, rangeId, formType),
-      fetchAlertsAnalytics(row.id, landingPagePublicId, rangeId),
-    ])
+    const overviewResp = await fetch(
+      `${apiBase}/v1/analytics/overview?workspace_id=${encodeURIComponent(row.id)}`,
+      {
+        headers: { "x-arohaa-internal": secret },
+        signal: controller.signal,
+        cache: "no-store",
+      }
+    )
 
     if (!overviewResp.ok) {
       const body = await overviewResp.text().catch(() => "")
@@ -207,35 +211,7 @@ export async function loadOverviewDashboardData(
     }
 
     const data = (await overviewResp.json()) as AnalyticsOverview
-    const funnelSteps = funnelAnalytics
-      ? buildOverviewFunnelSteps(funnelAnalytics, formType)
-      : data.funnel.map((step, i) => {
-          const funnelTail =
-            formType === "zip"
-              ? (["Zip Started", "Zip Submitted"] as const)
-              : (["Form Started", "Form Submitted"] as const)
-          const funnelLabels = [
-            "Landing Page Visits",
-            "Interactions",
-            ...funnelTail,
-          ]
-          return {
-            label: funnelLabels[i] ?? step.label,
-            value: fmtCount(step.count),
-          }
-        })
-
-    const analyticsAlerts = alertsAnalytics
-      ? mapAnalyticsAlerts(alertsAnalytics.items)
-      : []
-
-    return buildOverviewFromAnalytics(
-      data,
-      formType,
-      funnelSteps,
-      rangeId,
-      analyticsAlerts
-    )
+    return buildOverviewFromAnalytics(data, formType, rangeId)
   } catch (err) {
     if (process.env.NODE_ENV === "development") {
       console.error("[overview] analytics fetch failed", err)
@@ -244,4 +220,27 @@ export async function loadOverviewDashboardData(
   } finally {
     clearTimeout(timer)
   }
+}
+
+export async function loadOverviewDashboardDataForApi(
+  landingPagePublicId: string,
+  rangeIdRaw: string | null | undefined
+): Promise<
+  | { ok: true; data: OverviewDashboardData }
+  | { ok: false; status: number; error: string }
+> {
+  const rangeId = parseTrafficRangeId(rangeIdRaw)
+
+  const actor = await requireLandingPageActor()
+  if (!actor) {
+    return { ok: false, status: 401, error: "Unauthorized" }
+  }
+
+  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
+  if (!row) {
+    return { ok: false, status: 404, error: "Not found" }
+  }
+
+  const data = await loadOverviewDashboardData(landingPagePublicId, rangeId)
+  return { ok: true, data }
 }

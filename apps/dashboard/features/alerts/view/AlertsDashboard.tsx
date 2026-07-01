@@ -9,7 +9,7 @@ import { AlertsListCard } from "@/features/alerts/view/AlertsListCard"
 import { getAlertsEmptyDashboardData } from "@/features/alerts/controller/alerts-empty-data"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
-const ALERTS_REFETCH_MS = 30_000
+const ALERTS_REFETCH_MS = 60_000
 
 type AlertsDashboardProps = {
   data: AlertsDashboardData

@@ -15,7 +15,7 @@ import { EventTrackingKpiRow } from "@/features/event-tracking/view/EventTrackin
 import { EventTrackingSubmissionOverTimeCard } from "@/features/event-tracking/view/EventTrackingSubmissionOverTimeCard"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
-const EVENTS_REFETCH_MS = 30_000
+const EVENTS_REFETCH_MS = 60_000
 
 type EventTrackingDashboardProps = {
   data: EventTrackingDashboardData
