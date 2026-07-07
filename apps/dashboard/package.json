@@ -9,6 +9,8 @@
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "email:dev": "react-email dev --dir ./emails/templates",
     "email:export": "react-email export --dir ./emails/templates --outDir ./emails/dist"
   },
@@ -47,6 +49,7 @@
     "@types/react-dom": "^19.2.3",
     "@workspace/eslint-config": "workspace:^",
     "@workspace/typescript-config": "workspace:*",
+    "@playwright/test": "^1.55.0",
     "eslint": "^9.39.2",
     "typescript": "^5.9.3"
   }

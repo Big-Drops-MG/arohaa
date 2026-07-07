@@ -13,8 +13,13 @@
     "lint": "turbo lint",
     "format": "turbo format",
     "typecheck": "turbo typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "pnpm --filter dashboard test:e2e",
+    "test:load": "k6 run scripts/load/ingest.k6.js",
     "db:migrate": "pnpm --filter @workspace/database db:migrate",
     "db:push": "pnpm --filter @workspace/database db:push",
+    "clickhouse:migrate": "tsx scripts/migrate-clickhouse-phase1.mts",
     "prepare": "husky",
     "vercel:link": "pnpm dlx vercel@latest link --yes --cwd apps/dashboard --scope big-drops-mg-admins-projects --project arohaa-dashboard",
     "vercel:env:pull": "pnpm dlx vercel@latest env pull --cwd apps/dashboard"
@@ -31,7 +36,8 @@
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
     "turbo": "^2.8.17",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "^3.2.4"
   },
   "packageManager": "pnpm@9.15.9",
   "engines": {

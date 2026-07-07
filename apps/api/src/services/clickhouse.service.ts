@@ -162,21 +162,23 @@ async function migrateLegacyEventsTable(ch: ClickHouseClient): Promise<void> {
 }
 
 export async function pingClickHouse(timeoutMs: number = 3000): Promise<boolean> {
-  const ch = getClickHouseClient()
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const result = await ch.query({
-      query: 'SELECT 1 AS ok',
-      format: 'JSON',
-      abort_signal: controller.signal,
-    })
-    const json = (await result.json()) as { data: Array<{ ok: number }> }
-    return json.data?.[0]?.ok === 1
+    const ch = getClickHouseClient()
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      const result = await ch.query({
+        query: 'SELECT 1 AS ok',
+        format: 'JSON',
+        abort_signal: controller.signal,
+      })
+      const json = (await result.json()) as { data: Array<{ ok: number }> }
+      return json.data?.[0]?.ok === 1
+    } finally {
+      clearTimeout(timer)
+    }
   } catch {
     return false
-  } finally {
-    clearTimeout(timer)
   }
 }
 

@@ -1,0 +1,11 @@
+version: "3.8"
+
+services:
+  worker:
+    build:
+      context: ../..
+      dockerfile: apps/worker/Dockerfile
+    container_name: arohaa-worker
+    restart: unless-stopped
+    env_file:
+      - worker.env

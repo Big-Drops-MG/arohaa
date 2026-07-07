@@ -2,9 +2,11 @@ import './instrument.js';
 import { Redis } from 'ioredis';
 import { createClient } from '@clickhouse/client';
 import * as Sentry from '@sentry/node';
+import { sendAlertWebhook } from './alert-webhook.js';
 import { validateEvent } from './processor/validator.js';
 import { anonymizeEvent } from './processor/pii.js';
 import { DbWriter } from './processor/dbWriter.js';
+import { logger } from './logger.js';
 
 const LOCAL_REDIS_URL = 'redis://127.0.0.1:6379';
 const MAX_BATCH_SIZE = 1000;
@@ -42,7 +44,7 @@ const redis = new Redis(resolveRedisUrl(), {
 });
 
 redis.on('error', (err) => {
-  console.error('[Worker] Redis connection error:', err.message);
+  logger.error({ err }, 'redis connection error');
 });
 
 //
@@ -75,7 +77,7 @@ let batch = [];
 let lastFlushTime = Date.now();
 
 async function startQueueConsumption() {
-  console.log('[Worker] Starting queue consumption from "analytics_queue"...');
+  logger.info('starting queue consumption from analytics_queue');
   
   while (!isShuttingDown) {
     try {
@@ -93,7 +95,7 @@ async function startQueueConsumption() {
             await redis.lpush('failed_events', JSON.stringify({ reason: 'validation_failed', payload, timestamp: Date.now() }));
           }
         } catch (parseErr) {
-          console.error('[Worker] Invalid JSON payload received, skipping.', payload);
+          logger.warn({ payload }, 'invalid JSON payload received');
           await redis.lpush('failed_events', JSON.stringify({ reason: 'json_parse_error', payload, timestamp: Date.now() }));
         }
       }
@@ -108,7 +110,7 @@ async function startQueueConsumption() {
       }
       
     } catch (err) {
-      console.error('[Worker] Error in queue consumption loop:', err.message);
+      logger.error({ err }, 'error in queue consumption loop');
       // Brief pause to prevent tight looping on Redis connection issues
       await new Promise(resolve => setTimeout(resolve, 1000)); 
     }
@@ -121,12 +123,12 @@ async function startQueueConsumption() {
 async function shutdown(signal) {
   if (isShuttingDown) return; // Prevent double execution
   isShuttingDown = true;
-  console.log(`\n[Worker] Shutdown initiated (received ${signal})`);
+  logger.info({ signal }, 'shutdown initiated');
   
   try {
     // 1. Flush any remaining events in the batch
     if (batch.length > 0) {
-      console.log(`[Worker] Flushing ${batch.length} pending events before shutdown...`);
+      logger.info({ rows: batch.length }, 'flushing pending events before shutdown');
       const currentBatch = [...batch];
       batch = [];
       await dbWriter.flushBatch(currentBatch);
@@ -135,22 +137,22 @@ async function shutdown(signal) {
     // 2. Close ClickHouse connection
     if (clickHouseClient) {
       await clickHouseClient.close();
-      console.log('[Worker] ClickHouse disconnected');
+      logger.info('clickhouse disconnected');
     }
 
     // 3. Close Redis connection
     if (redis) {
       await redis.quit();
-      console.log('[Worker] Redis disconnected');
+      logger.info('redis disconnected');
     }
 
     // Flush Sentry events
     await Sentry.close(2000);
 
-    console.log('[Worker] Shutdown complete');
+    logger.info('shutdown complete');
     process.exit(0);
   } catch (err) {
-    console.error('[Worker] Error during shutdown:', err);
+    logger.error({ err }, 'error during shutdown');
     process.exit(1);
   }
 }
@@ -163,7 +165,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 // 5. Startup Sequence
 //
 async function start() {
-  console.log('[Worker] Starting...');
+  logger.info('starting worker');
 
   try {
     // Wait for Redis to be ready
@@ -172,7 +174,7 @@ async function start() {
       redis.once('ready', resolve);
       redis.once('error', reject);
     });
-    console.log('[Worker] Redis connected');
+    logger.info('redis connected');
 
     // Initialize ClickHouse client
     clickHouseClient = getClickHouseClient();
@@ -187,15 +189,20 @@ async function start() {
     if (json?.data?.[0]?.ok !== 1) {
       throw new Error('ClickHouse ping failed.');
     }
-    console.log('[Worker] ClickHouse connected');
+    logger.info('clickhouse connected');
 
-    console.log('[Worker] Ready');
+    logger.info('worker ready');
     
     // Start processing
     startQueueConsumption();
   } catch (err) {
-    console.error('[Worker] Startup failed');
-    console.error(err);
+    logger.error({ err }, 'worker startup failed');
+    void sendAlertWebhook({
+      title: 'Worker startup failed',
+      body: err instanceof Error ? err.message : String(err),
+      severity: 'critical',
+      source: 'worker.startup',
+    });
     Sentry.captureException(err);
     await Sentry.flush(2000).catch(() => undefined);
     process.exit(1);

@@ -4,6 +4,10 @@ import { randomUUID } from 'node:crypto'
 import * as Sentry from '@sentry/node'
 import Fastify, { type FastifyError } from 'fastify'
 import cors from '@fastify/cors'
+import {
+  isCorsOriginAllowed,
+  resolveAllowedCorsOrigins,
+} from './lib/cors-origins.js'
 import rateLimit from '@fastify/rate-limit'
 import fastifyRedis from '@fastify/redis'
 import { redis } from './services/redis.service.js'
@@ -17,6 +21,7 @@ import {
   noteClickHouseFailure,
 } from './services/clickhouse.service.js'
 import { initGeo } from './services/geo.service.js'
+import { sendAlertWebhook } from './lib/alert-webhook.js'
 import {
   startBufferProcessor,
   stopBufferProcessor,
@@ -70,7 +75,15 @@ server.addHook('onRequest', async (request, reply) => {
 const isDev = process.env.NODE_ENV !== 'production'
 
 server.register(cors, {
-  origin: true,
+  origin: async (origin: string | undefined) => {
+    if (!origin) return false
+
+    const allowed = await resolveAllowedCorsOrigins()
+    if (isCorsOriginAllowed(origin, allowed)) {
+      return origin
+    }
+    return false
+  },
   credentials: false,
   methods: ['GET', 'POST', 'OPTIONS'],
 })
@@ -126,6 +139,13 @@ server.addHook('onError', async (request, _reply, error: FastifyError) => {
         trace_id: request.id,
       },
     },
+  })
+
+  void sendAlertWebhook({
+    title: 'API server error',
+    body: `${request.method} ${request.url}\n${error.message}`,
+    severity: 'critical',
+    source: 'api.onError',
   })
 })
 

@@ -9,6 +9,8 @@ import * as workspaceSchema from './schema/workspace.js';
 import * as experimentsSchema from './schema/experiments.js';
 import * as notificationsSchema from './schema/notifications.js';
 import * as seoSchema from './schema/seo.js';
+import * as workspaceApiKeysSchema from './schema/workspace-api-keys.js';
+import * as workspaceAlertWebhooksSchema from './schema/workspace-alert-webhooks.js';
 
 const schema = {
   ...authSchema,
@@ -18,6 +20,8 @@ const schema = {
   ...experimentsSchema,
   ...notificationsSchema,
   ...seoSchema,
+  ...workspaceApiKeysSchema,
+  ...workspaceAlertWebhooksSchema,
 };
 
 bootstrapDatabaseEnv(import.meta.url);
@@ -45,11 +49,15 @@ export * from './schema/tokens.js';
 export * from './schema/experiments.js';
 export * from './schema/notifications.js';
 export * from './schema/seo.js';
+export * from './schema/workspace-api-keys.js';
+export * from './schema/workspace-alert-webhooks.js';
 export * from './email.js';
 export * from './notifications/create-notification.js';
 export * from './landing/normalizeLandingPageUrl.js';
 export * from './landing/generatePublicLandingId.js';
 export * from './landing/htmlVerificationToken.js';
+export * from './workspace-api-keys/api-key.js';
+export * from './alert-webhooks/dispatch.js';
 
 export * from 'drizzle-orm';
 

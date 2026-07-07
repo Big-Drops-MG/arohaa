@@ -4,6 +4,7 @@ import {
   resolveInternalApiSecret,
   verifyInternalApiRequest,
 } from '../lib/internal-api-secret.js'
+import { verifyWorkspaceApiKeyForWorkspace } from '../lib/workspace-api-key-auth.js'
 import {
   emptyAnalyticsFunnel,
   getAnalyticsFunnel,
@@ -99,27 +100,36 @@ const funnelSchema = {
   },
 } as const
 
-function guardAnalyticsRequest(
+async function guardAnalyticsRequest(
   request: FastifyRequest,
   reply: FastifyReply,
   workspaceId: string,
-): boolean {
-  if (!resolveInternalApiSecret()) {
-    void reply.code(503).send({ error: 'Analytics not configured on this server' })
-    return false
-  }
-
-  if (!verifyInternalApiRequest(request.headers['x-arohaa-internal'])) {
-    void reply.code(401).send({ error: 'Unauthorized' })
-    return false
-  }
-
+): Promise<boolean> {
   if (!UUID_RE.test(workspaceId)) {
     void reply.code(400).send({ error: 'Invalid workspace_id' })
     return false
   }
 
-  return true
+  if (verifyInternalApiRequest(request.headers['x-arohaa-internal'])) {
+    return true
+  }
+
+  if (
+    await verifyWorkspaceApiKeyForWorkspace(
+      request.headers.authorization,
+      workspaceId,
+    )
+  ) {
+    return true
+  }
+
+  if (!resolveInternalApiSecret()) {
+    void reply.code(503).send({ error: 'Analytics not configured on this server' })
+    return false
+  }
+
+  void reply.code(401).send({ error: 'Unauthorized' })
+  return false
 }
 
 async function sendAnalyticsQuery<T>({
@@ -139,7 +149,7 @@ async function sendAnalyticsQuery<T>({
   logLabel: string
   logContext?: Record<string, unknown>
 }): Promise<void> {
-  if (!guardAnalyticsRequest(request, reply, workspaceId)) return
+  if (!(await guardAnalyticsRequest(request, reply, workspaceId))) return
 
   try {
     const result = await run()

@@ -1,5 +1,7 @@
 import type { ProfileData } from "@/features/profile/model/profile"
 import { ProfileAccountSection } from "@/features/profile/view/ProfileAccountSection"
+import { ProfileAlertWebhooksSection } from "@/features/profile/view/ProfileAlertWebhooksSection"
+import { ProfileApiKeysSection } from "@/features/profile/view/ProfileApiKeysSection"
 import { ProfilePersonalSection } from "@/features/profile/view/ProfilePersonalSection"
 import { ProfileSecuritySection } from "@/features/profile/view/ProfileSecuritySection"
 
@@ -25,6 +27,8 @@ export function ProfileDashboard({ profile }: ProfileDashboardProps) {
           profile={profile}
         />
         <ProfileAccountSection profile={profile} />
+        <ProfileApiKeysSection />
+        <ProfileAlertWebhooksSection />
         <ProfileSecuritySection profile={profile} />
       </div>
     </div>

@@ -8,6 +8,7 @@ import {
 } from "@workspace/database"
 import type { NotificationRecord } from "@/features/notifications/model/notifications"
 import { fetchAlertsAnalytics } from "@/lib/server/alerts-dashboard-load"
+import { dispatchWorkspaceAlertWebhooks } from "@/lib/server/workspace-alert-webhooks"
 
 const SKIP_AUDIT_ACTIONS = new Set(["check_connection"])
 
@@ -249,6 +250,7 @@ export async function syncAnalyticsAlertNotifications(
       id: landingPages.id,
       publicId: landingPages.publicId,
       brandName: landingPages.brandName,
+      workspaceId: landingPages.workspaceId,
     })
     .from(landingPages)
     .innerJoin(workspaces, eq(landingPages.workspaceId, workspaces.id))
@@ -274,6 +276,13 @@ export async function syncAnalyticsAlertNotifications(
           sourceType: "analytics_alert",
           sourceId: `${page.publicId}:${alert.id}:${alert.message}`,
         })
+
+        void dispatchWorkspaceAlertWebhooks(page.workspaceId, {
+          title: "Analytics alert",
+          body: `${page.brandName}: ${alert.message}`,
+          severity: alert.severity === "info" ? "info" : "warning",
+          source: `analytics:${page.publicId}`,
+        }).catch(() => undefined)
       }
     })
   )

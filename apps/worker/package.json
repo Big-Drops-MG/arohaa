@@ -11,6 +11,7 @@
     "@clickhouse/client": "^1.14.0",
     "@sentry/node": "^10.51.0",
     "dotenv": "^16.6.1",
-    "ioredis": "^5.10.1"
+    "ioredis": "^5.10.1",
+    "pino": "^9.6.0"
   }
 }

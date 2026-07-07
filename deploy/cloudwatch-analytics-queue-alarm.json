@@ -1,0 +1,12 @@
+{
+  "AlarmName": "arohaa-analytics-queue-depth",
+  "AlarmDescription": "Alert when analytics_queue depth stays high (ARHT32)",
+  "Namespace": "Arohaa/Custom",
+  "MetricName": "analytics_queue_depth",
+  "Statistic": "Maximum",
+  "Period": 300,
+  "EvaluationPeriods": 2,
+  "Threshold": 5000,
+  "ComparisonOperator": "GreaterThanThreshold",
+  "TreatMissingData": "notBreaching"
+}

@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/node';
+import { sendAlertWebhook } from '../alert-webhook.js';
 
 const CLICKHOUSE_EVENTS_TABLE = 'events_raw';
 
@@ -29,6 +30,13 @@ export class DbWriter {
     } catch (err) {
       console.error(`[Worker] Failed to insert ${batch.length} events to ClickHouse:`, err.message);
       
+      void sendAlertWebhook({
+        title: 'Worker ClickHouse insert failed',
+        body: `${batch.length} events moved to DLQ. ${err.message}`,
+        severity: 'critical',
+        source: 'worker.clickhouse.insert',
+      });
+
       Sentry.captureException(err, {
         extra: {
           batchSize: batch.length,

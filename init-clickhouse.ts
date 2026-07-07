@@ -148,9 +148,77 @@ function columnsMatch(actual: string[]): boolean {
   return EXPECTED_COLUMNS.every((c, i) => actual[i] === c)
 }
 
+async function ensureDailyMetrics(): Promise<void> {
+  await client.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS daily_metrics (
+          workspace_id UUID,
+          day Date,
+          pageviews SimpleAggregateFunction(sum, UInt64),
+          visitors AggregateFunction(uniq, String),
+          sessions AggregateFunction(uniq, String),
+          interactions AggregateFunction(uniq, String),
+          form_started AggregateFunction(uniq, String),
+          form_submitted AggregateFunction(uniq, String)
+      ) ENGINE = AggregatingMergeTree()
+      ORDER BY (workspace_id, day)
+    `,
+  })
+
+  await client.command({ query: "DROP VIEW IF EXISTS daily_metrics_mv" })
+
+  await client.command({
+    query: `
+      CREATE MATERIALIZED VIEW IF NOT EXISTS daily_metrics_mv
+      TO daily_metrics AS
+      SELECT
+          workspace_id,
+          toDate(created_at) AS day,
+          sum(if(event_name = 'page_view', 1, 0)) AS pageviews,
+          uniqStateIf(user_id, event_name = 'page_view') AS visitors,
+          uniqState(session_id) AS sessions,
+          uniqStateIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth')) AS interactions,
+          uniqStateIf(session_id, event_name = 'form_start') AS form_started,
+          uniqStateIf(session_id, event_name = 'form_success') AS form_submitted
+      FROM ${EVENTS_TABLE}
+      GROUP BY workspace_id, day
+    `,
+  })
+
+  const metricsCount = await client.query({
+    query: "SELECT count() AS n FROM daily_metrics",
+    format: "JSON",
+  })
+  const metricsJson = (await metricsCount.json()) as {
+    data: Array<{ n: string | number }>
+  }
+  const metricsRows = Number(metricsJson.data[0]?.n ?? 0)
+  const rawRows = await rowCount()
+
+  if (metricsRows === 0 && rawRows > 0) {
+    console.log("Backfilling daily_metrics from events_raw...")
+    await client.command({
+      query: `
+        INSERT INTO daily_metrics
+        SELECT
+            workspace_id,
+            toDate(created_at) AS day,
+            sum(if(event_name = 'page_view', 1, 0)) AS pageviews,
+            uniqStateIf(user_id, event_name = 'page_view') AS visitors,
+            uniqState(session_id) AS sessions,
+            uniqStateIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth')) AS interactions,
+            uniqStateIf(session_id, event_name = 'form_start') AS form_started,
+            uniqStateIf(session_id, event_name = 'form_success') AS form_submitted
+        FROM ${EVENTS_TABLE}
+        GROUP BY workspace_id, day
+      `,
+    })
+  }
+}
+
 async function init() {
   try {
-    console.log("Connecting to ClickHouse Cloud...")
+    console.log(`Connecting to ClickHouse at ${url}...`)
 
     const legacyExists = await client.query({
       query:
@@ -173,8 +241,11 @@ async function init() {
     if (existsAfterRename) {
       const cols = await readColumns()
       const meta = await readTableMeta()
-      if (columnsMatch(cols) && metaMatches(meta)) {
-        console.log(`${EVENTS_TABLE} table already matches the expected schema. Nothing to do.`)
+      const schemaOk = columnsMatch(cols) && metaMatches(meta)
+
+      if (schemaOk) {
+        console.log(`${EVENTS_TABLE} schema matches. Ensuring daily_metrics views...`)
+        await ensureDailyMetrics()
         return
       }
 
@@ -202,44 +273,7 @@ async function init() {
 
     console.log(`Creating ${EVENTS_TABLE} table with new schema...`)
     await client.command({ query: CREATE_EVENTS })
-
-    console.log("Creating daily_metrics materialized view...")
-    await client.command({
-      query: `
-        CREATE TABLE IF NOT EXISTS daily_metrics (
-            workspace_id UUID,
-            day Date,
-            pageviews SimpleAggregateFunction(sum, UInt64),
-            visitors AggregateFunction(uniq, String),
-            sessions AggregateFunction(uniq, String),
-            interactions AggregateFunction(uniq, String),
-            form_started AggregateFunction(uniq, String),
-            form_submitted AggregateFunction(uniq, String)
-        ) ENGINE = AggregatingMergeTree()
-        ORDER BY (workspace_id, day)
-      `
-    })
-
-    await client.command({ query: "DROP VIEW IF EXISTS daily_metrics_mv" })
-
-    await client.command({
-      query: `
-        CREATE MATERIALIZED VIEW IF NOT EXISTS daily_metrics_mv
-        TO daily_metrics AS
-        SELECT
-            workspace_id,
-            toDate(created_at) AS day,
-            sum(if(event_name = 'page_view', 1, 0)) AS pageviews,
-            uniqStateIf(user_id, event_name = 'page_view') AS visitors,
-            uniqState(session_id) AS sessions,
-            uniqStateIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth')) AS interactions,
-            uniqStateIf(session_id, event_name = 'form_start') AS form_started,
-            uniqStateIf(session_id, event_name = 'form_success') AS form_submitted
-        FROM ${EVENTS_TABLE}
-        GROUP BY workspace_id, day
-      `
-    })
-
+    await ensureDailyMetrics()
     console.log(`${EVENTS_TABLE} table and materialized views are ready.`)
   } catch (error) {
     console.error("Migration failed:", error)
