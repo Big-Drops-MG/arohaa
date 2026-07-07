@@ -1,0 +1,36 @@
+name: Deploy Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/worker/**"
+      - "scripts/deploy-worker-do.py"
+      - ".github/workflows/deploy-worker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deploy dependencies
+        run: pip install paramiko
+
+      - name: Deploy worker to DigitalOcean
+        env:
+          DO_SSH_PASSWORD: ${{ secrets.DO_SSH_PASSWORD }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          CLICKHOUSE_URL: ${{ secrets.CLICKHOUSE_URL }}
+          CLICKHOUSE_USER: ${{ secrets.CLICKHOUSE_USER }}
+          CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: python scripts/deploy-worker-do.py

@@ -9,7 +9,7 @@ on:
       - "pnpm-lock.yaml"
       - "scripts/deploy-api-aws.py"
       - "scripts/deploy-cloudwatch-queue-alarms.py"
-      - "deploy/**"
+      - "terraform/**"
       - ".github/workflows/deploy-api.yml"
   workflow_dispatch:
 
@@ -49,7 +49,15 @@ jobs:
             --query "service.deployments[0].rolloutState" \
             --output text
 
-      - name: Deploy CloudWatch queue alarms
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Apply Terraform (queue alarms + IAM)
+        working-directory: terraform
         env:
-          CLOUDWATCH_ALARM_SNS_ARN: ${{ secrets.CLOUDWATCH_ALARM_SNS_ARN }}
-        run: python scripts/deploy-cloudwatch-queue-alarms.py
+          TF_VAR_cloudwatch_alarm_sns_arn: ${{ secrets.CLOUDWATCH_ALARM_SNS_ARN }}
+        run: |
+          terraform init
+          python ../scripts/terraform-import-existing.py || true
+          terraform apply -auto-approve

@@ -38,5 +38,11 @@ npm-debug.log*
 .DS_Store
 *.pem
 
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/tfplan
+
 # GeoIP databases (downloaded at build time / locally; never commit)
 *.mmdb

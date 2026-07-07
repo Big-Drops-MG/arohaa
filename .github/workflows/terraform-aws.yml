@@ -1,0 +1,52 @@
+name: Terraform AWS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - "deploy/iam-queue-monitoring-policy.json"
+      - "deploy/cloudwatch-*.json"
+      - ".github/workflows/terraform-aws.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Import existing resources (idempotent)
+        run: python ../scripts/terraform-import-existing.py
+        continue-on-error: true
+
+      - name: Terraform plan
+        env:
+          TF_VAR_cloudwatch_alarm_sns_arn: ${{ secrets.CLOUDWATCH_ALARM_SNS_ARN }}
+        run: terraform plan -out=tfplan
+
+      - name: Terraform apply
+        if: github.ref == 'refs/heads/main'
+        env:
+          TF_VAR_cloudwatch_alarm_sns_arn: ${{ secrets.CLOUDWATCH_ALARM_SNS_ARN }}
+        run: terraform apply -auto-approve tfplan

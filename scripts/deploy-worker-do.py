@@ -50,7 +50,7 @@ def main() -> None:
     merged = {**parse_env_file(env_dev), **parse_env_file(env_local)}
 
     def pick(key: str) -> str:
-        return merged.get(key, "")
+        return os.environ.get(key, "").strip() or merged.get(key, "")
 
     worker_env = f"""NODE_ENV=production
 REDIS_URL={pick("REDIS_URL") or pick("KV_URL")}
