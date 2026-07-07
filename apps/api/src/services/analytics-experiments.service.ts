@@ -4,6 +4,7 @@ import type {
   AnalyticsExperiments,
   RangeId,
 } from '../types/analytics-experiments.js'
+import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
 
 type CHJson<T> = { data: T[] }
 
@@ -34,6 +35,10 @@ export async function getAnalyticsExperiments({
   lpPublicId: string
   rangeId: RangeId
 }): Promise<AnalyticsExperiments> {
+  const cacheKey = `analytics:experiments:${workspaceId}:${lpPublicId}:${rangeId}`
+  const cached = await readAnalyticsCache<AnalyticsExperiments>(cacheKey)
+  if (cached) return cached
+
   // 1. Fetch active experiments from Postgres
   const lp = await db.query.landingPages.findFirst({
     where: eq(landingPages.publicId, lpPublicId),
@@ -71,7 +76,7 @@ export async function getAnalyticsExperiments({
           uniqExactIf(user_id, event_name = 'page_view') AS visitors,
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS sessions
-        FROM events
+        FROM events_raw
         WHERE workspace_id = {wid:UUID} 
           AND lp_public_id = {lp:String}
           AND created_at >= now() - INTERVAL ${interval}
@@ -88,7 +93,7 @@ export async function getAnalyticsExperiments({
           if(variant = '', 'Unknown', variant) AS variant_label,
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS sessions
-        FROM events
+        FROM events_raw
         WHERE workspace_id = {wid:UUID} 
           AND lp_public_id = {lp:String}
           AND created_at >= now() - INTERVAL ${interval}
@@ -157,11 +162,14 @@ export async function getAnalyticsExperiments({
     )
     .map((entry) => entry.row) as any[]
 
-  return {
+  const result = {
     experiments: formattedExperiments,
     variantPerformance,
     performanceByLocation,
   }
+
+  await writeAnalyticsCache(cacheKey, result)
+  return result
 }
 
 export function emptyAnalyticsExperiments(): AnalyticsExperiments {

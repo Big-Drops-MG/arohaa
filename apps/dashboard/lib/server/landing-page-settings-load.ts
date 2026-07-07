@@ -8,7 +8,7 @@ import {
   buildLandingSdkScriptTag,
   resolveLandingSdkEnv,
 } from "@/lib/server/landing-snippet"
-import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
+import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
 export async function loadLandingPageSettingsData(
   landingPagePublicId: string
@@ -16,7 +16,7 @@ export async function loadLandingPageSettingsData(
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
 
-  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
+  const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
 
   const { ingestApiBase, sdkScriptUrl } = resolveLandingSdkEnv()
@@ -58,7 +58,7 @@ export async function loadLandingPageSettingsDataForApi(
     return { ok: false, status: 401, error: "Unauthorized" }
   }
 
-  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
+  const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) {
     return { ok: false, status: 404, error: "Not found" }
   }

@@ -1,50 +1,71 @@
-import { build } from "esbuild"
 import { readFileSync } from "node:fs"
+import { rollup } from "rollup"
+import terser from "@rollup/plugin-terser"
+import esbuild from "rollup-plugin-esbuild"
 
 const pkg = JSON.parse(readFileSync("package.json", "utf-8"))
 const version = pkg.version ?? "0.0.0"
 const major = version.split(".")[0]
 
-async function run() {
-  await build({
-    entryPoints: ["src/sdk.ts"],
-    bundle: true,
-    minify: true,
-    sourcemap: true,
-    format: "iife",
-    target: ["es2020"],
-    outfile: `dist/sdk.v${major}.js`,
-    define: {
-      "process.env.SDK_VERSION": JSON.stringify(version),
-    },
+async function buildBundle(options: {
+  input: string
+  output: string
+  target: string
+  sourcemap: boolean
+  define?: Record<string, string>
+}) {
+  const bundle = await rollup({
+    input: options.input,
+    plugins: [
+      esbuild({
+        target: options.target,
+        define: options.define,
+        minify: false,
+      }),
+      terser(),
+    ],
   })
 
-  await build({
-    entryPoints: ["src/sdk.ts"],
-    bundle: true,
-    minify: true,
-    sourcemap: true,
+  await bundle.write({
+    file: options.output,
     format: "iife",
-    target: ["es2020"],
-    outfile: "dist/sdk.js",
-    define: {
-      "process.env.SDK_VERSION": JSON.stringify(version),
-    },
+    sourcemap: options.sourcemap,
   })
-
-  await build({
-    entryPoints: ["src/snippet.ts"],
-    bundle: true,
-    minify: true,
-    sourcemap: false,
-    format: "iife",
-    target: ["es2017"],
-    outfile: "dist/snippet.js",
-  })
-
-  console.log(
-    `Built sdk.js + sdk.v${major}.js + snippet.js (v${version})`,
-  )
+  await bundle.close()
 }
 
-run()
+async function run() {
+  const sdkDefine = {
+    "process.env.SDK_VERSION": JSON.stringify(version),
+  }
+
+  await buildBundle({
+    input: "src/sdk.ts",
+    output: `dist/sdk.v${major}.js`,
+    target: "es2020",
+    sourcemap: true,
+    define: sdkDefine,
+  })
+
+  await buildBundle({
+    input: "src/sdk.ts",
+    output: "dist/sdk.js",
+    target: "es2020",
+    sourcemap: true,
+    define: sdkDefine,
+  })
+
+  await buildBundle({
+    input: "src/snippet.ts",
+    output: "dist/snippet.js",
+    target: "es2017",
+    sourcemap: false,
+  })
+
+  console.log(`Built sdk.js + sdk.v${major}.js + snippet.js (v${version}) via Rollup`)
+}
+
+run().catch((err) => {
+  console.error(err)
+  process.exit(1)
+})

@@ -15,7 +15,7 @@ import {
   parseOptionalFaviconUrl,
   parseOptionalNotes,
 } from "@/lib/server/landing-page-validation"
-import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
+import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import { buildHtmlVerificationMetaTag } from "@/lib/server/landing-snippet"
 import { writeLandingPageAuditLog } from "@/lib/server/landing-audit-log"
 import {
@@ -53,7 +53,7 @@ export async function GET(
   if (limited) return limited
 
   const { publicId } = await context.params
-  const row = await getActiveLandingPageByPublicId(publicId)
+  const row = await getActiveLandingPageForActor(actor.id, publicId)
   if (!row) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
@@ -73,7 +73,7 @@ export async function PATCH(
   if (limited) return limited
 
   const { publicId } = await context.params
-  const row = await getActiveLandingPageByPublicId(publicId)
+  const row = await getActiveLandingPageForActor(actor.id, publicId)
   if (!row) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
@@ -323,7 +323,7 @@ export async function DELETE(
   if (limited) return limited
 
   const { publicId } = await context.params
-  const row = await getActiveLandingPageByPublicId(publicId)
+  const row = await getActiveLandingPageForActor(actor.id, publicId)
   if (!row) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }

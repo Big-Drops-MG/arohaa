@@ -12,7 +12,7 @@ import {
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
+import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
 interface AnalyticsExperimentRow {
   id: string
@@ -155,9 +155,15 @@ export async function fetchExperimentsAnalytics(
     }
 
     return (await resp.json()) as AnalyticsExperiments
-  } catch (err) {
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[experiments] analytics fetch timed out")
+      }
+      return null
+    }
     if (process.env.NODE_ENV === "development") {
-      console.error("[experiments] analytics fetch failed", err)
+      console.error("[experiments] analytics fetch failed", err?.message || err)
     }
     return null
   } finally {
@@ -175,7 +181,7 @@ export async function loadExperimentsDashboardData({
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
 
-  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
+  const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
 
   const formType = parseOverviewLandingFormType(row.formType)
@@ -213,7 +219,7 @@ export async function loadExperimentsDashboardDataForApi(
     return { ok: false, status: 401, error: "Unauthorized" }
   }
 
-  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
+  const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) {
     return { ok: false, status: 404, error: "Not found" }
   }

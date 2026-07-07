@@ -4,6 +4,7 @@ import type {
   AnalyticsAlertItem,
   AnalyticsAlertsResponse,
 } from '../types/analytics-alerts.js'
+import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
 
 type CHJson<T> = { data: T[] }
 
@@ -42,6 +43,10 @@ export async function getAnalyticsAlerts({
   lpPublicId: string
   rangeId: RangeId
 }): Promise<AnalyticsAlertsResponse> {
+  const cacheKey = `analytics:alerts:${workspaceId}:${lpPublicId}:${rangeId}`
+  const cached = await readAnalyticsCache<AnalyticsAlertsResponse>(cacheKey)
+  if (cached) return cached
+
   const ch = getClickHouseClient()
   const { current, previous } = getIntervals(rangeId)
   const p = { wid: workspaceId, lp: lpPublicId }
@@ -58,7 +63,7 @@ export async function getAnalyticsAlerts({
         uniqExactIf(session_id, created_at >= now() - INTERVAL ${previous} AND created_at < now() - INTERVAL ${current}) AS prev_sessions,
         uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL ${previous} AND created_at < now() - INTERVAL ${current}) AS prev_form_success,
         uniqExactIf(session_id, event_name = 'form_start' AND created_at >= now() - INTERVAL ${previous} AND created_at < now() - INTERVAL ${current}) AS prev_form_starts
-      FROM events
+      FROM events_raw
       WHERE workspace_id = {wid:UUID}
         AND lp_public_id = {lp:String}
         AND created_at >= now() - INTERVAL ${previous}
@@ -179,7 +184,9 @@ export async function getAnalyticsAlerts({
     }
   }
 
-  return { items }
+  const result = { items }
+  await writeAnalyticsCache(cacheKey, result)
+  return result
 }
 
 export function emptyAnalyticsAlerts(): AnalyticsAlertsResponse {

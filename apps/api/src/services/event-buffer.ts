@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/node'
 import type { FastifyBaseLogger } from 'fastify'
-import { insertEvents } from './clickhouse.service.js'
+import { redis } from './redis.service.js'
 import type { EventRow } from '../types/event.js'
 
 const FLUSH_INTERVAL_MS = 5000
@@ -44,6 +44,8 @@ export function pushEvent(row: EventRow): void {
         },
       })
     }
+    
+    void redis.lpush('failed_events', JSON.stringify({ reason: 'api_buffer_full', payload: row, timestamp: Date.now() })).catch(() => {})
     return
   }
 
@@ -74,25 +76,30 @@ export async function flush(reason: string = 'manual'): Promise<void> {
 }
 
 async function doFlush(reason: string): Promise<void> {
+  if (buffer.length === 0) return
+
   const batch = buffer
   buffer = []
 
   const startedAt = Date.now()
   try {
-    await insertEvents(batch)
+    const payloads = batch.map(row => JSON.stringify(row))
+    await redis.lpush('analytics_queue', ...payloads)
+
     logger?.info(
       {
         reason,
         rows: batch.length,
         durationMs: Date.now() - startedAt,
       },
-      'flushed events to clickhouse',
+      'flushed events to redis queue',
     )
   } catch (err) {
     const remainingHeadroom = MAX_BUFFER_SIZE - buffer.length
     const requeue = batch.slice(0, Math.max(0, remainingHeadroom))
     const droppedRows = batch.length - requeue.length
     buffer = requeue.concat(buffer)
+
     logger?.error(
       {
         err,
@@ -101,11 +108,11 @@ async function doFlush(reason: string): Promise<void> {
         requeuedRows: requeue.length,
         droppedRows,
       },
-      'clickhouse insert failed; events requeued',
+      'redis push failed; events requeued',
     )
 
     Sentry.captureException(err, {
-      tags: { component: 'clickhouse-insert', reason },
+      tags: { component: 'redis-push', reason },
       contexts: {
         flush: {
           attemptedRows: batch.length,

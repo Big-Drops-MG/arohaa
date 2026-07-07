@@ -4,7 +4,7 @@ import {
   type AnalyticsRangeId,
 } from '../lib/analytics-range.js'
 import { computePeriodChangePct } from '../lib/funnel-trend.js'
-import { TtlMemoryCache } from '../lib/ttl-memory-cache.js'
+import { redis } from './redis.service.js'
 import { getClickHouseClient } from './clickhouse.service.js'
 import type {
   FunnelDashboardResponse,
@@ -43,7 +43,7 @@ function coreFunnelQuery(whereClause: string): string {
       uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
       uniqExactIf(session_id, event_name = 'zip_start') AS zip_started,
       uniqExactIf(session_id, event_name = 'zip_submit') AS zip_submitted
-    FROM events
+    FROM events_raw
     WHERE ${whereClause}
   `
 }
@@ -62,7 +62,7 @@ function multiStepQuery(whereClause: string): string {
       SELECT
         session_id,
         ${STEP_INDEX_EXPR} AS step_index
-      FROM events
+      FROM events_raw
       WHERE ${whereClause}
         AND event_name = 'form_step_view'
         AND ${STEP_INDEX_EXPR} > 0
@@ -89,7 +89,7 @@ function dropOffQuery(whereClause: string): string {
         session_id,
         event_name,
         ${FIELD_NAME_EXPR} AS field_name
-      FROM events
+      FROM events_raw
       WHERE ${whereClause}
         AND event_name IN ('form_field_abandon', 'form_field_focus')
         AND ${FIELD_NAME_EXPR} != ''
@@ -231,16 +231,20 @@ export interface GetAnalyticsFunnelParams {
   formType?: FunnelFormType
 }
 
-const FUNNEL_RESPONSE_CACHE = new TtlMemoryCache<FunnelDashboardResponse>(45_000)
-
 export async function getAnalyticsFunnel({
   workspaceId,
   rangeId,
   formType = 'single',
 }: GetAnalyticsFunnelParams): Promise<FunnelDashboardResponse> {
-  const cacheKey = `${workspaceId}:${rangeId}:${formType}`
-  const cached = FUNNEL_RESPONSE_CACHE.get(cacheKey)
-  if (cached) return cached
+  const cacheKey = `analytics:funnel:${workspaceId}:${rangeId}:${formType}`
+  try {
+    const cachedStr = await redis.get(cacheKey)
+    if (cachedStr) {
+      return JSON.parse(cachedStr) as FunnelDashboardResponse
+    }
+  } catch (err) {
+    // ignore cache read errors
+  }
 
   const ch = getClickHouseClient()
   const p = { wid: workspaceId }
@@ -288,7 +292,11 @@ export async function getAnalyticsFunnel({
     dropOffRows: buildDropOffRows(dropOffRows),
   }
 
-  FUNNEL_RESPONSE_CACHE.set(cacheKey, response)
+  try {
+    await redis.set(cacheKey, JSON.stringify(response), 'EX', 45)
+  } catch (err) {
+    // ignore cache write errors
+  }
   return response
 }
 

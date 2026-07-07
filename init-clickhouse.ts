@@ -48,8 +48,10 @@ const EXPECTED_COLUMNS = [
   "created_at",
 ] as const
 
+const EVENTS_TABLE = "events_raw"
+
 const CREATE_EVENTS = `
-CREATE TABLE IF NOT EXISTS events (
+CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
     event_name LowCardinality(String),
     workspace_id UUID,
     lp_public_id LowCardinality(String) DEFAULT '',
@@ -85,7 +87,7 @@ ORDER BY (workspace_id, toDate(created_at), event_name);
 async function tableExists(): Promise<boolean> {
   const r = await client.query({
     query:
-      "SELECT count() AS n FROM system.tables WHERE database = currentDatabase() AND name = 'events'",
+      `SELECT count() AS n FROM system.tables WHERE database = currentDatabase() AND name = '${EVENTS_TABLE}'`,
     format: "JSON",
   })
   const json = (await r.json()) as { data: Array<{ n: string | number }> }
@@ -95,7 +97,7 @@ async function tableExists(): Promise<boolean> {
 async function readColumns(): Promise<string[]> {
   const r = await client.query({
     query:
-      "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 'events' ORDER BY position",
+      `SELECT name FROM system.columns WHERE database = currentDatabase() AND table = '${EVENTS_TABLE}' ORDER BY position`,
     format: "JSON",
   })
   const json = (await r.json()) as { data: Array<{ name: string }> }
@@ -108,7 +110,7 @@ async function readTableMeta(): Promise<{
 }> {
   const r = await client.query({
     query:
-      "SELECT partition_key AS partitionKey, sorting_key AS sortingKey FROM system.tables WHERE database = currentDatabase() AND name = 'events'",
+      `SELECT partition_key AS partitionKey, sorting_key AS sortingKey FROM system.tables WHERE database = currentDatabase() AND name = '${EVENTS_TABLE}'`,
     format: "JSON",
   })
   const json = (await r.json()) as {
@@ -134,7 +136,7 @@ function metaMatches(meta: { partitionKey: string; sortingKey: string }): boolea
 
 async function rowCount(): Promise<number> {
   const r = await client.query({
-    query: "SELECT count() AS n FROM events",
+    query: `SELECT count() AS n FROM ${EVENTS_TABLE}`,
     format: "JSON",
   })
   const json = (await r.json()) as { data: Array<{ n: string | number }> }
@@ -150,18 +152,34 @@ async function init() {
   try {
     console.log("Connecting to ClickHouse Cloud...")
 
+    const legacyExists = await client.query({
+      query:
+        "SELECT count() AS n FROM system.tables WHERE database = currentDatabase() AND name = 'events'",
+      format: "JSON",
+    })
+    const legacyJson = (await legacyExists.json()) as {
+      data: Array<{ n: string | number }>
+    }
+    const hasLegacy = Number(legacyJson.data[0]?.n ?? 0) > 0
     const exists = await tableExists()
 
-    if (exists) {
+    if (hasLegacy && !exists) {
+      console.log("Renaming legacy events table to events_raw...")
+      await client.command({ query: "RENAME TABLE events TO events_raw" })
+    }
+
+    const existsAfterRename = await tableExists()
+
+    if (existsAfterRename) {
       const cols = await readColumns()
       const meta = await readTableMeta()
       if (columnsMatch(cols) && metaMatches(meta)) {
-        console.log("events table already matches the expected schema. Nothing to do.")
+        console.log(`${EVENTS_TABLE} table already matches the expected schema. Nothing to do.`)
         return
       }
 
       const rows = await rowCount()
-      console.warn("events table exists with a different schema:")
+      console.warn(`${EVENTS_TABLE} table exists with a different schema:`)
       console.warn(`  current columns:    ${cols.join(", ")}`)
       console.warn(`  expected columns:   ${EXPECTED_COLUMNS.join(", ")}`)
       console.warn(`  current partition:  ${meta.partitionKey || "(none)"}`)
@@ -178,13 +196,51 @@ async function init() {
         return
       }
 
-      console.log("Dropping old events table...")
-      await client.command({ query: "DROP TABLE IF EXISTS events" })
+      console.log(`Dropping old ${EVENTS_TABLE} table...`)
+      await client.command({ query: `DROP TABLE IF EXISTS ${EVENTS_TABLE}` })
     }
 
-    console.log("Creating events table with new schema...")
+    console.log(`Creating ${EVENTS_TABLE} table with new schema...`)
     await client.command({ query: CREATE_EVENTS })
-    console.log("events table is ready.")
+
+    console.log("Creating daily_metrics materialized view...")
+    await client.command({
+      query: `
+        CREATE TABLE IF NOT EXISTS daily_metrics (
+            workspace_id UUID,
+            day Date,
+            pageviews SimpleAggregateFunction(sum, UInt64),
+            visitors AggregateFunction(uniq, String),
+            sessions AggregateFunction(uniq, String),
+            interactions AggregateFunction(uniq, String),
+            form_started AggregateFunction(uniq, String),
+            form_submitted AggregateFunction(uniq, String)
+        ) ENGINE = AggregatingMergeTree()
+        ORDER BY (workspace_id, day)
+      `
+    })
+
+    await client.command({ query: "DROP VIEW IF EXISTS daily_metrics_mv" })
+
+    await client.command({
+      query: `
+        CREATE MATERIALIZED VIEW IF NOT EXISTS daily_metrics_mv
+        TO daily_metrics AS
+        SELECT
+            workspace_id,
+            toDate(created_at) AS day,
+            sum(if(event_name = 'page_view', 1, 0)) AS pageviews,
+            uniqStateIf(user_id, event_name = 'page_view') AS visitors,
+            uniqState(session_id) AS sessions,
+            uniqStateIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth')) AS interactions,
+            uniqStateIf(session_id, event_name = 'form_start') AS form_started,
+            uniqStateIf(session_id, event_name = 'form_success') AS form_submitted
+        FROM ${EVENTS_TABLE}
+        GROUP BY workspace_id, day
+      `
+    })
+
+    console.log(`${EVENTS_TABLE} table and materialized views are ready.`)
   } catch (error) {
     console.error("Migration failed:", error)
     process.exitCode = 1

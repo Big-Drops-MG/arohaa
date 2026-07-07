@@ -21,7 +21,7 @@ import {
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
+import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
 export { parseTrafficRangeId as parseFunnelRangeId } from "@/features/traffic/model/traffic-range"
 
@@ -143,9 +143,15 @@ export async function fetchFunnelAnalytics(
     }
 
     return (await resp.json()) as AnalyticsFunnel
-  } catch (err) {
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[funnel] analytics fetch timed out")
+      }
+      return null
+    }
     if (process.env.NODE_ENV === "development") {
-      console.error("[funnel] analytics fetch failed", err)
+      console.error("[funnel] analytics fetch failed", err?.message || err)
     }
     return null
   } finally {
@@ -163,7 +169,7 @@ export async function loadFunnelDashboardData({
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
 
-  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
+  const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
 
   const formType = parseOverviewLandingFormType(row.formType)
@@ -190,7 +196,7 @@ export async function loadFunnelDashboardDataForApi(
     return { ok: false, status: 401, error: "Unauthorized" }
   }
 
-  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
+  const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) {
     return { ok: false, status: 404, error: "Not found" }
   }
@@ -218,7 +224,7 @@ export async function loadOverviewFunnelSteps({
   const actor = await requireLandingPageActor()
   if (!actor) return null
 
-  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
+  const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) return null
 
   const formType = parseOverviewLandingFormType(row.formType)

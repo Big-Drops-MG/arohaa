@@ -1,6 +1,8 @@
 export interface IngestEventBody {
-  ev: string
-  wid: string
+  ev?: string
+  event_name?: string
+  wid?: string
+  workspace_id?: string
   uid: string
   sid: string
   lp_id?: string
@@ -68,8 +70,8 @@ export function ingestBodyToEventRow(
   enrichment: EnrichmentForRow,
 ): EventRow {
   return {
-    event_name: body.ev,
-    workspace_id: body.wid,
+    event_name: body.event_name ?? body.ev ?? '',
+    workspace_id: body.workspace_id ?? body.wid ?? '',
     lp_public_id: body.lp_id?.trim() ?? '',
     user_id: body.uid,
     session_id: body.sid,
