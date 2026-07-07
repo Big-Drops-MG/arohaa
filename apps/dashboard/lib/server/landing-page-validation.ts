@@ -19,7 +19,7 @@ export function parseOptionalFaviconUrl(
     return { ok: false, error: "Favicon URL must use http or https" }
   }
 
-  return { ok: true, value: u.href }
+  return { ok: true, value: t }
 }
 
 export function parseLandingPageFormType(

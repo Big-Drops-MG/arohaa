@@ -86,39 +86,18 @@ export async function reconcileLandingPageIngest(payload: {
   const nextStatus = row.status === 'inactive' ? 'inactive' : 'verified'
   const wasSdkDetected = row.sdkInstallStatus === 'detected'
 
-  const faviconRaw =
-    payload.ev === 'sdk_connected' && typeof payload.props?.favicon_url === 'string'
-      ? payload.props.favicon_url.trim().slice(0, 2048)
-      : null
-
-  if (faviconRaw) {
-    await sql`
-      UPDATE landing_page
-      SET
-        "lastSeenAt" = ${now},
-        "lastEventAt" = ${now},
-        "sdkInstallStatus" = ${'detected'},
-        "status" = ${nextStatus},
-        "verifiedAt" = ${nextVerifiedAt},
-        "verificationMethod" = ${'sdk_event'},
-        "faviconUrl" = COALESCE("faviconUrl", ${faviconRaw}),
-        "updatedAt" = ${now}
-      WHERE id = ${row.id}
-    `
-  } else {
-    await sql`
-      UPDATE landing_page
-      SET
-        "lastSeenAt" = ${now},
-        "lastEventAt" = ${now},
-        "sdkInstallStatus" = ${'detected'},
-        "status" = ${nextStatus},
-        "verifiedAt" = ${nextVerifiedAt},
-        "verificationMethod" = ${'sdk_event'},
-        "updatedAt" = ${now}
-      WHERE id = ${row.id}
-    `
-  }
+  await sql`
+    UPDATE landing_page
+    SET
+      "lastSeenAt" = ${now},
+      "lastEventAt" = ${now},
+      "sdkInstallStatus" = ${'detected'},
+      "status" = ${nextStatus},
+      "verifiedAt" = ${nextVerifiedAt},
+      "verificationMethod" = ${'sdk_event'},
+      "updatedAt" = ${now}
+    WHERE id = ${row.id}
+  `
 
   if (!wasSdkDetected) {
     try {
