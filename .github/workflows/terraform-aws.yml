@@ -7,6 +7,8 @@ on:
       - "terraform/**"
       - "deploy/iam-queue-monitoring-policy.json"
       - "deploy/cloudwatch-*.json"
+      - "scripts/terraform-bootstrap-state.py"
+      - "scripts/terraform-import-existing.py"
       - ".github/workflows/terraform-aws.yml"
   workflow_dispatch:
 
@@ -19,8 +21,22 @@ jobs:
     defaults:
       run:
         working-directory: terraform
+    env:
+      TF_VAR_database_url: ${{ secrets.DATABASE_URL }}
+      TF_VAR_redis_url: ${{ secrets.REDIS_URL }}
+      TF_VAR_clickhouse_url: http://137.184.17.135:8123
+      TF_VAR_clickhouse_user: arohaa
+      TF_VAR_clickhouse_password: ${{ secrets.CLICKHOUSE_PASSWORD }}
+      TF_VAR_api_container_aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      TF_VAR_api_container_aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      TF_VAR_arohaa_internal_api_secret: ${{ secrets.AROHAA_INTERNAL_API_SECRET }}
+      TF_VAR_cloudwatch_alarm_sns_arn: ${{ secrets.CLOUDWATCH_ALARM_SNS_ARN }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -28,6 +44,10 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
+
+      - name: Bootstrap remote state backend
+        working-directory: .
+        run: python scripts/terraform-bootstrap-state.py
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -41,12 +61,8 @@ jobs:
         continue-on-error: true
 
       - name: Terraform plan
-        env:
-          TF_VAR_cloudwatch_alarm_sns_arn: ${{ secrets.CLOUDWATCH_ALARM_SNS_ARN }}
         run: terraform plan -out=tfplan
 
       - name: Terraform apply
         if: github.ref == 'refs/heads/main'
-        env:
-          TF_VAR_cloudwatch_alarm_sns_arn: ${{ secrets.CLOUDWATCH_ALARM_SNS_ARN }}
         run: terraform apply -auto-approve tfplan

@@ -9,8 +9,18 @@ output "ecs_cluster_arn" {
 }
 
 output "ecs_service_name" {
-  description = "Name of the production ECS API service (data source)."
-  value       = data.aws_ecs_service.api.service_name
+  description = "Name of the production ECS API service."
+  value       = aws_ecs_service.api.name
+}
+
+output "ecs_task_definition_arn" {
+  description = "Latest ECS task definition ARN for the API."
+  value       = aws_ecs_task_definition.api.arn
+}
+
+output "terraform_state_bucket" {
+  description = "S3 bucket used for Terraform remote state."
+  value       = aws_s3_bucket.terraform_state.bucket
 }
 
 output "cloudwatch_alarms" {

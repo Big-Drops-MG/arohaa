@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars and fill sensitive values locally.
+# In CI, use GitHub Actions secrets mapped to TF_VAR_* instead.
+
+aws_region = "us-east-1"
+
+# database_url            = "postgresql://..."
+# redis_url               = "rediss://..."
+# clickhouse_password     = "..."
+# api_container_aws_access_key_id     = "..."
+# api_container_aws_secret_access_key = "..."
+# arohaa_internal_api_secret          = "..."
