@@ -3,9 +3,13 @@ import { expect, test } from "@playwright/test"
 test.describe("public smoke", () => {
   test("login page renders", async ({ page }) => {
     await page.goto("/login")
-    await expect(page.getByRole("heading", { name: /sign in/i })).toBeVisible()
-    await expect(page.getByLabel(/email/i)).toBeVisible()
-    await expect(page.getByLabel(/password/i)).toBeVisible()
+    await expect(page.getByRole("textbox", { name: /email/i })).toBeVisible({
+      timeout: 15_000,
+    })
+    await expect(page.getByRole("textbox", { name: /password/i })).toBeVisible()
+    await expect(
+      page.getByRole("button", { name: /sign in with google/i })
+    ).toBeVisible()
   })
 
   test("unauthenticated dashboard redirects to login", async ({ page }) => {
