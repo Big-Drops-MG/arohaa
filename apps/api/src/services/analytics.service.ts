@@ -448,7 +448,7 @@ export async function getLandingPageCardMetrics(
       FROM (
         SELECT session_id, min(created_at) AS first_at, toUInt8(count() = 1) AS is_bounce
         FROM events_raw
-        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 24 MONTH
+        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 7 DAY
         GROUP BY session_id
       )
     `,

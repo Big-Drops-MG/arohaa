@@ -38,7 +38,7 @@ export async function fetchLandingPageCardMetrics(
   }
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 5_000)
+  const timer = setTimeout(() => controller.abort(), 15_000)
 
   try {
     const resp = await fetch(

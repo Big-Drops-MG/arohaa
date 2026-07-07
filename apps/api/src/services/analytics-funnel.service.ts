@@ -86,21 +86,39 @@ function dropOffQuery(whereClause: string): string {
   return `
     SELECT
       field_name,
-      uniqExactIf(session_id, event_name = 'form_field_abandon') AS drop_offs,
-      uniqExactIf(session_id, event_name = 'form_field_focus') AS reached
+      uniqExact(session_id) AS reached,
+      uniqExactIf(session_id, dropped = 1) AS drop_offs
     FROM (
       SELECT
-        session_id,
-        event_name,
-        ${FIELD_NAME_EXPR} AS field_name
-      FROM events_raw
-      WHERE ${whereClause}
-        AND event_name IN ('form_field_abandon', 'form_field_focus')
-        AND ${FIELD_NAME_EXPR} != ''
+        fo.session_id AS session_id,
+        fo.field_name AS field_name,
+        if(ls.last_field = fo.field_name AND su.succeeded = 0, 1, 0) AS dropped
+      FROM (
+        SELECT session_id, ${FIELD_NAME_EXPR} AS field_name
+        FROM events_raw
+        WHERE ${whereClause}
+          AND event_name = 'form_field_focus'
+          AND ${FIELD_NAME_EXPR} != ''
+      ) AS fo
+      INNER JOIN (
+        SELECT session_id, argMax(${FIELD_NAME_EXPR}, created_at) AS last_field
+        FROM events_raw
+        WHERE ${whereClause}
+          AND event_name = 'form_field_focus'
+          AND ${FIELD_NAME_EXPR} != ''
+        GROUP BY session_id
+      ) AS ls ON fo.session_id = ls.session_id
+      LEFT JOIN (
+        SELECT session_id, toUInt8(1) AS succeeded
+        FROM events_raw
+        WHERE ${whereClause}
+          AND event_name = 'form_success'
+        GROUP BY session_id
+      ) AS su ON fo.session_id = su.session_id
     )
     GROUP BY field_name
     HAVING reached > 0
-    ORDER BY drop_offs DESC
+    ORDER BY drop_offs DESC, reached DESC
     LIMIT 20
   `
 }
