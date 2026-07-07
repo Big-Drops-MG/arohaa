@@ -14,6 +14,7 @@ import { loadLandingPageSettingsData } from "@/lib/server/landing-page-settings-
 import { loadOverviewDashboardData } from "@/lib/server/overview-dashboard-load"
 import { loadSegmentsDashboardData } from "@/lib/server/segments-dashboard-load"
 import { loadSeoDashboardData } from "@/lib/server/seo-dashboard-load"
+import { loadUtmDashboardData } from "@/lib/server/utm-dashboard-load"
 import { loadTrafficDashboardData } from "@/lib/server/traffic-dashboard-load"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
@@ -64,6 +65,7 @@ export default async function ProjectPage({
   let segments = null
   let experiments = null
   let seo = null
+  let utm = null
   let alerts = null
   let settings = null
 
@@ -107,6 +109,9 @@ export default async function ProjectPage({
         rangeId,
       })
       break
+    case "utm":
+      utm = await loadUtmDashboardData(project)
+      break
     case "alerts":
       alerts = await loadAlertsDashboardData({
         landingPagePublicId: project,
@@ -135,6 +140,7 @@ export default async function ProjectPage({
           segments: segments ?? undefined,
           experiments: experiments ?? undefined,
           seo: seo ?? undefined,
+          utm: utm ?? undefined,
           alerts: alerts ?? undefined,
           settings: settings ?? undefined,
         }}

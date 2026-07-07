@@ -40,7 +40,7 @@ import {
   getAnalyticsSeo,
   syncSeoResults,
 } from '../services/analytics-seo.service.js'
-import type { SeoSortField } from '../types/analytics-seo.js'
+import { getDiscoveredUtmParams } from '../services/analytics-utm-discover.service.js'
 import { isFunnelRangeId } from '../types/analytics-funnel.js'
 import { isTrafficRangeId } from '../types/analytics-traffic.js'
 import { RangeId as EventsRangeId } from '../types/analytics-events.js'
@@ -336,6 +336,22 @@ export async function analyticsRoutes(server: FastifyInstance) {
         emptyValue: emptyLandingPageCardMetrics(),
         run: () => getLandingPageCardMetrics(workspace_id),
         logLabel: 'landing summary query ok',
+      })
+    },
+  )
+
+  server.get<{ Querystring: { workspace_id: string } }>(
+    '/v1/analytics/utm-discovered',
+    { schema: workspaceSchema, config: ANALYTICS_RATE_LIMIT },
+    async (request, reply) => {
+      const { workspace_id } = request.query
+      await sendAnalyticsQuery({
+        request,
+        reply,
+        workspaceId: workspace_id,
+        emptyValue: [] as Array<{ key: string; value: string }>,
+        run: () => getDiscoveredUtmParams(workspace_id),
+        logLabel: 'utm discovered query ok',
       })
     },
   )
