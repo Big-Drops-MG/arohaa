@@ -8,12 +8,7 @@ import { funnelKpiMetricIdAtIndex } from "@/features/funnel/model/funnel"
 
 const FUNNEL_BASE_LABELS = ["Landing Page Visits", "Interactions"] as const
 
-const DEFAULT_MULTI_STEP_LABELS = [
-  "Step 1",
-  "Step 2",
-  "Step 3",
-  "Final Submit",
-] as const
+const DEFAULT_MULTI_STEP_LABELS = [] as const
 
 function funnelTailLabels(
   formType: OverviewLandingFormType

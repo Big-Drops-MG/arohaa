@@ -22,6 +22,7 @@ const round2 = (v: number) => Math.round(v * 100) / 100
 
 const FIELD_NAME_EXPR = `JSONExtractString(properties, 'fieldName')`
 const STEP_INDEX_EXPR = `toUInt8(JSONExtractUInt(properties, 'stepIndex'))`
+const STEP_NAME_EXPR = `nullIf(JSONExtractString(properties, 'stepName'), '')`
 
 type CoreFunnelRow = {
   page_views: string
@@ -50,6 +51,7 @@ function coreFunnelQuery(whereClause: string): string {
 
 type StepAggRow = {
   step_index: string
+  step_name?: string
   sessions: string
 }
 
@@ -57,11 +59,13 @@ function multiStepQuery(whereClause: string): string {
   return `
     SELECT
       step_index,
+      anyHeavy(step_name) AS step_name,
       uniqExact(session_id) AS sessions
     FROM (
       SELECT
         session_id,
-        ${STEP_INDEX_EXPR} AS step_index
+        ${STEP_INDEX_EXPR} AS step_index,
+        ${STEP_NAME_EXPR} AS step_name
       FROM events_raw
       WHERE ${whereClause}
         AND event_name = 'form_step_view'
@@ -147,58 +151,69 @@ function buildMetrics(
   }))
 }
 
+function resolveStepLabel(
+  stepIndex: number,
+  currentSteps: StepAggRow[],
+  previousSteps: StepAggRow[],
+): string {
+  const fromCurrent = currentSteps
+    .find((row) => n(row.step_index) === stepIndex)
+    ?.step_name?.trim()
+  if (fromCurrent) return fromCurrent
+
+  const fromPrevious = previousSteps
+    .find((row) => n(row.step_index) === stepIndex)
+    ?.step_name?.trim()
+  if (fromPrevious) return fromPrevious
+
+  return `Step ${stepIndex}`
+}
+
 function buildMultiStepSteps(
   currentSteps: StepAggRow[],
   previousSteps: StepAggRow[],
   currentCore: ReturnType<typeof parseCoreFunnel>,
   previousCore: ReturnType<typeof parseCoreFunnel>,
 ): FunnelMultiStepRow[] {
-  const curMap = new Map(currentSteps.map(r => [n(r.step_index), n(r.sessions)]))
-  const prevMap = new Map(previousSteps.map(r => [n(r.step_index), n(r.sessions)]))
-
-  const maxStep = Math.max(
-    0,
-    ...curMap.keys(),
-    ...prevMap.keys(),
-    currentSteps.length > 0 ? 0 : 1,
+  const curMap = new Map(
+    currentSteps.map((row) => [n(row.step_index), n(row.sessions)]),
+  )
+  const prevMap = new Map(
+    previousSteps.map((row) => [n(row.step_index), n(row.sessions)]),
   )
 
-  const steps: FunnelMultiStepRow[] = []
+  const stepIndices = [
+    ...new Set([
+      ...currentSteps.map((row) => n(row.step_index)),
+      ...previousSteps.map((row) => n(row.step_index)),
+    ]),
+  ]
+    .filter((index) => index > 0)
+    .sort((a, b) => a - b)
 
-  if (curMap.size === 0 && prevMap.size === 0) {
-    const fallbackSteps = [
-      { label: 'Step 1', cur: currentCore.formStarted, prev: previousCore.formStarted },
-      { label: 'Step 2', cur: 0, prev: 0 },
-      { label: 'Step 3', cur: 0, prev: 0 },
-    ]
-    for (const step of fallbackSteps) {
-      steps.push({
-        label: step.label,
-        count: step.cur,
-        changePct: computePeriodChangePct(step.cur, step.prev),
-      })
-    }
-  } else {
-    const stepCount = Math.max(maxStep, 3)
-    for (let i = 1; i <= stepCount; i++) {
-      const cur = curMap.get(i) ?? 0
-      const prev = prevMap.get(i) ?? 0
-      steps.push({
-        label: `Step ${i}`,
-        count: cur,
-        changePct: computePeriodChangePct(cur, prev),
-      })
-    }
-  }
-
-  steps.push({
-    label: 'Final Submit',
-    count: currentCore.formSubmitted,
+  const steps: FunnelMultiStepRow[] = stepIndices.map((index) => ({
+    label: resolveStepLabel(index, currentSteps, previousSteps),
+    count: curMap.get(index) ?? 0,
     changePct: computePeriodChangePct(
-      currentCore.formSubmitted,
-      previousCore.formSubmitted,
+      curMap.get(index) ?? 0,
+      prevMap.get(index) ?? 0,
     ),
-  })
+  }))
+
+  if (
+    stepIndices.length > 0 ||
+    currentCore.formSubmitted > 0 ||
+    previousCore.formSubmitted > 0
+  ) {
+    steps.push({
+      label: 'Form Submitted',
+      count: currentCore.formSubmitted,
+      changePct: computePeriodChangePct(
+        currentCore.formSubmitted,
+        previousCore.formSubmitted,
+      ),
+    })
+  }
 
   return steps
 }
@@ -236,7 +251,7 @@ export async function getAnalyticsFunnel({
   rangeId,
   formType = 'single',
 }: GetAnalyticsFunnelParams): Promise<FunnelDashboardResponse> {
-  const cacheKey = `analytics:funnel:${workspaceId}:${rangeId}:${formType}`
+  const cacheKey = `analytics:funnel:v2:${workspaceId}:${rangeId}:${formType}`
   try {
     const cachedStr = await redis.get(cacheKey)
     if (cachedStr) {
@@ -317,12 +332,7 @@ export function emptyAnalyticsFunnel(rangeId: AnalyticsRangeId): FunnelDashboard
       count: 0,
       changePct: null,
     })),
-    multiStepSteps: [
-      { label: 'Step 1', count: 0, changePct: null },
-      { label: 'Step 2', count: 0, changePct: null },
-      { label: 'Step 3', count: 0, changePct: null },
-      { label: 'Final Submit', count: 0, changePct: null },
-    ],
+    multiStepSteps: [],
     dropOffRows: [],
   }
 }

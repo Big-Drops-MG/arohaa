@@ -47,25 +47,25 @@ export function getFunnelPlaceholderData(
     ],
     multiStepSteps: [
       {
-        label: "Step 1",
+        label: "Contact info",
         value: "8,000",
         change: "-20%",
         changeVariant: "negative",
       },
       {
-        label: "Step 2",
+        label: "Property details",
         value: "5,500",
         change: "-25%",
         changeVariant: "negative",
       },
       {
-        label: "Step 3",
+        label: "Review & submit",
         value: "3,000",
         change: "-33%",
         changeVariant: "negative",
       },
       {
-        label: "Final Submit",
+        label: "Form Submitted",
         value: "1,200",
       },
     ],
