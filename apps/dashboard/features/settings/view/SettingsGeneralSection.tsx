@@ -168,7 +168,8 @@ export function SettingsGeneralSection({
             autoComplete="off"
           />
           <p className="text-xs text-muted-foreground">
-            Optional. Can also be detected automatically when the SDK connects.
+            Used exactly as entered. The SDK only auto-detects a favicon when
+            this field is left empty; a saved URL is never overwritten.
           </p>
         </div>
 

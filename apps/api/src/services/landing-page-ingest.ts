@@ -101,7 +101,7 @@ export async function reconcileLandingPageIngest(payload: {
         "status" = ${nextStatus},
         "verifiedAt" = ${nextVerifiedAt},
         "verificationMethod" = ${'sdk_event'},
-        "faviconUrl" = ${faviconRaw},
+        "faviconUrl" = COALESCE("faviconUrl", ${faviconRaw}),
         "updatedAt" = ${now}
       WHERE id = ${row.id}
     `
