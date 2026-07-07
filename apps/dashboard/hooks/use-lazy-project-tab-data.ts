@@ -16,6 +16,8 @@ import type {
 } from "@/features/overview/model/overview"
 import type { SegmentsDashboardData } from "@/features/segments/model/segments"
 import { getSegmentsEmptyDashboardData } from "@/features/segments/controller/segments-empty-data"
+import type { SeoDashboardData } from "@/features/seo/model/seo"
+import { getSeoEmptyDashboardData } from "@/features/seo/controller/seo-empty-data"
 import type { LandingPageSettingsData } from "@/features/settings/model/landing-page-settings"
 import type { TrafficDashboardData } from "@/features/traffic/model/traffic"
 import { getTrafficEmptyDashboardData } from "@/features/traffic/controller/traffic-empty-data"
@@ -28,6 +30,7 @@ export type ProjectTabData = {
   "event-tracking": EventTrackingDashboardData
   segments: SegmentsDashboardData
   experiments: ExperimentsDashboardData
+  seo: SeoDashboardData
   alerts: AlertsDashboardData
   settings: LandingPageSettingsData
 }
@@ -64,6 +67,8 @@ function emptyTabData(
       return getSegmentsEmptyDashboardData(projectId, rangeId)
     case "experiments":
       return getExperimentsEmptyDashboardData(projectId, rangeId, formType)
+    case "seo":
+      return getSeoEmptyDashboardData(projectId, rangeId)
     case "alerts":
       return getAlertsEmptyDashboardData(projectId, rangeId)
   }
@@ -157,6 +162,7 @@ export function useLazyProjectTabData({
     experiments:
       cache.experiments ??
       getExperimentsEmptyDashboardData(projectId, rangeId, formType),
+    seo: cache.seo ?? getSeoEmptyDashboardData(projectId, rangeId),
     alerts: cache.alerts ?? getAlertsEmptyDashboardData(projectId, rangeId),
     settings: cache.settings ?? null,
     loadingTab,

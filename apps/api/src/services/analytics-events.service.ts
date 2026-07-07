@@ -43,7 +43,7 @@ export async function getAnalyticsEvents({
           countIf(event_name = 'form_start') AS form_started,
           countIf(event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS total_sessions
-        FROM events
+        FROM events_raw
         WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}
       `,
     }),
@@ -56,7 +56,7 @@ export async function getAnalyticsEvents({
           countIf(event_name = 'zip_submit') AS zip_submitted,
           countIf(event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS total_sessions
-        FROM events
+        FROM events_raw
         WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}
         GROUP BY date_label
         ORDER BY date_label ASC

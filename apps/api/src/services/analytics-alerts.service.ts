@@ -58,7 +58,7 @@ export async function getAnalyticsAlerts({
         uniqExactIf(session_id, created_at >= now() - INTERVAL ${previous} AND created_at < now() - INTERVAL ${current}) AS prev_sessions,
         uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL ${previous} AND created_at < now() - INTERVAL ${current}) AS prev_form_success,
         uniqExactIf(session_id, event_name = 'form_start' AND created_at >= now() - INTERVAL ${previous} AND created_at < now() - INTERVAL ${current}) AS prev_form_starts
-      FROM events
+      FROM events_raw
       WHERE workspace_id = {wid:UUID}
         AND lp_public_id = {lp:String}
         AND created_at >= now() - INTERVAL ${previous}

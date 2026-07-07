@@ -8,6 +8,7 @@ import * as tokenSchema from './schema/tokens.js';
 import * as workspaceSchema from './schema/workspace.js';
 import * as experimentsSchema from './schema/experiments.js';
 import * as notificationsSchema from './schema/notifications.js';
+import * as seoSchema from './schema/seo.js';
 
 const schema = {
   ...authSchema,
@@ -16,6 +17,7 @@ const schema = {
   ...tokenSchema,
   ...experimentsSchema,
   ...notificationsSchema,
+  ...seoSchema,
 };
 
 bootstrapDatabaseEnv(import.meta.url);
@@ -42,6 +44,7 @@ export * from './schema/workspace.js';
 export * from './schema/tokens.js';
 export * from './schema/experiments.js';
 export * from './schema/notifications.js';
+export * from './schema/seo.js';
 export * from './email.js';
 export * from './notifications/create-notification.js';
 export * from './landing/normalizeLandingPageUrl.js';

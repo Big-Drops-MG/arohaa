@@ -21,7 +21,7 @@ export async function getEvents(client: ClickHouseClient, params: EventQueryPara
     throw new Error('workspaceId is required for tenant isolation');
   }
 
-  let query = 'SELECT * FROM events WHERE workspace_id = {workspaceId: UUID}';
+  let query = 'SELECT * FROM events_raw WHERE workspace_id = {workspaceId: UUID}';
   const queryParams: Record<string, unknown> = {
     workspaceId: params.workspaceId,
   };
@@ -71,7 +71,7 @@ export async function getEventsCount(client: ClickHouseClient, workspaceId: stri
   }
 
   const resultSet = await client.query({
-    query: 'SELECT count() as count FROM events WHERE workspace_id = {workspaceId: UUID}',
+    query: 'SELECT count() as count FROM events_raw WHERE workspace_id = {workspaceId: UUID}',
     format: 'JSONEachRow',
     query_params: {
       workspaceId,

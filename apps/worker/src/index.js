@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './instrument.js';
 import { Redis } from 'ioredis';
 import { createClient } from '@clickhouse/client';
 import * as Sentry from '@sentry/node';
@@ -9,14 +9,6 @@ import { DbWriter } from './processor/dbWriter.js';
 const LOCAL_REDIS_URL = 'redis://127.0.0.1:6379';
 const MAX_BATCH_SIZE = 1000;
 const FLUSH_INTERVAL_MS = 5000;
-
-// Initialize Sentry if configured
-if (process.env.SENTRY_DSN) {
-  Sentry.init({
-    dsn: process.env.SENTRY_DSN,
-    environment: process.env.NODE_ENV || 'development',
-  });
-}
 
 //
 // 1. Redis Connection Initialization
@@ -138,10 +130,12 @@ async function startQueueConsumption() {
           if (validateEvent(rawEvent)) {
             const safeEvent = anonymizeEvent(rawEvent);
             batch.push(safeEvent);
+          } else {
+            await redis.lpush('failed_events', JSON.stringify({ reason: 'validation_failed', payload, timestamp: Date.now() }));
           }
         } catch (parseErr) {
           console.error('[Worker] Invalid JSON payload received, skipping.', payload);
-          // Invalid JSON is dropped. Could also push to a separate DLQ if desired.
+          await redis.lpush('failed_events', JSON.stringify({ reason: 'json_parse_error', payload, timestamp: Date.now() }));
         }
       }
 
@@ -243,6 +237,8 @@ async function start() {
   } catch (err) {
     console.error('[Worker] Startup failed');
     console.error(err);
+    Sentry.captureException(err);
+    await Sentry.flush(2000).catch(() => undefined);
     process.exit(1);
   }
 }

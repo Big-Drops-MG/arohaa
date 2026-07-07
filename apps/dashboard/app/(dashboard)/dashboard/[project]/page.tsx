@@ -13,8 +13,10 @@ import { loadFunnelDashboardData } from "@/lib/server/funnel-dashboard-load"
 import { loadLandingPageSettingsData } from "@/lib/server/landing-page-settings-load"
 import { loadOverviewDashboardData } from "@/lib/server/overview-dashboard-load"
 import { loadSegmentsDashboardData } from "@/lib/server/segments-dashboard-load"
+import { loadSeoDashboardData } from "@/lib/server/seo-dashboard-load"
 import { loadTrafficDashboardData } from "@/lib/server/traffic-dashboard-load"
-import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
+import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
+import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { pageMetadata } from "@/lib/site-metadata"
 
 type ProjectPageProps = {
@@ -26,7 +28,11 @@ export async function generateMetadata({
   params,
 }: ProjectPageProps): Promise<Metadata> {
   const { project } = await params
-  const row = await getActiveLandingPageByPublicId(project)
+  const actor = await requireLandingPageActor()
+  if (!actor) {
+    return pageMetadata("Project Not Found")
+  }
+  const row = await getActiveLandingPageForActor(actor.id, project)
   if (!row) {
     return pageMetadata("Project Not Found")
   }
@@ -42,7 +48,10 @@ export default async function ProjectPage({
   const rangeId = parseTrafficRangeId(rangeIdParam)
   const tab = parseProjectTab(tabParam)
 
-  const row = await getActiveLandingPageByPublicId(project)
+  const actor = await requireLandingPageActor()
+  if (!actor) notFound()
+
+  const row = await getActiveLandingPageForActor(actor.id, project)
   if (!row) notFound()
 
   const formType = parseOverviewLandingFormType(row.formType)
@@ -54,6 +63,7 @@ export default async function ProjectPage({
   let eventTracking = null
   let segments = null
   let experiments = null
+  let seo = null
   let alerts = null
   let settings = null
 
@@ -91,6 +101,12 @@ export default async function ProjectPage({
         rangeId,
       })
       break
+    case "seo":
+      seo = await loadSeoDashboardData({
+        landingPagePublicId: project,
+        rangeId,
+      })
+      break
     case "alerts":
       alerts = await loadAlertsDashboardData({
         landingPagePublicId: project,
@@ -118,6 +134,7 @@ export default async function ProjectPage({
           "event-tracking": eventTracking ?? undefined,
           segments: segments ?? undefined,
           experiments: experiments ?? undefined,
+          seo: seo ?? undefined,
           alerts: alerts ?? undefined,
           settings: settings ?? undefined,
         }}

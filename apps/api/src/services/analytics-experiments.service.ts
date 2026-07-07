@@ -71,7 +71,7 @@ export async function getAnalyticsExperiments({
           uniqExactIf(user_id, event_name = 'page_view') AS visitors,
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS sessions
-        FROM events
+        FROM events_raw
         WHERE workspace_id = {wid:UUID} 
           AND lp_public_id = {lp:String}
           AND created_at >= now() - INTERVAL ${interval}
@@ -88,7 +88,7 @@ export async function getAnalyticsExperiments({
           if(variant = '', 'Unknown', variant) AS variant_label,
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS sessions
-        FROM events
+        FROM events_raw
         WHERE workspace_id = {wid:UUID} 
           AND lp_public_id = {lp:String}
           AND created_at >= now() - INTERVAL ${interval}

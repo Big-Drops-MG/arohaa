@@ -1,5 +1,7 @@
 import * as Sentry from '@sentry/node';
 
+const CLICKHOUSE_EVENTS_TABLE = 'events_raw';
+
 /**
  * Handles database inserts for the worker.
  * Task 1: Insert processed events into database.
@@ -18,10 +20,8 @@ export class DbWriter {
     if (!batch || batch.length === 0) return;
 
     try {
-      // The notion task specified 'INSERT INTO events_raw', but the schema defines 'events'.
-      // We write to 'events' to match the current ClickHouse migration schema.
       await this.clickHouseClient.insert({
-        table: 'events',
+        table: CLICKHOUSE_EVENTS_TABLE,
         values: batch,
         format: 'JSONEachRow',
       });

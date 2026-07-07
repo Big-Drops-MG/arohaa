@@ -1,22 +1,17 @@
 import type { InferSelectModel } from "drizzle-orm"
 import { and, eq, isNull } from "drizzle-orm"
 import { db, landingPages } from "@workspace/database"
+import { getOrCreateOwnerWorkspace } from "./resolve-workspace"
 
 export type LandingPageRow = InferSelectModel<typeof landingPages>
 
-/** Any non-deleted landing page by public id (shared dashboard read access). */
-export async function getActiveLandingPageByPublicId(
+/** Non-deleted landing page in the actor's workspace. */
+export async function getActiveLandingPageForActor(
+  actorId: string,
   publicId: string
 ): Promise<LandingPageRow | null> {
-  const rows = await db
-    .select()
-    .from(landingPages)
-    .where(
-      and(eq(landingPages.publicId, publicId), isNull(landingPages.deletedAt))
-    )
-    .limit(1)
-
-  return rows[0] ?? null
+  const ws = await getOrCreateOwnerWorkspace(actorId)
+  return getActiveLandingPageInWorkspace(ws.id, publicId)
 }
 
 export async function getActiveLandingPageInWorkspace(

@@ -51,7 +51,7 @@ async function run() {
   setTimeout(async () => {
     // Check clickhouse
     const res = await clickhouse.query({
-      query: 'SELECT * FROM events WHERE event_name LIKE \'test_event_%\' ORDER BY event_name',
+      query: 'SELECT * FROM events_raw WHERE event_name LIKE \'test_event_%\' ORDER BY event_name',
       format: 'JSONEachRow'
     });
     const rows = await res.json();

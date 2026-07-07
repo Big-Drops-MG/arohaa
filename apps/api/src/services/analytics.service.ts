@@ -1,6 +1,6 @@
 import { getClickHouseClient } from './clickhouse.service.js'
 import { formatDayOfWeek } from '../lib/day-of-week.js'
-import { TtlMemoryCache } from '../lib/ttl-memory-cache.js'
+import { redis } from './redis.service.js'
 
 export type RangeId = '24h' | '7d' | '30d' | '3m' | '12m' | '24m'
 
@@ -120,16 +120,21 @@ function buildSeries(
   return pts
 }
 
-const OVERVIEW_RESPONSE_CACHE = new TtlMemoryCache<AnalyticsOverview>(45_000)
-
 export async function getAnalyticsOverview(workspaceId: string): Promise<AnalyticsOverview> {
-  const cached = OVERVIEW_RESPONSE_CACHE.get(workspaceId)
-  if (cached) return cached
+  const cacheKey = `analytics:overview:${workspaceId}`
+  try {
+    const cachedStr = await redis.get(cacheKey)
+    if (cachedStr) {
+      return JSON.parse(cachedStr) as AnalyticsOverview
+    }
+  } catch (err) {
+    // ignore cache read errors
+  }
 
   const ch = getClickHouseClient()
   const p = { wid: workspaceId }
 
-  const [kpiRes, bounceRes, hourlyRes, dailyRes, monthlyRes, funnelRes, cityRes, dowRes, engagedRes] =
+  const [kpi24hRes, kpiLongRes, bounceRes, hourlyRes, dailyRes, monthlyRes, funnelRes, cityRes, dowRes, engagedRes] =
     await Promise.all([
       ch.query({
         format: 'JSON', query_params: p,
@@ -139,33 +144,42 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
             uniqExactIf(session_id, created_at >= now() - INTERVAL 24 HOUR) AS ses_24h,
             countIf(event_name = 'page_view' AND created_at >= now() - INTERVAL 24 HOUR) AS pv_24h,
             uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL 24 HOUR) AS fs_24h,
-            uniqExactIf(user_id, created_at >= now() - INTERVAL 7 DAY AND event_name = 'page_view') AS vis_7d,
-            uniqExactIf(session_id, created_at >= now() - INTERVAL 7 DAY) AS ses_7d,
-            countIf(event_name = 'page_view' AND created_at >= now() - INTERVAL 7 DAY) AS pv_7d,
-            uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL 7 DAY) AS fs_7d,
-            uniqExactIf(user_id, created_at >= now() - INTERVAL 30 DAY AND event_name = 'page_view') AS vis_30d,
-            uniqExactIf(session_id, created_at >= now() - INTERVAL 30 DAY) AS ses_30d,
-            countIf(event_name = 'page_view' AND created_at >= now() - INTERVAL 30 DAY) AS pv_30d,
-            uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL 30 DAY) AS fs_30d,
-            uniqExactIf(user_id, created_at >= now() - INTERVAL 3 MONTH AND event_name = 'page_view') AS vis_3m,
-            uniqExactIf(session_id, created_at >= now() - INTERVAL 3 MONTH) AS ses_3m,
-            countIf(event_name = 'page_view' AND created_at >= now() - INTERVAL 3 MONTH) AS pv_3m,
-            uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL 3 MONTH) AS fs_3m,
-            uniqExactIf(user_id, created_at >= now() - INTERVAL 12 MONTH AND event_name = 'page_view') AS vis_12m,
-            uniqExactIf(session_id, created_at >= now() - INTERVAL 12 MONTH) AS ses_12m,
-            countIf(event_name = 'page_view' AND created_at >= now() - INTERVAL 12 MONTH) AS pv_12m,
-            uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL 12 MONTH) AS fs_12m,
-            uniqExactIf(user_id, event_name = 'page_view') AS vis_24m,
-            uniqExact(session_id) AS ses_24m,
-            countIf(event_name = 'page_view') AS pv_24m,
-            uniqExactIf(session_id, event_name = 'form_success') AS fs_24m,
             uniqExactIf(
               user_id,
               created_at >= now() - INTERVAL 5 MINUTE
                 AND event_name IN ('heartbeat', 'page_view')
             ) AS active_users_now
-          FROM events
-          WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 24 MONTH
+          FROM events_raw
+          WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 25 HOUR
+        `,
+      }),
+
+      ch.query({
+        format: 'JSON', query_params: p,
+        query: `
+          SELECT
+            uniqMergeIf(visitors, day >= today() - 7) AS vis_7d,
+            uniqMergeIf(sessions, day >= today() - 7) AS ses_7d,
+            sumIf(pageviews, day >= today() - 7) AS pv_7d,
+            uniqMergeIf(form_submitted, day >= today() - 7) AS fs_7d,
+            uniqMergeIf(visitors, day >= today() - 30) AS vis_30d,
+            uniqMergeIf(sessions, day >= today() - 30) AS ses_30d,
+            sumIf(pageviews, day >= today() - 30) AS pv_30d,
+            uniqMergeIf(form_submitted, day >= today() - 30) AS fs_30d,
+            uniqMergeIf(visitors, day >= today() - 90) AS vis_3m,
+            uniqMergeIf(sessions, day >= today() - 90) AS ses_3m,
+            sumIf(pageviews, day >= today() - 90) AS pv_3m,
+            uniqMergeIf(form_submitted, day >= today() - 90) AS fs_3m,
+            uniqMergeIf(visitors, day >= today() - 365) AS vis_12m,
+            uniqMergeIf(sessions, day >= today() - 365) AS ses_12m,
+            sumIf(pageviews, day >= today() - 365) AS pv_12m,
+            uniqMergeIf(form_submitted, day >= today() - 365) AS fs_12m,
+            uniqMerge(visitors) AS vis_24m,
+            uniqMerge(sessions) AS ses_24m,
+            sum(pageviews) AS pv_24m,
+            uniqMerge(form_submitted) AS fs_24m
+          FROM daily_metrics
+          WHERE workspace_id = {wid:UUID} AND day >= today() - 730
         `,
       }),
 
@@ -187,7 +201,7 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
             count() AS ses_24m
           FROM (
             SELECT session_id, min(created_at) AS first_at, toUInt8(count() = 1) AS is_bounce
-            FROM events
+            FROM events_raw
             WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 24 MONTH
             GROUP BY session_id
           )
@@ -199,7 +213,7 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
         query: `
           SELECT toStartOfHour(created_at) AS hour,
                  uniqExactIf(user_id, event_name = 'page_view') AS visitors
-          FROM events
+          FROM events_raw
           WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 25 HOUR
           GROUP BY hour ORDER BY hour ASC
         `,
@@ -208,10 +222,10 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
       ch.query({
         format: 'JSON', query_params: p,
         query: `
-          SELECT toDate(created_at) AS day,
-                 uniqExactIf(user_id, event_name = 'page_view') AS visitors
-          FROM events
-          WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 91 DAY
+          SELECT day,
+                 uniqMerge(visitors) AS visitors
+          FROM daily_metrics
+          WHERE workspace_id = {wid:UUID} AND day >= today() - 91
           GROUP BY day ORDER BY day ASC
         `,
       }),
@@ -219,10 +233,10 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
       ch.query({
         format: 'JSON', query_params: p,
         query: `
-          SELECT toStartOfMonth(created_at) AS month,
-                 uniqExactIf(user_id, event_name = 'page_view') AS visitors
-          FROM events
-          WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 25 MONTH
+          SELECT toStartOfMonth(day) AS month,
+                 uniqMerge(visitors) AS visitors
+          FROM daily_metrics
+          WHERE workspace_id = {wid:UUID} AND day >= today() - 730
           GROUP BY month ORDER BY month ASC
         `,
       }),
@@ -231,19 +245,19 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
         format: 'JSON', query_params: p,
         query: `
           SELECT
-            countIf(event_name = 'page_view') AS page_views,
-            uniqExactIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth')) AS interactions,
-            uniqExactIf(session_id, event_name = 'form_start') AS form_started,
-            uniqExactIf(session_id, event_name = 'form_success') AS form_submitted
-          FROM events
-          WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 7 DAY
+            sum(pageviews) AS page_views,
+            uniqMerge(interactions) AS interactions,
+            uniqMerge(form_started) AS form_started,
+            uniqMerge(form_submitted) AS form_submitted
+          FROM daily_metrics
+          WHERE workspace_id = {wid:UUID} AND day >= today() - 7
         `,
       }),
 
       ch.query({
         format: 'JSON', query_params: p,
         query: `
-          SELECT city FROM events
+          SELECT city FROM events_raw
           WHERE workspace_id = {wid:UUID} AND city != '' AND created_at >= now() - INTERVAL 7 DAY
           GROUP BY city ORDER BY uniqExactIf(user_id, event_name = 'page_view') DESC LIMIT 1
         `,
@@ -252,7 +266,7 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
       ch.query({
         format: 'JSON', query_params: p,
         query: `
-          SELECT toDayOfWeek(created_at, 1) AS dow FROM events
+          SELECT toDayOfWeek(created_at, 1) AS dow FROM events_raw
           WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 7 DAY
           GROUP BY dow
           ORDER BY uniqExactIf(session_id, event_name = 'form_success') DESC
@@ -266,7 +280,7 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
           SELECT avg(max_engaged) AS avg_sec
           FROM (
             SELECT session_id, max(metric_value) AS max_engaged
-            FROM events
+            FROM events_raw
             WHERE workspace_id = {wid:UUID} AND event_name = 'heartbeat'
               AND metric_name = 'engaged_seconds' AND created_at >= now() - INTERVAL 7 DAY
             GROUP BY session_id
@@ -277,7 +291,9 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
 
   type KR = Record<string, string>
 
-  const kd = ((await kpiRes.json()) as CHJson<KR>).data[0] ?? {}
+  const kd24 = ((await kpi24hRes.json()) as CHJson<KR>).data[0] ?? {}
+  const kdLong = ((await kpiLongRes.json()) as CHJson<KR>).data[0] ?? {}
+  const kd = { ...kd24, ...kdLong }
   const bd = ((await bounceRes.json()) as CHJson<KR>).data[0] ?? {}
   const hourlyRows = ((await hourlyRes.json()) as CHJson<{ hour: string; visitors: string }>).data
   const dailyRows = ((await dailyRes.json()) as CHJson<{ day: string; visitors: string }>).data
@@ -337,7 +353,11 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
     activeUsersNow: n(kd.active_users_now),
   }
 
-  OVERVIEW_RESPONSE_CACHE.set(workspaceId, result)
+  try {
+    await redis.set(cacheKey, JSON.stringify(result), 'EX', 45)
+  } catch (err) {
+    // ignore cache write errors
+  }
   return result
 }
 
@@ -402,7 +422,7 @@ export async function getLandingPageCardMetrics(
           event_name = 'form_success'
             AND created_at >= now() - INTERVAL 7 DAY
         ) AS form_submissions_7d
-      FROM events
+      FROM events_raw
       WHERE workspace_id = {wid:UUID}
     `,
     query_params: { wid: workspaceId },
@@ -422,7 +442,7 @@ export async function getLandingPageCardMetrics(
         sumIf(1, first_at >= now() - INTERVAL 7 DAY) AS ses_7d
       FROM (
         SELECT session_id, min(created_at) AS first_at, toUInt8(count() = 1) AS is_bounce
-        FROM events
+        FROM events_raw
         WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 24 MONTH
         GROUP BY session_id
       )

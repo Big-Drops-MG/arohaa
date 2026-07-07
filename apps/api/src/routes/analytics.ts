@@ -34,6 +34,12 @@ import {
   emptyAnalyticsAlerts,
   getAnalyticsAlerts,
 } from '../services/analytics-alerts.service.js'
+import {
+  emptyAnalyticsSeo,
+  getAnalyticsSeo,
+  syncSeoResults,
+} from '../services/analytics-seo.service.js'
+import type { SeoSortField } from '../types/analytics-seo.js'
 import { isFunnelRangeId } from '../types/analytics-funnel.js'
 import { isTrafficRangeId } from '../types/analytics-traffic.js'
 import { RangeId as EventsRangeId } from '../types/analytics-events.js'
@@ -348,6 +354,154 @@ export async function analyticsRoutes(server: FastifyInstance) {
         logLabel: 'analytics alerts query ok',
         logContext: { range_id: rangeId, lp_public_id },
       })
+    },
+  )
+
+  const SEO_SORT_FIELDS = new Set<SeoSortField>([
+    'clicks',
+    'impressions',
+    'ctr',
+    'position',
+    'query',
+  ])
+
+  server.get<{
+    Querystring: {
+      workspace_id: string
+      lp_public_id: string
+      range_id?: string
+      sort_by?: string
+      sort_order?: string
+    }
+  }>(
+    '/v1/analytics/seo',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['workspace_id', 'lp_public_id'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            lp_public_id: { type: 'string', minLength: 1 },
+            range_id: { type: 'string', maxLength: 10 },
+            sort_by: { type: 'string', maxLength: 20 },
+            sort_order: { type: 'string', enum: ['asc', 'desc'] },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { workspace_id, lp_public_id, range_id, sort_by, sort_order } =
+        request.query
+      const rangeId = range_id?.trim() || DEFAULT_RANGE_ID
+
+      if (!isTrafficRangeId(rangeId)) {
+        return reply.code(400).send({ error: 'Invalid range_id' })
+      }
+
+      const sortBy = SEO_SORT_FIELDS.has(sort_by as SeoSortField)
+        ? (sort_by as SeoSortField)
+        : 'clicks'
+      const sortOrder = sort_order === 'asc' ? 'asc' : 'desc'
+
+      await sendAnalyticsQuery({
+        request,
+        reply,
+        workspaceId: workspace_id,
+        emptyValue: emptyAnalyticsSeo(rangeId as any, sortBy, sortOrder),
+        run: () =>
+          getAnalyticsSeo({
+            workspaceId: workspace_id,
+            lpPublicId: lp_public_id,
+            rangeId: rangeId as any,
+            sortBy,
+            sortOrder,
+          }),
+        logLabel: 'analytics seo query ok',
+        logContext: { range_id: rangeId, lp_public_id, sort_by: sortBy },
+      })
+    },
+  )
+
+  server.post<{
+    Body: {
+      workspace_id: string
+      lp_public_id: string
+      rows: Array<{
+        query: string
+        pageUrl: string
+        clicks: number
+        impressions: number
+        ctr: number
+        position: number
+        reportDate: string
+      }>
+    }
+  }>(
+    '/v1/analytics/seo/sync',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['workspace_id', 'lp_public_id', 'rows'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            lp_public_id: { type: 'string', minLength: 1 },
+            rows: {
+              type: 'array',
+              maxItems: 5000,
+              items: {
+                type: 'object',
+                required: [
+                  'query',
+                  'pageUrl',
+                  'clicks',
+                  'impressions',
+                  'ctr',
+                  'position',
+                  'reportDate',
+                ],
+                properties: {
+                  query: { type: 'string', minLength: 1, maxLength: 500 },
+                  pageUrl: { type: 'string', minLength: 1, maxLength: 2048 },
+                  clicks: { type: 'number', minimum: 0 },
+                  impressions: { type: 'number', minimum: 0 },
+                  ctr: { type: 'number', minimum: 0 },
+                  position: { type: 'number', minimum: 0 },
+                  reportDate: { type: 'string', minLength: 8, maxLength: 32 },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { workspace_id, lp_public_id, rows } = request.body
+
+      if (!resolveInternalApiSecret()) {
+        return reply.code(503).send({ error: 'Analytics not configured on this server' })
+      }
+
+      if (!verifyInternalApiRequest(request.headers['x-arohaa-internal'])) {
+        return reply.code(401).send({ error: 'Unauthorized' })
+      }
+
+      if (!UUID_RE.test(workspace_id)) {
+        return reply.code(400).send({ error: 'Invalid workspace_id' })
+      }
+
+      try {
+        const result = await syncSeoResults({
+          workspaceId: workspace_id,
+          lpPublicId: lp_public_id,
+          rows,
+        })
+        return reply.send(result)
+      } catch (err) {
+        request.log.error({ err, workspace_id, lp_public_id }, 'seo sync failed')
+        return reply.code(400).send({ error: 'SEO sync failed' })
+      }
     },
   )
 }

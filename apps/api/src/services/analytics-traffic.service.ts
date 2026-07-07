@@ -1,4 +1,4 @@
-import { TtlMemoryCache } from '../lib/ttl-memory-cache.js'
+import { redis } from './redis.service.js'
 import { getClickHouseClient } from './clickhouse.service.js'
 import type {
   ReferrerRow,
@@ -99,18 +99,28 @@ const ACTIVE_USERS_QUERY = `
     created_at >= now() - INTERVAL 5 MINUTE
       AND event_name IN ('heartbeat', 'page_view')
   ) AS active_users
-  FROM events
+  FROM events_raw
   WHERE workspace_id = {wid:UUID}
 `
 
 function kpiQuery(rangeId: TrafficRangeId): string {
+  if (rangeId === '24h') {
+    return `
+      SELECT
+        uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+        uniqExact(session_id) AS sessions,
+        countIf(event_name = 'page_view') AS page_views
+      FROM events_raw
+      WHERE ${RANGE_FILTER(rangeId)}
+    `
+  }
   return `
     SELECT
-      uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-      uniqExact(session_id) AS sessions,
-      countIf(event_name = 'page_view') AS page_views
-    FROM events
-    WHERE ${RANGE_FILTER(rangeId)}
+      uniqMerge(visitors) AS visitors,
+      uniqMerge(sessions) AS sessions,
+      sum(pageviews) AS page_views
+    FROM daily_metrics
+    WHERE workspace_id = {wid:UUID} AND day >= today() - INTERVAL ${RANGE_CLICKHOUSE_INTERVAL[rangeId]}
   `
 }
 
@@ -123,7 +133,7 @@ function bounceQuery(rangeId: TrafficRangeId): string {
       count() AS sessions
     FROM (
       SELECT session_id, toUInt8(count() = 1) AS is_bounce
-      FROM events
+      FROM events_raw
       WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}
       GROUP BY session_id
     )
@@ -131,23 +141,35 @@ function bounceQuery(rangeId: TrafficRangeId): string {
 }
 
 function trafficByTimeQuery(rangeId: TrafficRangeId): string {
+  if (rangeId === '24h') {
+    return `
+      SELECT
+        toStartOfHour(created_at) AS bucket,
+        uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+        uniqExact(session_id) AS sessions,
+        uniqExactIf(session_id, event_name = 'form_success') AS form_submitted
+      FROM events_raw
+      WHERE ${RANGE_LOOKBACK_FILTER(rangeId)}
+      GROUP BY bucket
+      ORDER BY bucket ASC
+    `
+  }
+
   const bucketExpr =
-    rangeId === '24h'
-      ? 'toStartOfHour(created_at)'
-      : rangeId === '7d' || rangeId === '30d'
-        ? 'toDate(created_at)'
-        : rangeId === '3m'
-          ? 'toMonday(toDate(created_at))'
-          : 'toStartOfMonth(created_at)'
+    rangeId === '7d' || rangeId === '30d'
+      ? 'day'
+      : rangeId === '3m'
+        ? 'toMonday(day)'
+        : 'toStartOfMonth(day)'
 
   return `
     SELECT
       ${bucketExpr} AS bucket,
-      uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-      uniqExact(session_id) AS sessions,
-      uniqExactIf(session_id, event_name = 'form_success') AS form_submitted
-    FROM events
-    WHERE ${RANGE_LOOKBACK_FILTER(rangeId)}
+      uniqMerge(visitors) AS visitors,
+      uniqMerge(sessions) AS sessions,
+      uniqMerge(form_submitted) AS form_submitted
+    FROM daily_metrics
+    WHERE workspace_id = {wid:UUID} AND day >= today() - INTERVAL ${RANGE_QUERY_LOOKBACK[rangeId]}
     GROUP BY bucket
     ORDER BY bucket ASC
   `
@@ -160,7 +182,7 @@ function trafficByDeviceQuery(rangeId: TrafficRangeId): string {
       uniqExactIf(user_id, event_name = 'page_view') AS visitors,
       uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
       uniqExact(session_id) AS sessions
-    FROM events
+    FROM events_raw
     WHERE ${RANGE_FILTER(rangeId)}
     GROUP BY device
     ORDER BY visitors DESC
@@ -177,7 +199,7 @@ function topPagesQuery(rangeId: TrafficRangeId): string {
       SELECT
         user_id,
         ${PAGE_PATH_EXPR} AS page
-      FROM events
+      FROM events_raw
       WHERE ${RANGE_FILTER(rangeId)} AND event_name = 'page_view'
     )
     GROUP BY page
@@ -199,7 +221,7 @@ function trafficByLocationQuery(rangeId: TrafficRangeId): string {
         user_id,
         session_id,
         event_name
-      FROM events
+      FROM events_raw
       WHERE ${RANGE_FILTER(rangeId)}
     )
     GROUP BY city_label
@@ -217,7 +239,7 @@ function referrersQuery(rangeId: TrafficRangeId): string {
       SELECT
         user_id,
         ${REFERRER_DOMAIN_EXPR} AS referrer_domain
-      FROM events
+      FROM events_raw
       WHERE ${RANGE_FILTER(rangeId)} AND event_name = 'page_view'
     )
     GROUP BY domain
@@ -248,7 +270,7 @@ function utmParametersQuery(rangeId: TrafficRangeId): string {
           anyIf(utm_campaign, utm_campaign != '') AS utm_campaign,
           anyIf(utm_id, utm_id != '') AS utm_id,
           anyIf(utm_s1, utm_s1 != '') AS utm_s1
-        FROM events
+        FROM events_raw
         WHERE ${RANGE_FILTER(rangeId)}
         GROUP BY session_id
         HAVING max(event_name = 'page_view') = 1
@@ -417,15 +439,19 @@ export interface GetAnalyticsTrafficParams {
   rangeId: TrafficRangeId
 }
 
-const TRAFFIC_RESPONSE_CACHE = new TtlMemoryCache<TrafficDashboardResponse>(45_000)
-
 export async function getAnalyticsTraffic({
   workspaceId,
   rangeId,
 }: GetAnalyticsTrafficParams): Promise<TrafficDashboardResponse> {
-  const cacheKey = `${workspaceId}:${rangeId}`
-  const cached = TRAFFIC_RESPONSE_CACHE.get(cacheKey)
-  if (cached) return cached
+  const cacheKey = `analytics:traffic:${workspaceId}:${rangeId}`
+  try {
+    const cachedStr = await redis.get(cacheKey)
+    if (cachedStr) {
+      return JSON.parse(cachedStr) as TrafficDashboardResponse
+    }
+  } catch (err) {
+    // ignore cache read errors
+  }
 
   const ch = getClickHouseClient()
   const p = { wid: workspaceId }
@@ -533,7 +559,11 @@ export async function getAnalyticsTraffic({
     utmParameters,
   }
 
-  TRAFFIC_RESPONSE_CACHE.set(cacheKey, response)
+  try {
+    await redis.set(cacheKey, JSON.stringify(response), 'EX', 45)
+  } catch (err) {
+    // ignore cache write errors
+  }
   return response
 }
 

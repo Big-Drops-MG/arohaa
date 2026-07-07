@@ -23,7 +23,7 @@ async function run() {
   // Clear any existing events for this test workspace in ClickHouse
   try {
     await clickhouse.query({
-      query: `ALTER TABLE events DELETE WHERE workspace_id = '${workspaceId}'`,
+      query: `ALTER TABLE events_raw DELETE WHERE workspace_id = '${workspaceId}'`,
       format: 'JSONEachRow'
     });
     // Wait a bit for mutation

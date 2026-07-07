@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
+import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
 
 export async function GET(
@@ -16,7 +16,7 @@ export async function GET(
   if (limited) return limited
 
   const { publicId } = await context.params
-  const row = await getActiveLandingPageByPublicId(publicId)
+  const row = await getActiveLandingPageForActor(actor.id, publicId)
   if (!row) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }

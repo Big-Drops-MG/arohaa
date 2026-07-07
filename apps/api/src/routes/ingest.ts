@@ -8,7 +8,11 @@ import { normalizeReferrer } from '../utils/referrer.js'
 const ingestSchema = {
   body: {
     type: 'object',
-    required: ['ev', 'wid', 'sid', 'uid'],
+    required: ['sid', 'uid'],
+    anyOf: [
+      { required: ['ev', 'wid'] },
+      { required: ['event_name', 'workspace_id'] }
+    ],
     additionalProperties: false,
     properties: {
       ev: {
@@ -16,7 +20,13 @@ const ingestSchema = {
         maxLength: 50,
         pattern: '^[a-z0-9_]+$',
       },
+      event_name: {
+        type: 'string',
+        maxLength: 50,
+        pattern: '^[a-z0-9_]+$',
+      },
       wid: { type: 'string', format: 'uuid' },
+      workspace_id: { type: 'string', format: 'uuid' },
       sid: { type: 'string', minLength: 8, maxLength: 64 },
       uid: { type: 'string', minLength: 8, maxLength: 64 },
       fp: { type: 'string', pattern: '^[a-f0-9]{1,16}$' },
@@ -66,9 +76,9 @@ export async function ingestRoutes(server: FastifyInstance) {
     async (request, reply) => {
       const landing = await reconcileLandingPageIngest({
         lpIdRaw: request.body.lp_id,
-        wid: request.body.wid,
+        wid: request.body.workspace_id ?? request.body.wid ?? '',
         eventUrl: request.body.url,
-        ev: request.body.ev,
+        ev: request.body.event_name ?? request.body.ev ?? '',
         props: request.body.props,
       })
 
@@ -79,7 +89,7 @@ export async function ingestRoutes(server: FastifyInstance) {
             event: 'ingest_lp_rejected',
             reason: landing.reason,
             lp_id: request.body.lp_id,
-            wid: request.body.wid,
+            wid: request.body.workspace_id ?? request.body.wid,
           },
           'ingest landing-page validation failed',
         )
@@ -95,7 +105,7 @@ export async function ingestRoutes(server: FastifyInstance) {
           trace_id: request.id,
           event: 'ingest_lp_linked',
           lp_id: request.body.lp_id,
-          wid: request.body.wid,
+          wid: request.body.workspace_id ?? request.body.wid,
         })
       }
 

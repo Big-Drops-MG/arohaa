@@ -24,7 +24,7 @@ import type {
 } from "@/features/overview/model/overview"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
+import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import type { AnalyticsOverview, RangeId } from "@/lib/server/analytics-types"
 import {
   resolveIngestApiBase,
@@ -174,7 +174,7 @@ export async function loadOverviewDashboardData(
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
 
-  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
+  const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
 
   const formType = parseOverviewLandingFormType(row.formType)
@@ -236,7 +236,7 @@ export async function loadOverviewDashboardDataForApi(
     return { ok: false, status: 401, error: "Unauthorized" }
   }
 
-  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
+  const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) {
     return { ok: false, status: 404, error: "Not found" }
   }

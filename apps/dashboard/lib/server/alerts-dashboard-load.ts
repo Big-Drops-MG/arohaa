@@ -11,7 +11,7 @@ import {
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { getActiveLandingPageByPublicId } from "@/lib/server/landing-pages-store"
+import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
 interface AnalyticsAlertItem {
   id: string
@@ -123,7 +123,7 @@ export async function loadAlertsDashboardData({
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
 
-  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
+  const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
 
   const analytics = await fetchAlertsAnalytics(
@@ -155,7 +155,7 @@ export async function loadAlertsDashboardDataForApi(
     return { ok: false, status: 401, error: "Unauthorized" }
   }
 
-  const row = await getActiveLandingPageByPublicId(landingPagePublicId)
+  const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) {
     return { ok: false, status: 404, error: "Not found" }
   }

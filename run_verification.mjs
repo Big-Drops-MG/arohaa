@@ -22,7 +22,7 @@ async function run() {
   // Clear any existing events for this test workspace in ClickHouse
   try {
     await clickhouse.query({
-      query: `ALTER TABLE events DELETE WHERE workspace_id = '${workspaceId}'`,
+      query: `ALTER TABLE events_raw DELETE WHERE workspace_id = '${workspaceId}'`,
       format: 'JSONEachRow'
     });
     // Wait a bit for mutation
@@ -99,7 +99,7 @@ async function run() {
 // To avoid TS compilation issues in this simple script, I will just query ClickHouse directly
 async function getEventsDirect() {
   const rs = await clickhouse.query({
-    query: "SELECT * FROM events WHERE workspace_id = '11111111-1111-1111-1111-111111111111'",
+    query: "SELECT * FROM events_raw WHERE workspace_id = '11111111-1111-1111-1111-111111111111'",
     format: 'JSONEachRow'
   });
   return await rs.json();

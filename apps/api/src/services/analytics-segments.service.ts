@@ -105,7 +105,7 @@ export async function getAnalyticsSegments({
           uniqExactIf(user_id, event_name = 'page_view') AS visitors,
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS sessions
-        FROM events
+        FROM events_raw
         WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}
         GROUP BY label
         ORDER BY visitors DESC
@@ -121,7 +121,7 @@ export async function getAnalyticsSegments({
           uniqExactIf(user_id, event_name = 'page_view') AS visitors,
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS sessions
-        FROM events
+        FROM events_raw
         WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}
         GROUP BY label
         ORDER BY visitors DESC
@@ -137,7 +137,7 @@ export async function getAnalyticsSegments({
           uniqExactIf(user_id, event_name = 'page_view') AS visitors,
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS sessions
-        FROM events
+        FROM events_raw
         WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}
         GROUP BY label
         ORDER BY visitors DESC
@@ -150,7 +150,7 @@ export async function getAnalyticsSegments({
         SELECT
           toHour(created_at) AS label,
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted
-        FROM events
+        FROM events_raw
         WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}
         GROUP BY label
         ORDER BY form_submitted DESC

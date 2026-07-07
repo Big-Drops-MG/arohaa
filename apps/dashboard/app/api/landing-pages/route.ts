@@ -89,10 +89,14 @@ export async function GET() {
   const limited = await enforceLandingApiRateLimit(actor.id)
   if (limited) return limited
 
+  const ws = await getOrCreateOwnerWorkspace(actor.id)
+
   const rows = await db
     .select()
     .from(landingPages)
-    .where(isNull(landingPages.deletedAt))
+    .where(
+      and(eq(landingPages.workspaceId, ws.id), isNull(landingPages.deletedAt))
+    )
     .orderBy(desc(landingPages.createdAt))
 
   return NextResponse.json({ landingPages: rows.map(toJson) })
