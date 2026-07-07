@@ -8,7 +8,8 @@ on:
       - "packages/database/**"
       - "pnpm-lock.yaml"
       - "scripts/deploy-api-aws.py"
-      - "scripts/deploy-cloudwatch-queue-alarms.py"
+      - "scripts/terraform-bootstrap-state.py"
+      - "scripts/terraform-import-existing.py"
       - "terraform/**"
       - ".github/workflows/deploy-api.yml"
   workflow_dispatch:
@@ -19,8 +20,22 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      TF_VAR_database_url: ${{ secrets.DATABASE_URL }}
+      TF_VAR_redis_url: ${{ secrets.REDIS_URL }}
+      TF_VAR_clickhouse_url: http://137.184.17.135:8123
+      TF_VAR_clickhouse_user: arohaa
+      TF_VAR_clickhouse_password: ${{ secrets.CLICKHOUSE_PASSWORD }}
+      TF_VAR_api_container_aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      TF_VAR_api_container_aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      TF_VAR_arohaa_internal_api_secret: ${{ secrets.AROHAA_INTERNAL_API_SECRET }}
+      TF_VAR_cloudwatch_alarm_sns_arn: ${{ secrets.CLOUDWATCH_ALARM_SNS_ARN }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -49,14 +64,15 @@ jobs:
             --query "service.deployments[0].rolloutState" \
             --output text
 
+      - name: Bootstrap remote state backend
+        run: python scripts/terraform-bootstrap-state.py
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
 
-      - name: Apply Terraform (queue alarms + IAM)
+      - name: Apply Terraform (ECS + monitoring)
         working-directory: terraform
-        env:
-          TF_VAR_cloudwatch_alarm_sns_arn: ${{ secrets.CLOUDWATCH_ALARM_SNS_ARN }}
         run: |
           terraform init
           python ../scripts/terraform-import-existing.py || true

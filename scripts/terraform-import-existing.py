@@ -24,6 +24,22 @@ IMPORTS = [
         "aws_cloudwatch_log_group.api",
         "/arohaa/production/fastify-backend",
     ),
+    (
+        "aws_cloudwatch_log_group.api_ecs",
+        "/ecs/arohaa-api",
+    ),
+    (
+        "aws_s3_bucket.terraform_state",
+        "arohaa-terraform-state-442042553666",
+    ),
+    (
+        "aws_dynamodb_table.terraform_locks",
+        "arohaa-terraform-locks",
+    ),
+    (
+        "aws_ecs_service.api",
+        "arohaa-production/arohaa-api-service-syjf98zg",
+    ),
 ]
 
 
