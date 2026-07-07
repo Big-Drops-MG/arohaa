@@ -42,6 +42,7 @@ import {
 } from '../services/analytics-seo.service.js'
 import { getDiscoveredUtmParams } from '../services/analytics-utm-discover.service.js'
 import { isFunnelRangeId } from '../types/analytics-funnel.js'
+import type { SeoSortField } from '../types/analytics-seo.js'
 import { isTrafficRangeId } from '../types/analytics-traffic.js'
 import { RangeId as EventsRangeId } from '../types/analytics-events.js'
 import { RangeId as SegmentsRangeId } from '../types/analytics-segments.js'
