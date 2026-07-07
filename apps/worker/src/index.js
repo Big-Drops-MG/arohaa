@@ -2,8 +2,8 @@ import './instrument.js';
 import { Redis } from 'ioredis';
 import { createClient } from '@clickhouse/client';
 import * as Sentry from '@sentry/node';
-import crypto from 'crypto';
 import { validateEvent } from './processor/validator.js';
+import { anonymizeEvent } from './processor/pii.js';
 import { DbWriter } from './processor/dbWriter.js';
 
 const LOCAL_REDIS_URL = 'redis://127.0.0.1:6379';
@@ -73,47 +73,6 @@ let dbWriter = null;
 let isShuttingDown = false;
 let batch = [];
 let lastFlushTime = Date.now();
-
-// Email regex pattern for simple detection
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function hashEmail(email) {
-  return crypto.createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
-}
-
-function anonymizeEvent(event) {
-  if (!event) return event;
-  const cloned = { ...event };
-
-  // Mask top-level user_id if it looks like an email
-  if (typeof cloned.user_id === 'string' && EMAIL_REGEX.test(cloned.user_id)) {
-    cloned.user_id = hashEmail(cloned.user_id);
-  }
-
-  // Parse and mask properties if present
-  if (typeof cloned.properties === 'string') {
-    try {
-      const props = JSON.parse(cloned.properties);
-      let modified = false;
-      
-      // Look for standard email fields in properties
-      if (typeof props.email === 'string' && EMAIL_REGEX.test(props.email)) {
-        props.email = hashEmail(props.email);
-        modified = true;
-      }
-      
-      if (modified) {
-        cloned.properties = JSON.stringify(props);
-      }
-    } catch (e) {
-      // Ignore JSON parse errors for properties
-    }
-  }
-
-  return cloned;
-}
-
-// Removed flushBatch() - now handled by DbWriter
 
 async function startQueueConsumption() {
   console.log('[Worker] Starting queue consumption from "analytics_queue"...');

@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "geoip:download": "node scripts/download-geoip.mjs",
+    "predev": "node scripts/download-geoip.mjs"
   },
   "dependencies": {
     "@clickhouse/client": "^1.14.0",

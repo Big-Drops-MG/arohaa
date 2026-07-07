@@ -4,6 +4,7 @@ import type {
   AnalyticsExperiments,
   RangeId,
 } from '../types/analytics-experiments.js'
+import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
 
 type CHJson<T> = { data: T[] }
 
@@ -34,6 +35,10 @@ export async function getAnalyticsExperiments({
   lpPublicId: string
   rangeId: RangeId
 }): Promise<AnalyticsExperiments> {
+  const cacheKey = `analytics:experiments:${workspaceId}:${lpPublicId}:${rangeId}`
+  const cached = await readAnalyticsCache<AnalyticsExperiments>(cacheKey)
+  if (cached) return cached
+
   // 1. Fetch active experiments from Postgres
   const lp = await db.query.landingPages.findFirst({
     where: eq(landingPages.publicId, lpPublicId),
@@ -157,11 +162,14 @@ export async function getAnalyticsExperiments({
     )
     .map((entry) => entry.row) as any[]
 
-  return {
+  const result = {
     experiments: formattedExperiments,
     variantPerformance,
     performanceByLocation,
   }
+
+  await writeAnalyticsCache(cacheKey, result)
+  return result
 }
 
 export function emptyAnalyticsExperiments(): AnalyticsExperiments {

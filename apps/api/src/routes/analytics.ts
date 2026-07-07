@@ -50,6 +50,13 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 const DEFAULT_RANGE_ID = '7d' as const
 
+const ANALYTICS_RATE_LIMIT = {
+  rateLimit: {
+    max: 120,
+    timeWindow: '1 minute',
+  },
+} as const
+
 const workspaceSchema = {
   querystring: {
     type: 'object',
@@ -156,7 +163,7 @@ async function sendAnalyticsQuery<T>({
 export async function analyticsRoutes(server: FastifyInstance) {
   server.get<{ Querystring: { workspace_id: string } }>(
     '/v1/analytics/overview',
-    { schema: workspaceSchema },
+    { schema: workspaceSchema, config: ANALYTICS_RATE_LIMIT },
     async (request, reply) => {
       const { workspace_id } = request.query
       await sendAnalyticsQuery({
@@ -172,7 +179,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
 
   server.get<{ Querystring: { workspace_id: string; range_id?: string } }>(
     '/v1/analytics/traffic',
-    { schema: rangeSchema },
+    { schema: rangeSchema, config: ANALYTICS_RATE_LIMIT },
     async (request, reply) => {
       const { workspace_id, range_id } = request.query
       const rangeId = range_id?.trim() || DEFAULT_RANGE_ID
@@ -197,7 +204,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
     Querystring: { workspace_id: string; range_id?: string; form_type?: string }
   }>(
     '/v1/analytics/funnel',
-    { schema: funnelSchema },
+    { schema: funnelSchema, config: ANALYTICS_RATE_LIMIT },
     async (request, reply) => {
       const { workspace_id, range_id, form_type } = request.query
       const rangeId = range_id?.trim() || DEFAULT_RANGE_ID
@@ -226,7 +233,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
 
   server.get<{ Querystring: { workspace_id: string; range_id?: string } }>(
     '/v1/analytics/events',
-    { schema: rangeSchema },
+    { schema: rangeSchema, config: ANALYTICS_RATE_LIMIT },
     async (request, reply) => {
       const { workspace_id, range_id } = request.query
       const rangeId = range_id?.trim() || DEFAULT_RANGE_ID
@@ -250,7 +257,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
 
   server.get<{ Querystring: { workspace_id: string; range_id?: string } }>(
     '/v1/analytics/segments',
-    { schema: rangeSchema },
+    { schema: rangeSchema, config: ANALYTICS_RATE_LIMIT },
     async (request, reply) => {
       const { workspace_id, range_id } = request.query
       const rangeId = range_id?.trim() || DEFAULT_RANGE_ID
@@ -285,6 +292,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
           },
         },
       },
+      config: ANALYTICS_RATE_LIMIT,
     },
     async (request, reply) => {
       const { workspace_id, lp_public_id, range_id } = request.query
@@ -308,7 +316,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
 
   server.get<{ Querystring: { workspace_id: string } }>(
     '/v1/analytics/landing-summary',
-    { schema: workspaceSchema },
+    { schema: workspaceSchema, config: ANALYTICS_RATE_LIMIT },
     async (request, reply) => {
       const { workspace_id } = request.query
       await sendAnalyticsQuery({
@@ -336,6 +344,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
           },
         },
       },
+      config: ANALYTICS_RATE_LIMIT,
     },
     async (request, reply) => {
       const { workspace_id, lp_public_id, range_id } = request.query
@@ -389,6 +398,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
           },
         },
       },
+      config: ANALYTICS_RATE_LIMIT,
     },
     async (request, reply) => {
       const { workspace_id, lp_public_id, range_id, sort_by, sort_order } =
@@ -475,6 +485,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
           },
         },
       },
+      config: ANALYTICS_RATE_LIMIT,
     },
     async (request, reply) => {
       const { workspace_id, lp_public_id, rows } = request.body

@@ -11,6 +11,7 @@ import type {
   SeoSortOrder,
 } from "@/features/seo/model/seo"
 import { SeoResultsTable } from "@/features/seo/view/SeoResultsTable"
+import { SeoImportPanel } from "@/features/seo/view/SeoImportPanel"
 import { formatSeoSummaryLabel } from "@/features/seo/utils/seo-format"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
@@ -141,6 +142,13 @@ export function SeoDashboard({
         dateRangeOptions={dashboardData.dateRangeOptions}
         dateRangeId={dateRangeId}
         onDateRangeChange={setDateRangeId}
+      />
+
+      <SeoImportPanel
+        projectId={projectId}
+        onSynced={() => {
+          void fetchSeoForRange(dateRangeId, sortBy, sortOrder)
+        }}
       />
 
       <div

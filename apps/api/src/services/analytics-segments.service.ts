@@ -4,6 +4,7 @@ import {
   formatDayOfWeek,
 } from '../lib/day-of-week.js'
 import type { AnalyticsSegments, RangeId } from '../types/analytics-segments.js'
+import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
 
 type CHJson<T> = { data: T[] }
 
@@ -91,6 +92,10 @@ export async function getAnalyticsSegments({
   workspaceId: string
   rangeId: RangeId
 }): Promise<AnalyticsSegments> {
+  const cacheKey = `analytics:segments:${workspaceId}:${rangeId}`
+  const cached = await readAnalyticsCache<AnalyticsSegments>(cacheKey)
+  if (cached) return cached
+
   const ch = getClickHouseClient()
   const interval = getInterval(rangeId)
   const p = { wid: workspaceId }
@@ -209,7 +214,7 @@ export async function getAnalyticsSegments({
     }
   }
 
-  return {
+  const result = {
     summaryKpis: {
       topRegion,
       topDevice,
@@ -221,6 +226,9 @@ export async function getAnalyticsSegments({
     performanceByDevice,
     performanceByTime,
   }
+
+  await writeAnalyticsCache(cacheKey, result)
+  return result
 }
 
 export function emptyAnalyticsSegments(): AnalyticsSegments {

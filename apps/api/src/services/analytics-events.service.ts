@@ -1,5 +1,6 @@
 import { getClickHouseClient } from './clickhouse.service.js'
 import type { AnalyticsEvents, RangeId } from '../types/analytics-events.js'
+import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
 
 type CHJson<T> = { data: T[] }
 
@@ -28,6 +29,10 @@ export async function getAnalyticsEvents({
   workspaceId: string
   rangeId: RangeId
 }): Promise<AnalyticsEvents> {
+  const cacheKey = `analytics:events:${workspaceId}:${rangeId}`
+  const cached = await readAnalyticsCache<AnalyticsEvents>(cacheKey)
+  if (cached) return cached
+
   const ch = getClickHouseClient()
   const interval = getInterval(rangeId)
   
@@ -113,7 +118,7 @@ export async function getAnalyticsEvents({
     }
   })
 
-  return {
+  const result = {
     kpis: {
       totalEvents,
       zipSubmit,
@@ -130,6 +135,9 @@ export async function getAnalyticsEvents({
       { name: 'Form Submitted', value: formSubmitted },
     ]
   }
+
+  await writeAnalyticsCache(cacheKey, result)
+  return result
 }
 
 export function emptyAnalyticsEvents(): AnalyticsEvents {

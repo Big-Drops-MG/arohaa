@@ -1,5 +1,6 @@
 import { getClickHouseClient } from './clickhouse.service.js'
 import { formatDayOfWeek } from '../lib/day-of-week.js'
+import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
 import { redis } from './redis.service.js'
 
 export type RangeId = '24h' | '7d' | '30d' | '3m' | '12m' | '24m'
@@ -408,6 +409,10 @@ export interface LandingPageCardMetrics {
 export async function getLandingPageCardMetrics(
   workspaceId: string
 ): Promise<LandingPageCardMetrics> {
+  const cacheKey = `analytics:landing-summary:${workspaceId}`
+  const cached = await readAnalyticsCache<LandingPageCardMetrics>(cacheKey)
+  if (cached) return cached
+
   const ch = getClickHouseClient()
   const metricsRes = await ch.query({
     query: `
@@ -455,11 +460,14 @@ export async function getLandingPageCardMetrics(
   ).data
 
   const ses7d = n(bounceRow?.ses_7d)
-  return {
+  const result = {
     activeUsers: n(row?.active_users),
     formSubmissions7d: n(row?.form_submissions_7d),
     bounceRate7d: bouncePct(n(bounceRow?.bounce_7d), ses7d),
   }
+
+  await writeAnalyticsCache(cacheKey, result)
+  return result
 }
 
 export function emptyLandingPageCardMetrics(): LandingPageCardMetrics {

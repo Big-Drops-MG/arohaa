@@ -7,6 +7,11 @@ import type {
   SeoSortField,
   SeoSyncRowInput,
 } from '../types/analytics-seo.js'
+import {
+  invalidateAnalyticsCache,
+  readAnalyticsCache,
+  writeAnalyticsCache,
+} from '../lib/analytics-cache.js'
 
 function getRangeStart(rangeId: RangeId): Date {
   const now = new Date()
@@ -63,6 +68,10 @@ export async function getAnalyticsSeo({
   sortBy?: SeoSortField
   sortOrder?: 'asc' | 'desc'
 }): Promise<AnalyticsSeo> {
+  const cacheKey = `analytics:seo:${workspaceId}:${lpPublicId}:${rangeId}:${sortBy}:${sortOrder}`
+  const cached = await readAnalyticsCache<AnalyticsSeo>(cacheKey)
+  if (cached) return cached
+
   const lp = await db.query.landingPages.findFirst({
     where: eq(landingPages.publicId, lpPublicId),
   })
@@ -97,7 +106,7 @@ export async function getAnalyticsSeo({
       ? sorted.reduce((sum, row) => sum + row.position, 0) / sorted.length
       : 0
 
-  return {
+  const result = {
     rangeId,
     sortBy,
     sortOrder,
@@ -110,6 +119,9 @@ export async function getAnalyticsSeo({
     },
     rows: sorted,
   }
+
+  await writeAnalyticsCache(cacheKey, result)
+  return result
 }
 
 export async function syncSeoResults({
@@ -159,6 +171,8 @@ export async function syncSeoResults({
         position: sql`excluded.position`,
       },
     })
+
+  await invalidateAnalyticsCache(`analytics:seo:${workspaceId}:${lpPublicId}:`)
 
   return { inserted: values.length }
 }
