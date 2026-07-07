@@ -1,0 +1,55 @@
+name: Deploy API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - "packages/database/**"
+      - "pnpm-lock.yaml"
+      - "scripts/deploy-api-aws.py"
+      - "scripts/deploy-cloudwatch-queue-alarms.py"
+      - "deploy/**"
+      - ".github/workflows/deploy-api.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push API image
+        env:
+          ECR_REGISTRY: 442042553666.dkr.ecr.us-east-1.amazonaws.com
+          IMAGE_TAG: latest
+        run: |
+          docker build -f apps/api/Dockerfile -t "$ECR_REGISTRY/arohaa-api:$IMAGE_TAG" .
+          docker push "$ECR_REGISTRY/arohaa-api:$IMAGE_TAG"
+
+      - name: Roll out ECS service
+        run: |
+          aws ecs update-service \
+            --cluster arohaa-production \
+            --service arohaa-api-service-syjf98zg \
+            --force-new-deployment \
+            --query "service.deployments[0].rolloutState" \
+            --output text
+
+      - name: Deploy CloudWatch queue alarms
+        env:
+          CLOUDWATCH_ALARM_SNS_ARN: ${{ secrets.CLOUDWATCH_ALARM_SNS_ARN }}
+        run: python scripts/deploy-cloudwatch-queue-alarms.py

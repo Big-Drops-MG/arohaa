@@ -1,0 +1,47 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "QueueMetricsPublish",
+      "Effect": "Allow",
+      "Action": ["cloudwatch:PutMetricData"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "QueueAlarmsManage",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:PutMetricAlarm",
+        "cloudwatch:DeleteAlarms",
+        "cloudwatch:DescribeAlarms"
+      ],
+      "Resource": "arn:aws:cloudwatch:us-east-1:442042553666:alarm:arohaa-*"
+    },
+    {
+      "Sid": "EcrPushApiImage",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:GetAuthorizationToken",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:PutImage"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EcsDeployApi",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:DescribeServices",
+        "ecs:DescribeTaskDefinition",
+        "ecs:UpdateService",
+        "ecs:RegisterTaskDefinition"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
