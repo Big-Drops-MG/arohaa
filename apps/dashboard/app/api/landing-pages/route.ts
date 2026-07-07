@@ -21,6 +21,7 @@ import {
 import { enforceLandingQuota } from "@/lib/server/landing-quota"
 import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
 import { getOrCreateOwnerWorkspace } from "@/lib/server/resolve-workspace"
+import { parseOptionalFaviconUrl } from "@/lib/server/landing-page-validation"
 
 type LandingRow = InferSelectModel<typeof landingPages>
 
@@ -62,23 +63,6 @@ function toJson(row: LandingRow) {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   }
-}
-
-function parseOptionalFaviconUrl(
-  raw: string
-): { ok: true; value: string | null } | { ok: false; error: string } {
-  const t = raw.trim()
-  if (t.length === 0) return { ok: true, value: null }
-  let u: URL
-  try {
-    u = new URL(t)
-  } catch {
-    return { ok: false, error: "Invalid favicon URL" }
-  }
-  if (u.protocol !== "http:" && u.protocol !== "https:") {
-    return { ok: false, error: "Favicon URL must use http or https" }
-  }
-  return { ok: true, value: u.href }
 }
 
 export async function GET() {

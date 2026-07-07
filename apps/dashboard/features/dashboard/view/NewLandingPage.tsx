@@ -209,7 +209,7 @@ export function NewLandingPage() {
           />
           <Input
             type="url"
-            placeholder="Favicon URL (optional)"
+            placeholder="Favicon URL"
             value={faviconUrl}
             onChange={(e) => setFaviconUrl(e.target.value)}
             className="h-12 rounded-lg px-4 text-base"
