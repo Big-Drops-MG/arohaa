@@ -1,0 +1,12 @@
+{
+  "AlarmName": "arohaa-failed-events-depth",
+  "AlarmDescription": "Alert when failed_events DLQ depth stays high",
+  "Namespace": "Arohaa/Custom",
+  "MetricName": "failed_events_depth",
+  "Statistic": "Maximum",
+  "Period": 300,
+  "EvaluationPeriods": 2,
+  "Threshold": 100,
+  "ComparisonOperator": "GreaterThanThreshold",
+  "TreatMissingData": "notBreaching"
+}

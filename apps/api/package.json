@@ -11,6 +11,7 @@
     "predev": "node scripts/download-geoip.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-cloudwatch": "^3.888.0",
     "@clickhouse/client": "^1.14.0",
     "@fastify/cors": "^11.2.0",
     "@fastify/rate-limit": "^10.3.0",

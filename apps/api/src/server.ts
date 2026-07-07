@@ -26,6 +26,10 @@ import {
   startBufferProcessor,
   stopBufferProcessor,
 } from './services/event-buffer.js'
+import {
+  startQueueDepthMonitor,
+  stopQueueDepthMonitor,
+} from './services/queue-metrics.service.js'
 
 const TRACE_ID_HEADER = 'x-trace-id'
 const TRACE_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/
@@ -198,6 +202,7 @@ const start = async () => {
     await initGeo(server.log)
 
     startBufferProcessor({ logger: server.log })
+    startQueueDepthMonitor({ logger: server.log })
 
     const port = Number(process.env.PORT) || 3001
     await server.listen({ port, host: '0.0.0.0' })
@@ -213,6 +218,7 @@ const shutdown = async (signal: string) => {
   server.log.info({ signal }, 'shutdown signal received')
   try {
     await stopBufferProcessor()
+    await stopQueueDepthMonitor()
     await server.close()
     await closeClickHouseClient()
     await Sentry.flush(2000).catch(() => undefined)
