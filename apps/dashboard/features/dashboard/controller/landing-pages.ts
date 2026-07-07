@@ -1,4 +1,4 @@
-import { desc, and, eq, isNull } from "drizzle-orm"
+import { desc, isNull } from "drizzle-orm"
 import { db, landingPages } from "@workspace/database"
 import type {
   LandingPageListItem,
@@ -7,13 +7,10 @@ import type {
 import { fetchLandingPageCardMetrics } from "@/lib/server/landing-page-metrics-load"
 import { isLandingPageLive } from "@/lib/server/landing-page-live"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { getOrCreateOwnerWorkspace } from "@/lib/server/resolve-workspace"
 
 export async function getLandingPageNavItems(): Promise<LandingPageNavItem[]> {
   const actor = await requireLandingPageActor()
   if (!actor) return []
-
-  const ws = await getOrCreateOwnerWorkspace(actor.id)
 
   return db
     .select({
@@ -22,17 +19,13 @@ export async function getLandingPageNavItems(): Promise<LandingPageNavItem[]> {
       faviconUrl: landingPages.faviconUrl,
     })
     .from(landingPages)
-    .where(
-      and(eq(landingPages.workspaceId, ws.id), isNull(landingPages.deletedAt))
-    )
+    .where(isNull(landingPages.deletedAt))
     .orderBy(desc(landingPages.createdAt))
 }
 
 export async function getLandingPageList(): Promise<LandingPageListItem[]> {
   const actor = await requireLandingPageActor()
   if (!actor) return []
-
-  const ws = await getOrCreateOwnerWorkspace(actor.id)
 
   const rows = await db
     .select({
@@ -44,9 +37,7 @@ export async function getLandingPageList(): Promise<LandingPageListItem[]> {
       status: landingPages.status,
     })
     .from(landingPages)
-    .where(
-      and(eq(landingPages.workspaceId, ws.id), isNull(landingPages.deletedAt))
-    )
+    .where(isNull(landingPages.deletedAt))
     .orderBy(desc(landingPages.createdAt))
 
   const metricsList = await Promise.all(
