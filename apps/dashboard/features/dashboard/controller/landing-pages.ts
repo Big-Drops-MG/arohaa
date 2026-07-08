@@ -35,13 +35,14 @@ export async function getLandingPageList(): Promise<LandingPageListItem[]> {
       landingPageUrl: landingPages.landingPageUrl,
       faviconUrl: landingPages.faviconUrl,
       status: landingPages.status,
+      formType: landingPages.formType,
     })
     .from(landingPages)
     .where(isNull(landingPages.deletedAt))
     .orderBy(desc(landingPages.createdAt))
 
   const metricsList = await Promise.all(
-    rows.map((row) => fetchLandingPageCardMetrics(row.id))
+    rows.map((row) => fetchLandingPageCardMetrics(row.id, row.formType))
   )
 
   return rows.map((row, index) => ({

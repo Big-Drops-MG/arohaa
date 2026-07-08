@@ -1,5 +1,8 @@
 import type { LandingPageMetric } from "@/features/dashboard/model/landing-page"
-import { emptyLandingPageMetrics } from "@/features/dashboard/model/landing-page"
+import {
+  emptyLandingPageMetrics,
+  submissionMetricLabel,
+} from "@/features/dashboard/model/landing-page"
 import type { LandingPageCardMetrics } from "@/lib/server/analytics-types"
 import {
   resolveIngestApiBase,
@@ -18,23 +21,28 @@ function fmtPct(v: number): string {
 }
 
 export function buildLandingPageMetrics(
-  data: LandingPageCardMetrics
+  data: LandingPageCardMetrics,
+  formType = "single"
 ): LandingPageMetric[] {
   return [
     { label: "Active Users", value: fmtCount(data.activeUsers) },
-    { label: "Form Submissions", value: fmtCount(data.formSubmissions7d) },
+    {
+      label: submissionMetricLabel(formType),
+      value: fmtCount(data.formSubmissions7d),
+    },
     { label: "Bounce Rate", value: fmtPct(data.bounceRate7d) },
   ]
 }
 
 export async function fetchLandingPageCardMetrics(
-  landingPageId: string
+  landingPageId: string,
+  formType = "single"
 ): Promise<LandingPageMetric[]> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
 
   if (!apiBase || !secret) {
-    return emptyLandingPageMetrics
+    return emptyLandingPageMetrics(formType)
   }
 
   const controller = new AbortController()
@@ -58,22 +66,22 @@ export async function fetchLandingPageCardMetrics(
           body.slice(0, 200)
         )
       }
-      return emptyLandingPageMetrics
+      return emptyLandingPageMetrics(formType)
     }
 
     const data = (await resp.json()) as LandingPageCardMetrics
-    return buildLandingPageMetrics(data)
+    return buildLandingPageMetrics(data, formType)
   } catch (err: any) {
     if (err.name === "AbortError") {
       if (process.env.NODE_ENV === "development") {
         console.warn("[landing-metrics] fetch timed out")
       }
-      return emptyLandingPageMetrics
+      return emptyLandingPageMetrics(formType)
     }
     if (process.env.NODE_ENV === "development") {
       console.error("[landing-metrics] fetch failed", err?.message || err)
     }
-    return emptyLandingPageMetrics
+    return emptyLandingPageMetrics(formType)
   } finally {
     clearTimeout(timer)
   }
