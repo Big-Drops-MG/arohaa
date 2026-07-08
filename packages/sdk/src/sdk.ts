@@ -1,9 +1,10 @@
 import { initSDK, track } from "./index"
 import type { ArohaaApi, ArohaaQueueStub } from "./types/global"
 
-initSDK()
+void (async () => {
+  const blocked = await initSDK()
+  if (blocked || typeof window === "undefined") return
 
-if (typeof window !== "undefined") {
   const existing = window.arohaa as ArohaaQueueStub | undefined
   const queued = existing?.q ?? []
   const startedAt = existing?.l
@@ -35,4 +36,4 @@ if (typeof window !== "undefined") {
       console.error("[arohaa] failed to drain queued event", err)
     }
   }
-}
+})()

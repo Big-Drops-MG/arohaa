@@ -116,3 +116,22 @@ export function isUtmBlocked(
   }
   return false
 }
+
+export type PublicBlockedUtmResponse = {
+  utm_source: string[]
+  utm_s1: string[]
+}
+
+export function serializeBlockedUtmResponse(
+  sets: BlockedUtmSets,
+): PublicBlockedUtmResponse {
+  return {
+    utm_source: [...sets.utm_source].sort(),
+    utm_s1: [...sets.utm_s1].sort(),
+  }
+}
+
+export function invalidateBlockedUtmCache(landingPageId: string): void {
+  cache.delete(landingPageId)
+  inflight.delete(landingPageId)
+}

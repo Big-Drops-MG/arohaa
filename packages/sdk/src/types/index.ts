@@ -5,6 +5,7 @@ export interface SDKConfig {
   variant: string
   formtype: "zip" | "single" | "multiple"
   apiBase: string
+  utmBlockRedirect: string
 }
 
 export interface EventPayload {

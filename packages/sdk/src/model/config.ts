@@ -7,6 +7,7 @@ const DEFAULT_CONFIG: SDKConfig = {
   variant: "A",
   formtype: "single",
   apiBase: "",
+  utmBlockRedirect: "",
 }
 
 let config: SDKConfig = DEFAULT_CONFIG
@@ -46,6 +47,8 @@ export function initializeConfig(script?: HTMLScriptElement | null): SDKConfig {
     variant: resolvedScript?.getAttribute("data-variant") ?? "A",
     formtype: parseFormType(resolvedScript?.getAttribute("data-formtype")),
     apiBase: resolvedScript?.getAttribute("data-api") ?? "",
+    utmBlockRedirect:
+      resolvedScript?.getAttribute("data-utm-block-redirect") ?? "",
   }
 
   initialized = true
