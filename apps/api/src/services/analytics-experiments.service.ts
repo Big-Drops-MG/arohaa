@@ -1,7 +1,10 @@
 import { getClickHouseClient } from './clickhouse.service.js'
-import { db, experiments, landingPages, eq, and, sql, sum, inArray } from '@workspace/database'
+import { db, experiments, landingPages, eq } from '@workspace/database'
 import type {
   AnalyticsExperiments,
+  AnalyticsLocationPerformanceRow,
+  AnalyticsStatePerformanceRow,
+  AnalyticsZipcodePerformanceRow,
   RangeId,
 } from '../types/analytics-experiments.js'
 import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
@@ -31,6 +34,73 @@ function getInterval(rangeId: RangeId): string {
   return '24 MONTH'
 }
 
+type LocationDimension = 'city' | 'state' | 'zipcode'
+
+type LocationRow = {
+  location_label: string
+  variant_label: string
+  form_submitted: string
+  sessions: string
+}
+
+function locationBreakdownQuery(
+  dimension: LocationDimension,
+  interval: string,
+  utmSql: string,
+): string {
+  const labelExpr =
+    dimension === 'state'
+      ? `if(state != '', state, if(utm_term != '', utm_term, 'Unknown'))`
+      : `if(${dimension} = '', 'Unknown', ${dimension})`
+
+  return `
+    SELECT
+      ${labelExpr} AS location_label,
+      if(variant = '', 'Unknown', variant) AS variant_label,
+      uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
+      uniqExact(session_id) AS sessions
+    FROM events_raw
+    WHERE workspace_id = {wid:UUID} 
+      AND lp_public_id = {lp:String}
+      AND created_at >= now() - INTERVAL ${interval}${utmSql}
+    GROUP BY location_label, variant_label
+    ORDER BY sessions DESC
+  `
+}
+
+function aggregatePerformanceByDimension<T extends Record<string, string | number>>(
+  rows: LocationRow[],
+  outputKey: keyof T & string,
+): T[] {
+  type Accumulator = {
+    row: Record<string, string | number>
+    conversions: number
+    sessions: number
+  }
+
+  const map = new Map<string, Accumulator>()
+  for (const row of rows) {
+    const label = row.location_label
+    if (!map.has(label)) {
+      map.set(label, {
+        row: { [outputKey]: label },
+        conversions: 0,
+        sessions: 0,
+      })
+    }
+    const entry = map.get(label)!
+    const fs = n(row.form_submitted)
+    const ses = n(row.sessions)
+    entry.row[`variant${row.variant_label}`] = `${fsrPct(fs, ses)}%`
+    entry.conversions += fs
+    entry.sessions += ses
+  }
+
+  return Array.from(map.values())
+    .sort((a, b) => b.conversions - a.conversions || b.sessions - a.sessions)
+    .map((entry) => entry.row as T)
+}
+
 export async function getAnalyticsExperiments({
   workspaceId,
   lpPublicId,
@@ -46,7 +116,6 @@ export async function getAnalyticsExperiments({
   const cached = await readAnalyticsCache<AnalyticsExperiments>(cacheKey)
   if (cached) return cached
 
-  // 1. Fetch active experiments from Postgres
   const lp = await db.query.landingPages.findFirst({
     where: eq(landingPages.publicId, lpPublicId),
   })
@@ -59,7 +128,6 @@ export async function getAnalyticsExperiments({
     })
   }
 
-  // Map to response format
   const formattedExperiments = activeExperiments.map(exp => ({
     id: exp.id,
     name: exp.name,
@@ -74,7 +142,7 @@ export async function getAnalyticsExperiments({
   const utmSql = utmFilterSql(utmFilter)
   const p = { wid: workspaceId, lp: lpPublicId, ...utmFilterParams(utmFilter) }
 
-  const [variantRes, locationRes] = await Promise.all([
+  const [variantRes, cityRes, stateRes, zipcodeRes] = await Promise.all([
     ch.query({
       format: 'JSON',
       query_params: p,
@@ -95,19 +163,17 @@ export async function getAnalyticsExperiments({
     ch.query({
       format: 'JSON',
       query_params: p,
-      query: `
-        SELECT
-          if(city = '', 'Unknown', city) AS city,
-          if(variant = '', 'Unknown', variant) AS variant_label,
-          uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
-          uniqExact(session_id) AS sessions
-        FROM events_raw
-        WHERE workspace_id = {wid:UUID} 
-          AND lp_public_id = {lp:String}
-          AND created_at >= now() - INTERVAL ${interval}${utmSql}
-        GROUP BY city, variant_label
-        ORDER BY sessions DESC
-      `,
+      query: locationBreakdownQuery('city', interval, utmSql),
+    }),
+    ch.query({
+      format: 'JSON',
+      query_params: p,
+      query: locationBreakdownQuery('state', interval, utmSql),
+    }),
+    ch.query({
+      format: 'JSON',
+      query_params: p,
+      query: locationBreakdownQuery('zipcode', interval, utmSql),
     }),
   ])
 
@@ -118,15 +184,10 @@ export async function getAnalyticsExperiments({
     sessions: string
   }
 
-  type LocationRow = {
-    city: string
-    variant_label: string
-    form_submitted: string
-    sessions: string
-  }
-
   const variantRows = ((await variantRes.json()) as CHJson<VariantRow>).data ?? []
-  const locationRows = ((await locationRes.json()) as CHJson<LocationRow>).data ?? []
+  const cityRows = ((await cityRes.json()) as CHJson<LocationRow>).data ?? []
+  const stateRows = ((await stateRes.json()) as CHJson<LocationRow>).data ?? []
+  const zipcodeRows = ((await zipcodeRes.json()) as CHJson<LocationRow>).data ?? []
 
   const variantPerformance = variantRows.map(row => {
     const visitors = n(row.visitors)
@@ -140,40 +201,12 @@ export async function getAnalyticsExperiments({
     }
   })
 
-  // Group location by city, tracking totals so we can rank top-performing
-  // locations first instead of listing them alphabetically.
-  type CityAccumulator = {
-    row: Record<string, string | number>
-    conversions: number
-    sessions: number
-  }
-  const cityMap = new Map<string, CityAccumulator>()
-  for (const row of locationRows) {
-    if (!cityMap.has(row.city)) {
-      cityMap.set(row.city, {
-        row: { city: row.city },
-        conversions: 0,
-        sessions: 0,
-      })
-    }
-    const entry = cityMap.get(row.city)!
-    const fs = n(row.form_submitted)
-    const ses = n(row.sessions)
-    entry.row[`variant${row.variant_label}`] = `${fsrPct(fs, ses)}%`
-    entry.conversions += fs
-    entry.sessions += ses
-  }
-
-  const performanceByLocation = Array.from(cityMap.values())
-    .sort(
-      (a, b) => b.conversions - a.conversions || b.sessions - a.sessions,
-    )
-    .map((entry) => entry.row) as any[]
-
   const result = {
     experiments: formattedExperiments,
     variantPerformance,
-    performanceByLocation,
+    performanceByLocation: aggregatePerformanceByDimension<AnalyticsLocationPerformanceRow>(cityRows, 'city'),
+    performanceByState: aggregatePerformanceByDimension<AnalyticsStatePerformanceRow>(stateRows, 'state'),
+    performanceByZipcode: aggregatePerformanceByDimension<AnalyticsZipcodePerformanceRow>(zipcodeRows, 'zipcode'),
   }
 
   await writeAnalyticsCache(cacheKey, result)
@@ -185,5 +218,7 @@ export function emptyAnalyticsExperiments(): AnalyticsExperiments {
     experiments: [],
     variantPerformance: [],
     performanceByLocation: [],
+    performanceByState: [],
+    performanceByZipcode: [],
   }
 }

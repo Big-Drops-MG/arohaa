@@ -92,5 +92,38 @@ export function getExperimentsPlaceholderData(
         },
       ],
     },
+    performanceByState: {
+      title: "Performance by state",
+      columns: [
+        { key: "state", label: "State" },
+        { key: "variantA", label: "Variant A FSR" },
+        { key: "variantB", label: "Variant B FSR" },
+        { key: "variantC", label: "Variant C FSR" },
+      ],
+      rows: [
+        {
+          state: "New York",
+          variantA: "17%",
+          variantB: "22%",
+          variantC: "14%",
+        },
+        { state: "Texas", variantA: "13%", variantB: "18%", variantC: "11%" },
+        { state: "Florida", variantA: "15%", variantB: "20%", variantC: "12%" },
+      ],
+    },
+    performanceByZipcode: {
+      title: "Performance by zipcode",
+      columns: [
+        { key: "zipcode", label: "Zipcode" },
+        { key: "variantA", label: "Variant A FSR" },
+        { key: "variantB", label: "Variant B FSR" },
+        { key: "variantC", label: "Variant C FSR" },
+      ],
+      rows: [
+        { zipcode: "10001", variantA: "19%", variantB: "24%", variantC: "16%" },
+        { zipcode: "60601", variantA: "14%", variantB: "18%", variantC: "11%" },
+        { zipcode: "75201", variantA: "12%", variantB: "16%", variantC: "9%" },
+      ],
+    },
   }
 }

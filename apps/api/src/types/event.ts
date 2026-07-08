@@ -47,6 +47,8 @@ export interface EventRow {
   device: string
   country: string
   city: string
+  state: string
+  zipcode: string
   variant: string
   metric_name: string
   metric_value: number
@@ -62,6 +64,17 @@ export interface EnrichmentForRow {
   device: string
   country: string
   city: string
+  state: string
+  zipcode: string
+}
+
+function zipFromProps(props: Record<string, unknown> | undefined): string {
+  const raw = props?.zip ?? props?.zipCode ?? props?.zipcode
+  if (typeof raw === 'string' || typeof raw === 'number') {
+    const digits = String(raw).replace(/\D/g, '').slice(0, 5)
+    return digits.length === 5 ? digits : ''
+  }
+  return ''
 }
 
 export function ingestBodyToEventRow(
@@ -69,6 +82,8 @@ export function ingestBodyToEventRow(
   traceId: string,
   enrichment: EnrichmentForRow,
 ): EventRow {
+  const submittedZip = zipFromProps(body.props)
+
   return {
     event_name: body.event_name ?? body.ev ?? '',
     workspace_id: body.workspace_id ?? body.wid ?? '',
@@ -91,6 +106,8 @@ export function ingestBodyToEventRow(
     device: enrichment.device,
     country: enrichment.country,
     city: enrichment.city,
+    state: enrichment.state,
+    zipcode: submittedZip || enrichment.zipcode,
     variant: body.variant ?? '',
     metric_name: body.metric_name ?? '',
     metric_value: typeof body.metric_value === 'number' && Number.isFinite(body.metric_value)

@@ -41,10 +41,14 @@ export function ExperimentsCards({ data }: ExperimentsCardsProps) {
   const performanceByLocation = experimentsSectionToBreakdownTable(
     data.performanceByLocation
   )
+  const performanceByState = experimentsSectionToBreakdownTable(
+    data.performanceByState
+  )
+  const performanceByZipcode = experimentsSectionToBreakdownTable(
+    data.performanceByZipcode
+  )
 
   const highlights = experimentHighlightForTables({
-    variantPerformance,
-    performanceByLocation,
     winningVariantId: winningVariantIdFromPerformance(data),
   })
 
@@ -61,6 +65,20 @@ export function ExperimentsCards({ data }: ExperimentsCardsProps) {
         title={data.performanceByLocation.title}
         table={performanceByLocation}
         highlight={highlights.performanceByLocation}
+        expandable
+        previewRowLimit={EXPERIMENTS_PREVIEW_ROW_LIMIT}
+      />
+      <ExperimentsTableCard
+        title={data.performanceByState.title}
+        table={performanceByState}
+        highlight={highlights.performanceByState}
+        expandable
+        previewRowLimit={EXPERIMENTS_PREVIEW_ROW_LIMIT}
+      />
+      <ExperimentsTableCard
+        title={data.performanceByZipcode.title}
+        table={performanceByZipcode}
+        highlight={highlights.performanceByZipcode}
         expandable
         previewRowLimit={EXPERIMENTS_PREVIEW_ROW_LIMIT}
       />

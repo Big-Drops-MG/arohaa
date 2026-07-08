@@ -150,6 +150,8 @@ export async function ingestRoutes(server: FastifyInstance) {
         device: ctx.ua.device,
         country: ctx.geo.country,
         city: ctx.geo.city,
+        state: ctx.geo.state,
+        zipcode: ctx.geo.zipcode,
       })
 
       pushEvent(row)

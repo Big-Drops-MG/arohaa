@@ -45,5 +45,15 @@ export function getExperimentsEmptyDashboardData(
       columns: [{ key: "city", label: "City" }],
       rows: [],
     },
+    performanceByState: {
+      title: "Performance by state",
+      columns: [{ key: "state", label: "State" }],
+      rows: [],
+    },
+    performanceByZipcode: {
+      title: "Performance by zipcode",
+      columns: [{ key: "zipcode", label: "Zipcode" }],
+      rows: [],
+    },
   }
 }

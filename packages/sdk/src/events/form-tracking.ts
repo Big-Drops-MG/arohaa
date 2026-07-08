@@ -32,9 +32,9 @@ let zipClickTrackingInstalled = false
 
 export { isSubmitFormUrl }
 
-function fireZipSubmitIfApplicable(formId?: string): void {
+function fireZipSubmitIfApplicable(formId?: string, zip?: string): void {
   if (!isZipFormType()) return
-  trackZipSubmit(formId)
+  trackZipSubmit(formId, zip)
 }
 
 function fireZipStartIfApplicable(formId?: string): void {
@@ -67,7 +67,7 @@ function handleZipControlSubmit(control: HTMLElement): void {
   fireZipStartIfApplicable(formId)
   trackFormSubmit(formId)
   trackFormSuccess(formId)
-  fireZipSubmitIfApplicable(formId)
+  fireZipSubmitIfApplicable(formId, zip)
   markFormSessionSucceeded(formId)
 }
 

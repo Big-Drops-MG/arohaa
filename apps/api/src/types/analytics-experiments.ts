@@ -18,11 +18,23 @@ export interface AnalyticsVariantPerformanceRow {
 
 export interface AnalyticsLocationPerformanceRow {
   city: string
-  [variantKey: string]: string | number // Dynamic keys like 'variantA', 'variantB'
+  [variantKey: string]: string | number
+}
+
+export interface AnalyticsStatePerformanceRow {
+  state: string
+  [variantKey: string]: string | number
+}
+
+export interface AnalyticsZipcodePerformanceRow {
+  zipcode: string
+  [variantKey: string]: string | number
 }
 
 export interface AnalyticsExperiments {
   experiments: AnalyticsExperimentRow[]
   variantPerformance: AnalyticsVariantPerformanceRow[]
   performanceByLocation: AnalyticsLocationPerformanceRow[]
+  performanceByState: AnalyticsStatePerformanceRow[]
+  performanceByZipcode: AnalyticsZipcodePerformanceRow[]
 }

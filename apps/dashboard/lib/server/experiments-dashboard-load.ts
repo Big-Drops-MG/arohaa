@@ -37,10 +37,22 @@ interface AnalyticsLocationPerformanceRow {
   [variantKey: string]: string | number
 }
 
+interface AnalyticsStatePerformanceRow {
+  state: string
+  [variantKey: string]: string | number
+}
+
+interface AnalyticsZipcodePerformanceRow {
+  zipcode: string
+  [variantKey: string]: string | number
+}
+
 interface AnalyticsExperiments {
   experiments: AnalyticsExperimentRow[]
   variantPerformance: AnalyticsVariantPerformanceRow[]
   performanceByLocation: AnalyticsLocationPerformanceRow[]
+  performanceByState: AnalyticsStatePerformanceRow[]
+  performanceByZipcode: AnalyticsZipcodePerformanceRow[]
 }
 
 function safeNum(value: number): number {
@@ -59,22 +71,52 @@ function fmtPct(v: number): string {
   return `${safeNum(v).toFixed(1)}%`
 }
 
-export function buildExperimentsDashboardData(
-  data: AnalyticsExperiments,
-  formType: ReturnType<typeof parseOverviewLandingFormType>,
-  rangeId: RangeId
-): ExperimentsDashboardData {
-  const { experiments, variantPerformance, performanceByLocation } = data
-
-  const variants = variantPerformance.map((v) => v.variant)
-  const rateLabel = experimentVariantPerformanceRateLabel(formType)
-  const locationColumns = [
-    { key: "city", label: "City" },
+function buildDimensionPerformanceSection(
+  title: string,
+  dimensionKey: "city" | "state" | "zipcode",
+  dimensionLabel: string,
+  rows: Array<Record<string, string | number>>,
+  variants: string[],
+  rateLabel: string
+): ExperimentsDashboardData["performanceByLocation"] {
+  const columns = [
+    { key: dimensionKey, label: dimensionLabel },
     ...variants.map((v) => ({
       key: `variant${v}`,
       label: `Variant ${v} ${rateLabel}`,
     })),
   ]
+
+  return {
+    title,
+    columns,
+    rows: rows.map((row) => {
+      const result: Record<string, string> = {
+        [dimensionKey]: String(row[dimensionKey] ?? "Unknown"),
+      }
+      for (const variant of variants) {
+        result[`variant${variant}`] = String(row[`variant${variant}`] || "0%")
+      }
+      return result
+    }),
+  }
+}
+
+export function buildExperimentsDashboardData(
+  data: AnalyticsExperiments,
+  formType: ReturnType<typeof parseOverviewLandingFormType>,
+  rangeId: RangeId
+): ExperimentsDashboardData {
+  const {
+    experiments,
+    variantPerformance,
+    performanceByLocation,
+    performanceByState,
+    performanceByZipcode,
+  } = data
+
+  const variants = variantPerformance.map((v) => v.variant)
+  const rateLabel = experimentVariantPerformanceRateLabel(formType)
 
   return {
     formType,
@@ -97,7 +139,7 @@ export function buildExperimentsDashboardData(
           key: "formSubmitted",
           label: experimentVariantPerformanceSubmitLabel(formType),
         },
-        { key: "fsr", label: experimentVariantPerformanceRateLabel(formType) },
+        { key: "fsr", label: rateLabel },
       ],
       rows: variantPerformance.map((row) => ({
         variant: row.variant,
@@ -106,17 +148,30 @@ export function buildExperimentsDashboardData(
         fsr: fmtPct(row.fsr),
       })),
     },
-    performanceByLocation: {
-      title: "Performance by location",
-      columns: locationColumns,
-      rows: performanceByLocation.map((row) => {
-        const result: Record<string, string> = { city: row.city }
-        for (const variant of variants) {
-          result[`variant${variant}`] = String(row[`variant${variant}`] || "0%")
-        }
-        return result
-      }),
-    },
+    performanceByLocation: buildDimensionPerformanceSection(
+      "Performance by location",
+      "city",
+      "City",
+      performanceByLocation,
+      variants,
+      rateLabel
+    ),
+    performanceByState: buildDimensionPerformanceSection(
+      "Performance by state",
+      "state",
+      "State",
+      performanceByState,
+      variants,
+      rateLabel
+    ),
+    performanceByZipcode: buildDimensionPerformanceSection(
+      "Performance by zipcode",
+      "zipcode",
+      "Zipcode",
+      performanceByZipcode,
+      variants,
+      rateLabel
+    ),
   }
 }
 

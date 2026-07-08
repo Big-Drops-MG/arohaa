@@ -6,9 +6,16 @@ import { fileURLToPath } from 'node:url'
 export interface GeoInfo {
   country: string
   city: string
+  state: string
+  zipcode: string
 }
 
-const UNKNOWN_GEO: GeoInfo = { country: 'Unknown', city: '' }
+const UNKNOWN_GEO: GeoInfo = {
+  country: 'Unknown',
+  city: '',
+  state: '',
+  zipcode: '',
+}
 
 let reader: Reader<CityResponse> | null = null
 
@@ -70,7 +77,12 @@ export function lookupGeoIp(ip: string): GeoInfo {
 
     const country = result.country?.names?.en?.trim() || 'Unknown'
     const city = result.city?.names?.en?.trim() || ''
-    return { country, city }
+    const state =
+      result.subdivisions?.[0]?.names?.en?.trim() ||
+      result.subdivisions?.[0]?.iso_code?.trim() ||
+      ''
+    const zipcode = result.postal?.code?.trim() || ''
+    return { country, city, state, zipcode }
   } catch {
     return { ...UNKNOWN_GEO }
   }

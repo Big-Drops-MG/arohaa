@@ -26,21 +26,29 @@ export type ExperimentTableHighlight = {
   boldColumnIds?: string[]
 }
 
-export function experimentHighlightForTables(tables: ExperimentsTabTables): {
+export function experimentHighlightForTables(tables: {
+  winningVariantId: ExperimentVariantId | null
+}): {
   variantPerformance: ExperimentTableHighlight
   performanceByLocation: ExperimentTableHighlight
+  performanceByState: ExperimentTableHighlight
+  performanceByZipcode: ExperimentTableHighlight
 } {
   const winner = tables.winningVariantId
   if (!winner) {
     return {
       variantPerformance: {},
       performanceByLocation: {},
+      performanceByState: {},
+      performanceByZipcode: {},
     }
   }
 
   return {
     variantPerformance: { boldRowVariantIds: [winner] },
     performanceByLocation: { boldColumnIds: [`${winner}-fsr`] },
+    performanceByState: { boldColumnIds: [`${winner}-fsr`] },
+    performanceByZipcode: { boldColumnIds: [`${winner}-fsr`] },
   }
 }
 
@@ -73,4 +81,6 @@ export type ExperimentsDashboardData = {
   experiments: ExperimentListRow[]
   variantPerformance: ExperimentsTableSection
   performanceByLocation: ExperimentsTableSection
+  performanceByState: ExperimentsTableSection
+  performanceByZipcode: ExperimentsTableSection
 }
