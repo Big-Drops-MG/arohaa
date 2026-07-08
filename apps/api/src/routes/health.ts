@@ -12,6 +12,18 @@ import { db, sql } from '@workspace/database'
 const PING_TIMEOUT_MS = 3000
 const HEALTH_RATE_LIMIT_OPT_OUT = { rateLimit: false } as const
 
+async function timedCheck(
+  fn: () => Promise<boolean>,
+  timeoutMs: number,
+): Promise<{ status: 'ok' | 'unreachable'; latency_ms: number }> {
+  const start = Date.now()
+  const timeout = new Promise<boolean>((resolve) =>
+    setTimeout(() => resolve(false), timeoutMs),
+  )
+  const ok = await Promise.race([fn().catch(() => false), timeout])
+  return { status: ok ? 'ok' : 'unreachable', latency_ms: Date.now() - start }
+}
+
 export async function healthRoutes(server: FastifyInstance) {
   server.get(
     '/health',
@@ -147,6 +159,59 @@ export async function healthRoutes(server: FastifyInstance) {
         }
       } catch {
         return reply.status(503).send({ status: 'error', reason: 'metrics_unavailable' })
+      }
+    },
+  )
+
+  server.get(
+    '/health/detailed',
+    { config: HEALTH_RATE_LIMIT_OPT_OUT },
+    async (request) => {
+      const [clickhouse, redisCheck, postgres, queueLen, dlqLen] =
+        await Promise.all([
+          timedCheck(() => pingClickHouse(PING_TIMEOUT_MS), PING_TIMEOUT_MS),
+          timedCheck(() => redis.ping().then(() => true), PING_TIMEOUT_MS),
+          timedCheck(
+            () => db.execute(sql`SELECT 1 AS ok`).then(() => true),
+            PING_TIMEOUT_MS,
+          ),
+          redis.llen('analytics_queue').catch(() => -1),
+          redis.llen('failed_events').catch(() => -1),
+        ])
+
+      const mem = process.memoryUsage()
+      const toMb = (bytes: number) => Math.round((bytes / 1024 / 1024) * 10) / 10
+
+      const allOk =
+        clickhouse.status === 'ok' &&
+        redisCheck.status === 'ok' &&
+        postgres.status === 'ok'
+
+      return {
+        status: allOk ? 'ok' : 'degraded',
+        service: 'arohaa-ingestion-api',
+        version: process.env.API_VERSION?.trim() || process.env.GIT_SHA?.trim() || 'unknown',
+        environment: process.env.NODE_ENV || 'development',
+        region: process.env.AWS_REGION?.trim() || 'unknown',
+        uptime_s: Math.round(process.uptime()),
+        dependencies: {
+          clickhouse: clickhouse,
+          redis: redisCheck,
+          postgres: postgres,
+        },
+        queues: {
+          analytics_queue: queueLen,
+          failed_events: dlqLen,
+        },
+        system: {
+          node: process.version,
+          pid: process.pid,
+          memory_rss_mb: toMb(mem.rss),
+          memory_heap_used_mb: toMb(mem.heapUsed),
+          memory_heap_total_mb: toMb(mem.heapTotal),
+        },
+        timestamp: new Date().toISOString(),
+        trace_id: request.id,
       }
     },
   )
