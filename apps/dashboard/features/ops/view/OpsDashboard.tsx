@@ -2,6 +2,8 @@ import { cn } from "@workspace/ui/lib/utils"
 import type {
   OpsDashboardData,
   OpsEndpointCheck,
+  OpsFailedItem,
+  OpsQueueItem,
 } from "@/lib/server/ops-dashboard-load"
 import { SettingsSectionCard } from "@/features/settings/view/SettingsSectionCard"
 import { OpsAutoRefresh } from "@/features/ops/view/OpsAutoRefresh"
@@ -128,6 +130,70 @@ function EndpointTable({ checks }: { checks: OpsEndpointCheck[] }) {
         </tbody>
       </table>
     </div>
+  )
+}
+
+function JsonDisclosure({ json }: { json: string }) {
+  return (
+    <details className="mt-1">
+      <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+        View payload
+      </summary>
+      <pre className="mt-1 max-h-64 overflow-auto rounded-md bg-neutral-50 p-3 font-mono text-xs text-neutral-800 dark:bg-neutral-900 dark:text-neutral-200">
+        {json}
+      </pre>
+    </details>
+  )
+}
+
+function FailedEventsList({ items }: { items: OpsFailedItem[] }) {
+  return (
+    <ul className="space-y-3">
+      {items.map((item, idx) => (
+        <li
+          key={idx}
+          className="rounded-md border border-neutral-100 p-3 dark:border-neutral-900"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <StatusPill tone="down" label={item.reason} />
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {item.timestamp
+                ? new Date(item.timestamp).toLocaleString()
+                : "unknown time"}
+            </span>
+          </div>
+          <JsonDisclosure json={item.json} />
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function QueueSampleList({ items }: { items: OpsQueueItem[] }) {
+  return (
+    <ul className="space-y-3">
+      {items.map((item, idx) => (
+        <li
+          key={idx}
+          className="rounded-md border border-neutral-100 p-3 dark:border-neutral-900"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-medium text-foreground">
+              {item.event_name ?? "event"}
+            </span>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {item.created_at ?? ""}
+            </span>
+          </div>
+          {item.url ? (
+            <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+              {item.url}
+            </p>
+          ) : null}
+          <JsonDisclosure json={item.json} />
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -301,6 +367,46 @@ export function OpsDashboard({ data }: OpsDashboardProps) {
               />
             </div>
           ) : null}
+        </SettingsSectionCard>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <SettingsSectionCard
+          title="failed_events (DLQ)"
+          description={
+            data.queues
+              ? `Dead-letter queue. Showing up to ${data.queues.limit} of ${data.queues.failed_events.depth} items.`
+              : "Dead-letter queue items."
+          }
+        >
+          {data.queuesError ? (
+            <p className="text-sm text-destructive">{data.queuesError}</p>
+          ) : data.queues && data.queues.failed_events.sample.length > 0 ? (
+            <FailedEventsList items={data.queues.failed_events.sample} />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No failed events. The DLQ is empty.
+            </p>
+          )}
+        </SettingsSectionCard>
+
+        <SettingsSectionCard
+          title="analytics_queue"
+          description={
+            data.queues
+              ? `Events waiting for ingestion. Showing up to ${data.queues.limit} of ${data.queues.analytics_queue.depth} items.`
+              : "Events waiting for ingestion."
+          }
+        >
+          {data.queuesError ? (
+            <p className="text-sm text-destructive">{data.queuesError}</p>
+          ) : data.queues && data.queues.analytics_queue.sample.length > 0 ? (
+            <QueueSampleList items={data.queues.analytics_queue.sample} />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Queue is empty. Events are being processed in real time.
+            </p>
+          )}
         </SettingsSectionCard>
       </div>
 

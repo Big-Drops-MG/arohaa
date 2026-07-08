@@ -81,14 +81,44 @@ export type OpsEndpointGroup = {
   checks: OpsEndpointCheck[]
 }
 
+export type OpsQueueItem = {
+  event_name: string | null
+  url: string | null
+  workspace_id: string | null
+  created_at: string | null
+  json: string
+}
+
+export type OpsFailedItem = {
+  reason: string
+  timestamp: number | null
+  json: string
+}
+
+export type OpsQueuesSnapshot = {
+  status: string
+  limit: number
+  analytics_queue: {
+    depth: number
+    sample: OpsQueueItem[]
+  }
+  failed_events: {
+    depth: number
+    sample: OpsFailedItem[]
+  }
+  timestamp: string
+}
+
 export type OpsDashboardData = {
   apiBase: string
   ready: OpsReadySnapshot | null
   metrics: OpsMetricsSnapshot | null
   detailed: OpsDetailedSnapshot | null
+  queues: OpsQueuesSnapshot | null
   readyError: string | null
   metricsError: string | null
   detailedError: string | null
+  queuesError: string | null
   endpointGroups: OpsEndpointGroup[]
   fetchedAt: string
 }
@@ -206,9 +236,13 @@ const DASHBOARD_ENDPOINTS: EndpointDef[] = [
   },
 ]
 
-async function fetchJson<T>(url: string): Promise<T> {
+async function fetchJson<T>(
+  url: string,
+  headersInit?: Record<string, string>
+): Promise<T> {
   const response = await fetch(url, {
     cache: "no-store",
+    headers: headersInit,
     signal: AbortSignal.timeout(15_000),
   })
   if (!response.ok) {
@@ -296,9 +330,11 @@ export async function loadOpsDashboardData(): Promise<OpsDashboardData> {
       ready: null,
       metrics: null,
       detailed: null,
+      queues: null,
       readyError: "INGEST_BASE_URL is not configured",
       metricsError: "INGEST_BASE_URL is not configured",
       detailedError: "INGEST_BASE_URL is not configured",
+      queuesError: "INGEST_BASE_URL is not configured",
       endpointGroups: [],
       fetchedAt,
     }
@@ -312,19 +348,30 @@ export async function loadOpsDashboardData(): Promise<OpsDashboardData> {
   const dashboardOrigin = await resolveDashboardOrigin()
   const cookieHeader = await resolveCookieHeader()
 
-  const [readyResult, metricsResult, detailedResult, ingestChecks] =
-    await Promise.all([
-      Promise.allSettled([
-        fetchJson<OpsReadySnapshot>(`${apiBase}/health/ready`),
-      ]).then((r) => r[0]),
-      Promise.allSettled([
-        fetchJson<OpsMetricsSnapshot>(`${apiBase}/health/metrics`),
-      ]).then((r) => r[0]),
-      Promise.allSettled([
-        fetchJson<OpsDetailedSnapshot>(`${apiBase}/health/detailed`),
-      ]).then((r) => r[0]),
-      probeGroup(apiBase, INGEST_ENDPOINTS, ingestHeaders),
-    ])
+  const [
+    readyResult,
+    metricsResult,
+    detailedResult,
+    queuesResult,
+    ingestChecks,
+  ] = await Promise.all([
+    Promise.allSettled([
+      fetchJson<OpsReadySnapshot>(`${apiBase}/health/ready`),
+    ]).then((r) => r[0]),
+    Promise.allSettled([
+      fetchJson<OpsMetricsSnapshot>(`${apiBase}/health/metrics`),
+    ]).then((r) => r[0]),
+    Promise.allSettled([
+      fetchJson<OpsDetailedSnapshot>(`${apiBase}/health/detailed`),
+    ]).then((r) => r[0]),
+    Promise.allSettled([
+      fetchJson<OpsQueuesSnapshot>(
+        `${apiBase}/health/queues?limit=25`,
+        ingestHeaders
+      ),
+    ]).then((r) => r[0]),
+    probeGroup(apiBase, INGEST_ENDPOINTS, ingestHeaders),
+  ])
 
   const dashboardChecks =
     dashboardOrigin && cookieHeader
@@ -365,9 +412,11 @@ export async function loadOpsDashboardData(): Promise<OpsDashboardData> {
     metrics: metricsResult.status === "fulfilled" ? metricsResult.value : null,
     detailed:
       detailedResult.status === "fulfilled" ? detailedResult.value : null,
+    queues: queuesResult.status === "fulfilled" ? queuesResult.value : null,
     readyError: errorMessage(readyResult, "Failed to load readiness"),
     metricsError: errorMessage(metricsResult, "Failed to load metrics"),
     detailedError: errorMessage(detailedResult, "Failed to load detailed"),
+    queuesError: errorMessage(queuesResult, "Failed to load queues"),
     endpointGroups,
     fetchedAt,
   }
