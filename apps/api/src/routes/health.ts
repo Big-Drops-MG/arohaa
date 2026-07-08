@@ -7,6 +7,7 @@ import {
 } from '../services/clickhouse.service.js'
 import { redis } from '../services/redis.service.js'
 import { sendAlertWebhook } from '../lib/alert-webhook.js'
+import { verifyInternalApiRequest } from '../lib/internal-api-secret.js'
 import { db, sql } from '@workspace/database'
 
 const PING_TIMEOUT_MS = 3000
@@ -212,6 +213,93 @@ export async function healthRoutes(server: FastifyInstance) {
         },
         timestamp: new Date().toISOString(),
         trace_id: request.id,
+      }
+    },
+  )
+
+  server.get<{ Querystring: { limit?: string } }>(
+    '/health/queues',
+    { config: HEALTH_RATE_LIMIT_OPT_OUT },
+    async (request, reply) => {
+      if (!verifyInternalApiRequest(request.headers['x-arohaa-internal'])) {
+        return reply.code(401).send({ error: 'Unauthorized' })
+      }
+
+      const parsedLimit = Number(request.query.limit)
+      const limit = Number.isFinite(parsedLimit)
+        ? Math.min(Math.max(Math.floor(parsedLimit), 1), 100)
+        : 20
+
+      const truncate = (value: string) =>
+        value.length > 4000 ? `${value.slice(0, 4000)}…` : value
+
+      const pick = (obj: Record<string, unknown>, key: string): string | null => {
+        const v = obj[key]
+        return typeof v === 'string' || typeof v === 'number' ? String(v) : null
+      }
+
+      const mapQueueItem = (raw: string) => {
+        try {
+          const obj = JSON.parse(raw) as Record<string, unknown>
+          return {
+            event_name: pick(obj, 'event_name'),
+            url: pick(obj, 'url'),
+            workspace_id: pick(obj, 'workspace_id'),
+            created_at: pick(obj, 'created_at'),
+            json: truncate(raw),
+          }
+        } catch {
+          return {
+            event_name: null,
+            url: null,
+            workspace_id: null,
+            created_at: null,
+            json: truncate(raw),
+          }
+        }
+      }
+
+      const mapFailedItem = (raw: string) => {
+        try {
+          const obj = JSON.parse(raw) as Record<string, unknown>
+          const reason =
+            pick(obj, 'reason') ?? (obj.error ? 'batch_error' : 'unknown')
+          const ts = obj.timestamp
+          return {
+            reason,
+            timestamp: typeof ts === 'number' ? ts : null,
+            json: truncate(raw),
+          }
+        } catch {
+          return { reason: 'unparseable', timestamp: null, json: truncate(raw) }
+        }
+      }
+
+      try {
+        const [queueDepth, dlqDepth, queueRaw, dlqRaw] = await Promise.all([
+          redis.llen('analytics_queue').catch(() => -1),
+          redis.llen('failed_events').catch(() => -1),
+          redis.lrange('analytics_queue', 0, limit - 1).catch(() => [] as string[]),
+          redis.lrange('failed_events', 0, limit - 1).catch(() => [] as string[]),
+        ])
+
+        return {
+          status: 'ok',
+          limit,
+          analytics_queue: {
+            depth: queueDepth,
+            sample: queueRaw.map(mapQueueItem),
+          },
+          failed_events: {
+            depth: dlqDepth,
+            sample: dlqRaw.map(mapFailedItem),
+          },
+          timestamp: new Date().toISOString(),
+        }
+      } catch {
+        return reply
+          .status(503)
+          .send({ status: 'error', reason: 'queues_unavailable' })
       }
     },
   )
