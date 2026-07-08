@@ -269,27 +269,27 @@ function utmParametersQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFil
       visitors
     FROM (
       SELECT
-        utm_source,
-        utm_medium,
-        utm_campaign,
-        utm_id,
-        utm_s1,
+        sess_utm_source AS utm_source,
+        sess_utm_medium AS utm_medium,
+        sess_utm_campaign AS utm_campaign,
+        sess_utm_id AS utm_id,
+        sess_utm_s1 AS utm_s1,
         uniqExact(user_id) AS visitors
       FROM (
         SELECT
           session_id,
           any(user_id) AS user_id,
-          anyIf(utm_source, utm_source != '') AS utm_source,
-          anyIf(utm_medium, utm_medium != '') AS utm_medium,
-          anyIf(utm_campaign, utm_campaign != '') AS utm_campaign,
-          anyIf(utm_id, utm_id != '') AS utm_id,
-          anyIf(utm_s1, utm_s1 != '') AS utm_s1
+          anyIf(utm_source, utm_source != '') AS sess_utm_source,
+          anyIf(utm_medium, utm_medium != '') AS sess_utm_medium,
+          anyIf(utm_campaign, utm_campaign != '') AS sess_utm_campaign,
+          anyIf(utm_id, utm_id != '') AS sess_utm_id,
+          anyIf(utm_s1, utm_s1 != '') AS sess_utm_s1
         FROM events_raw
         WHERE ${RANGE_FILTER(rangeId, utmFilter)}
         GROUP BY session_id
         HAVING max(event_name = 'page_view') = 1
       )
-      WHERE utm_source != ''
+      WHERE sess_utm_source != ''
       GROUP BY utm_source, utm_medium, utm_campaign, utm_id, utm_s1
       HAVING ${UTM_LABEL_EXPR} != ''
       ORDER BY utm_source ASC, visitors DESC
