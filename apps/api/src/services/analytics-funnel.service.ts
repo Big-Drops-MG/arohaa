@@ -85,14 +85,13 @@ type DropOffAggRow = {
 function dropOffQuery(whereClause: string): string {
   return `
     SELECT
-      field_name,
-      uniqExact(session_id) AS reached,
-      uniqExactIf(session_id, isNull(success_session_id)) AS drop_offs
+      reaches.field_name AS field_name,
+      reaches.reached AS reached,
+      drops.drop_offs AS drop_offs
     FROM (
       SELECT
-        fo.session_id AS session_id,
-        fo.field_name AS field_name,
-        su.session_id AS success_session_id
+        field_name,
+        uniqExact(session_id) AS reached
       FROM (
         SELECT DISTINCT
           session_id,
@@ -101,18 +100,37 @@ function dropOffQuery(whereClause: string): string {
         WHERE ${whereClause}
           AND event_name = 'form_field_focus'
           AND ${FIELD_NAME_EXPR} != ''
-      ) AS fo
-      LEFT JOIN (
-        SELECT session_id
-        FROM events_raw
-        WHERE ${whereClause}
-          AND event_name = 'form_success'
-        GROUP BY session_id
-      ) AS su ON fo.session_id = su.session_id
-    )
-    GROUP BY field_name
-    HAVING drop_offs > 0
-    ORDER BY drop_offs DESC, reached DESC
+      )
+      GROUP BY field_name
+    ) AS reaches
+    INNER JOIN (
+      SELECT
+        field_name,
+        uniqExact(session_id) AS drop_offs
+      FROM (
+        SELECT DISTINCT
+          focused.session_id AS session_id,
+          focused.field_name AS field_name
+        FROM (
+          SELECT
+            session_id,
+            ${FIELD_NAME_EXPR} AS field_name
+          FROM events_raw
+          WHERE ${whereClause}
+            AND event_name = 'form_field_focus'
+            AND ${FIELD_NAME_EXPR} != ''
+        ) AS focused
+        LEFT ANTI JOIN (
+          SELECT DISTINCT session_id
+          FROM events_raw
+          WHERE ${whereClause}
+            AND event_name = 'form_success'
+        ) AS submitted ON focused.session_id = submitted.session_id
+      )
+      GROUP BY field_name
+    ) AS drops ON drops.field_name = reaches.field_name
+    WHERE drops.drop_offs > 0
+    ORDER BY drops.drop_offs DESC, reaches.reached DESC
     LIMIT 20
   `
 }
@@ -263,7 +281,7 @@ export async function getAnalyticsFunnel({
   rangeId,
   formType = 'single',
 }: GetAnalyticsFunnelParams): Promise<FunnelDashboardResponse> {
-  const cacheKey = `analytics:funnel:v4:${workspaceId}:${rangeId}:${formType}`
+  const cacheKey = `analytics:funnel:v6:${workspaceId}:${rangeId}:${formType}`
   try {
     const cachedStr = await redis.get(cacheKey)
     if (cachedStr) {
