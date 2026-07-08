@@ -3,6 +3,20 @@ export type LandingPageMetric = {
   value: string
 }
 
+export function submissionMetricLabel(formType: string): string {
+  return formType === "zip" ? "Zip Submits" : "Form Submissions"
+}
+
+export function emptyLandingPageMetrics(
+  formType = "single"
+): LandingPageMetric[] {
+  return [
+    { label: "Active Users", value: "0" },
+    { label: submissionMetricLabel(formType), value: "0" },
+    { label: "Bounce Rate", value: "0%" },
+  ]
+}
+
 export type LandingPageNavItem = {
   publicId: string
   brandName: string
@@ -17,9 +31,3 @@ export type LandingPageListItem = {
   isLive: boolean
   metrics: LandingPageMetric[]
 }
-
-export const emptyLandingPageMetrics: LandingPageMetric[] = [
-  { label: "Active Users", value: "0" },
-  { label: "Form Submissions", value: "0" },
-  { label: "Bounce Rate", value: "0%" },
-]
