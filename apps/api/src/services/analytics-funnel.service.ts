@@ -87,19 +87,20 @@ function dropOffQuery(whereClause: string): string {
     SELECT
       field_name,
       uniqExact(session_id) AS reached,
-      uniqExactIf(session_id, succeeded = 0) AS drop_offs
+      uniqExactIf(session_id, isNull(success_session_id)) AS drop_offs
     FROM (
       SELECT
         fo.session_id AS session_id,
         fo.field_name AS field_name,
-        if(su.session_id IS NOT NULL, 1, 0) AS succeeded
+        su.session_id AS success_session_id
       FROM (
-        SELECT session_id, ${FIELD_NAME_EXPR} AS field_name
+        SELECT DISTINCT
+          session_id,
+          ${FIELD_NAME_EXPR} AS field_name
         FROM events_raw
         WHERE ${whereClause}
           AND event_name = 'form_field_focus'
           AND ${FIELD_NAME_EXPR} != ''
-        GROUP BY session_id, field_name
       ) AS fo
       LEFT JOIN (
         SELECT session_id
@@ -262,7 +263,7 @@ export async function getAnalyticsFunnel({
   rangeId,
   formType = 'single',
 }: GetAnalyticsFunnelParams): Promise<FunnelDashboardResponse> {
-  const cacheKey = `analytics:funnel:v3:${workspaceId}:${rangeId}:${formType}`
+  const cacheKey = `analytics:funnel:v4:${workspaceId}:${rangeId}:${formType}`
   try {
     const cachedStr = await redis.get(cacheKey)
     if (cachedStr) {
