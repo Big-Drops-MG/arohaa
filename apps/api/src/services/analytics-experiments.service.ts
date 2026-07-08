@@ -43,6 +43,33 @@ type LocationRow = {
   sessions: string
 }
 
+function zipcodeBreakdownQuery(interval: string, utmSql: string): string {
+  return `
+    SELECT
+      if(session_zip = '', 'Unknown', session_zip) AS location_label,
+      if(variant_label = '', 'Unknown', variant_label) AS variant_label,
+      countIf(has_form_success = 1) AS form_submitted,
+      count() AS sessions
+    FROM (
+      SELECT
+        session_id,
+        anyIf(variant, variant != '') AS variant_label,
+        max(event_name = 'form_success') AS has_form_success,
+        anyIf(
+          if(zipcode != '', zipcode, nullIf(JSONExtractString(properties, 'zip'), '')),
+          zipcode != '' OR JSONExtractString(properties, 'zip') != ''
+        ) AS session_zip
+      FROM events_raw
+      WHERE workspace_id = {wid:UUID}
+        AND lp_public_id = {lp:String}
+        AND created_at >= now() - INTERVAL ${interval}${utmSql}
+      GROUP BY session_id
+    )
+    GROUP BY location_label, variant_label
+    ORDER BY sessions DESC
+  `
+}
+
 function locationBreakdownQuery(
   dimension: LocationDimension,
   interval: string,
@@ -173,7 +200,7 @@ export async function getAnalyticsExperiments({
     ch.query({
       format: 'JSON',
       query_params: p,
-      query: locationBreakdownQuery('zipcode', interval, utmSql),
+      query: zipcodeBreakdownQuery(interval, utmSql),
     }),
   ])
 

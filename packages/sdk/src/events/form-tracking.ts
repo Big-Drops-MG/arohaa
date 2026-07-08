@@ -10,6 +10,7 @@ import {
   isWithinZipForm,
   isZipFormType,
   isZipInput,
+  normalizeZipValue,
   readZipValue,
 } from "./form-dom.utils"
 import {
@@ -32,9 +33,26 @@ let zipClickTrackingInstalled = false
 
 export { isSubmitFormUrl }
 
+function resolveZipForSubmit(formId?: string, zip?: string): string | undefined {
+  if (zip && isValidZipValue(zip)) return normalizeZipValue(zip)
+
+  if (typeof document === "undefined") return undefined
+
+  if (formId && formId !== "zip") {
+    const el = document.getElementById(formId)
+    if (el instanceof HTMLFormElement) {
+      const fromForm = readZipValue(el)
+      if (fromForm) return fromForm
+    }
+  }
+
+  const fromPage = readZipValue(document)
+  return fromPage ?? undefined
+}
+
 function fireZipSubmitIfApplicable(formId?: string, zip?: string): void {
   if (!isZipFormType()) return
-  trackZipSubmit(formId, zip)
+  trackZipSubmit(formId, resolveZipForSubmit(formId, zip))
 }
 
 function fireZipStartIfApplicable(formId?: string): void {
@@ -48,10 +66,11 @@ function fireFormSuccessOnSubmit(form: HTMLFormElement): void {
   const id = formIdFromForm(form)
   if (hasFormSessionSucceeded(id)) return
 
+  const zip = resolveZipForSubmit(id)
 
   fireZipStartIfApplicable(id)
-  trackFormSuccess(id)
-  fireZipSubmitIfApplicable(id)
+  trackFormSuccess(id, zip)
+  fireZipSubmitIfApplicable(id, zip)
   markFormSessionSucceeded(id)
 }
 
@@ -65,8 +84,8 @@ function handleZipControlSubmit(control: HTMLElement): void {
   if (hasFormSessionSucceeded(formId)) return
 
   fireZipStartIfApplicable(formId)
-  trackFormSubmit(formId)
-  trackFormSuccess(formId)
+  trackFormSubmit(formId, zip)
+  trackFormSuccess(formId, zip)
   fireZipSubmitIfApplicable(formId, zip)
   markFormSessionSucceeded(formId)
 }
@@ -101,17 +120,19 @@ export function installFormFetchTracking(): void {
         }
         if (response.ok && data.success !== false && !data.rejected) {
           if (!hasFormSessionSucceeded()) {
+            const zip = resolveZipForSubmit()
             fireZipStartIfApplicable()
-            trackFormSuccess()
-            fireZipSubmitIfApplicable()
+            trackFormSuccess(undefined, zip)
+            fireZipSubmitIfApplicable(undefined, zip)
             markFormSessionSucceeded()
           }
         }
       } catch {
         if (response.ok && !hasFormSessionSucceeded()) {
+          const zip = resolveZipForSubmit()
           fireZipStartIfApplicable()
-          trackFormSuccess()
-          fireZipSubmitIfApplicable()
+          trackFormSuccess(undefined, zip)
+          fireZipSubmitIfApplicable(undefined, zip)
           markFormSessionSucceeded()
         }
       }
