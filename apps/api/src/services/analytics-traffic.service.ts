@@ -1,5 +1,13 @@
 import { redis } from './redis.service.js'
 import { getClickHouseClient } from './clickhouse.service.js'
+import {
+  rangeFilter,
+  rangeLookbackFilter,
+} from '../lib/analytics-range.js'
+import {
+  utmFilterParams,
+  type AnalyticsUtmFilter,
+} from '../lib/analytics-utm-filter.js'
 import type {
   ReferrerRow,
   TopPageRow,
@@ -48,11 +56,8 @@ const RANGE_QUERY_LOOKBACK: Record<TrafficRangeId, string> = {
   '24m': '24 MONTH',
 }
 
-const RANGE_FILTER = (rangeId: TrafficRangeId) =>
-  `workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${RANGE_CLICKHOUSE_INTERVAL[rangeId]}`
-
-const RANGE_LOOKBACK_FILTER = (rangeId: TrafficRangeId) =>
-  `workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${RANGE_QUERY_LOOKBACK[rangeId]}`
+const RANGE_FILTER = rangeFilter
+const RANGE_LOOKBACK_FILTER = rangeLookbackFilter
 
 // Strip query strings from URLs before path() so top pages are not split by UTM params.
 const PAGE_PATH_EXPR = `
@@ -93,25 +98,25 @@ const UTM_LABEL_EXPR = `
   )
 `
 
-const ACTIVE_USERS_QUERY = `
+const ACTIVE_USERS_QUERY = (utmFilter?: AnalyticsUtmFilter) => `
   SELECT uniqExactIf(
     user_id,
     created_at >= now() - INTERVAL 5 MINUTE
       AND event_name IN ('heartbeat', 'page_view')
   ) AS active_users
   FROM events_raw
-  WHERE workspace_id = {wid:UUID}
+  WHERE workspace_id = {wid:UUID}${utmFilter ? ` AND ${utmFilter.dimension} = {utm_value:String}` : ''}
 `
 
-function kpiQuery(rangeId: TrafficRangeId): string {
-  if (rangeId === '24h') {
+function kpiQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): string {
+  if (rangeId === '24h' || utmFilter) {
     return `
       SELECT
         uniqExactIf(user_id, event_name = 'page_view') AS visitors,
         uniqExact(session_id) AS sessions,
         countIf(event_name = 'page_view') AS page_views
       FROM events_raw
-      WHERE ${RANGE_FILTER(rangeId)}
+      WHERE ${RANGE_FILTER(rangeId, utmFilter)}
     `
   }
   return `
@@ -125,7 +130,7 @@ function kpiQuery(rangeId: TrafficRangeId): string {
 }
 
 /** Bounce = session with exactly one event in the range. */
-function bounceQuery(rangeId: TrafficRangeId): string {
+function bounceQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): string {
   const interval = RANGE_CLICKHOUSE_INTERVAL[rangeId]
   return `
     SELECT
@@ -134,22 +139,31 @@ function bounceQuery(rangeId: TrafficRangeId): string {
     FROM (
       SELECT session_id, toUInt8(count() = 1) AS is_bounce
       FROM events_raw
-      WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}
+      WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}${utmFilter ? ` AND ${utmFilter.dimension} = {utm_value:String}` : ''}
       GROUP BY session_id
     )
   `
 }
 
-function trafficByTimeQuery(rangeId: TrafficRangeId): string {
-  if (rangeId === '24h') {
+function trafficByTimeQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): string {
+  if (rangeId === '24h' || utmFilter) {
+    const bucketExpr =
+      rangeId === '24h'
+        ? 'toStartOfHour(created_at)'
+        : rangeId === '7d' || rangeId === '30d'
+          ? 'toDate(created_at)'
+          : rangeId === '3m'
+            ? 'toMonday(toDate(created_at))'
+            : 'toStartOfMonth(created_at)'
+
     return `
       SELECT
-        toStartOfHour(created_at) AS bucket,
+        ${bucketExpr} AS bucket,
         uniqExactIf(user_id, event_name = 'page_view') AS visitors,
         uniqExact(session_id) AS sessions,
         uniqExactIf(session_id, event_name = 'form_success') AS form_submitted
       FROM events_raw
-      WHERE ${RANGE_LOOKBACK_FILTER(rangeId)}
+      WHERE ${RANGE_LOOKBACK_FILTER(rangeId, utmFilter)}
       GROUP BY bucket
       ORDER BY bucket ASC
     `
@@ -175,7 +189,7 @@ function trafficByTimeQuery(rangeId: TrafficRangeId): string {
   `
 }
 
-function trafficByDeviceQuery(rangeId: TrafficRangeId): string {
+function trafficByDeviceQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
       lower(device) AS device,
@@ -183,14 +197,14 @@ function trafficByDeviceQuery(rangeId: TrafficRangeId): string {
       uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
       uniqExact(session_id) AS sessions
     FROM events_raw
-    WHERE ${RANGE_FILTER(rangeId)}
+    WHERE ${RANGE_FILTER(rangeId, utmFilter)}
     GROUP BY device
     ORDER BY visitors DESC
     LIMIT ${TOP_N}
   `
 }
 
-function topPagesQuery(rangeId: TrafficRangeId): string {
+function topPagesQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
       page,
@@ -200,7 +214,7 @@ function topPagesQuery(rangeId: TrafficRangeId): string {
         user_id,
         ${PAGE_PATH_EXPR} AS page
       FROM events_raw
-      WHERE ${RANGE_FILTER(rangeId)} AND event_name = 'page_view'
+      WHERE ${RANGE_FILTER(rangeId, utmFilter)} AND event_name = 'page_view'
     )
     GROUP BY page
     ORDER BY visitors DESC
@@ -208,7 +222,7 @@ function topPagesQuery(rangeId: TrafficRangeId): string {
   `
 }
 
-function trafficByLocationQuery(rangeId: TrafficRangeId): string {
+function trafficByLocationQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
       city_label AS city,
@@ -222,7 +236,7 @@ function trafficByLocationQuery(rangeId: TrafficRangeId): string {
         session_id,
         event_name
       FROM events_raw
-      WHERE ${RANGE_FILTER(rangeId)}
+      WHERE ${RANGE_FILTER(rangeId, utmFilter)}
     )
     GROUP BY city_label
     ORDER BY visitors DESC
@@ -230,7 +244,7 @@ function trafficByLocationQuery(rangeId: TrafficRangeId): string {
   `
 }
 
-function referrersQuery(rangeId: TrafficRangeId): string {
+function referrersQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
       if(referrer_domain = '', 'Direct', referrer_domain) AS domain,
@@ -240,7 +254,7 @@ function referrersQuery(rangeId: TrafficRangeId): string {
         user_id,
         ${REFERRER_DOMAIN_EXPR} AS referrer_domain
       FROM events_raw
-      WHERE ${RANGE_FILTER(rangeId)} AND event_name = 'page_view'
+      WHERE ${RANGE_FILTER(rangeId, utmFilter)} AND event_name = 'page_view'
     )
     GROUP BY domain
     ORDER BY visitors DESC
@@ -248,7 +262,7 @@ function referrersQuery(rangeId: TrafficRangeId): string {
   `
 }
 
-function utmParametersQuery(rangeId: TrafficRangeId): string {
+function utmParametersQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
       ${UTM_LABEL_EXPR} AS domain,
@@ -271,7 +285,7 @@ function utmParametersQuery(rangeId: TrafficRangeId): string {
           anyIf(utm_id, utm_id != '') AS utm_id,
           anyIf(utm_s1, utm_s1 != '') AS utm_s1
         FROM events_raw
-        WHERE ${RANGE_FILTER(rangeId)}
+        WHERE ${RANGE_FILTER(rangeId, utmFilter)}
         GROUP BY session_id
         HAVING max(event_name = 'page_view') = 1
       )
@@ -437,13 +451,15 @@ function buildTrafficByTime(
 export interface GetAnalyticsTrafficParams {
   workspaceId: string
   rangeId: TrafficRangeId
+  utmFilter?: AnalyticsUtmFilter
 }
 
 export async function getAnalyticsTraffic({
   workspaceId,
   rangeId,
+  utmFilter,
 }: GetAnalyticsTrafficParams): Promise<TrafficDashboardResponse> {
-  const cacheKey = `analytics:traffic:${workspaceId}:${rangeId}`
+  const cacheKey = `analytics:traffic:${workspaceId}:${rangeId}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
   try {
     const cachedStr = await redis.get(cacheKey)
     if (cachedStr) {
@@ -454,7 +470,7 @@ export async function getAnalyticsTraffic({
   }
 
   const ch = getClickHouseClient()
-  const p = { wid: workspaceId }
+  const p = { wid: workspaceId, ...utmFilterParams(utmFilter) }
   const q = (query: string) => ch.query({ format: 'JSON', query_params: p, query })
 
   const [
@@ -468,15 +484,15 @@ export async function getAnalyticsTraffic({
     referrersRes,
     utmRes,
   ] = await Promise.all([
-    q(ACTIVE_USERS_QUERY),
-    q(kpiQuery(rangeId)),
-    q(bounceQuery(rangeId)),
-    q(trafficByTimeQuery(rangeId)),
-    q(trafficByDeviceQuery(rangeId)),
-    q(topPagesQuery(rangeId)),
-    q(trafficByLocationQuery(rangeId)),
-    q(referrersQuery(rangeId)),
-    q(utmParametersQuery(rangeId)),
+    q(ACTIVE_USERS_QUERY(utmFilter)),
+    q(kpiQuery(rangeId, utmFilter)),
+    q(bounceQuery(rangeId, utmFilter)),
+    q(trafficByTimeQuery(rangeId, utmFilter)),
+    q(trafficByDeviceQuery(rangeId, utmFilter)),
+    q(topPagesQuery(rangeId, utmFilter)),
+    q(trafficByLocationQuery(rangeId, utmFilter)),
+    q(referrersQuery(rangeId, utmFilter)),
+    q(utmParametersQuery(rangeId, utmFilter)),
   ])
 
   type KpiRow = { visitors: string; sessions: string; page_views: string }

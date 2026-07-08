@@ -1,3 +1,8 @@
+import {
+  utmFilterSql,
+  type AnalyticsUtmFilter,
+} from './analytics-utm-filter.js'
+
 export type AnalyticsRangeId = '24h' | '7d' | '30d' | '3m' | '12m' | '24m'
 
 export const ANALYTICS_RANGE_IDS: readonly AnalyticsRangeId[] = [
@@ -42,15 +47,24 @@ export const RANGE_QUERY_LOOKBACK: Record<AnalyticsRangeId, string> = {
   '24m': '24 MONTH',
 }
 
-export function rangeFilter(rangeId: AnalyticsRangeId): string {
-  return `workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${RANGE_CLICKHOUSE_INTERVAL[rangeId]}`
+export function rangeFilter(
+  rangeId: AnalyticsRangeId,
+  utmFilter?: AnalyticsUtmFilter,
+): string {
+  return `workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${RANGE_CLICKHOUSE_INTERVAL[rangeId]}${utmFilterSql(utmFilter)}`
 }
 
-export function rangeLookbackFilter(rangeId: AnalyticsRangeId): string {
-  return `workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${RANGE_QUERY_LOOKBACK[rangeId]}`
+export function rangeLookbackFilter(
+  rangeId: AnalyticsRangeId,
+  utmFilter?: AnalyticsUtmFilter,
+): string {
+  return `workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${RANGE_QUERY_LOOKBACK[rangeId]}${utmFilterSql(utmFilter)}`
 }
 
 /** Previous period of equal length immediately before the current range. */
-export function previousRangeFilter(rangeId: AnalyticsRangeId): string {
-  return `workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${RANGE_CLICKHOUSE_PREVIOUS_START[rangeId]} AND created_at < now() - INTERVAL ${RANGE_CLICKHOUSE_INTERVAL[rangeId]}`
+export function previousRangeFilter(
+  rangeId: AnalyticsRangeId,
+  utmFilter?: AnalyticsUtmFilter,
+): string {
+  return `workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${RANGE_CLICKHOUSE_PREVIOUS_START[rangeId]} AND created_at < now() - INTERVAL ${RANGE_CLICKHOUSE_INTERVAL[rangeId]}${utmFilterSql(utmFilter)}`
 }

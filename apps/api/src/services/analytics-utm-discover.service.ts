@@ -1,3 +1,7 @@
+import {
+  isUtmFilterDimension,
+  type UtmFilterDimension,
+} from '../lib/analytics-utm-filter.js'
 import { getClickHouseClient } from './clickhouse.service.js'
 
 type CHJson<T> = { data: T[] }
@@ -37,4 +41,32 @@ export async function getDiscoveredUtmParams(
 
   const rows = ((await res.json()) as CHJson<DiscoveredUtmParam>).data ?? []
   return rows.filter((row) => row.key && row.value)
+}
+
+export async function getUtmDimensionValues(
+  workspaceId: string,
+  dimension: UtmFilterDimension,
+): Promise<string[]> {
+  if (!isUtmFilterDimension(dimension)) return []
+
+  const ch = getClickHouseClient()
+  const res = await ch.query({
+    format: 'JSON',
+    query_params: { wid: workspaceId },
+    query: `
+      SELECT value
+      FROM (
+        SELECT ${dimension} AS value
+        FROM events_raw
+        WHERE workspace_id = {wid:UUID}
+          AND ${dimension} != ''
+          AND created_at >= now() - INTERVAL 90 DAY
+        GROUP BY ${dimension}
+      )
+      ORDER BY value ASC
+    `,
+  })
+
+  const rows = ((await res.json()) as CHJson<{ value: string }>).data ?? []
+  return rows.map((row) => row.value).filter(Boolean)
 }

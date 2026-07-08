@@ -23,6 +23,8 @@ import type {
   OverviewTrafficStat,
 } from "@/features/overview/model/overview"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
+import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
+import { appendDashboardUtmParams } from "@/lib/server/analytics-utm-params"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import type { AnalyticsOverview, RangeId } from "@/lib/server/analytics-types"
@@ -169,7 +171,8 @@ function buildOverviewFromAnalytics(
 
 export async function loadOverviewDashboardData(
   landingPagePublicId: string,
-  rangeId: RangeId = "7d"
+  rangeId: RangeId = "7d",
+  utmFilter?: DashboardUtmFilter
 ): Promise<OverviewDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
@@ -190,20 +193,21 @@ export async function loadOverviewDashboardData(
   const timer = setTimeout(() => controller.abort(), 8_000)
 
   try {
-    const overviewResp = await fetch(
-      `${apiBase}/v1/analytics/overview?workspace_id=${encodeURIComponent(row.id)}`,
-      {
-        headers: { "x-arohaa-internal": secret },
-        signal: controller.signal,
-        cache: "no-store",
-      }
-    )
+    const url = new URL(`${apiBase}/v1/analytics/overview`)
+    url.searchParams.set("workspace_id", row.id)
+    appendDashboardUtmParams(url, utmFilter)
+
+    const overviewResp = await fetch(url.toString(), {
+      headers: { "x-arohaa-internal": secret },
+      signal: controller.signal,
+      cache: "no-store",
+    })
 
     if (!overviewResp.ok) {
       const body = await overviewResp.text().catch(() => "")
       if (process.env.NODE_ENV === "development") {
         console.error(
-          `[overview] analytics API ${overviewResp.status} ${apiBase}/v1/analytics/overview`,
+          `[overview] analytics API ${overviewResp.status} ${url.pathname}`,
           body.slice(0, 200)
         )
       }
@@ -224,7 +228,8 @@ export async function loadOverviewDashboardData(
 
 export async function loadOverviewDashboardDataForApi(
   landingPagePublicId: string,
-  rangeIdRaw: string | null | undefined
+  rangeIdRaw: string | null | undefined,
+  utmFilter?: DashboardUtmFilter
 ): Promise<
   | { ok: true; data: OverviewDashboardData }
   | { ok: false; status: number; error: string }
@@ -241,6 +246,10 @@ export async function loadOverviewDashboardDataForApi(
     return { ok: false, status: 404, error: "Not found" }
   }
 
-  const data = await loadOverviewDashboardData(landingPagePublicId, rangeId)
+  const data = await loadOverviewDashboardData(
+    landingPagePublicId,
+    rangeId,
+    utmFilter
+  )
   return { ok: true, data }
 }

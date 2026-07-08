@@ -11,6 +11,8 @@ import {
   resolveIngestApiBase,
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
+import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
+import { appendDashboardUtmParams } from "@/lib/server/analytics-utm-params"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
@@ -121,7 +123,8 @@ export function buildExperimentsDashboardData(
 export async function fetchExperimentsAnalytics(
   workspaceId: string,
   landingPagePublicId: string,
-  rangeId: RangeId
+  rangeId: RangeId,
+  utmFilter?: DashboardUtmFilter
 ): Promise<AnalyticsExperiments | null> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
@@ -136,6 +139,7 @@ export async function fetchExperimentsAnalytics(
     url.searchParams.set("workspace_id", workspaceId)
     url.searchParams.set("lp_public_id", landingPagePublicId)
     url.searchParams.set("range_id", rangeId)
+    appendDashboardUtmParams(url, utmFilter)
 
     const resp = await fetch(url.toString(), {
       headers: { "x-arohaa-internal": secret },
@@ -174,9 +178,11 @@ export async function fetchExperimentsAnalytics(
 export async function loadExperimentsDashboardData({
   landingPagePublicId,
   rangeId = "7d",
+  utmFilter,
 }: {
   landingPagePublicId: string
   rangeId?: RangeId
+  utmFilter?: DashboardUtmFilter
 }): Promise<ExperimentsDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
@@ -189,7 +195,8 @@ export async function loadExperimentsDashboardData({
   const analytics = await fetchExperimentsAnalytics(
     row.id,
     landingPagePublicId,
-    rangeId
+    rangeId,
+    utmFilter
   )
   if (!analytics) {
     return getExperimentsEmptyDashboardData(
@@ -204,7 +211,8 @@ export async function loadExperimentsDashboardData({
 
 export async function loadExperimentsDashboardDataForApi(
   landingPagePublicId: string,
-  rangeIdRaw: string | null | undefined
+  rangeIdRaw: string | null | undefined,
+  utmFilter?: DashboardUtmFilter
 ): Promise<
   | { ok: true; data: ExperimentsDashboardData }
   | { ok: false; status: number; error: string }
@@ -229,7 +237,8 @@ export async function loadExperimentsDashboardDataForApi(
   const analytics = await fetchExperimentsAnalytics(
     row.id,
     landingPagePublicId,
-    rangeId
+    rangeId,
+    utmFilter
   )
   if (!analytics) {
     return {

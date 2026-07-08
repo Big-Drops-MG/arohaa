@@ -9,6 +9,11 @@ import { FunnelDetailCards } from "@/features/funnel/view/FunnelDetailCards"
 import { FunnelKpiRow } from "@/features/funnel/view/FunnelKpiRow"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import {
+  buildAnalyticsApiPath,
+  shouldUseInitialTabData,
+} from "@/lib/dashboard/analytics-query"
 
 const FUNNEL_REFETCH_MS = 60_000
 
@@ -24,6 +29,7 @@ export function FunnelDashboard({
   isActive = true,
 }: FunnelDashboardProps) {
   const { dateRangeId, setDateRangeId } = useDashboardDateRange()
+  const { utmFilter } = useDashboardUtmFilter()
   const [activeKpiId, setActiveKpiId] = useState(FUNNEL_DEFAULT_KPI_METRIC_ID)
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isLoading, setIsLoading] = useState(false)
@@ -32,7 +38,10 @@ export function FunnelDashboard({
     async (rangeId: typeof dateRangeId, signal?: AbortSignal) => {
       setIsLoading(true)
 
-      const url = `/api/landing-pages/${encodeURIComponent(projectId)}/funnel?range_id=${encodeURIComponent(rangeId)}`
+      const url = buildAnalyticsApiPath(
+        `/api/landing-pages/${encodeURIComponent(projectId)}/funnel`,
+        { rangeId, utmFilter }
+      )
       try {
         const res = await fetch(url, { cache: "no-store", signal })
         if (!res.ok) {
@@ -64,13 +73,19 @@ export function FunnelDashboard({
         }
       }
     },
-    [projectId]
+    [projectId, utmFilter]
   )
 
   useEffect(() => {
     setActiveKpiId(FUNNEL_DEFAULT_KPI_METRIC_ID)
 
-    if (dateRangeId === initialData.defaultDateRangeId) {
+    if (
+      shouldUseInitialTabData(
+        dateRangeId,
+        initialData.defaultDateRangeId,
+        utmFilter
+      )
+    ) {
       setDashboardData(initialData)
       setIsLoading(false)
       return
@@ -79,7 +94,7 @@ export function FunnelDashboard({
     const controller = new AbortController()
     void fetchFunnelForRange(dateRangeId, controller.signal)
     return () => controller.abort()
-  }, [dateRangeId, initialData, fetchFunnelForRange])
+  }, [dateRangeId, utmFilter, initialData, fetchFunnelForRange])
 
   useEffect(() => {
     if (isActive) {
@@ -100,7 +115,7 @@ export function FunnelDashboard({
       controller.abort()
       window.clearInterval(id)
     }
-  }, [dateRangeId, fetchFunnelForRange, isActive])
+  }, [dateRangeId, utmFilter, fetchFunnelForRange, isActive])
 
   return (
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">

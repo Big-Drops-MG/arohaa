@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { loadAlertsDashboardDataForApi } from "@/lib/server/alerts-dashboard-load"
+import { parseUtmFilterFromSearchParams } from "@/lib/server/analytics-utm-params"
 
 export async function GET(
   request: Request,
@@ -7,9 +8,10 @@ export async function GET(
 ) {
   const { searchParams } = new URL(request.url)
   const rangeId = searchParams.get("range_id")
+  const utmFilter = parseUtmFilterFromSearchParams(searchParams)
   const { publicId } = await props.params
 
-  const res = await loadAlertsDashboardDataForApi(publicId, rangeId)
+  const res = await loadAlertsDashboardDataForApi(publicId, rangeId, utmFilter)
 
   if (!res.ok) {
     return NextResponse.json({ error: res.error }, { status: res.status })

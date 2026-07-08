@@ -10,6 +10,8 @@ import {
   resolveIngestApiBase,
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
+import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
+import { appendDashboardUtmParams } from "@/lib/server/analytics-utm-params"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import { notFound } from "next/navigation"
@@ -122,7 +124,8 @@ export function buildEventTrackingDashboardData(
 
 export async function fetchEventTrackingAnalytics(
   workspaceId: string,
-  rangeId: RangeId
+  rangeId: RangeId,
+  utmFilter?: DashboardUtmFilter
 ): Promise<AnalyticsEvents | null> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
@@ -136,6 +139,7 @@ export async function fetchEventTrackingAnalytics(
     const url = new URL(`${apiBase}/v1/analytics/events`)
     url.searchParams.set("workspace_id", workspaceId)
     url.searchParams.set("range_id", rangeId)
+    appendDashboardUtmParams(url, utmFilter)
 
     const resp = await fetch(url.toString(), {
       headers: { "x-arohaa-internal": secret },
@@ -174,9 +178,11 @@ export async function fetchEventTrackingAnalytics(
 export async function loadEventTrackingDashboardData({
   landingPagePublicId,
   rangeId = "7d",
+  utmFilter,
 }: {
   landingPagePublicId: string
   rangeId?: RangeId
+  utmFilter?: DashboardUtmFilter
 }): Promise<EventTrackingDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
@@ -186,7 +192,11 @@ export async function loadEventTrackingDashboardData({
 
   const formType = parseOverviewLandingFormType(row.formType)
 
-  const analytics = await fetchEventTrackingAnalytics(row.id, rangeId)
+  const analytics = await fetchEventTrackingAnalytics(
+    row.id,
+    rangeId,
+    utmFilter
+  )
   if (!analytics) {
     return getEventTrackingEmptyDashboardData(
       landingPagePublicId,
@@ -200,7 +210,8 @@ export async function loadEventTrackingDashboardData({
 
 export async function loadEventTrackingDashboardDataForApi(
   landingPagePublicId: string,
-  rangeIdRaw: string | null | undefined
+  rangeIdRaw: string | null | undefined,
+  utmFilter?: DashboardUtmFilter
 ): Promise<
   | { ok: true; data: EventTrackingDashboardData }
   | { ok: false; status: number; error: string }
@@ -222,7 +233,11 @@ export async function loadEventTrackingDashboardDataForApi(
 
   const formType = parseOverviewLandingFormType(row.formType)
 
-  const analytics = await fetchEventTrackingAnalytics(row.id, rangeId)
+  const analytics = await fetchEventTrackingAnalytics(
+    row.id,
+    rangeId,
+    utmFilter
+  )
   if (!analytics) {
     return {
       ok: true,

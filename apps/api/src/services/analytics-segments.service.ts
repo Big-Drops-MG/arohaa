@@ -5,6 +5,11 @@ import {
 } from '../lib/day-of-week.js'
 import type { AnalyticsSegments, RangeId } from '../types/analytics-segments.js'
 import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
+import {
+  utmFilterParams,
+  utmFilterSql,
+  type AnalyticsUtmFilter,
+} from '../lib/analytics-utm-filter.js'
 
 type CHJson<T> = { data: T[] }
 
@@ -88,17 +93,20 @@ function formatDevice(device: string): string {
 export async function getAnalyticsSegments({
   workspaceId,
   rangeId,
+  utmFilter,
 }: {
   workspaceId: string
   rangeId: RangeId
+  utmFilter?: AnalyticsUtmFilter
 }): Promise<AnalyticsSegments> {
-  const cacheKey = `analytics:segments:${workspaceId}:${rangeId}`
+  const cacheKey = `analytics:segments:${workspaceId}:${rangeId}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
   const cached = await readAnalyticsCache<AnalyticsSegments>(cacheKey)
   if (cached) return cached
 
   const ch = getClickHouseClient()
   const interval = getInterval(rangeId)
-  const p = { wid: workspaceId }
+  const utmSql = utmFilterSql(utmFilter)
+  const p = { wid: workspaceId, ...utmFilterParams(utmFilter) }
 
   const [locationRes, deviceRes, dayRes, timeRes] = await Promise.all([
     ch.query({
@@ -111,7 +119,7 @@ export async function getAnalyticsSegments({
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS sessions
         FROM events_raw
-        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}
+        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}${utmSql}
         GROUP BY label
         ORDER BY visitors DESC
         LIMIT 20
@@ -127,7 +135,7 @@ export async function getAnalyticsSegments({
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS sessions
         FROM events_raw
-        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}
+        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}${utmSql}
         GROUP BY label
         ORDER BY visitors DESC
         LIMIT 20
@@ -143,7 +151,7 @@ export async function getAnalyticsSegments({
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS sessions
         FROM events_raw
-        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}
+        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}${utmSql}
         GROUP BY label
         ORDER BY visitors DESC
       `,
@@ -156,7 +164,7 @@ export async function getAnalyticsSegments({
           toHour(created_at) AS label,
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted
         FROM events_raw
-        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}
+        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}${utmSql}
         GROUP BY label
         ORDER BY form_submitted DESC
         LIMIT 1

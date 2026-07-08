@@ -6,6 +6,8 @@ import {
   resolveIngestApiBase,
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
+import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
+import { appendDashboardUtmParams } from "@/lib/server/analytics-utm-params"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
@@ -119,7 +121,8 @@ export function buildSegmentsDashboardData(
 
 export async function fetchSegmentsAnalytics(
   workspaceId: string,
-  rangeId: RangeId
+  rangeId: RangeId,
+  utmFilter?: DashboardUtmFilter
 ): Promise<AnalyticsSegments | null> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
@@ -133,6 +136,7 @@ export async function fetchSegmentsAnalytics(
     const url = new URL(`${apiBase}/v1/analytics/segments`)
     url.searchParams.set("workspace_id", workspaceId)
     url.searchParams.set("range_id", rangeId)
+    appendDashboardUtmParams(url, utmFilter)
 
     const resp = await fetch(url.toString(), {
       headers: { "x-arohaa-internal": secret },
@@ -171,9 +175,11 @@ export async function fetchSegmentsAnalytics(
 export async function loadSegmentsDashboardData({
   landingPagePublicId,
   rangeId = "7d",
+  utmFilter,
 }: {
   landingPagePublicId: string
   rangeId?: RangeId
+  utmFilter?: DashboardUtmFilter
 }): Promise<SegmentsDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
@@ -181,7 +187,7 @@ export async function loadSegmentsDashboardData({
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
 
-  const analytics = await fetchSegmentsAnalytics(row.id, rangeId)
+  const analytics = await fetchSegmentsAnalytics(row.id, rangeId, utmFilter)
   if (!analytics) {
     return getSegmentsEmptyDashboardData(landingPagePublicId, rangeId as any)
   }
@@ -191,7 +197,8 @@ export async function loadSegmentsDashboardData({
 
 export async function loadSegmentsDashboardDataForApi(
   landingPagePublicId: string,
-  rangeIdRaw: string | null | undefined
+  rangeIdRaw: string | null | undefined,
+  utmFilter?: DashboardUtmFilter
 ): Promise<
   | { ok: true; data: SegmentsDashboardData }
   | { ok: false; status: number; error: string }
@@ -211,7 +218,7 @@ export async function loadSegmentsDashboardDataForApi(
     return { ok: false, status: 404, error: "Not found" }
   }
 
-  const analytics = await fetchSegmentsAnalytics(row.id, rangeId)
+  const analytics = await fetchSegmentsAnalytics(row.id, rangeId, utmFilter)
   if (!analytics) {
     return {
       ok: true,

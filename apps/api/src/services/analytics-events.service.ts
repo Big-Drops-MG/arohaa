@@ -1,6 +1,11 @@
 import { getClickHouseClient } from './clickhouse.service.js'
 import type { AnalyticsEvents, RangeId } from '../types/analytics-events.js'
 import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
+import {
+  utmFilterParams,
+  utmFilterSql,
+  type AnalyticsUtmFilter,
+} from '../lib/analytics-utm-filter.js'
 
 type CHJson<T> = { data: T[] }
 
@@ -25,21 +30,25 @@ function getInterval(rangeId: RangeId): string {
 export async function getAnalyticsEvents({
   workspaceId,
   rangeId,
+  utmFilter,
 }: {
   workspaceId: string
   rangeId: RangeId
+  utmFilter?: AnalyticsUtmFilter
 }): Promise<AnalyticsEvents> {
-  const cacheKey = `analytics:events:${workspaceId}:${rangeId}`
+  const cacheKey = `analytics:events:${workspaceId}:${rangeId}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
   const cached = await readAnalyticsCache<AnalyticsEvents>(cacheKey)
   if (cached) return cached
 
   const ch = getClickHouseClient()
   const interval = getInterval(rangeId)
+  const utmSql = utmFilterSql(utmFilter)
+  const p = { wid: workspaceId, ...utmFilterParams(utmFilter) }
   
   const [kpiRes, dateRes] = await Promise.all([
     ch.query({
       format: 'JSON',
-      query_params: { wid: workspaceId },
+      query_params: p,
       query: `
         SELECT
           count() AS total_events,
@@ -49,12 +58,12 @@ export async function getAnalyticsEvents({
           countIf(event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS total_sessions
         FROM events_raw
-        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}
+        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}${utmSql}
       `,
     }),
     ch.query({
       format: 'JSON',
-      query_params: { wid: workspaceId },
+      query_params: p,
       query: `
         SELECT 
           toDate(created_at) AS date_label,
@@ -62,7 +71,7 @@ export async function getAnalyticsEvents({
           countIf(event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS total_sessions
         FROM events_raw
-        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}
+        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}${utmSql}
         GROUP BY date_label
         ORDER BY date_label ASC
       `,

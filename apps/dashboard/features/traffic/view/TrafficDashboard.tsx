@@ -13,6 +13,11 @@ import { TrafficKpiRow } from "@/features/traffic/view/TrafficKpiRow"
 import { TrafficSourcesCard } from "@/features/traffic/view/TrafficSourcesCard"
 import { TRAFFIC_PREVIEW_ROW_LIMIT } from "@/features/traffic/view/traffic-card-layout"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import {
+  buildAnalyticsApiPath,
+  shouldUseInitialTabData,
+} from "@/lib/dashboard/analytics-query"
 
 const TRAFFIC_REFETCH_MS = 60_000
 
@@ -28,6 +33,7 @@ export function TrafficDashboard({
   isActive = true,
 }: TrafficDashboardProps) {
   const { dateRangeId, setDateRangeId } = useDashboardDateRange()
+  const { utmFilter } = useDashboardUtmFilter()
   const [activeKpiId, setActiveKpiId] = useState<TrafficKpiMetricId>(
     initialData.defaultKpiMetricId
   )
@@ -38,7 +44,10 @@ export function TrafficDashboard({
     async (rangeId: typeof dateRangeId, signal?: AbortSignal) => {
       setIsLoading(true)
 
-      const url = `/api/landing-pages/${encodeURIComponent(projectId)}/traffic?range_id=${encodeURIComponent(rangeId)}`
+      const url = buildAnalyticsApiPath(
+        `/api/landing-pages/${encodeURIComponent(projectId)}/traffic`,
+        { rangeId, utmFilter }
+      )
       try {
         const res = await fetch(url, { cache: "no-store", signal })
         if (!res.ok) {
@@ -66,11 +75,17 @@ export function TrafficDashboard({
         }
       }
     },
-    [projectId]
+    [projectId, utmFilter]
   )
 
   useEffect(() => {
-    if (dateRangeId === initialData.defaultDateRangeId) {
+    if (
+      shouldUseInitialTabData(
+        dateRangeId,
+        initialData.defaultDateRangeId,
+        utmFilter
+      )
+    ) {
       setDashboardData(initialData)
       setIsLoading(false)
       return
@@ -79,7 +94,7 @@ export function TrafficDashboard({
     const controller = new AbortController()
     void fetchTrafficForRange(dateRangeId, controller.signal)
     return () => controller.abort()
-  }, [dateRangeId, initialData, fetchTrafficForRange])
+  }, [dateRangeId, utmFilter, initialData, fetchTrafficForRange])
 
   useEffect(() => {
     if (!isActive) return
@@ -94,7 +109,7 @@ export function TrafficDashboard({
       controller.abort()
       window.clearInterval(id)
     }
-  }, [dateRangeId, fetchTrafficForRange, isActive])
+  }, [dateRangeId, utmFilter, fetchTrafficForRange, isActive])
 
   return (
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">

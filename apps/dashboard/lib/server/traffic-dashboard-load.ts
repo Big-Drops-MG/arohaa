@@ -13,6 +13,8 @@ import {
 } from "@/lib/server/analytics-env"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
+import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
+import { appendDashboardUtmParams } from "@/lib/server/analytics-utm-params"
 
 export { parseTrafficRangeId } from "@/features/traffic/model/traffic-range"
 
@@ -131,7 +133,8 @@ export function buildTrafficDashboardData(
 
 export async function fetchTrafficAnalytics(
   workspaceId: string,
-  rangeId: RangeId
+  rangeId: RangeId,
+  utmFilter?: DashboardUtmFilter
 ): Promise<AnalyticsTraffic | null> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
@@ -145,6 +148,7 @@ export async function fetchTrafficAnalytics(
     const url = new URL(`${apiBase}/v1/analytics/traffic`)
     url.searchParams.set("workspace_id", workspaceId)
     url.searchParams.set("range_id", rangeId)
+    appendDashboardUtmParams(url, utmFilter)
 
     const resp = await fetch(url.toString(), {
       headers: { "x-arohaa-internal": secret },
@@ -183,9 +187,11 @@ export async function fetchTrafficAnalytics(
 export async function loadTrafficDashboardData({
   landingPagePublicId,
   rangeId = DEFAULT_TRAFFIC_RANGE_ID,
+  utmFilter,
 }: {
   landingPagePublicId: string
   rangeId?: RangeId
+  utmFilter?: DashboardUtmFilter
 }): Promise<TrafficDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
@@ -193,7 +199,7 @@ export async function loadTrafficDashboardData({
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
 
-  const analytics = await fetchTrafficAnalytics(row.id, rangeId)
+  const analytics = await fetchTrafficAnalytics(row.id, rangeId, utmFilter)
   if (!analytics) {
     return getTrafficEmptyDashboardData(landingPagePublicId, rangeId)
   }
@@ -203,7 +209,8 @@ export async function loadTrafficDashboardData({
 
 export async function loadTrafficDashboardDataForApi(
   landingPagePublicId: string,
-  rangeIdRaw: string | null | undefined
+  rangeIdRaw: string | null | undefined,
+  utmFilter?: DashboardUtmFilter
 ): Promise<
   | { ok: true; data: TrafficDashboardData }
   | { ok: false; status: number; error: string }
@@ -220,7 +227,7 @@ export async function loadTrafficDashboardDataForApi(
     return { ok: false, status: 404, error: "Not found" }
   }
 
-  const analytics = await fetchTrafficAnalytics(row.id, rangeId)
+  const analytics = await fetchTrafficAnalytics(row.id, rangeId, utmFilter)
   if (!analytics) {
     return {
       ok: true,

@@ -3,6 +3,10 @@ import {
   rangeFilter,
   type AnalyticsRangeId,
 } from '../lib/analytics-range.js'
+import {
+  utmFilterParams,
+  type AnalyticsUtmFilter,
+} from '../lib/analytics-utm-filter.js'
 import { computePeriodChangePct } from '../lib/funnel-trend.js'
 import { redis } from './redis.service.js'
 import { getClickHouseClient } from './clickhouse.service.js'
@@ -274,14 +278,16 @@ export interface GetAnalyticsFunnelParams {
   workspaceId: string
   rangeId: AnalyticsRangeId
   formType?: FunnelFormType
+  utmFilter?: AnalyticsUtmFilter
 }
 
 export async function getAnalyticsFunnel({
   workspaceId,
   rangeId,
   formType = 'single',
+  utmFilter,
 }: GetAnalyticsFunnelParams): Promise<FunnelDashboardResponse> {
-  const cacheKey = `analytics:funnel:v6:${workspaceId}:${rangeId}:${formType}`
+  const cacheKey = `analytics:funnel:v7:${workspaceId}:${rangeId}:${formType}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
   try {
     const cachedStr = await redis.get(cacheKey)
     if (cachedStr) {
@@ -292,11 +298,11 @@ export async function getAnalyticsFunnel({
   }
 
   const ch = getClickHouseClient()
-  const p = { wid: workspaceId }
+  const p = { wid: workspaceId, ...utmFilterParams(utmFilter) }
   const q = (query: string) => ch.query({ format: 'JSON', query_params: p, query })
 
-  const currentWhere = rangeFilter(rangeId)
-  const previousWhere = previousRangeFilter(rangeId)
+  const currentWhere = rangeFilter(rangeId, utmFilter)
+  const previousWhere = previousRangeFilter(rangeId, utmFilter)
 
   const [
     currentCoreRes,

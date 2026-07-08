@@ -32,6 +32,9 @@ import {
   useLazyProjectTabData,
   type ProjectTabData,
 } from "@/hooks/use-lazy-project-tab-data"
+import { ProjectAttributionFilters } from "@/features/dashboard/view/ProjectAttributionFilters"
+import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
 export type { ProjectTabValue }
 
@@ -67,6 +70,8 @@ export function ProjectDashboardView({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const activeTab = parseProjectTab(searchParams.get("tab") ?? initialTab)
+  const { dateRangeId } = useDashboardDateRange()
+  const { utmFilter } = useDashboardUtmFilter()
 
   const {
     overview,
@@ -83,7 +88,8 @@ export function ProjectDashboardView({
   } = useLazyProjectTabData({
     projectId,
     activeTab,
-    rangeId,
+    rangeId: dateRangeId,
+    utmFilter,
     formType,
     overviewPlaceholder,
     initial,
@@ -108,7 +114,7 @@ export function ProjectDashboardView({
         className="w-full"
       >
         <div className="w-full border-b border-neutral-200 bg-neutral-50/90">
-          <div className="mx-auto w-full max-w-[1440px] px-0">
+          <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-0 sm:flex-row sm:items-center sm:justify-between">
             <TabsList className="h-auto min-h-11 justify-start rounded-none border-0 bg-transparent px-0">
               {PROJECT_TABS.map((tab) => (
                 <TabsTrigger key={tab.value} value={tab.value}>
@@ -116,6 +122,7 @@ export function ProjectDashboardView({
                 </TabsTrigger>
               ))}
             </TabsList>
+            <ProjectAttributionFilters projectId={projectId} />
           </div>
         </div>
 

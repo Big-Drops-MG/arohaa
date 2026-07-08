@@ -27,6 +27,11 @@ import {
   overviewStaggerItem,
 } from "@/features/overview/view/overview-motion"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import {
+  buildAnalyticsApiPath,
+  shouldUseInitialTabData,
+} from "@/lib/dashboard/analytics-query"
 
 type OverviewDashboardProps = {
   data: OverviewDashboardData
@@ -52,6 +57,7 @@ function funnelStepsFromApiPayload(
 export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
   const reduceMotion = useReducedMotion()
   const { dateRangeId, setDateRangeId } = useDashboardDateRange()
+  const { utmFilter } = useDashboardUtmFilter()
   const [activeKpiId, setActiveKpiId] = useState<OverviewKpiMetricId>(
     data.defaultKpiMetricId
   )
@@ -63,8 +69,16 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
   const [chartNowNonce, setChartNowNonce] = useState(0)
 
   useEffect(() => {
+    setFunnelSteps(data.funnel)
+    setAlerts(data.alerts)
+  }, [data])
+
+  useEffect(() => {
     let cancelled = false
-    const url = `/api/landing-pages/${encodeURIComponent(projectId)}/alerts?range_id=${encodeURIComponent(dateRangeId)}`
+    const url = buildAnalyticsApiPath(
+      `/api/landing-pages/${encodeURIComponent(projectId)}/alerts`,
+      { rangeId: dateRangeId, utmFilter }
+    )
 
     void fetch(url, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
@@ -85,7 +99,7 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
     return () => {
       cancelled = true
     }
-  }, [projectId, dateRangeId])
+  }, [projectId, dateRangeId, utmFilter])
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -98,7 +112,10 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
     async (rangeId: typeof dateRangeId, signal?: AbortSignal) => {
       setIsFunnelLoading(true)
 
-      const url = `/api/landing-pages/${encodeURIComponent(projectId)}/funnel?range_id=${encodeURIComponent(rangeId)}`
+      const url = buildAnalyticsApiPath(
+        `/api/landing-pages/${encodeURIComponent(projectId)}/funnel`,
+        { rangeId, utmFilter }
+      )
       try {
         const res = await fetch(url, { cache: "no-store", signal })
         if (!res.ok) return
@@ -115,11 +132,13 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
         }
       }
     },
-    [projectId]
+    [projectId, utmFilter]
   )
 
   useEffect(() => {
-    if (dateRangeId === data.defaultDateRangeId) {
+    if (
+      shouldUseInitialTabData(dateRangeId, data.defaultDateRangeId, utmFilter)
+    ) {
       setFunnelSteps(data.funnel)
       setIsFunnelLoading(false)
       return
@@ -128,7 +147,7 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
     const controller = new AbortController()
     void fetchFunnelForRange(dateRangeId, controller.signal)
     return () => controller.abort()
-  }, [dateRangeId, data, fetchFunnelForRange])
+  }, [dateRangeId, utmFilter, data, fetchFunnelForRange])
 
   const chartPoints = useMemo(() => {
     void chartNowNonce

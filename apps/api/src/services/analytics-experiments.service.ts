@@ -5,6 +5,11 @@ import type {
   RangeId,
 } from '../types/analytics-experiments.js'
 import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
+import {
+  utmFilterParams,
+  utmFilterSql,
+  type AnalyticsUtmFilter,
+} from '../lib/analytics-utm-filter.js'
 
 type CHJson<T> = { data: T[] }
 
@@ -30,12 +35,14 @@ export async function getAnalyticsExperiments({
   workspaceId,
   lpPublicId,
   rangeId,
+  utmFilter,
 }: {
   workspaceId: string
   lpPublicId: string
   rangeId: RangeId
+  utmFilter?: AnalyticsUtmFilter
 }): Promise<AnalyticsExperiments> {
-  const cacheKey = `analytics:experiments:${workspaceId}:${lpPublicId}:${rangeId}`
+  const cacheKey = `analytics:experiments:${workspaceId}:${lpPublicId}:${rangeId}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
   const cached = await readAnalyticsCache<AnalyticsExperiments>(cacheKey)
   if (cached) return cached
 
@@ -64,7 +71,8 @@ export async function getAnalyticsExperiments({
 
   const ch = getClickHouseClient()
   const interval = getInterval(rangeId)
-  const p = { wid: workspaceId, lp: lpPublicId }
+  const utmSql = utmFilterSql(utmFilter)
+  const p = { wid: workspaceId, lp: lpPublicId, ...utmFilterParams(utmFilter) }
 
   const [variantRes, locationRes] = await Promise.all([
     ch.query({
@@ -79,7 +87,7 @@ export async function getAnalyticsExperiments({
         FROM events_raw
         WHERE workspace_id = {wid:UUID} 
           AND lp_public_id = {lp:String}
-          AND created_at >= now() - INTERVAL ${interval}
+          AND created_at >= now() - INTERVAL ${interval}${utmSql}
         GROUP BY variant_label
         ORDER BY visitors DESC
       `,
@@ -96,7 +104,7 @@ export async function getAnalyticsExperiments({
         FROM events_raw
         WHERE workspace_id = {wid:UUID} 
           AND lp_public_id = {lp:String}
-          AND created_at >= now() - INTERVAL ${interval}
+          AND created_at >= now() - INTERVAL ${interval}${utmSql}
         GROUP BY city, variant_label
         ORDER BY sessions DESC
       `,

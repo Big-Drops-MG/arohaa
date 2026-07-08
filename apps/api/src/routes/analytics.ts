@@ -40,7 +40,8 @@ import {
   getAnalyticsSeo,
   syncSeoResults,
 } from '../services/analytics-seo.service.js'
-import { getDiscoveredUtmParams } from '../services/analytics-utm-discover.service.js'
+import { getDiscoveredUtmParams, getUtmDimensionValues } from '../services/analytics-utm-discover.service.js'
+import { parseAnalyticsUtmFilter } from '../lib/analytics-utm-filter.js'
 import { isFunnelRangeId } from '../types/analytics-funnel.js'
 import type { SeoSortField } from '../types/analytics-seo.js'
 import { isTrafficRangeId } from '../types/analytics-traffic.js'
@@ -59,12 +60,18 @@ const ANALYTICS_RATE_LIMIT = {
   },
 } as const
 
+const utmFilterSchemaProps = {
+  utm_dim: { type: 'string', enum: ['utm_source', 'utm_medium'] },
+  utm_value: { type: 'string', minLength: 1, maxLength: 100 },
+} as const
+
 const workspaceSchema = {
   querystring: {
     type: 'object',
     required: ['workspace_id'],
     properties: {
       workspace_id: { type: 'string', format: 'uuid' },
+      ...utmFilterSchemaProps,
     },
   },
 } as const
@@ -79,6 +86,7 @@ const rangeSchema = {
         type: 'string',
         enum: ['24h', '7d', '30d', '3m', '12m', '24m'],
       },
+      ...utmFilterSchemaProps,
     },
   },
 } as const
@@ -97,6 +105,7 @@ const funnelSchema = {
         type: 'string',
         enum: ['zip', 'single', 'multiple'],
       },
+      ...utmFilterSchemaProps,
     },
   },
 } as const
@@ -172,28 +181,30 @@ async function sendAnalyticsQuery<T>({
 }
 
 export async function analyticsRoutes(server: FastifyInstance) {
-  server.get<{ Querystring: { workspace_id: string } }>(
+  server.get<{ Querystring: { workspace_id: string; utm_dim?: string; utm_value?: string } }>(
     '/v1/analytics/overview',
     { schema: workspaceSchema, config: ANALYTICS_RATE_LIMIT },
     async (request, reply) => {
-      const { workspace_id } = request.query
+      const { workspace_id, utm_dim, utm_value } = request.query
+      const utmFilter = parseAnalyticsUtmFilter(utm_dim, utm_value)
       await sendAnalyticsQuery({
         request,
         reply,
         workspaceId: workspace_id,
         emptyValue: emptyAnalyticsOverview(),
-        run: () => getAnalyticsOverview(workspace_id),
+        run: () => getAnalyticsOverview(workspace_id, utmFilter),
         logLabel: 'analytics overview query ok',
       })
     },
   )
 
-  server.get<{ Querystring: { workspace_id: string; range_id?: string } }>(
+  server.get<{ Querystring: { workspace_id: string; range_id?: string; utm_dim?: string; utm_value?: string } }>(
     '/v1/analytics/traffic',
     { schema: rangeSchema, config: ANALYTICS_RATE_LIMIT },
     async (request, reply) => {
-      const { workspace_id, range_id } = request.query
+      const { workspace_id, range_id, utm_dim, utm_value } = request.query
       const rangeId = range_id?.trim() || DEFAULT_RANGE_ID
+      const utmFilter = parseAnalyticsUtmFilter(utm_dim, utm_value)
 
       if (!isTrafficRangeId(rangeId)) {
         return reply.code(400).send({ error: 'Invalid range_id' })
@@ -204,7 +215,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
         reply,
         workspaceId: workspace_id,
         emptyValue: emptyAnalyticsTraffic(rangeId),
-        run: () => getAnalyticsTraffic({ workspaceId: workspace_id, rangeId }),
+        run: () => getAnalyticsTraffic({ workspaceId: workspace_id, rangeId, utmFilter }),
         logLabel: 'analytics traffic query ok',
         logContext: { range_id: rangeId },
       })
@@ -212,13 +223,14 @@ export async function analyticsRoutes(server: FastifyInstance) {
   )
 
   server.get<{
-    Querystring: { workspace_id: string; range_id?: string; form_type?: string }
+    Querystring: { workspace_id: string; range_id?: string; form_type?: string; utm_dim?: string; utm_value?: string }
   }>(
     '/v1/analytics/funnel',
     { schema: funnelSchema, config: ANALYTICS_RATE_LIMIT },
     async (request, reply) => {
-      const { workspace_id, range_id, form_type } = request.query
+      const { workspace_id, range_id, form_type, utm_dim, utm_value } = request.query
       const rangeId = range_id?.trim() || DEFAULT_RANGE_ID
+      const utmFilter = parseAnalyticsUtmFilter(utm_dim, utm_value)
 
       if (!isFunnelRangeId(rangeId)) {
         return reply.code(400).send({ error: 'Invalid range_id' })
@@ -235,21 +247,21 @@ export async function analyticsRoutes(server: FastifyInstance) {
         workspaceId: workspace_id,
         emptyValue: emptyAnalyticsFunnel(rangeId),
         run: () =>
-          getAnalyticsFunnel({ workspaceId: workspace_id, rangeId, formType }),
+          getAnalyticsFunnel({ workspaceId: workspace_id, rangeId, formType, utmFilter }),
         logLabel: 'analytics funnel query ok',
         logContext: { range_id: rangeId, form_type: formType },
       })
     },
   )
 
-  server.get<{ Querystring: { workspace_id: string; range_id?: string } }>(
+  server.get<{ Querystring: { workspace_id: string; range_id?: string; utm_dim?: string; utm_value?: string } }>(
     '/v1/analytics/events',
     { schema: rangeSchema, config: ANALYTICS_RATE_LIMIT },
     async (request, reply) => {
-      const { workspace_id, range_id } = request.query
+      const { workspace_id, range_id, utm_dim, utm_value } = request.query
       const rangeId = range_id?.trim() || DEFAULT_RANGE_ID
+      const utmFilter = parseAnalyticsUtmFilter(utm_dim, utm_value)
 
-      // Reusing traffic range IDs as they match the standard ranges
       if (!isTrafficRangeId(rangeId)) {
         return reply.code(400).send({ error: 'Invalid range_id' })
       }
@@ -259,19 +271,20 @@ export async function analyticsRoutes(server: FastifyInstance) {
         reply,
         workspaceId: workspace_id,
         emptyValue: emptyAnalyticsEvents(),
-        run: () => getAnalyticsEvents({ workspaceId: workspace_id, rangeId: rangeId as EventsRangeId }),
+        run: () => getAnalyticsEvents({ workspaceId: workspace_id, rangeId: rangeId as EventsRangeId, utmFilter }),
         logLabel: 'analytics events query ok',
         logContext: { range_id: rangeId },
       })
     },
   )
 
-  server.get<{ Querystring: { workspace_id: string; range_id?: string } }>(
+  server.get<{ Querystring: { workspace_id: string; range_id?: string; utm_dim?: string; utm_value?: string } }>(
     '/v1/analytics/segments',
     { schema: rangeSchema, config: ANALYTICS_RATE_LIMIT },
     async (request, reply) => {
-      const { workspace_id, range_id } = request.query
+      const { workspace_id, range_id, utm_dim, utm_value } = request.query
       const rangeId = range_id?.trim() || DEFAULT_RANGE_ID
+      const utmFilter = parseAnalyticsUtmFilter(utm_dim, utm_value)
 
       if (!isTrafficRangeId(rangeId)) {
         return reply.code(400).send({ error: 'Invalid range_id' })
@@ -282,14 +295,14 @@ export async function analyticsRoutes(server: FastifyInstance) {
         reply,
         workspaceId: workspace_id,
         emptyValue: emptyAnalyticsSegments(),
-        run: () => getAnalyticsSegments({ workspaceId: workspace_id, rangeId: rangeId as SegmentsRangeId }),
+        run: () => getAnalyticsSegments({ workspaceId: workspace_id, rangeId: rangeId as SegmentsRangeId, utmFilter }),
         logLabel: 'analytics segments query ok',
         logContext: { range_id: rangeId },
       })
     },
   )
 
-  server.get<{ Querystring: { workspace_id: string; lp_public_id: string; range_id?: string } }>(
+  server.get<{ Querystring: { workspace_id: string; lp_public_id: string; range_id?: string; utm_dim?: string; utm_value?: string } }>(
     '/v1/analytics/experiments',
     {
       schema: {
@@ -300,14 +313,16 @@ export async function analyticsRoutes(server: FastifyInstance) {
             workspace_id: { type: 'string', format: 'uuid' },
             lp_public_id: { type: 'string', minLength: 1 },
             range_id: { type: 'string', maxLength: 10 },
+            ...utmFilterSchemaProps,
           },
         },
       },
       config: ANALYTICS_RATE_LIMIT,
     },
     async (request, reply) => {
-      const { workspace_id, lp_public_id, range_id } = request.query
+      const { workspace_id, lp_public_id, range_id, utm_dim, utm_value } = request.query
       const rangeId = range_id?.trim() || DEFAULT_RANGE_ID
+      const utmFilter = parseAnalyticsUtmFilter(utm_dim, utm_value)
 
       if (!isTrafficRangeId(rangeId)) {
         return reply.code(400).send({ error: 'Invalid range_id' })
@@ -318,7 +333,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
         reply,
         workspaceId: workspace_id,
         emptyValue: emptyAnalyticsExperiments(),
-        run: () => getAnalyticsExperiments({ workspaceId: workspace_id, lpPublicId: lp_public_id, rangeId: rangeId as ExperimentsRangeId }),
+        run: () => getAnalyticsExperiments({ workspaceId: workspace_id, lpPublicId: lp_public_id, rangeId: rangeId as ExperimentsRangeId, utmFilter }),
         logLabel: 'analytics experiments query ok',
         logContext: { range_id: rangeId, lp_public_id },
       })
@@ -357,7 +372,39 @@ export async function analyticsRoutes(server: FastifyInstance) {
     },
   )
 
-  server.get<{ Querystring: { workspace_id: string; lp_public_id: string; range_id?: string } }>(
+  server.get<{ Querystring: { workspace_id: string; dim: string } }>(
+    '/v1/analytics/utm-values',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['workspace_id', 'dim'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            dim: { type: 'string', enum: ['utm_source', 'utm_medium'] },
+          },
+        },
+      },
+      config: ANALYTICS_RATE_LIMIT,
+    },
+    async (request, reply) => {
+      const { workspace_id, dim } = request.query
+      if (dim !== 'utm_source' && dim !== 'utm_medium') {
+        return reply.code(400).send({ error: 'Invalid dim' })
+      }
+      await sendAnalyticsQuery({
+        request,
+        reply,
+        workspaceId: workspace_id,
+        emptyValue: [] as string[],
+        run: () => getUtmDimensionValues(workspace_id, dim),
+        logLabel: 'utm values query ok',
+        logContext: { dim },
+      })
+    },
+  )
+
+  server.get<{ Querystring: { workspace_id: string; lp_public_id: string; range_id?: string; utm_dim?: string; utm_value?: string } }>(
     '/v1/analytics/alerts',
     {
       schema: {
@@ -368,14 +415,16 @@ export async function analyticsRoutes(server: FastifyInstance) {
             workspace_id: { type: 'string', format: 'uuid' },
             lp_public_id: { type: 'string', minLength: 1 },
             range_id: { type: 'string', maxLength: 10 },
+            ...utmFilterSchemaProps,
           },
         },
       },
       config: ANALYTICS_RATE_LIMIT,
     },
     async (request, reply) => {
-      const { workspace_id, lp_public_id, range_id } = request.query
+      const { workspace_id, lp_public_id, range_id, utm_dim, utm_value } = request.query
       const rangeId = range_id?.trim() || DEFAULT_RANGE_ID
+      const utmFilter = parseAnalyticsUtmFilter(utm_dim, utm_value)
 
       if (!isTrafficRangeId(rangeId)) {
         return reply.code(400).send({ error: 'Invalid range_id' })
@@ -386,7 +435,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
         reply,
         workspaceId: workspace_id,
         emptyValue: emptyAnalyticsAlerts(),
-        run: () => getAnalyticsAlerts({ workspaceId: workspace_id, lpPublicId: lp_public_id, rangeId: rangeId as any }),
+        run: () => getAnalyticsAlerts({ workspaceId: workspace_id, lpPublicId: lp_public_id, rangeId: rangeId as any, utmFilter }),
         logLabel: 'analytics alerts query ok',
         logContext: { range_id: rangeId, lp_public_id },
       })

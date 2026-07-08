@@ -5,6 +5,11 @@ import type {
   AnalyticsAlertsResponse,
 } from '../types/analytics-alerts.js'
 import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
+import {
+  utmFilterParams,
+  utmFilterSql,
+  type AnalyticsUtmFilter,
+} from '../lib/analytics-utm-filter.js'
 
 type CHJson<T> = { data: T[] }
 
@@ -38,18 +43,21 @@ export async function getAnalyticsAlerts({
   workspaceId,
   lpPublicId,
   rangeId,
+  utmFilter,
 }: {
   workspaceId: string
   lpPublicId: string
   rangeId: RangeId
+  utmFilter?: AnalyticsUtmFilter
 }): Promise<AnalyticsAlertsResponse> {
-  const cacheKey = `analytics:alerts:${workspaceId}:${lpPublicId}:${rangeId}`
+  const cacheKey = `analytics:alerts:${workspaceId}:${lpPublicId}:${rangeId}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
   const cached = await readAnalyticsCache<AnalyticsAlertsResponse>(cacheKey)
   if (cached) return cached
 
   const ch = getClickHouseClient()
   const { current, previous } = getIntervals(rangeId)
-  const p = { wid: workspaceId, lp: lpPublicId }
+  const utmSql = utmFilterSql(utmFilter)
+  const p = { wid: workspaceId, lp: lpPublicId, ...utmFilterParams(utmFilter) }
 
   const res = await ch.query({
     format: 'JSON',
@@ -66,7 +74,7 @@ export async function getAnalyticsAlerts({
       FROM events_raw
       WHERE workspace_id = {wid:UUID}
         AND lp_public_id = {lp:String}
-        AND created_at >= now() - INTERVAL ${previous}
+        AND created_at >= now() - INTERVAL ${previous}${utmSql}
     `,
   })
 

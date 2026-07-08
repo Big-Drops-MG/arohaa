@@ -8,6 +8,11 @@ import type { SegmentsDashboardData } from "@/features/segments/model/segments"
 import { SegmentsPerformanceCards } from "@/features/segments/view/SegmentsPerformanceCards"
 import { SegmentsSummaryKpiRow } from "@/features/segments/view/SegmentsSummaryKpiRow"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import {
+  buildAnalyticsApiPath,
+  shouldUseInitialTabData,
+} from "@/lib/dashboard/analytics-query"
 
 const SEGMENTS_REFETCH_MS = 60_000
 
@@ -23,6 +28,7 @@ export function SegmentsDashboard({
   isActive = true,
 }: SegmentsDashboardProps) {
   const { dateRangeId, setDateRangeId } = useDashboardDateRange()
+  const { utmFilter } = useDashboardUtmFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isLoading, setIsLoading] = useState(false)
   const [activeKpiId, setActiveKpiId] = useState<string>(
@@ -33,7 +39,10 @@ export function SegmentsDashboard({
     async (rangeId: typeof dateRangeId, signal?: AbortSignal) => {
       setIsLoading(true)
 
-      const url = `/api/landing-pages/${encodeURIComponent(projectId)}/segments?range_id=${encodeURIComponent(rangeId)}`
+      const url = buildAnalyticsApiPath(
+        `/api/landing-pages/${encodeURIComponent(projectId)}/segments`,
+        { rangeId, utmFilter }
+      )
       try {
         const res = await fetch(url, { cache: "no-store", signal })
         if (!res.ok) {
@@ -66,11 +75,17 @@ export function SegmentsDashboard({
         }
       }
     },
-    [projectId]
+    [projectId, utmFilter]
   )
 
   useEffect(() => {
-    if (dateRangeId === initialData.defaultDateRangeId) {
+    if (
+      shouldUseInitialTabData(
+        dateRangeId,
+        initialData.defaultDateRangeId,
+        utmFilter
+      )
+    ) {
       setDashboardData(initialData)
       setActiveKpiId(initialData.summaryKpis[0]?.label ?? "")
       setIsLoading(false)
@@ -80,7 +95,7 @@ export function SegmentsDashboard({
     const controller = new AbortController()
     void fetchSegmentsForRange(dateRangeId, controller.signal)
     return () => controller.abort()
-  }, [dateRangeId, initialData, fetchSegmentsForRange])
+  }, [dateRangeId, utmFilter, initialData, fetchSegmentsForRange])
 
   useEffect(() => {
     if (!isActive) return
@@ -95,7 +110,7 @@ export function SegmentsDashboard({
       controller.abort()
       window.clearInterval(id)
     }
-  }, [dateRangeId, fetchSegmentsForRange, isActive])
+  }, [dateRangeId, utmFilter, fetchSegmentsForRange, isActive])
 
   return (
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">

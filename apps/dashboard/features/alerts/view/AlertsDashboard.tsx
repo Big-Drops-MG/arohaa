@@ -8,6 +8,11 @@ import type { AlertsDashboardData } from "@/features/alerts/model/alerts"
 import { AlertsListCard } from "@/features/alerts/view/AlertsListCard"
 import { getAlertsEmptyDashboardData } from "@/features/alerts/controller/alerts-empty-data"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import {
+  buildAnalyticsApiPath,
+  shouldUseInitialTabData,
+} from "@/lib/dashboard/analytics-query"
 
 const ALERTS_REFETCH_MS = 60_000
 
@@ -23,6 +28,7 @@ export function AlertsDashboard({
   isActive = true,
 }: AlertsDashboardProps) {
   const { dateRangeId, setDateRangeId } = useDashboardDateRange()
+  const { utmFilter } = useDashboardUtmFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isLoading, setIsLoading] = useState(false)
 
@@ -30,7 +36,10 @@ export function AlertsDashboard({
     async (rangeId: typeof dateRangeId, signal?: AbortSignal) => {
       setIsLoading(true)
 
-      const url = `/api/landing-pages/${encodeURIComponent(projectId)}/alerts?range_id=${encodeURIComponent(rangeId)}`
+      const url = buildAnalyticsApiPath(
+        `/api/landing-pages/${encodeURIComponent(projectId)}/alerts`,
+        { rangeId, utmFilter }
+      )
       try {
         const res = await fetch(url, { cache: "no-store", signal })
         if (!res.ok) {
@@ -58,11 +67,17 @@ export function AlertsDashboard({
         }
       }
     },
-    [projectId]
+    [projectId, utmFilter]
   )
 
   useEffect(() => {
-    if (dateRangeId === initialData.defaultDateRangeId) {
+    if (
+      shouldUseInitialTabData(
+        dateRangeId,
+        initialData.defaultDateRangeId,
+        utmFilter
+      )
+    ) {
       setDashboardData(initialData)
       setIsLoading(false)
       return
@@ -71,7 +86,7 @@ export function AlertsDashboard({
     const controller = new AbortController()
     void fetchAlertsForRange(dateRangeId, controller.signal)
     return () => controller.abort()
-  }, [dateRangeId, initialData, fetchAlertsForRange])
+  }, [dateRangeId, utmFilter, initialData, fetchAlertsForRange])
 
   useEffect(() => {
     if (!isActive) return
@@ -86,7 +101,7 @@ export function AlertsDashboard({
       controller.abort()
       window.clearInterval(id)
     }
-  }, [dateRangeId, fetchAlertsForRange, isActive])
+  }, [dateRangeId, utmFilter, fetchAlertsForRange, isActive])
 
   return (
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">

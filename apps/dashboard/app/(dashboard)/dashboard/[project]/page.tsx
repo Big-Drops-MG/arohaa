@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { ProjectDashboardView } from "@/features/dashboard/view/ProjectDashboardView"
 import { parseProjectTab } from "@/features/dashboard/model/project-tab"
+import { parseDashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
 import { getOverviewPlaceholderData } from "@/features/overview/controller/overview-placeholder-data"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
 import { parseTrafficRangeId } from "@/features/traffic/model/traffic-range"
@@ -22,7 +23,12 @@ import { pageMetadata } from "@/lib/site-metadata"
 
 type ProjectPageProps = {
   params: Promise<{ project: string }>
-  searchParams: Promise<{ range_id?: string; tab?: string }>
+  searchParams: Promise<{
+    range_id?: string
+    tab?: string
+    utm_dim?: string
+    utm_value?: string
+  }>
 }
 
 export async function generateMetadata({
@@ -45,9 +51,15 @@ export default async function ProjectPage({
   searchParams,
 }: ProjectPageProps) {
   const { project } = await params
-  const { range_id: rangeIdParam, tab: tabParam } = await searchParams
+  const {
+    range_id: rangeIdParam,
+    tab: tabParam,
+    utm_dim,
+    utm_value,
+  } = await searchParams
   const rangeId = parseTrafficRangeId(rangeIdParam)
   const tab = parseProjectTab(tabParam)
+  const utmFilter = parseDashboardUtmFilter(utm_dim, utm_value)
 
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
@@ -71,36 +83,41 @@ export default async function ProjectPage({
 
   switch (tab) {
     case "overview":
-      overview = await loadOverviewDashboardData(project, rangeId)
+      overview = await loadOverviewDashboardData(project, rangeId, utmFilter)
       break
     case "traffic":
       traffic = await loadTrafficDashboardData({
         landingPagePublicId: project,
         rangeId,
+        utmFilter,
       })
       break
     case "funnel":
       funnel = await loadFunnelDashboardData({
         landingPagePublicId: project,
         rangeId,
+        utmFilter,
       })
       break
     case "event-tracking":
       eventTracking = await loadEventTrackingDashboardData({
         landingPagePublicId: project,
         rangeId,
+        utmFilter,
       })
       break
     case "segments":
       segments = await loadSegmentsDashboardData({
         landingPagePublicId: project,
         rangeId,
+        utmFilter,
       })
       break
     case "experiments":
       experiments = await loadExperimentsDashboardData({
         landingPagePublicId: project,
         rangeId,
+        utmFilter,
       })
       break
     case "seo":
@@ -116,6 +133,7 @@ export default async function ProjectPage({
       alerts = await loadAlertsDashboardData({
         landingPagePublicId: project,
         rangeId,
+        utmFilter,
       })
       break
     case "settings":

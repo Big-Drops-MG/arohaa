@@ -7,6 +7,11 @@ import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import type { ExperimentsDashboardData } from "@/features/experiments/model/experiments"
 import { ExperimentsCards } from "@/features/experiments/view/ExperimentsCards"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import {
+  buildAnalyticsApiPath,
+  shouldUseInitialTabData,
+} from "@/lib/dashboard/analytics-query"
 
 const EXPERIMENTS_REFETCH_MS = 60_000
 
@@ -22,6 +27,7 @@ export function ExperimentsDashboard({
   isActive = true,
 }: ExperimentsDashboardProps) {
   const { dateRangeId, setDateRangeId } = useDashboardDateRange()
+  const { utmFilter } = useDashboardUtmFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isLoading, setIsLoading] = useState(false)
 
@@ -29,7 +35,10 @@ export function ExperimentsDashboard({
     async (rangeId: typeof dateRangeId, signal?: AbortSignal) => {
       setIsLoading(true)
 
-      const url = `/api/landing-pages/${encodeURIComponent(projectId)}/experiments?range_id=${encodeURIComponent(rangeId)}`
+      const url = buildAnalyticsApiPath(
+        `/api/landing-pages/${encodeURIComponent(projectId)}/experiments`,
+        { rangeId, utmFilter }
+      )
       try {
         const res = await fetch(url, { cache: "no-store", signal })
         if (!res.ok) {
@@ -61,11 +70,17 @@ export function ExperimentsDashboard({
         }
       }
     },
-    [projectId]
+    [projectId, utmFilter]
   )
 
   useEffect(() => {
-    if (dateRangeId === initialData.defaultDateRangeId) {
+    if (
+      shouldUseInitialTabData(
+        dateRangeId,
+        initialData.defaultDateRangeId,
+        utmFilter
+      )
+    ) {
       setDashboardData(initialData)
       setIsLoading(false)
       return
@@ -74,7 +89,7 @@ export function ExperimentsDashboard({
     const controller = new AbortController()
     void fetchExperimentsForRange(dateRangeId, controller.signal)
     return () => controller.abort()
-  }, [dateRangeId, initialData, fetchExperimentsForRange])
+  }, [dateRangeId, utmFilter, initialData, fetchExperimentsForRange])
 
   useEffect(() => {
     if (!isActive) return
@@ -89,7 +104,7 @@ export function ExperimentsDashboard({
       controller.abort()
       window.clearInterval(id)
     }
-  }, [dateRangeId, fetchExperimentsForRange, isActive])
+  }, [dateRangeId, utmFilter, fetchExperimentsForRange, isActive])
 
   return (
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">

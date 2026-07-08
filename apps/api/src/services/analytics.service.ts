@@ -2,6 +2,11 @@ import { getClickHouseClient } from './clickhouse.service.js'
 import { formatDayOfWeek } from '../lib/day-of-week.js'
 import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
 import { redis } from './redis.service.js'
+import {
+  utmFilterParams,
+  utmFilterSql,
+  type AnalyticsUtmFilter,
+} from '../lib/analytics-utm-filter.js'
 
 export type RangeId = '24h' | '7d' | '30d' | '3m' | '12m' | '24m'
 
@@ -121,8 +126,11 @@ function buildSeries(
   return pts
 }
 
-export async function getAnalyticsOverview(workspaceId: string): Promise<AnalyticsOverview> {
-  const cacheKey = `analytics:overview:${workspaceId}`
+export async function getAnalyticsOverview(
+  workspaceId: string,
+  utmFilter?: AnalyticsUtmFilter,
+): Promise<AnalyticsOverview> {
+  const cacheKey = `analytics:overview:${workspaceId}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
   try {
     const cachedStr = await redis.get(cacheKey)
     if (cachedStr) {
@@ -133,31 +141,36 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
   }
 
   const ch = getClickHouseClient()
-  const p = { wid: workspaceId }
+  const utmSql = utmFilterSql(utmFilter)
+  const p = { wid: workspaceId, ...utmFilterParams(utmFilter) }
 
-  const [kpi24hRes, kpiLongRes, bounceRes, hourlyRes, dailyRes, monthlyRes, funnelRes, cityRes, dowRes, engagedRes] =
-    await Promise.all([
-      ch.query({
-        format: 'JSON', query_params: p,
-        query: `
+  const kpiLongQuery = utmFilter
+    ? `
           SELECT
-            uniqExactIf(user_id, created_at >= now() - INTERVAL 24 HOUR AND event_name = 'page_view') AS vis_24h,
-            uniqExactIf(session_id, created_at >= now() - INTERVAL 24 HOUR) AS ses_24h,
-            countIf(event_name = 'page_view' AND created_at >= now() - INTERVAL 24 HOUR) AS pv_24h,
-            uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL 24 HOUR) AS fs_24h,
-            uniqExactIf(
-              user_id,
-              created_at >= now() - INTERVAL 5 MINUTE
-                AND event_name IN ('heartbeat', 'page_view')
-            ) AS active_users_now
+            uniqExactIf(user_id, event_name = 'page_view' AND created_at >= now() - INTERVAL 7 DAY) AS vis_7d,
+            uniqExactIf(session_id, created_at >= now() - INTERVAL 7 DAY) AS ses_7d,
+            countIf(event_name = 'page_view' AND created_at >= now() - INTERVAL 7 DAY) AS pv_7d,
+            uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL 7 DAY) AS fs_7d,
+            uniqExactIf(user_id, event_name = 'page_view' AND created_at >= now() - INTERVAL 30 DAY) AS vis_30d,
+            uniqExactIf(session_id, created_at >= now() - INTERVAL 30 DAY) AS ses_30d,
+            countIf(event_name = 'page_view' AND created_at >= now() - INTERVAL 30 DAY) AS pv_30d,
+            uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL 30 DAY) AS fs_30d,
+            uniqExactIf(user_id, event_name = 'page_view' AND created_at >= now() - INTERVAL 90 DAY) AS vis_3m,
+            uniqExactIf(session_id, created_at >= now() - INTERVAL 90 DAY) AS ses_3m,
+            countIf(event_name = 'page_view' AND created_at >= now() - INTERVAL 90 DAY) AS pv_3m,
+            uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL 90 DAY) AS fs_3m,
+            uniqExactIf(user_id, event_name = 'page_view' AND created_at >= now() - INTERVAL 365 DAY) AS vis_12m,
+            uniqExactIf(session_id, created_at >= now() - INTERVAL 365 DAY) AS ses_12m,
+            countIf(event_name = 'page_view' AND created_at >= now() - INTERVAL 365 DAY) AS pv_12m,
+            uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL 365 DAY) AS fs_12m,
+            uniqExactIf(user_id, event_name = 'page_view' AND created_at >= now() - INTERVAL 24 MONTH) AS vis_24m,
+            uniqExactIf(session_id, created_at >= now() - INTERVAL 24 MONTH) AS ses_24m,
+            countIf(event_name = 'page_view' AND created_at >= now() - INTERVAL 24 MONTH) AS pv_24m,
+            uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL 24 MONTH) AS fs_24m
           FROM events_raw
-          WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 25 HOUR
-        `,
-      }),
-
-      ch.query({
-        format: 'JSON', query_params: p,
-        query: `
+          WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 24 MONTH${utmSql}
+        `
+    : `
           SELECT
             uniqMergeIf(visitors, day >= today() - 7) AS vis_7d,
             uniqMergeIf(sessions, day >= today() - 7) AS ses_7d,
@@ -181,7 +194,83 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
             uniqMerge(form_submitted) AS fs_24m
           FROM daily_metrics
           WHERE workspace_id = {wid:UUID} AND day >= today() - 730
+        `
+
+  const dailySeriesQuery = utmFilter
+    ? `
+          SELECT toDate(created_at) AS day,
+                 uniqExactIf(user_id, event_name = 'page_view') AS visitors
+          FROM events_raw
+          WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 91 DAY${utmSql}
+          GROUP BY day ORDER BY day ASC
+        `
+    : `
+          SELECT day,
+                 uniqMerge(visitors) AS visitors
+          FROM daily_metrics
+          WHERE workspace_id = {wid:UUID} AND day >= today() - 91
+          GROUP BY day ORDER BY day ASC
+        `
+
+  const monthlySeriesQuery = utmFilter
+    ? `
+          SELECT toStartOfMonth(created_at) AS month,
+                 uniqExactIf(user_id, event_name = 'page_view') AS visitors
+          FROM events_raw
+          WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 24 MONTH${utmSql}
+          GROUP BY month ORDER BY month ASC
+        `
+    : `
+          SELECT toStartOfMonth(day) AS month,
+                 uniqMerge(visitors) AS visitors
+          FROM daily_metrics
+          WHERE workspace_id = {wid:UUID} AND day >= today() - 730
+          GROUP BY month ORDER BY month ASC
+        `
+
+  const funnelQuery = utmFilter
+    ? `
+          SELECT
+            countIf(event_name = 'page_view') AS page_views,
+            uniqExactIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth')) AS interactions,
+            uniqExactIf(session_id, event_name = 'form_start') AS form_started,
+            uniqExactIf(session_id, event_name = 'form_success') AS form_submitted
+          FROM events_raw
+          WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 7 DAY${utmSql}
+        `
+    : `
+          SELECT
+            sum(pageviews) AS page_views,
+            uniqMerge(interactions) AS interactions,
+            uniqMerge(form_started) AS form_started,
+            uniqMerge(form_submitted) AS form_submitted
+          FROM daily_metrics
+          WHERE workspace_id = {wid:UUID} AND day >= today() - 7
+        `
+
+  const [kpi24hRes, kpiLongRes, bounceRes, hourlyRes, dailyRes, monthlyRes, funnelRes, cityRes, dowRes, engagedRes] =
+    await Promise.all([
+      ch.query({
+        format: 'JSON', query_params: p,
+        query: `
+          SELECT
+            uniqExactIf(user_id, created_at >= now() - INTERVAL 24 HOUR AND event_name = 'page_view') AS vis_24h,
+            uniqExactIf(session_id, created_at >= now() - INTERVAL 24 HOUR) AS ses_24h,
+            countIf(event_name = 'page_view' AND created_at >= now() - INTERVAL 24 HOUR) AS pv_24h,
+            uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL 24 HOUR) AS fs_24h,
+            uniqExactIf(
+              user_id,
+              created_at >= now() - INTERVAL 5 MINUTE
+                AND event_name IN ('heartbeat', 'page_view')
+            ) AS active_users_now
+          FROM events_raw
+          WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 25 HOUR${utmSql}
         `,
+      }),
+
+      ch.query({
+        format: 'JSON', query_params: p,
+        query: kpiLongQuery,
       }),
 
       ch.query({
@@ -203,7 +292,7 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
           FROM (
             SELECT session_id, min(created_at) AS first_at, toUInt8(count() = 1) AS is_bounce
             FROM events_raw
-            WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 24 MONTH
+            WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 24 MONTH${utmSql}
             GROUP BY session_id
           )
         `,
@@ -215,51 +304,31 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
           SELECT toStartOfHour(created_at) AS hour,
                  uniqExactIf(user_id, event_name = 'page_view') AS visitors
           FROM events_raw
-          WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 25 HOUR
+          WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 25 HOUR${utmSql}
           GROUP BY hour ORDER BY hour ASC
         `,
       }),
 
       ch.query({
         format: 'JSON', query_params: p,
-        query: `
-          SELECT day,
-                 uniqMerge(visitors) AS visitors
-          FROM daily_metrics
-          WHERE workspace_id = {wid:UUID} AND day >= today() - 91
-          GROUP BY day ORDER BY day ASC
-        `,
+        query: dailySeriesQuery,
       }),
 
       ch.query({
         format: 'JSON', query_params: p,
-        query: `
-          SELECT toStartOfMonth(day) AS month,
-                 uniqMerge(visitors) AS visitors
-          FROM daily_metrics
-          WHERE workspace_id = {wid:UUID} AND day >= today() - 730
-          GROUP BY month ORDER BY month ASC
-        `,
+        query: monthlySeriesQuery,
       }),
 
       ch.query({
         format: 'JSON', query_params: p,
-        query: `
-          SELECT
-            sum(pageviews) AS page_views,
-            uniqMerge(interactions) AS interactions,
-            uniqMerge(form_started) AS form_started,
-            uniqMerge(form_submitted) AS form_submitted
-          FROM daily_metrics
-          WHERE workspace_id = {wid:UUID} AND day >= today() - 7
-        `,
+        query: funnelQuery,
       }),
 
       ch.query({
         format: 'JSON', query_params: p,
         query: `
           SELECT city FROM events_raw
-          WHERE workspace_id = {wid:UUID} AND city != '' AND created_at >= now() - INTERVAL 7 DAY
+          WHERE workspace_id = {wid:UUID} AND city != '' AND created_at >= now() - INTERVAL 7 DAY${utmSql}
           GROUP BY city ORDER BY uniqExactIf(user_id, event_name = 'page_view') DESC LIMIT 1
         `,
       }),
@@ -268,7 +337,7 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
         format: 'JSON', query_params: p,
         query: `
           SELECT toDayOfWeek(created_at, 1) AS dow FROM events_raw
-          WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 7 DAY
+          WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 7 DAY${utmSql}
           GROUP BY dow
           ORDER BY uniqExactIf(session_id, event_name = 'form_success') DESC
           LIMIT 1
@@ -283,7 +352,7 @@ export async function getAnalyticsOverview(workspaceId: string): Promise<Analyti
             SELECT session_id, max(metric_value) AS max_engaged
             FROM events_raw
             WHERE workspace_id = {wid:UUID} AND event_name = 'heartbeat'
-              AND metric_name = 'engaged_seconds' AND created_at >= now() - INTERVAL 7 DAY
+              AND metric_name = 'engaged_seconds' AND created_at >= now() - INTERVAL 7 DAY${utmSql}
             GROUP BY session_id
           )
         `,

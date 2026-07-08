@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { loadSegmentsDashboardDataForApi } from "@/lib/server/segments-dashboard-load"
+import { parseUtmFilterFromSearchParams } from "@/lib/server/analytics-utm-params"
 
 export async function GET(
   request: NextRequest,
@@ -9,8 +10,13 @@ export async function GET(
 
   const { searchParams } = new URL(request.url)
   const rangeIdRaw = searchParams.get("range_id")
+  const utmFilter = parseUtmFilterFromSearchParams(searchParams)
 
-  const result = await loadSegmentsDashboardDataForApi(publicId, rangeIdRaw)
+  const result = await loadSegmentsDashboardDataForApi(
+    publicId,
+    rangeIdRaw,
+    utmFilter
+  )
 
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status })
