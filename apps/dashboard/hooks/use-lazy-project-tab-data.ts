@@ -18,6 +18,8 @@ import type { SegmentsDashboardData } from "@/features/segments/model/segments"
 import { getSegmentsEmptyDashboardData } from "@/features/segments/controller/segments-empty-data"
 import type { SeoDashboardData } from "@/features/seo/model/seo"
 import { getSeoEmptyDashboardData } from "@/features/seo/controller/seo-empty-data"
+import type { UtmDashboardData } from "@/features/utm/model/utm"
+import { getUtmEmptyDashboardData } from "@/features/utm/controller/utm-empty-data"
 import type { LandingPageSettingsData } from "@/features/settings/model/landing-page-settings"
 import type { TrafficDashboardData } from "@/features/traffic/model/traffic"
 import { getTrafficEmptyDashboardData } from "@/features/traffic/controller/traffic-empty-data"
@@ -31,6 +33,7 @@ export type ProjectTabData = {
   segments: SegmentsDashboardData
   experiments: ExperimentsDashboardData
   seo: SeoDashboardData
+  utm: UtmDashboardData
   alerts: AlertsDashboardData
   settings: LandingPageSettingsData
 }
@@ -47,6 +50,7 @@ function tabApiPath(
 
   const qs = `?range_id=${encodeURIComponent(rangeId)}`
   if (tab === "event-tracking") return `${base}/events${qs}`
+  if (tab === "utm") return `${base}/utm`
   return `${base}/${tab}${qs}`
 }
 
@@ -69,6 +73,8 @@ function emptyTabData(
       return getExperimentsEmptyDashboardData(projectId, rangeId, formType)
     case "seo":
       return getSeoEmptyDashboardData(projectId, rangeId)
+    case "utm":
+      return getUtmEmptyDashboardData(projectId)
     case "alerts":
       return getAlertsEmptyDashboardData(projectId, rangeId)
   }
@@ -163,6 +169,7 @@ export function useLazyProjectTabData({
       cache.experiments ??
       getExperimentsEmptyDashboardData(projectId, rangeId, formType),
     seo: cache.seo ?? getSeoEmptyDashboardData(projectId, rangeId),
+    utm: cache.utm ?? getUtmEmptyDashboardData(projectId),
     alerts: cache.alerts ?? getAlertsEmptyDashboardData(projectId, rangeId),
     settings: cache.settings ?? null,
     loadingTab,

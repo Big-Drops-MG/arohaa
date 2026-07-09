@@ -1,9 +1,23 @@
-import { initSDK, track } from "./index"
+import { initSDK, isSDKInitializedState, track } from "./index"
 import type { ArohaaApi, ArohaaQueueStub } from "./types/global"
 
-initSDK()
+function drainQueuedEvents(arohaa: ArohaaApi, queued: unknown[][]): void {
+  for (let i = 0; i < queued.length; i++) {
+    const args = queued[i]
+    if (!args || args.length === 0) continue
+    try {
+      const event = args[0]
+      const props = args[1] as Record<string, unknown> | undefined
+      if (typeof event === "string") {
+        arohaa(event, props)
+      }
+    } catch (err) {
+      console.error("[arohaa] failed to drain queued event", err)
+    }
+  }
+}
 
-if (typeof window !== "undefined") {
+function installArohaaStub(): ArohaaApi {
   const existing = window.arohaa as ArohaaQueueStub | undefined
   const queued = existing?.q ?? []
   const startedAt = existing?.l
@@ -21,18 +35,21 @@ if (typeof window !== "undefined") {
   if (typeof startedAt === "number") arohaa.l = startedAt
 
   window.arohaa = arohaa
+  return arohaa
+}
 
-  for (let i = 0; i < queued.length; i++) {
-    const args = queued[i]
-    if (!args || args.length === 0) continue
-    try {
-      const event = args[0]
-      const props = args[1] as Record<string, unknown> | undefined
-      if (typeof event === "string") {
-        arohaa(event, props)
-      }
-    } catch (err) {
-      console.error("[arohaa] failed to drain queued event", err)
-    }
-  }
+async function bootstrap(): Promise<void> {
+  const existing = window.arohaa as ArohaaQueueStub | undefined
+  const queued = (existing?.q ?? []).map((args) => Array.from(args))
+  const arohaa = installArohaaStub()
+
+  await initSDK()
+
+  if (!isSDKInitializedState()) return
+
+  drainQueuedEvents(arohaa, queued)
+}
+
+if (typeof window !== "undefined") {
+  void bootstrap()
 }

@@ -1,6 +1,10 @@
 import type { FastifyInstance, FastifySchema } from 'fastify'
 import { pushEvent } from '../services/event-buffer.js'
 import { reconcileLandingPageIngest } from '../services/landing-page-ingest.js'
+import {
+  getBlockedUtmSets,
+  isUtmBlocked,
+} from '../services/utm-block.service.js'
 import { ingestBodyToEventRow, type IngestEventBody } from '../types/event.js'
 import { buildEnrichmentContext } from '../utils/enrichment.js'
 import { normalizeReferrer } from '../utils/referrer.js'
@@ -107,6 +111,33 @@ export async function ingestRoutes(server: FastifyInstance) {
           lp_id: request.body.lp_id,
           wid: request.body.workspace_id ?? request.body.wid,
         })
+      }
+
+      const landingPageId =
+        request.body.workspace_id ?? request.body.wid ?? ''
+      if (landingPageId) {
+        const blockedSets = await getBlockedUtmSets(landingPageId)
+        if (
+          isUtmBlocked(
+            blockedSets,
+            request.body.utm_source,
+            request.body.utm_s1,
+          )
+        ) {
+          request.log.info(
+            {
+              trace_id: request.id,
+              event: 'ingest_utm_blocked',
+              wid: landingPageId,
+              utm_source: request.body.utm_source,
+              utm_s1: request.body.utm_s1,
+            },
+            'ingest event dropped by UTM block rule',
+          )
+          return reply
+            .code(202)
+            .send({ status: 'accepted', trace_id: request.id })
+        }
       }
 
       const ctx = buildEnrichmentContext(request)

@@ -20,6 +20,7 @@ import type {
 import { OverviewDashboard } from "@/features/overview/view/OverviewDashboard"
 import { SegmentsDashboard } from "@/features/segments/view/SegmentsDashboard"
 import { SeoDashboard } from "@/features/seo/view/SeoDashboard"
+import { UtmDashboard } from "@/features/utm/view/UtmDashboard"
 import { SettingsDashboard } from "@/features/settings/view/SettingsDashboard"
 import { TrafficDashboard } from "@/features/traffic/view/TrafficDashboard"
 import {
@@ -75,6 +76,7 @@ export function ProjectDashboardView({
     segments,
     experiments,
     seo,
+    utm,
     alerts,
     settings,
     loadingTab,
@@ -152,6 +154,8 @@ export function ProjectDashboardView({
                 />
               ) : tab.value === "seo" ? (
                 <SeoDashboard data={seo} projectId={projectId} isActive />
+              ) : tab.value === "utm" ? (
+                <UtmDashboard data={utm} projectId={projectId} isActive />
               ) : tab.value === "alerts" ? (
                 <AlertsDashboard data={alerts} projectId={projectId} isActive />
               ) : tab.value === "settings" && settings ? (

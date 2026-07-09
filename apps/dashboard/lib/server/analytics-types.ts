@@ -14,6 +14,19 @@ export interface SeriesPoint {
   value: number
 }
 
+export type OverviewKpiMetricId =
+  | "visitors"
+  | "sessions"
+  | "page-views"
+  | "form-submitted"
+  | "fsr"
+  | "bounce-rate"
+
+export type OverviewKpiSeriesByRange = Record<
+  RangeId,
+  Record<OverviewKpiMetricId, SeriesPoint[]>
+>
+
 export interface FunnelStep {
   label: string
   count: number
@@ -22,6 +35,7 @@ export interface FunnelStep {
 export interface AnalyticsOverview {
   kpis: Record<RangeId, RangeKpis>
   series: Record<RangeId, SeriesPoint[]>
+  kpiSeries: OverviewKpiSeriesByRange
   funnel: FunnelStep[]
   uniqueVisitors7d: number
   avgEngagedSecPerSession: number

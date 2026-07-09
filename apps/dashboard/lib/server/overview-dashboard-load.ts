@@ -98,7 +98,10 @@ function buildOverviewFromAnalytics(
   ) as OverviewKpiValuesByDateRange
 
   const kpiSeriesByDateRange = Object.fromEntries(
-    RANGES.map((rid) => [rid, { visitors: data.series[rid] }])
+    RANGES.map((rid) => [
+      rid,
+      data.kpiSeries?.[rid] ?? { visitors: data.series[rid] },
+    ])
   ) as OverviewKpiSeriesByDateRange
 
   const funnel: OverviewFunnelStep[] = funnelStepsFromOverviewApi(
@@ -191,7 +194,7 @@ export async function loadOverviewDashboardData(
 
   try {
     const overviewResp = await fetch(
-      `${apiBase}/v1/analytics/overview?workspace_id=${encodeURIComponent(row.id)}`,
+      `${apiBase}/v1/analytics/overview?workspace_id=${encodeURIComponent(row.id)}&form_type=${encodeURIComponent(formType)}`,
       {
         headers: { "x-arohaa-internal": secret },
         signal: controller.signal,

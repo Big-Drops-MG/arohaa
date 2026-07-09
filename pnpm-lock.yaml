@@ -135,6 +135,9 @@ importers:
       '@workspace/database':
         specifier: workspace:^
         version: link:../../packages/database
+      '@workspace/lp-core':
+        specifier: workspace:*
+        version: link:../../packages/lp-core
       '@workspace/ui':
         specifier: workspace:*
         version: link:../../packages/ui

@@ -165,7 +165,7 @@ export function SettingsConnectionSection({
 
         <SettingsCopyBlock
           label="SDK snippet"
-          description='Paste this script inside the landing page head tag. Optional: add data-variant="A" or data-variant="B" on the script tag for A/B experiments.'
+          description='Paste this script inside the landing page head tag. Optional: add data-variant="A" or data-variant="B" for A/B experiments. For UTM blocking, host a page at /access-denied (or set data-utm-denied-path on the script tag).'
           value={sdkSnippetHtml}
           copyLabel="Copy SDK"
         />

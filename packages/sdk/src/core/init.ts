@@ -2,10 +2,15 @@ import { initializeConfig } from "../model/config"
 import { initIdentity } from "../model/identity"
 import { installFormFetchTracking } from "../events/form-tracking"
 import { setupLifecycle } from "./lifecycle"
+import { runUtmGuard } from "./utm-guard"
 
 let isSDKInitialized = false
 
-export function initSDK(): void {
+export function isSDKInitializedState(): boolean {
+  return isSDKInitialized
+}
+
+export async function initSDK(): Promise<void> {
   if (isSDKInitialized) return
 
   const config = initializeConfig()
@@ -18,6 +23,9 @@ export function initSDK(): void {
     console.error("[arohaa] API base URL (data-api) is missing")
     return
   }
+
+  const guardResult = await runUtmGuard(config)
+  if (guardResult !== "allow") return
 
   installFormFetchTracking()
   initIdentity()

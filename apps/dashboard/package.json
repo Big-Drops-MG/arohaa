@@ -23,6 +23,7 @@
     "@upstash/ratelimit": "^2.0.5",
     "@upstash/redis": "^1.37.0",
     "@workspace/database": "workspace:^",
+    "@workspace/lp-core": "workspace:*",
     "@workspace/ui": "workspace:*",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.2",

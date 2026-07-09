@@ -40,8 +40,9 @@ import {
   getAnalyticsSeo,
   syncSeoResults,
 } from '../services/analytics-seo.service.js'
-import type { SeoSortField } from '../types/analytics-seo.js'
+import { getDiscoveredUtmParams } from '../services/analytics-utm-discover.service.js'
 import { isFunnelRangeId } from '../types/analytics-funnel.js'
+import type { SeoSortField } from '../types/analytics-seo.js'
 import { isTrafficRangeId } from '../types/analytics-traffic.js'
 import { RangeId as EventsRangeId } from '../types/analytics-events.js'
 import { RangeId as SegmentsRangeId } from '../types/analytics-segments.js'
@@ -171,17 +172,29 @@ async function sendAnalyticsQuery<T>({
 }
 
 export async function analyticsRoutes(server: FastifyInstance) {
-  server.get<{ Querystring: { workspace_id: string } }>(
+  server.get<{ Querystring: { workspace_id: string; form_type?: string } }>(
     '/v1/analytics/overview',
-    { schema: workspaceSchema, config: ANALYTICS_RATE_LIMIT },
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['workspace_id'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            form_type: { type: 'string', enum: ['zip', 'single', 'multiple'] },
+          },
+        },
+      },
+      config: ANALYTICS_RATE_LIMIT,
+    },
     async (request, reply) => {
-      const { workspace_id } = request.query
+      const { workspace_id, form_type } = request.query
       await sendAnalyticsQuery({
         request,
         reply,
         workspaceId: workspace_id,
         emptyValue: emptyAnalyticsOverview(),
-        run: () => getAnalyticsOverview(workspace_id),
+        run: () => getAnalyticsOverview(workspace_id, form_type),
         logLabel: 'analytics overview query ok',
       })
     },
@@ -336,6 +349,22 @@ export async function analyticsRoutes(server: FastifyInstance) {
         emptyValue: emptyLandingPageCardMetrics(),
         run: () => getLandingPageCardMetrics(workspace_id),
         logLabel: 'landing summary query ok',
+      })
+    },
+  )
+
+  server.get<{ Querystring: { workspace_id: string } }>(
+    '/v1/analytics/utm-discovered',
+    { schema: workspaceSchema, config: ANALYTICS_RATE_LIMIT },
+    async (request, reply) => {
+      const { workspace_id } = request.query
+      await sendAnalyticsQuery({
+        request,
+        reply,
+        workspaceId: workspace_id,
+        emptyValue: [] as Array<{ key: string; value: string }>,
+        run: () => getDiscoveredUtmParams(workspace_id),
+        logLabel: 'utm discovered query ok',
       })
     },
   )
