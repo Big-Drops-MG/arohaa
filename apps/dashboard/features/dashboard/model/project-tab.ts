@@ -6,7 +6,7 @@ export const PROJECT_TABS = [
   { value: "segments", label: "Segments" },
   { value: "experiments", label: "Experiments" },
   { value: "seo", label: "SEO" },
-  { value: "utm", label: "UTM" },
+  { value: "utm", label: "UTM Control" },
   { value: "alerts", label: "Alerts" },
   { value: "settings", label: "Settings" },
 ] as const

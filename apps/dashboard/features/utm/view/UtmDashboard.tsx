@@ -54,14 +54,16 @@ export function UtmDashboard({
       aria-busy={isLoading}
     >
       <div className="flex flex-col gap-1 border-b border-border pb-4">
-        <h1 className="text-xl font-semibold text-foreground">UTM</h1>
+        <h1 className="text-xl font-semibold text-foreground">UTM Control</h1>
         <p className="text-sm text-muted-foreground">
-          Manage allowed and blocked UTM parameters for{" "}
-          {dashboardData.brandName}.
+          Block unwanted UTM traffic for {dashboardData.brandName}. Blocked
+          visitors are redirected to{" "}
+          <code className="text-xs">/access-denied</code> on your landing page
+          and are excluded from analytics.
         </p>
       </div>
 
-      <UtmOverviewCards stats={dashboardData.stats} />
+      <UtmOverviewCards data={dashboardData} />
 
       <UtmParamsColumns
         projectId={projectId}

@@ -6,7 +6,7 @@ import {
   isStoredUtmParamKey,
   sanitizeUtmParamValue,
   type StoredUtmParamKey,
-} from "@workspace/lp-core"
+} from "@workspace/lp-core/model"
 import type { UtmDashboardData, UtmParamItem } from "@/features/utm/model/utm"
 import { getUtmEmptyDashboardData } from "@/features/utm/controller/utm-empty-data"
 import {
@@ -122,26 +122,30 @@ async function syncDiscoveredParams(
   )
 }
 
+function countByKeyAndStatus(
+  items: UtmParamItem[],
+  key: "utm_source" | "utm_s1",
+  status: UtmParamItem["status"]
+): number {
+  return items.filter((item) => item.key === key && item.status === status)
+    .length
+}
+
 function buildDashboardData(
   brandName: string,
   items: UtmParamItem[]
 ): UtmDashboardData {
   const active = items.filter((item) => item.status === "active")
   const blocked = items.filter((item) => item.status === "blocked")
-  const total = items.length
-  const activePct =
-    total > 0 ? Math.round((active.length / total) * 1000) / 10 : 0
-  const blockedPct =
-    total > 0 ? Math.round((blocked.length / total) * 1000) / 10 : 0
 
   return {
     brandName,
     stats: {
-      total,
-      active: active.length,
-      blocked: blocked.length,
-      activePct,
-      blockedPct,
+      total: items.length,
+      activeSource: countByKeyAndStatus(items, "utm_source", "active"),
+      activeS1: countByKeyAndStatus(items, "utm_s1", "active"),
+      blockedSource: countByKeyAndStatus(items, "utm_source", "blocked"),
+      blockedS1: countByKeyAndStatus(items, "utm_s1", "blocked"),
     },
     activeItems: active.map(({ key, value }) => ({ key, value })),
     blockedItems: blocked.map(({ key, value }) => ({ key, value })),

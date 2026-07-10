@@ -27,3 +27,12 @@ export {
   isMalformedStoredUtmValue,
 } from './utm-params';
 export type { StoredUtmParamKey } from './utm-params';
+export type { BlockedUtmLists, BlockedUtmSets } from './utm-block';
+export {
+  DEFAULT_UTM_DENIED_PATH,
+  emptyBlockedUtmSets,
+  isAccessDeniedPath,
+  isUtmBlocked,
+  normalizeDeniedPath,
+  toBlockedUtmSets,
+} from './utm-block';

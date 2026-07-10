@@ -13,10 +13,10 @@ export type UtmParamPair = {
 
 export type UtmDashboardStats = {
   total: number
-  active: number
-  blocked: number
-  activePct: number
-  blockedPct: number
+  activeSource: number
+  activeS1: number
+  blockedSource: number
+  blockedS1: number
 }
 
 export type UtmDashboardData = {
@@ -25,4 +25,10 @@ export type UtmDashboardData = {
   activeItems: UtmParamPair[]
   blockedItems: UtmParamPair[]
   items: UtmParamItem[]
+}
+
+export function getUtmParamLabel(key: string): string {
+  if (key === "utm_source") return "Source"
+  if (key === "utm_s1") return "S1"
+  return key
 }

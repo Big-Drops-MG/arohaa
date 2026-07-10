@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  transpilePackages: ["@workspace/ui", "@workspace/database"],
+  transpilePackages: [
+    "@workspace/ui",
+    "@workspace/database",
+    "@workspace/lp-core",
+  ],
   experimental: {
     extensionAlias: {
       ".js": [".ts", ".tsx", ".js", ".jsx"],

@@ -7,6 +7,20 @@ export type BlockedUtmSets = {
   utm_s1: Set<string>
 }
 
+export type BlockedUtmLists = {
+  utm_source: string[]
+  utm_s1: string[]
+}
+
+export type PublicBlockedUtmResponse = BlockedUtmLists
+
+function setsToLists(sets: BlockedUtmSets): BlockedUtmLists {
+  return {
+    utm_source: [...sets.utm_source].sort(),
+    utm_s1: [...sets.utm_s1].sort(),
+  }
+}
+
 type CacheEntry = {
   sets: BlockedUtmSets
   expiresAt: number
@@ -34,7 +48,6 @@ function getSql(): ReturnType<typeof neon> | null {
 function emptySets(): BlockedUtmSets {
   return { utm_source: new Set<string>(), utm_s1: new Set<string>() }
 }
-
 
 function sanitizeUtmParamValue(key: StoredUtmParamKey, value: string): string {
   const trimmed = value.trim()
@@ -71,6 +84,13 @@ async function loadBlockedSets(landingPageId: string): Promise<BlockedUtmSets> {
   return sets
 }
 
+export async function getBlockedUtmLists(
+  landingPageId: string,
+): Promise<BlockedUtmLists> {
+  const sets = await getBlockedUtmSets(landingPageId)
+  return setsToLists(sets)
+}
+
 export async function getBlockedUtmSets(
   landingPageId: string,
 ): Promise<BlockedUtmSets> {
@@ -90,7 +110,6 @@ export async function getBlockedUtmSets(
       return sets
     })
     .catch(() => {
-
       const sets = emptySets()
       cache.set(landingPageId, { sets, expiresAt: Date.now() + ERROR_TTL_MS })
       inflight.delete(landingPageId)
@@ -117,18 +136,10 @@ export function isUtmBlocked(
   return false
 }
 
-export type PublicBlockedUtmResponse = {
-  utm_source: string[]
-  utm_s1: string[]
-}
-
 export function serializeBlockedUtmResponse(
   sets: BlockedUtmSets,
 ): PublicBlockedUtmResponse {
-  return {
-    utm_source: [...sets.utm_source].sort(),
-    utm_s1: [...sets.utm_s1].sort(),
-  }
+  return setsToLists(sets)
 }
 
 export function invalidateBlockedUtmCache(landingPageId: string): void {

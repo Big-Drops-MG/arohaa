@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { Maximize2 } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import { cn } from "@workspace/ui/lib/utils"
@@ -10,32 +11,38 @@ import {
   CardHeader,
   CardTitle,
 } from "@workspace/ui/components/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@workspace/ui/components/dialog"
 import type {
   UtmDashboardData,
   UtmParamItem,
   UtmParamPair,
 } from "@/features/utm/model/utm"
-import { getUtmParamLabel } from "@workspace/lp-core"
-import {
-  overviewAnalyticCardHeaderClassName,
-  overviewAnalyticCardShellClassName,
-  overviewSectionHeadingClassName,
-} from "@/features/overview/view/overview-card-density"
-
-const PARAM_GROUPS = [
-  { key: "utm_source", label: "Source" },
-  { key: "utm_s1", label: "S1" },
-] as const
+import { getUtmParamLabel } from "@/features/utm/model/utm"
+import { UtmParamMasonryChips } from "@/features/utm/view/UtmParamMasonryChips"
+import { overviewSectionHeadingClassName } from "@/features/overview/view/overview-card-density"
 
 type CardFilter = "all" | "source" | "s1"
 type ModalFilter = "all" | "active" | "blocked"
 
-function sortParams<T extends { key: string; value: string }>(items: T[]): T[] {
-  return [...items].sort((a, b) => {
-    const byKey = a.key.localeCompare(b.key)
-    if (byKey !== 0) return byKey
-    return a.value.localeCompare(b.value, undefined, { sensitivity: "base" })
-  })
+const EXPAND_SEARCH_DEBOUNCE_MS = 300
+
+function filterUtmParamItems(
+  items: UtmParamPair[],
+  query: string
+): UtmParamPair[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return items
+  return items.filter(
+    (item) =>
+      item.value.toLowerCase().includes(q) ||
+      getUtmParamLabel(item.key).toLowerCase().includes(q)
+  )
 }
 
 function ParamsPanel({
@@ -44,84 +51,123 @@ function ParamsPanel({
   tone,
   headerActions,
   emptyMessage,
+  sectionFilter = "all",
 }: {
   title: string
   items: UtmParamPair[]
   tone: "danger" | "success"
   headerActions?: React.ReactNode
   emptyMessage: string
+  sectionFilter?: CardFilter
 }) {
-  const sorted = sortParams(items)
-  const byKey = new Map<string, UtmParamPair[]>()
-  for (const row of sorted) {
-    const list = byKey.get(row.key) ?? []
-    list.push(row)
-    byKey.set(row.key, list)
-  }
+  const [isExpandedOpen, setIsExpandedOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
+  const subtitle =
+    tone === "success"
+      ? "Allowed traffic parameters"
+      : "Blocked traffic parameters"
 
-  const headerTone =
-    tone === "danger"
-      ? "border-rose-200/70 bg-rose-50/40 text-rose-800"
-      : "border-teal-200/70 bg-teal-50/40 text-teal-800"
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+    }, EXPAND_SEARCH_DEBOUNCE_MS)
+    return () => window.clearTimeout(timeoutId)
+  }, [searchQuery])
+
+  const handleExpandedOpenChange = useCallback((open: boolean) => {
+    setIsExpandedOpen(open)
+    if (!open) {
+      setSearchQuery("")
+      setDebouncedSearchQuery("")
+    }
+  }, [])
+
+  const filteredExpandedItems = useMemo(
+    () => filterUtmParamItems(items, debouncedSearchQuery),
+    [debouncedSearchQuery, items]
+  )
+
+  const expandedEmptyMessage = debouncedSearchQuery.trim()
+    ? "No UTM params match your search."
+    : emptyMessage
 
   return (
-    <Card className={cn(overviewAnalyticCardShellClassName, "h-full")}>
-      <CardHeader
+    <>
+      <Card
         className={cn(
-          overviewAnalyticCardHeaderClassName,
-          "border-b",
-          headerTone
+          "group/status-card relative flex h-[380px] w-full max-w-none flex-col gap-0 overflow-hidden py-0!"
         )}
       >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle className="text-sm font-semibold">{title}</CardTitle>
-            <p className="mt-1 text-xs opacity-80">
-              {tone === "success"
-                ? "Allowed traffic parameters"
-                : "Filtered out by rules"}
-            </p>
+        <CardHeader className="shrink-0 border-b border-border px-5 py-4 sm:px-6">
+          <div className="flex w-full items-start justify-between gap-3">
+            <div className="space-y-1">
+              <CardTitle className="text-sm font-semibold text-foreground">
+                {title}
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">{subtitle}</p>
+            </div>
+            {headerActions ? (
+              <div className="flex shrink-0 items-center gap-2">
+                {headerActions}
+              </div>
+            ) : null}
           </div>
-          <div className="flex items-center gap-2">
-            {headerActions}
-            <span className="rounded-full bg-white/70 px-2 py-0.5 text-xs font-semibold tabular-nums">
-              {items.length}
-            </span>
+        </CardHeader>
+        <CardContent className="min-h-0 flex-1 overflow-y-auto px-5 pt-5 pb-14 sm:px-6">
+          <UtmParamMasonryChips
+            items={items}
+            tone={tone}
+            emptyMessage={emptyMessage}
+            sectionFilter={sectionFilter}
+          />
+        </CardContent>
+        <button
+          type="button"
+          onClick={() => setIsExpandedOpen(true)}
+          className={cn(
+            "absolute right-4 bottom-4 z-10 flex size-9 items-center justify-center rounded-full",
+            "border border-border/60 bg-background/95 text-foreground shadow-sm",
+            "opacity-0 transition-opacity duration-200",
+            "group-hover/status-card:opacity-100",
+            "hover:bg-muted focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          )}
+          aria-label={`Expand ${title} params`}
+        >
+          <Maximize2 className="size-4" />
+        </button>
+      </Card>
+
+      <Dialog open={isExpandedOpen} onOpenChange={handleExpandedOpenChange}>
+        <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+          <div className="shrink-0 border-b border-border px-5 py-4 sm:px-6">
+            <DialogHeader className="gap-1">
+              <DialogTitle className="text-base font-semibold text-foreground">
+                {title}
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                {subtitle}
+              </DialogDescription>
+            </DialogHeader>
           </div>
-        </div>
-      </CardHeader>
-      <CardContent className="max-h-[420px] overflow-y-auto p-0">
-        {items.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-muted-foreground sm:px-6">
-            {emptyMessage}
-          </p>
-        ) : (
-          <div className="divide-y divide-border">
-            {PARAM_GROUPS.map((group) => {
-              const rows = byKey.get(group.key) ?? []
-              if (rows.length === 0) return null
-              return (
-                <div key={group.key} className="px-5 py-3 sm:px-6">
-                  <p className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                    {group.label} ({group.key})
-                  </p>
-                  <div className="space-y-2">
-                    {rows.map((item) => (
-                      <div
-                        key={`${item.key}:${item.value}`}
-                        className="rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground"
-                      >
-                        {item.value}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
+          <div className="shrink-0 border-b border-border px-5 py-3 sm:px-6">
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by value or type..."
+            />
           </div>
-        )}
-      </CardContent>
-    </Card>
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+            <UtmParamMasonryChips
+              items={filteredExpandedItems}
+              tone={tone}
+              emptyMessage={expandedEmptyMessage}
+              sectionFilter={sectionFilter}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -277,7 +323,9 @@ export function UtmParamsColumns({
         <div>
           <h2 className={overviewSectionHeadingClassName}>UTM Params Status</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Active params on the left, blocked on the right.
+            Active params on the left, blocked on the right. Blocked values
+            redirect visitors to <code className="text-xs">/access-denied</code>
+            .
           </p>
         </div>
         <Button type="button" size="sm" onClick={openEditModal}>
@@ -309,17 +357,19 @@ export function UtmParamsColumns({
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
         <ParamsPanel
           title="Active"
           items={filteredActiveItems}
           tone="success"
           emptyMessage="No active UTM params yet."
+          sectionFilter={cardFilter}
         />
         <ParamsPanel
           title="Blocked"
           items={filteredBlockedItems}
           tone="danger"
+          sectionFilter={cardFilter}
           headerActions={
             <Button
               type="button"
@@ -400,7 +450,7 @@ export function UtmParamsColumns({
                       className={cn(
                         "rounded-md px-2 py-1 text-xs font-semibold",
                         item.status === "active"
-                          ? "bg-teal-100 text-teal-700"
+                          ? "bg-neutral-100 text-neutral-900"
                           : "text-muted-foreground hover:bg-muted"
                       )}
                     >
@@ -414,7 +464,7 @@ export function UtmParamsColumns({
                       className={cn(
                         "rounded-md px-2 py-1 text-xs font-semibold",
                         item.status === "blocked"
-                          ? "bg-rose-100 text-rose-700"
+                          ? "bg-neutral-100 text-neutral-900"
                           : "text-muted-foreground hover:bg-muted"
                       )}
                     >
@@ -470,8 +520,8 @@ export function UtmParamsColumns({
                   className={cn(
                     "rounded-md border px-3 py-1.5 text-xs font-semibold",
                     addBlockedType === key
-                      ? "border-rose-300 bg-rose-50 text-rose-700"
-                      : "border-border"
+                      ? "border-neutral-300 bg-neutral-100 text-neutral-900"
+                      : "border-border text-muted-foreground"
                   )}
                 >
                   {label}
@@ -485,7 +535,7 @@ export function UtmParamsColumns({
               className="mt-3"
             />
             {addBlockedError ? (
-              <p className="mt-2 text-sm text-rose-600">{addBlockedError}</p>
+              <p className="mt-2 text-sm text-destructive">{addBlockedError}</p>
             ) : null}
             <div className="mt-4 flex justify-end gap-2">
               <Button

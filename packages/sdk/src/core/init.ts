@@ -6,27 +6,29 @@ import { enforceUtmBlockGate } from "./utm-gate"
 
 let isSDKInitialized = false
 
-/** Returns true when the visitor was blocked and tracking must not start. */
-export async function initSDK(): Promise<boolean> {
-  if (isSDKInitialized) return false
+export function isSDKInitializedState(): boolean {
+  return isSDKInitialized
+}
+
+export async function initSDK(): Promise<void> {
+  if (isSDKInitialized) return
 
   const config = initializeConfig()
 
   if (!config.wid) {
     console.error("[arohaa] Workspace ID (data-wid) is missing")
-    return false
+    return
   }
   if (!config.apiBase) {
     console.error("[arohaa] API base URL (data-api) is missing")
-    return false
+    return
   }
 
-  const gated = await enforceUtmBlockGate(config)
-  if (gated) return true
+  const blocked = await enforceUtmBlockGate(config)
+  if (blocked) return
 
   installFormFetchTracking()
   initIdentity()
   setupLifecycle()
   isSDKInitialized = true
-  return false
 }

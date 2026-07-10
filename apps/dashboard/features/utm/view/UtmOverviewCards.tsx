@@ -7,7 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@workspace/ui/components/card"
-import type { UtmDashboardStats } from "@/features/utm/model/utm"
+import type { UtmDashboardData } from "@/features/utm/model/utm"
 import {
   overviewAnalyticCardHeaderClassName,
   overviewAnalyticCardShellClassName,
@@ -15,77 +15,59 @@ import {
 } from "@/features/overview/view/overview-card-density"
 
 type UtmOverviewCardsProps = {
-  stats: UtmDashboardStats
+  data: UtmDashboardData
 }
 
-function StatCard({
+function MetricCard({
   title,
   value,
-  badge,
   description,
-  tone,
 }: {
   title: string
   value: number
-  badge: string
-  description: string
-  tone: "brand" | "success" | "danger"
+  description?: string
 }) {
-  const toneClass =
-    tone === "success"
-      ? "text-teal-700"
-      : tone === "danger"
-        ? "text-rose-700"
-        : "text-foreground"
-
   return (
-    <Card className={overviewAnalyticCardShellClassName}>
+    <Card className={cn(overviewAnalyticCardShellClassName, "min-w-0")}>
       <CardHeader className={overviewAnalyticCardHeaderClassName}>
-        <CardTitle className={cn("text-sm font-medium", toneClass)}>
+        <CardTitle className="text-sm font-medium text-foreground">
           {title}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-1 px-5 pb-5 sm:px-6">
-        <div className="flex items-baseline justify-between gap-2">
-          <p className="font-heading text-2xl font-semibold tabular-nums">
-            {value}
-          </p>
-          <span className="text-xs font-semibold text-muted-foreground">
-            {badge}
-          </span>
-        </div>
-        <p className="text-xs text-muted-foreground">{description}</p>
+        <p className="font-heading text-3xl font-semibold tabular-nums">
+          {value}
+        </p>
+        {description ? (
+          <p className="text-xs text-muted-foreground">{description}</p>
+        ) : null}
       </CardContent>
     </Card>
   )
 }
 
-export function UtmOverviewCards({ stats }: UtmOverviewCardsProps) {
+export function UtmOverviewCards({ data }: UtmOverviewCardsProps) {
+  const { stats } = data
+
   return (
-    <div className="space-y-3">
-      <h2 className={overviewSectionHeadingClassName}>UTM Overview</h2>
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatCard
+    <div className="space-y-5">
+      <div>
+        <h2 className={overviewSectionHeadingClassName}>UTM Overview</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Source and S1 parameters tracked for this landing page.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-5 gap-4">
+        <MetricCard
           title="Total UTM Params"
           value={stats.total}
-          badge="100%"
-          description="All tracked UTM parameter entries."
-          tone="brand"
+          description="Source + S1 combined"
         />
-        <StatCard
-          title="Active UTM Params"
-          value={stats.active}
-          badge={`${stats.activePct}%`}
-          description="Currently allowed and processing traffic."
-          tone="success"
-        />
-        <StatCard
-          title="Blocked UTM Params"
-          value={stats.blocked}
-          badge={`${stats.blockedPct}%`}
-          description="Disabled due to rules or policy checks."
-          tone="danger"
-        />
+        <MetricCard title="Active Source" value={stats.activeSource} />
+        <MetricCard title="Active S1" value={stats.activeS1} />
+        <MetricCard title="Blocked Source" value={stats.blockedSource} />
+        <MetricCard title="Blocked S1" value={stats.blockedS1} />
       </div>
     </div>
   )

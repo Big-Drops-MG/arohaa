@@ -1,4 +1,8 @@
 import { getAttributionData } from "../utils/url"
+import {
+  isAccessDeniedPath,
+  normalizeDeniedPath,
+} from "../utils/utm-block"
 import type { SDKConfig } from "../types"
 
 type BlockedUtmResponse = {
@@ -122,8 +126,13 @@ export async function enforceUtmBlockGate(config: SDKConfig): Promise<boolean> {
       return false
     }
 
-    const redirect = config.utmBlockRedirect?.trim()
-    if (redirect) {
+    const redirect =
+      config.utmBlockRedirect?.trim() ||
+      normalizeDeniedPath(config.utmDeniedPath)
+    if (
+      redirect &&
+      !isAccessDeniedPath(window.location.pathname, redirect)
+    ) {
       try {
         window.location.replace(redirect)
       } catch {

@@ -1,4 +1,5 @@
 import type { SDKConfig } from "../types"
+import { normalizeDeniedPath } from "../utils/utm-block"
 
 const DEFAULT_CONFIG: SDKConfig = {
   wid: "",
@@ -8,6 +9,7 @@ const DEFAULT_CONFIG: SDKConfig = {
   formtype: "single",
   apiBase: "",
   utmBlockRedirect: "",
+  utmDeniedPath: "/access-denied",
 }
 
 let config: SDKConfig = DEFAULT_CONFIG
@@ -49,6 +51,9 @@ export function initializeConfig(script?: HTMLScriptElement | null): SDKConfig {
     apiBase: resolvedScript?.getAttribute("data-api") ?? "",
     utmBlockRedirect:
       resolvedScript?.getAttribute("data-utm-block-redirect") ?? "",
+    utmDeniedPath: normalizeDeniedPath(
+      resolvedScript?.getAttribute("data-utm-denied-path"),
+    ),
   }
 
   initialized = true

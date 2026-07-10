@@ -181,18 +181,31 @@ async function sendAnalyticsQuery<T>({
 }
 
 export async function analyticsRoutes(server: FastifyInstance) {
-  server.get<{ Querystring: { workspace_id: string; utm_dim?: string; utm_value?: string } }>(
+  server.get<{ Querystring: { workspace_id: string; form_type?: string; utm_dim?: string; utm_value?: string } }>(
     '/v1/analytics/overview',
-    { schema: workspaceSchema, config: ANALYTICS_RATE_LIMIT },
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['workspace_id'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            form_type: { type: 'string', enum: ['zip', 'single', 'multiple'] },
+            ...utmFilterSchemaProps,
+          },
+        },
+      },
+      config: ANALYTICS_RATE_LIMIT,
+    },
     async (request, reply) => {
-      const { workspace_id, utm_dim, utm_value } = request.query
+      const { workspace_id, form_type, utm_dim, utm_value } = request.query
       const utmFilter = parseAnalyticsUtmFilter(utm_dim, utm_value)
       await sendAnalyticsQuery({
         request,
         reply,
         workspaceId: workspace_id,
         emptyValue: emptyAnalyticsOverview(),
-        run: () => getAnalyticsOverview(workspace_id, utmFilter),
+        run: () => getAnalyticsOverview(workspace_id, form_type, utmFilter),
         logLabel: 'analytics overview query ok',
       })
     },
