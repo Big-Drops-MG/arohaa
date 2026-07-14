@@ -2,35 +2,31 @@ import type {
   OverviewDateRangeId,
   OverviewTimeSeriesPoint,
 } from "@/features/overview/model/overview"
+import {
+  addDashboardDays,
+  createDashboardDateTimeFormatter,
+  getDashboardZonedParts,
+  startOfDashboardDay,
+} from "@/lib/datetime"
 
-function startOfLocalDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
-}
-
-function addDays(d: Date, n: number): Date {
-  const x = new Date(d)
-  x.setDate(x.getDate() + n)
-  return x
-}
-
-const shortMonthDay = new Intl.DateTimeFormat(undefined, {
+const shortMonthDay = createDashboardDateTimeFormatter({
   month: "short",
   day: "numeric",
 })
 
-const shortMonthYear = new Intl.DateTimeFormat(undefined, {
+const shortMonthYear = createDashboardDateTimeFormatter({
   month: "short",
   year: "numeric",
 })
 
-const shortMonth = new Intl.DateTimeFormat(undefined, { month: "short" })
+const shortMonth = createDashboardDateTimeFormatter({ month: "short" })
 
-const hour12 = new Intl.DateTimeFormat(undefined, {
+const hour12 = createDashboardDateTimeFormatter({
   hour: "numeric",
   hour12: true,
 })
 
-const monthDayHour = new Intl.DateTimeFormat(undefined, {
+const monthDayHour = createDashboardDateTimeFormatter({
   month: "short",
   day: "numeric",
   hour: "numeric",
@@ -41,16 +37,22 @@ function zeros(labels: string[]): OverviewTimeSeriesPoint[] {
   return labels.map((label) => ({ label, value: 0 }))
 }
 
+function sameDashboardDay(a: Date, b: Date): boolean {
+  const left = getDashboardZonedParts(a)
+  const right = getDashboardZonedParts(b)
+  return (
+    left.year === right.year &&
+    left.month === right.month &&
+    left.day === right.day
+  )
+}
+
 function buckets24h(now: Date): string[] {
   const labels: string[] = []
-  const sameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
 
   for (let h = 23; h >= 0; h--) {
     const d = new Date(now.getTime() - h * 60 * 60 * 1000)
-    if (sameDay(d, now)) {
+    if (sameDashboardDay(d, now)) {
       labels.push(hour12.format(d))
     } else {
       labels.push(monthDayHour.format(d))
@@ -60,19 +62,19 @@ function buckets24h(now: Date): string[] {
 }
 
 function buckets7d(now: Date): string[] {
-  const end = startOfLocalDay(now)
+  const end = startOfDashboardDay(now)
   return Array.from({ length: 7 }, (_, i) => {
-    const d = addDays(end, -(6 - i))
+    const d = addDashboardDays(end, -(6 - i))
     return shortMonthDay.format(d)
   })
 }
 
 function buckets30d(now: Date): string[] {
   const n = 10
-  const end = startOfLocalDay(now)
+  const end = startOfDashboardDay(now)
   return Array.from({ length: n }, (_, i) => {
     const dayOffset = Math.round((29 * i) / Math.max(1, n - 1))
-    const d = addDays(end, -29 + dayOffset)
+    const d = addDashboardDays(end, -29 + dayOffset)
     return shortMonthDay.format(d)
   })
 }
@@ -80,27 +82,35 @@ function buckets30d(now: Date): string[] {
 function buckets3m(now: Date): string[] {
   const n = 12
   const daysBack = 90
-  const end = startOfLocalDay(now)
+  const end = startOfDashboardDay(now)
   return Array.from({ length: n }, (_, i) => {
     const dayOffset = Math.round((daysBack * i) / Math.max(1, n - 1))
-    const d = addDays(end, -daysBack + dayOffset)
+    const d = addDashboardDays(end, -daysBack + dayOffset)
     return shortMonthDay.format(d)
   })
 }
 
 function buckets12m(now: Date): string[] {
-  const first = new Date(now.getFullYear(), now.getMonth() - 11, 1)
+  const parts = getDashboardZonedParts(now)
+  const firstMonthIndex = parts.month - 1 - 11
   return Array.from({ length: 12 }, (_, m) => {
-    const d = new Date(first.getFullYear(), first.getMonth() + m, 1)
-    const sameYear = d.getFullYear() === now.getFullYear()
+    const cursor = new Date(Date.UTC(parts.year, firstMonthIndex + m, 1))
+    const d = new Date(
+      Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), 15)
+    )
+    const sameYear = getDashboardZonedParts(d).year === parts.year
     return sameYear ? shortMonth.format(d) : shortMonthYear.format(d)
   })
 }
 
 function buckets24m(now: Date): string[] {
-  const first = new Date(now.getFullYear(), now.getMonth() - 23, 1)
+  const parts = getDashboardZonedParts(now)
+  const firstMonthIndex = parts.month - 1 - 23
   return Array.from({ length: 24 }, (_, m) => {
-    const d = new Date(first.getFullYear(), first.getMonth() + m, 1)
+    const cursor = new Date(Date.UTC(parts.year, firstMonthIndex + m, 1))
+    const d = new Date(
+      Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), 15)
+    )
     return shortMonthYear.format(d)
   })
 }

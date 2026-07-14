@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { Bell, Loader2, Plus, Send, Trash2 } from "lucide-react"
 import { SettingsSectionCard } from "@/features/settings/view/SettingsSectionCard"
+import { formatDashboardDateTime } from "@/lib/datetime"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import { Label } from "@workspace/ui/components/label"
@@ -22,7 +23,7 @@ type WebhookItem = {
 
 function formatTestStatus(item: WebhookItem): string | null {
   if (!item.lastTestedAt) return null
-  const when = new Date(item.lastTestedAt).toLocaleString()
+  const when = formatDashboardDateTime(item.lastTestedAt)
   if (item.lastTestStatus === "success") return `Last test succeeded · ${when}`
   if (item.lastTestStatus === "failed") {
     return `Last test failed · ${when}${item.lastTestError ? ` · ${item.lastTestError}` : ""}`

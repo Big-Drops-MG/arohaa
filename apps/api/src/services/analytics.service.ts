@@ -2,6 +2,24 @@ import { getClickHouseClient } from './clickhouse.service.js'
 import { formatDayOfWeek } from '../lib/day-of-week.js'
 import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
 import {
+  addAnalyticsEtDays,
+  analyticsDayKey,
+  analyticsHourKey,
+  analyticsMondayKey,
+  analyticsMonthKey,
+  chDayBucketKey,
+  chHourBucketKey,
+  chToDayOfWeek,
+  chToday,
+  formatAnalyticsSeriesHour,
+  formatAnalyticsSeriesMonthDay,
+  formatAnalyticsSeriesMonthYear,
+  parseAnalyticsEtDayKey,
+  parseAnalyticsEtMonthKey,
+  startOfAnalyticsEtDay,
+  startOfAnalyticsEtHour,
+} from '../lib/analytics-timezone.js'
+import {
   utmFilterCacheKey,
   utmFilterParams,
   utmFilterSql,
@@ -72,25 +90,14 @@ function fsrPct(submitted: number, sessions: number): number {
   return sessions > 0 ? round1((submitted / sessions) * 100) : 0
 }
 
-function getMonday(d: Date): string {
-  const day = d.getUTCDay()
-  const diff = day === 0 ? -6 : 1 - day
-  const mon = new Date(d)
-  mon.setUTCDate(d.getUTCDate() + diff)
-  mon.setUTCHours(0, 0, 0, 0)
-  return mon.toISOString().slice(0, 10)
-}
-
 function seriesLabel(bucket: Date, rangeId: RangeId): string {
   if (rangeId === '24h') {
-    return `${String(bucket.getUTCHours()).padStart(2, '0')}:00`
+    return formatAnalyticsSeriesHour(bucket)
   }
   if (rangeId === '12m' || rangeId === '24m') {
-    const mon = bucket.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })
-    return `${mon} '${String(bucket.getUTCFullYear()).slice(2)}`
+    return formatAnalyticsSeriesMonthYear(bucket)
   }
-  const mon = bucket.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })
-  return `${mon} ${bucket.getUTCDate()}`
+  return formatAnalyticsSeriesMonthDay(bucket)
 }
 
 type LandingFormType = 'zip' | 'single' | 'multiple'
@@ -143,7 +150,7 @@ function normalizeTimeBucketKey(raw: string, rangeId: RangeId): string {
 }
 
 function rollupMetricsKey(dayKey: string, rangeId: RangeId): string {
-  if (rangeId === '3m') return getMonday(new Date(`${dayKey}T00:00:00Z`))
+  if (rangeId === '3m') return analyticsMondayKey(parseAnalyticsEtDayKey(dayKey))
   if (rangeId === '12m' || rangeId === '24m') return dayKey.slice(0, 7)
   return dayKey
 }
@@ -155,73 +162,84 @@ function iterBucketTimeline(
   const buckets: { label: string; key: string }[] = []
 
   if (rangeId === '24h') {
+    const end = startOfAnalyticsEtHour(now)
     for (let i = 23; i >= 0; i--) {
-      const d = new Date(now)
-      d.setUTCMinutes(0, 0, 0)
-      d.setUTCHours(d.getUTCHours() - i)
+      const d = new Date(end.getTime() - i * 60 * 60 * 1000)
       buckets.push({
         label: seriesLabel(d, rangeId),
-        key: d.toISOString().slice(0, 13),
+        key: analyticsHourKey(d),
       })
     }
     return buckets
   }
 
   if (rangeId === '7d') {
+    const end = startOfAnalyticsEtDay(now)
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(now)
-      d.setUTCHours(0, 0, 0, 0)
-      d.setUTCDate(d.getUTCDate() - i)
+      const d = addAnalyticsEtDays(end, -i)
       buckets.push({
         label: seriesLabel(d, rangeId),
-        key: d.toISOString().slice(0, 10),
+        key: analyticsDayKey(d),
       })
     }
     return buckets
   }
 
   if (rangeId === '30d') {
+    const end = startOfAnalyticsEtDay(now)
     for (let i = 29; i >= 0; i--) {
-      const d = new Date(now)
-      d.setUTCHours(0, 0, 0, 0)
-      d.setUTCDate(d.getUTCDate() - i)
+      const d = addAnalyticsEtDays(end, -i)
       buckets.push({
         label: seriesLabel(d, rangeId),
-        key: d.toISOString().slice(0, 10),
+        key: analyticsDayKey(d),
       })
     }
     return buckets
   }
 
   if (rangeId === '3m') {
-    const monday = getMonday(now)
+    const mondayKey = analyticsMondayKey(now)
+    const monday = parseAnalyticsEtDayKey(mondayKey)
     for (let i = 12; i >= 0; i--) {
-      const d = new Date(`${monday}T00:00:00Z`)
-      d.setUTCDate(d.getUTCDate() - i * 7)
+      const d = addAnalyticsEtDays(monday, -i * 7)
       buckets.push({
         label: seriesLabel(d, rangeId),
-        key: d.toISOString().slice(0, 10),
+        key: analyticsDayKey(d),
       })
     }
     return buckets
   }
 
   if (rangeId === '12m') {
+    const { year, month } = (() => {
+      const parts = analyticsMonthKey(now).split('-').map(Number)
+      return { year: parts[0] ?? 1970, month: parts[1] ?? 1 }
+    })()
     for (let i = 11; i >= 0; i--) {
-      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1))
+      const cursor = new Date(Date.UTC(year, month - 1 - i, 1))
+      const d = parseAnalyticsEtMonthKey(
+        `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`,
+      )
       buckets.push({
         label: seriesLabel(d, rangeId),
-        key: d.toISOString().slice(0, 7),
+        key: analyticsMonthKey(d),
       })
     }
     return buckets
   }
 
+  const { year, month } = (() => {
+    const parts = analyticsMonthKey(now).split('-').map(Number)
+    return { year: parts[0] ?? 1970, month: parts[1] ?? 1 }
+  })()
   for (let i = 23; i >= 0; i--) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1))
+    const cursor = new Date(Date.UTC(year, month - 1 - i, 1))
+    const d = parseAnalyticsEtMonthKey(
+      `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`,
+    )
     buckets.push({
       label: seriesLabel(d, rangeId),
-      key: d.toISOString().slice(0, 7),
+      key: analyticsMonthKey(d),
     })
   }
 
@@ -316,7 +334,7 @@ function overviewHourlyMetricsQuery(
   const submitEvent = submissionEventName(formType)
   return `
     SELECT
-      toStartOfHour(created_at) AS bucket,
+      ${chHourBucketKey('created_at')} AS bucket,
       uniqExactIf(user_id, event_name = 'page_view') AS visitors,
       uniqExact(session_id) AS sessions,
       countIf(event_name = 'page_view') AS page_views,
@@ -336,7 +354,7 @@ function overviewDailyMetricsQuery(
     const submitEvent = submissionEventName(formType)
     return `
       SELECT
-        toDate(created_at) AS bucket,
+        ${chDayBucketKey('created_at')} AS bucket,
         uniqExactIf(user_id, event_name = 'page_view') AS visitors,
         uniqExact(session_id) AS sessions,
         countIf(event_name = 'page_view') AS page_views,
@@ -350,13 +368,13 @@ function overviewDailyMetricsQuery(
 
   return `
     SELECT
-      day AS bucket,
+      toString(day) AS bucket,
       uniqMerge(visitors) AS visitors,
       uniqMerge(sessions) AS sessions,
       sum(pageviews) AS page_views,
       uniqMerge(form_submitted) AS form_submitted
     FROM daily_metrics
-    WHERE workspace_id = {wid:UUID} AND day >= today() - 730
+    WHERE workspace_id = {wid:UUID} AND day >= ${chToday()} - 730
     GROUP BY day
     ORDER BY day ASC
   `
@@ -365,7 +383,7 @@ function overviewDailyMetricsQuery(
 function overviewHourlyBounceQuery(utmSql = ''): string {
   return `
     SELECT
-      toStartOfHour(first_at) AS bucket,
+      ${chHourBucketKey('first_at')} AS bucket,
       sumIf(1, is_bounce = 1) AS bounces,
       count() AS sessions
     FROM (
@@ -385,7 +403,7 @@ function overviewHourlyBounceQuery(utmSql = ''): string {
 function overviewDailyBounceQuery(utmSql = ''): string {
   return `
     SELECT
-      toDate(first_at) AS bucket,
+      ${chDayBucketKey('first_at')} AS bucket,
       sumIf(1, is_bounce = 1) AS bounces,
       count() AS sessions
     FROM (
@@ -434,7 +452,7 @@ export async function getAnalyticsOverview(
   const submitEvent = submissionEventName(formType)
   const utmSql = utmFilterSql(utmFilter)
   const p = { wid: workspaceId, ...utmFilterParams(utmFilter) }
-  const cacheKey = `analytics:overview:v2:${workspaceId}:${formType}:${utmFilterCacheKey(utmFilter)}`
+  const cacheKey = `analytics:overview:v3-et:${workspaceId}:${formType}:${utmFilterCacheKey(utmFilter)}`
   try {
     const cachedStr = await redis.get(cacheKey)
     if (cachedStr) {
@@ -474,28 +492,28 @@ export async function getAnalyticsOverview(
         `
     : `
           SELECT
-            uniqMergeIf(visitors, day >= today() - 7) AS vis_7d,
-            uniqMergeIf(sessions, day >= today() - 7) AS ses_7d,
-            sumIf(pageviews, day >= today() - 7) AS pv_7d,
-            uniqMergeIf(form_submitted, day >= today() - 7) AS fs_7d,
-            uniqMergeIf(visitors, day >= today() - 30) AS vis_30d,
-            uniqMergeIf(sessions, day >= today() - 30) AS ses_30d,
-            sumIf(pageviews, day >= today() - 30) AS pv_30d,
-            uniqMergeIf(form_submitted, day >= today() - 30) AS fs_30d,
-            uniqMergeIf(visitors, day >= today() - 90) AS vis_3m,
-            uniqMergeIf(sessions, day >= today() - 90) AS ses_3m,
-            sumIf(pageviews, day >= today() - 90) AS pv_3m,
-            uniqMergeIf(form_submitted, day >= today() - 90) AS fs_3m,
-            uniqMergeIf(visitors, day >= today() - 365) AS vis_12m,
-            uniqMergeIf(sessions, day >= today() - 365) AS ses_12m,
-            sumIf(pageviews, day >= today() - 365) AS pv_12m,
-            uniqMergeIf(form_submitted, day >= today() - 365) AS fs_12m,
+            uniqMergeIf(visitors, day >= ${chToday()} - 7) AS vis_7d,
+            uniqMergeIf(sessions, day >= ${chToday()} - 7) AS ses_7d,
+            sumIf(pageviews, day >= ${chToday()} - 7) AS pv_7d,
+            uniqMergeIf(form_submitted, day >= ${chToday()} - 7) AS fs_7d,
+            uniqMergeIf(visitors, day >= ${chToday()} - 30) AS vis_30d,
+            uniqMergeIf(sessions, day >= ${chToday()} - 30) AS ses_30d,
+            sumIf(pageviews, day >= ${chToday()} - 30) AS pv_30d,
+            uniqMergeIf(form_submitted, day >= ${chToday()} - 30) AS fs_30d,
+            uniqMergeIf(visitors, day >= ${chToday()} - 90) AS vis_3m,
+            uniqMergeIf(sessions, day >= ${chToday()} - 90) AS ses_3m,
+            sumIf(pageviews, day >= ${chToday()} - 90) AS pv_3m,
+            uniqMergeIf(form_submitted, day >= ${chToday()} - 90) AS fs_3m,
+            uniqMergeIf(visitors, day >= ${chToday()} - 365) AS vis_12m,
+            uniqMergeIf(sessions, day >= ${chToday()} - 365) AS ses_12m,
+            sumIf(pageviews, day >= ${chToday()} - 365) AS pv_12m,
+            uniqMergeIf(form_submitted, day >= ${chToday()} - 365) AS fs_12m,
             uniqMerge(visitors) AS vis_24m,
             uniqMerge(sessions) AS ses_24m,
             sum(pageviews) AS pv_24m,
             uniqMerge(form_submitted) AS fs_24m
           FROM daily_metrics
-          WHERE workspace_id = {wid:UUID} AND day >= today() - 730
+          WHERE workspace_id = {wid:UUID} AND day >= ${chToday()} - 730
         `
 
   const funnelQuery = utmFilter
@@ -515,7 +533,7 @@ export async function getAnalyticsOverview(
             uniqMerge(form_started) AS form_started,
             uniqMerge(form_submitted) AS form_submitted
           FROM daily_metrics
-          WHERE workspace_id = {wid:UUID} AND day >= today() - 7
+          WHERE workspace_id = {wid:UUID} AND day >= ${chToday()} - 7
         `
 
   const [
@@ -620,7 +638,7 @@ export async function getAnalyticsOverview(
       ch.query({
         format: 'JSON', query_params: p,
         query: `
-          SELECT toDayOfWeek(created_at, 1) AS dow FROM events_raw
+          SELECT ${chToDayOfWeek('created_at', 1)} AS dow FROM events_raw
           WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 7 DAY${utmSql}
           GROUP BY dow
           ORDER BY uniqExactIf(session_id, event_name = '${submitEvent}') DESC

@@ -5,6 +5,7 @@ import {
 } from '../lib/day-of-week.js'
 import type { AnalyticsSegments, RangeId } from '../types/analytics-segments.js'
 import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
+import { chToDayOfWeek, chToHour } from '../lib/analytics-timezone.js'
 import {
   utmFilterParams,
   utmFilterSql,
@@ -99,7 +100,7 @@ export async function getAnalyticsSegments({
   rangeId: RangeId
   utmFilter?: AnalyticsUtmFilter
 }): Promise<AnalyticsSegments> {
-  const cacheKey = `analytics:segments:${workspaceId}:${rangeId}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
+  const cacheKey = `analytics:segments:v2-et:${workspaceId}:${rangeId}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
   const cached = await readAnalyticsCache<AnalyticsSegments>(cacheKey)
   if (cached) return cached
 
@@ -146,7 +147,7 @@ export async function getAnalyticsSegments({
       query_params: p,
       query: `
         SELECT
-          toDayOfWeek(created_at, 1) AS label,
+          ${chToDayOfWeek('created_at', 1)} AS label,
           uniqExactIf(user_id, event_name = 'page_view') AS visitors,
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS sessions
@@ -161,7 +162,7 @@ export async function getAnalyticsSegments({
       query_params: p,
       query: `
         SELECT
-          toHour(created_at) AS label,
+          ${chToHour('created_at')} AS label,
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted
         FROM events_raw
         WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}${utmSql}

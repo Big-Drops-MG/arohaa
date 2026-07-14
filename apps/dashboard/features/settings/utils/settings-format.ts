@@ -1,11 +1,8 @@
+import { formatDashboardDateTime } from "@/lib/datetime"
+
 export function formatSettingsTimestamp(iso: string | null): string {
   if (!iso) return "—"
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return "—"
-  return date.toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  })
+  return formatDashboardDateTime(iso)
 }
 
 export function formatLandingPageStatus(status: string): string {

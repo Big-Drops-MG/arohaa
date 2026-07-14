@@ -2,6 +2,11 @@ import { getClickHouseClient } from './clickhouse.service.js'
 import type { AnalyticsEvents, RangeId } from '../types/analytics-events.js'
 import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
 import {
+  chDayBucketKey,
+  formatAnalyticsCalendarDate,
+  parseAnalyticsEtDayKey,
+} from '../lib/analytics-timezone.js'
+import {
   utmFilterParams,
   utmFilterSql,
   type AnalyticsUtmFilter,
@@ -36,7 +41,7 @@ export async function getAnalyticsEvents({
   rangeId: RangeId
   utmFilter?: AnalyticsUtmFilter
 }): Promise<AnalyticsEvents> {
-  const cacheKey = `analytics:events:${workspaceId}:${rangeId}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
+  const cacheKey = `analytics:events:v2-et:${workspaceId}:${rangeId}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
   const cached = await readAnalyticsCache<AnalyticsEvents>(cacheKey)
   if (cached) return cached
 
@@ -66,7 +71,7 @@ export async function getAnalyticsEvents({
       query_params: p,
       query: `
         SELECT 
-          toDate(created_at) AS date_label,
+          ${chDayBucketKey('created_at')} AS date_label,
           countIf(event_name = 'zip_submit') AS zip_submitted,
           countIf(event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS total_sessions
@@ -119,8 +124,8 @@ export async function getAnalyticsEvents({
 
   // To display nice dates, let's format them
   const formattedSubmissionRows = submissionRows.map(row => {
-    const d = new Date(row.date + 'T00:00:00Z')
-    const formattedDate = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+    const d = parseAnalyticsEtDayKey(row.date)
+    const formattedDate = formatAnalyticsCalendarDate(d)
     return {
       ...row,
       date: formattedDate

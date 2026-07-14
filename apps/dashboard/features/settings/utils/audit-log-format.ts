@@ -1,5 +1,6 @@
 import type { LandingPageAuditLogEntry } from "@/features/settings/model/landing-page-audit-log"
 import { formatSettingsTimestamp } from "@/features/settings/utils/settings-format"
+import { formatDashboardDateLong } from "@/lib/datetime"
 
 const ACTION_LABELS: Record<string, string> = {
   create: "Project created",
@@ -79,12 +80,7 @@ export function groupAuditLogsByDate(
     const date = new Date(item.createdAt)
     const dateLabel = Number.isNaN(date.getTime())
       ? "Unknown date"
-      : date.toLocaleDateString(undefined, {
-          weekday: "long",
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        })
+      : formatDashboardDateLong(date)
 
     const bucket = groups.get(dateLabel) ?? []
     bucket.push(item)

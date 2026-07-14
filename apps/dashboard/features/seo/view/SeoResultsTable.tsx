@@ -14,6 +14,7 @@ import {
   overviewSectionHeadingClassName,
 } from "@/features/overview/view/overview-card-density"
 import { overviewCardPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
+import { formatDashboardDate } from "@/lib/datetime"
 
 const COLUMNS: Array<{
   key: SeoSortField | "pageUrl" | "reportDate"
@@ -39,11 +40,7 @@ type SeoResultsTableProps = {
 function formatDate(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  })
+  return formatDashboardDate(d)
 }
 
 function cellValue(row: SeoResultRow, key: (typeof COLUMNS)[number]["key"]) {

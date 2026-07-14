@@ -8,6 +8,25 @@ import {
   utmFilterParams,
   type AnalyticsUtmFilter,
 } from '../lib/analytics-utm-filter.js'
+import {
+  addAnalyticsEtDays,
+  analyticsDayKey,
+  analyticsHourKey,
+  analyticsMondayKey,
+  analyticsMonthKey,
+  chDayBucketKey,
+  chHourBucketKey,
+  chMonthBucketKey,
+  chToday,
+  chWeekBucketKey,
+  formatAnalyticsSeriesHour,
+  formatAnalyticsSeriesMonthDay,
+  formatAnalyticsSeriesMonthYear,
+  parseAnalyticsEtDayKey,
+  parseAnalyticsEtMonthKey,
+  startOfAnalyticsEtDay,
+  startOfAnalyticsEtHour,
+} from '../lib/analytics-timezone.js'
 import type {
   ReferrerRow,
   TopPageRow,
@@ -125,7 +144,7 @@ function kpiQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): stri
       uniqMerge(sessions) AS sessions,
       sum(pageviews) AS page_views
     FROM daily_metrics
-    WHERE workspace_id = {wid:UUID} AND day >= today() - INTERVAL ${RANGE_CLICKHOUSE_INTERVAL[rangeId]}
+    WHERE workspace_id = {wid:UUID} AND day >= ${chToday()} - INTERVAL ${RANGE_CLICKHOUSE_INTERVAL[rangeId]}
   `
 }
 
@@ -149,12 +168,12 @@ function trafficByTimeQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFil
   if (rangeId === '24h' || utmFilter) {
     const bucketExpr =
       rangeId === '24h'
-        ? 'toStartOfHour(created_at)'
+        ? chHourBucketKey('created_at')
         : rangeId === '7d' || rangeId === '30d'
-          ? 'toDate(created_at)'
+          ? chDayBucketKey('created_at')
           : rangeId === '3m'
-            ? 'toMonday(toDate(created_at))'
-            : 'toStartOfMonth(created_at)'
+            ? chWeekBucketKey('created_at')
+            : chMonthBucketKey('created_at')
 
     return `
       SELECT
@@ -171,10 +190,10 @@ function trafficByTimeQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFil
 
   const bucketExpr =
     rangeId === '7d' || rangeId === '30d'
-      ? 'day'
+      ? 'toString(day)'
       : rangeId === '3m'
-        ? 'toMonday(day)'
-        : 'toStartOfMonth(day)'
+        ? 'toString(toMonday(day))'
+        : "formatDateTime(toDateTime(day), '%Y-%m')"
 
   return `
     SELECT
@@ -183,7 +202,7 @@ function trafficByTimeQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFil
       uniqMerge(sessions) AS sessions,
       uniqMerge(form_submitted) AS form_submitted
     FROM daily_metrics
-    WHERE workspace_id = {wid:UUID} AND day >= today() - INTERVAL ${RANGE_QUERY_LOOKBACK[rangeId]}
+    WHERE workspace_id = {wid:UUID} AND day >= ${chToday()} - INTERVAL ${RANGE_QUERY_LOOKBACK[rangeId]}
     GROUP BY bucket
     ORDER BY bucket ASC
   `
@@ -302,25 +321,14 @@ function utmParametersQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFil
   `
 }
 
-function getMonday(d: Date): string {
-  const day = d.getUTCDay()
-  const diff = day === 0 ? -6 : 1 - day
-  const mon = new Date(d)
-  mon.setUTCDate(d.getUTCDate() + diff)
-  mon.setUTCHours(0, 0, 0, 0)
-  return mon.toISOString().slice(0, 10)
-}
-
 function bucketLabel(bucket: Date, rangeId: TrafficRangeId): string {
   if (rangeId === '24h') {
-    return `${String(bucket.getUTCHours()).padStart(2, '0')}:00`
+    return formatAnalyticsSeriesHour(bucket)
   }
   if (rangeId === '12m' || rangeId === '24m') {
-    const mon = bucket.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })
-    return `${mon} '${String(bucket.getUTCFullYear()).slice(2)}`
+    return formatAnalyticsSeriesMonthYear(bucket)
   }
-  const mon = bucket.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })
-  return `${mon} ${bucket.getUTCDate()}`
+  return formatAnalyticsSeriesMonthDay(bucket)
 }
 
 function normalizeBucketKey(raw: string, rangeId: TrafficRangeId): string {
@@ -366,11 +374,10 @@ function buildTrafficByTime(
   const out: TrafficByTimeRow[] = []
 
   if (rangeId === '24h') {
+    const end = startOfAnalyticsEtHour(now)
     for (let i = 23; i >= 0; i--) {
-      const d = new Date(now)
-      d.setUTCMinutes(0, 0, 0)
-      d.setUTCHours(d.getUTCHours() - i)
-      const key = d.toISOString().slice(0, 13)
+      const d = new Date(end.getTime() - i * 60 * 60 * 1000)
+      const key = analyticsHourKey(d)
       const m = agg.get(key)
       out.push({
         date: bucketLabel(d, rangeId),
@@ -383,11 +390,10 @@ function buildTrafficByTime(
   }
 
   if (rangeId === '7d') {
+    const end = startOfAnalyticsEtDay(now)
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(now)
-      d.setUTCHours(0, 0, 0, 0)
-      d.setUTCDate(d.getUTCDate() - i)
-      const key = d.toISOString().slice(0, 10)
+      const d = addAnalyticsEtDays(end, -i)
+      const key = analyticsDayKey(d)
       const m = agg.get(key)
       out.push({
         date: bucketLabel(d, rangeId),
@@ -400,11 +406,10 @@ function buildTrafficByTime(
   }
 
   if (rangeId === '30d') {
+    const end = startOfAnalyticsEtDay(now)
     for (let i = 29; i >= 0; i--) {
-      const d = new Date(now)
-      d.setUTCHours(0, 0, 0, 0)
-      d.setUTCDate(d.getUTCDate() - i)
-      const key = d.toISOString().slice(0, 10)
+      const d = addAnalyticsEtDays(end, -i)
+      const key = analyticsDayKey(d)
       const m = agg.get(key)
       out.push({
         date: bucketLabel(d, rangeId),
@@ -417,11 +422,10 @@ function buildTrafficByTime(
   }
 
   if (rangeId === '3m') {
-    const monday = getMonday(now)
+    const monday = parseAnalyticsEtDayKey(analyticsMondayKey(now))
     for (let i = 12; i >= 0; i--) {
-      const d = new Date(monday + 'T00:00:00Z')
-      d.setUTCDate(d.getUTCDate() - i * 7)
-      const key = d.toISOString().slice(0, 10)
+      const d = addAnalyticsEtDays(monday, -i * 7)
+      const key = analyticsDayKey(d)
       const m = agg.get(key)
       out.push({
         date: bucketLabel(d, rangeId),
@@ -434,9 +438,13 @@ function buildTrafficByTime(
   }
 
   const monthCount = rangeId === '12m' ? 12 : 24
+  const parts = analyticsMonthKey(now).split('-').map(Number)
+  const year = parts[0] ?? 1970
+  const month = parts[1] ?? 1
   for (let i = monthCount - 1; i >= 0; i--) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1))
-    const key = d.toISOString().slice(0, 7)
+    const cursor = new Date(Date.UTC(year, month - 1 - i, 1))
+    const key = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`
+    const d = parseAnalyticsEtMonthKey(key)
     const m = agg.get(key)
     out.push({
       date: bucketLabel(d, rangeId),
@@ -459,7 +467,7 @@ export async function getAnalyticsTraffic({
   rangeId,
   utmFilter,
 }: GetAnalyticsTrafficParams): Promise<TrafficDashboardResponse> {
-  const cacheKey = `analytics:traffic:${workspaceId}:${rangeId}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
+  const cacheKey = `analytics:traffic:v2-et:${workspaceId}:${rangeId}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
   try {
     const cachedStr = await redis.get(cacheKey)
     if (cachedStr) {

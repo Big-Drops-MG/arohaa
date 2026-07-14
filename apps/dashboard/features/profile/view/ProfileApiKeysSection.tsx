@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { KeyRound, Loader2, Plus, Trash2 } from "lucide-react"
 import { SettingsCopyBlock } from "@/features/settings/view/SettingsCopyBlock"
 import { SettingsSectionCard } from "@/features/settings/view/SettingsSectionCard"
+import { formatDashboardDate } from "@/lib/datetime"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import { Label } from "@workspace/ui/components/label"
@@ -162,9 +163,9 @@ export function ProfileApiKeysSection() {
                     {item.keyPrefix}…
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Created {new Date(item.createdAt).toLocaleDateString()}
+                    Created {formatDashboardDate(item.createdAt)}
                     {item.lastUsedAt
-                      ? ` · Last used ${new Date(item.lastUsedAt).toLocaleDateString()}`
+                      ? ` · Last used ${formatDashboardDate(item.lastUsedAt)}`
                       : ""}
                   </p>
                 </div>

@@ -1,6 +1,7 @@
 import { createClient, type ClickHouseClient } from '@clickhouse/client'
 import type { EventRow } from '../types/event.js'
 import { CLICKHOUSE_EVENTS_TABLE } from '../lib/clickhouse-events-table.js'
+import { chToDate } from '../lib/analytics-timezone.js'
 
 const CREATE_EVENTS_SQL = `
 CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_EVENTS_TABLE} (
@@ -136,7 +137,7 @@ export async function ensureEventsTable(): Promise<void> {
       TO daily_metrics AS
       SELECT
           workspace_id,
-          toDate(created_at) AS day,
+          ${chToDate('created_at')} AS day,
           sum(if(event_name = 'page_view', 1, 0)) AS pageviews,
           uniqStateIf(user_id, event_name = 'page_view') AS visitors,
           uniqState(session_id) AS sessions,
@@ -146,6 +147,62 @@ export async function ensureEventsTable(): Promise<void> {
       FROM ${CLICKHOUSE_EVENTS_TABLE}
       GROUP BY workspace_id, day
     `,
+  })
+
+  await rebuildDailyMetricsIfNeeded(ch)
+}
+
+const DAILY_METRICS_TZ_VERSION = 'america_new_york_v1'
+
+async function rebuildDailyMetricsIfNeeded(ch: ClickHouseClient): Promise<void> {
+  await ch.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS arohaa_schema_meta (
+        key String,
+        value String
+      ) ENGINE = ReplacingMergeTree()
+      ORDER BY key
+    `,
+  })
+
+  const versionRes = await ch.query({
+    query: `
+      SELECT value
+      FROM arohaa_schema_meta
+      WHERE key = 'daily_metrics_tz'
+      ORDER BY value DESC
+      LIMIT 1
+    `,
+    format: 'JSON',
+  })
+  const versionRows = (
+    (await versionRes.json()) as { data: Array<{ value: string }> }
+  ).data
+  if (versionRows[0]?.value === DAILY_METRICS_TZ_VERSION) return
+
+  await ch.command({ query: 'TRUNCATE TABLE IF EXISTS daily_metrics' })
+  await ch.command({
+    query: `
+      INSERT INTO daily_metrics
+      SELECT
+          workspace_id,
+          ${chToDate('created_at')} AS day,
+          sum(if(event_name = 'page_view', 1, 0)) AS pageviews,
+          uniqStateIf(user_id, event_name = 'page_view') AS visitors,
+          uniqState(session_id) AS sessions,
+          uniqStateIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth')) AS interactions,
+          uniqStateIf(session_id, event_name = 'form_start') AS form_started,
+          uniqStateIf(session_id, event_name = 'form_success') AS form_submitted
+      FROM ${CLICKHOUSE_EVENTS_TABLE}
+      GROUP BY workspace_id, day
+    `,
+  })
+  await ch.command({
+    query: `
+      INSERT INTO arohaa_schema_meta (key, value)
+      VALUES ('daily_metrics_tz', {version:String})
+    `,
+    query_params: { version: DAILY_METRICS_TZ_VERSION },
   })
 }
 

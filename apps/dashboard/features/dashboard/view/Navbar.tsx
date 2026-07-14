@@ -4,6 +4,7 @@ import Link from "next/link"
 import { logout } from "@/actions/auth.actions"
 import type { LandingPageNavItem } from "@/features/dashboard/model/landing-page"
 import { LandingPageProjectDropdown } from "@/features/dashboard/view/LandingPageProjectDropdown"
+import { NavbarClock } from "@/features/dashboard/view/NavbarClock"
 import { NotificationBell } from "@/features/notifications/view/NotificationBell"
 import { Button } from "@workspace/ui/components/button"
 import {
@@ -55,6 +56,7 @@ export function Navbar({
           <LandingPageProjectDropdown pages={landingPageNavItems} />
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
+          <NavbarClock />
           <NotificationBell />
           <Popover>
             <PopoverTrigger asChild>

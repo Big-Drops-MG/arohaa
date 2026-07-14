@@ -7,6 +7,7 @@ import type {
 } from "@/lib/server/ops-dashboard-load"
 import { SettingsSectionCard } from "@/features/settings/view/SettingsSectionCard"
 import { OpsAutoRefresh } from "@/features/ops/view/OpsAutoRefresh"
+import { formatDashboardDateTime } from "@/lib/datetime"
 
 type PillTone = "ok" | "up" | "down"
 
@@ -158,7 +159,7 @@ function FailedEventsList({ items }: { items: OpsFailedItem[] }) {
             <StatusPill tone="down" label={item.reason} />
             <span className="text-xs text-muted-foreground tabular-nums">
               {item.timestamp
-                ? new Date(item.timestamp).toLocaleString()
+                ? formatDashboardDateTime(item.timestamp)
                 : "unknown time"}
             </span>
           </div>
@@ -182,7 +183,7 @@ function QueueSampleList({ items }: { items: OpsQueueItem[] }) {
               {item.event_name ?? "event"}
             </span>
             <span className="text-xs text-muted-foreground tabular-nums">
-              {item.created_at ?? ""}
+              {item.created_at ? formatDashboardDateTime(item.created_at) : ""}
             </span>
           </div>
           {item.url ? (
@@ -219,7 +220,7 @@ export function OpsDashboard({ data }: OpsDashboardProps) {
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Live ingestion pipeline health from {data.apiBase || "API"}.
-            Refreshed {new Date(data.fetchedAt).toLocaleString()}.
+            Refreshed {formatDashboardDateTime(data.fetchedAt)}.
           </p>
         </div>
         <OpsAutoRefresh />
