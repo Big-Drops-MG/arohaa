@@ -60,10 +60,11 @@ CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
     metric_value Float64 DEFAULT 0,
     properties String,
     trace_id String DEFAULT '',
-    created_at DateTime64(3) DEFAULT now64()
+    created_at DateTime64(3, 'UTC') DEFAULT now64(3, 'UTC'),
+    event_date_et Date MATERIALIZED toDate(created_at, 'America/New_York')
 ) ENGINE = MergeTree()
-PARTITION BY toYYYYMM(created_at)
-ORDER BY (workspace_id, toDate(created_at), event_name)
+PARTITION BY toYYYYMM(event_date_et)
+ORDER BY (workspace_id, event_date_et, event_name)
 `
 
 const CREATE_DAILY_METRICS = `
@@ -85,7 +86,7 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS daily_metrics_mv
 TO daily_metrics AS
 SELECT
     workspace_id,
-    toDate(created_at) AS day,
+    toDate(created_at, 'America/New_York') AS day,
     sum(if(event_name = 'page_view', 1, 0)) AS pageviews,
     uniqStateIf(user_id, event_name = 'page_view') AS visitors,
     uniqState(session_id) AS sessions,
@@ -100,7 +101,7 @@ const BACKFILL_DAILY_METRICS = `
 INSERT INTO daily_metrics
 SELECT
     workspace_id,
-    toDate(created_at) AS day,
+    toDate(created_at, 'America/New_York') AS day,
     sum(if(event_name = 'page_view', 1, 0)) AS pageviews,
     uniqStateIf(user_id, event_name = 'page_view') AS visitors,
     uniqState(session_id) AS sessions,
@@ -122,7 +123,9 @@ async function main() {
     console.log(`Renaming events (${legacyRows} rows) -> events_raw`)
     await client.command({ query: "RENAME TABLE events TO events_raw" })
   } else if (hasLegacy && hasRaw) {
-    console.warn("Both events and events_raw exist — manual merge may be required")
+    console.warn(
+      "Both events and events_raw exist — manual merge may be required"
+    )
   } else if (!hasRaw) {
     console.log("Creating events_raw...")
     await client.command({ query: CREATE_EVENTS_RAW })
@@ -131,6 +134,10 @@ async function main() {
   const rawRows = await countRows(EVENTS_TABLE)
   console.log(`${EVENTS_TABLE} row count: ${rawRows}`)
 
+  await client.command({
+    query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS event_date_et Date MATERIALIZED toDate(created_at, 'America/New_York')`,
+  })
+
   console.log("Ensuring daily_metrics table...")
   await client.command({ query: CREATE_DAILY_METRICS })
 
@@ -138,12 +145,41 @@ async function main() {
   await client.command({ query: "DROP VIEW IF EXISTS daily_metrics_mv" })
   await client.command({ query: CREATE_DAILY_METRICS_MV })
 
-  const metricsRows = await countRows("daily_metrics")
-  if (metricsRows === 0 && rawRows > 0) {
+  await client.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS arohaa_schema_meta (
+        key String,
+        value String
+      ) ENGINE = ReplacingMergeTree()
+      ORDER BY key
+    `,
+  })
+  const versionResult = await client.query({
+    query: `
+      SELECT value
+      FROM arohaa_schema_meta FINAL
+      WHERE key = 'daily_metrics_tz'
+      LIMIT 1
+    `,
+    format: "JSON",
+  })
+  const versionJson = (await versionResult.json()) as {
+    data: Array<{ value: string }>
+  }
+
+  if (versionJson.data[0]?.value !== "america_new_york_v1") {
+    await client.command({ query: "TRUNCATE TABLE daily_metrics" })
+  }
+  if (versionJson.data[0]?.value !== "america_new_york_v1" && rawRows > 0) {
     console.log("Backfilling daily_metrics from historical events_raw...")
     await client.command({ query: BACKFILL_DAILY_METRICS })
-  } else {
-    console.log(`daily_metrics rows: ${metricsRows} (skip backfill)`)
+  }
+  if (versionJson.data[0]?.value !== "america_new_york_v1") {
+    await client.insert({
+      table: "arohaa_schema_meta",
+      values: [{ key: "daily_metrics_tz", value: "america_new_york_v1" }],
+      format: "JSONEachRow",
+    })
   }
 
   const tables = await client.query({

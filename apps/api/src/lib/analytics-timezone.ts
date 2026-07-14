@@ -7,13 +7,10 @@ export const ANALYTICS_DISPLAY_LOCALE = 'en-US'
 
 /** Quoted timezone literal for ClickHouse SQL. */
 export const CH_TZ = `'${ANALYTICS_TIMEZONE}'`
+export const CH_UTC_TZ = "'UTC'"
 
 export function chToDate(expr = 'created_at'): string {
   return `toDate(${expr}, ${CH_TZ})`
-}
-
-export function chToStartOfHour(expr = 'created_at'): string {
-  return `toStartOfHour(${expr}, ${CH_TZ})`
 }
 
 export function chToStartOfMonth(expr = 'created_at'): string {
@@ -33,12 +30,15 @@ export function chToHour(expr = 'created_at'): string {
 }
 
 export function chToday(): string {
-  return `today(${CH_TZ})`
+  return `toDate(now(), ${CH_TZ})`
 }
 
-/** Hour key: YYYY-MM-DDTHH in Eastern Time (matches JS timeline keys). */
+/**
+ * Rolling 24-hour charts need an instant-based key so the repeated Eastern
+ * 1 AM hour at the fall DST transition remains two distinct buckets.
+ */
 export function chHourBucketKey(expr = 'created_at'): string {
-  return `formatDateTime(${expr}, '%Y-%m-%dT%H', ${CH_TZ})`
+  return `formatDateTime(${expr}, '%Y-%m-%dT%H', ${CH_UTC_TZ})`
 }
 
 /** Day key: YYYY-MM-DD in Eastern Time. */
@@ -129,8 +129,9 @@ export function startOfAnalyticsEtDay(date: Date): Date {
 }
 
 export function startOfAnalyticsEtHour(date: Date): Date {
-  const { year, month, day, hour } = getAnalyticsEtParts(date)
-  return new Date(analyticsEtToUtcMs(year, month, day, hour, 0, 0))
+  const start = new Date(date)
+  start.setUTCMinutes(0, 0, 0)
+  return start
 }
 
 export function addAnalyticsEtDays(date: Date, days: number): Date {
@@ -150,8 +151,7 @@ export function addAnalyticsEtDays(date: Date, days: number): Date {
 }
 
 export function analyticsHourKey(date: Date): string {
-  const { year, month, day, hour } = getAnalyticsEtParts(date)
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}`
+  return date.toISOString().slice(0, 13)
 }
 
 export function analyticsDayKey(date: Date): string {
@@ -228,13 +228,6 @@ export function formatAnalyticsCalendarDate(bucket: Date): string {
 export function parseAnalyticsEtDayKey(key: string): Date {
   const [y, m, d] = key.split('-').map(Number)
   return new Date(analyticsEtToUtcMs(y ?? 1970, m ?? 1, d ?? 1, 12, 0, 0))
-}
-
-export function parseAnalyticsEtHourKey(key: string): Date {
-  const [datePart, hourPart] = key.split('T')
-  const [y, m, d] = (datePart ?? '').split('-').map(Number)
-  const hour = Number(hourPart ?? 0)
-  return new Date(analyticsEtToUtcMs(y ?? 1970, m ?? 1, d ?? 1, hour, 0, 0))
 }
 
 export function parseAnalyticsEtMonthKey(key: string): Date {

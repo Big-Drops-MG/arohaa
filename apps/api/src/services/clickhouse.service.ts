@@ -33,10 +33,11 @@ CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_EVENTS_TABLE} (
     metric_value Float64 DEFAULT 0,
     properties String,
     trace_id String DEFAULT '',
-    created_at DateTime64(3) DEFAULT now64()
+    created_at DateTime64(3, 'UTC') DEFAULT now64(3, 'UTC'),
+    event_date_et Date MATERIALIZED ${chToDate('created_at')}
 ) ENGINE = MergeTree()
-PARTITION BY toYYYYMM(created_at)
-ORDER BY (workspace_id, toDate(created_at), event_name)
+PARTITION BY toYYYYMM(event_date_et)
+ORDER BY (workspace_id, event_date_et, event_name)
 `
 
 let client: ClickHouseClient | null = null
@@ -112,6 +113,10 @@ export async function ensureEventsTable(): Promise<void> {
     query:
       `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS zipcode LowCardinality(String) DEFAULT ''`,
   })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS event_date_et Date MATERIALIZED ${chToDate('created_at')}`,
+  })
 
   await ch.command({
     query: `
@@ -168,9 +173,8 @@ async function rebuildDailyMetricsIfNeeded(ch: ClickHouseClient): Promise<void> 
   const versionRes = await ch.query({
     query: `
       SELECT value
-      FROM arohaa_schema_meta
+      FROM arohaa_schema_meta FINAL
       WHERE key = 'daily_metrics_tz'
-      ORDER BY value DESC
       LIMIT 1
     `,
     format: 'JSON',

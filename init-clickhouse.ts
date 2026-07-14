@@ -7,7 +7,7 @@ config({ path: path.resolve(process.cwd(), "apps/dashboard/.env.local") })
 const url = process.env.CLICKHOUSE_URL?.trim()
 if (!url) {
   console.error(
-    "Missing CLICKHOUSE_URL. Set CLICKHOUSE_* in apps/dashboard/.env.local or .env at the repo root.",
+    "Missing CLICKHOUSE_URL. Set CLICKHOUSE_* in apps/dashboard/.env.local or .env at the repo root."
   )
   process.exit(1)
 }
@@ -46,6 +46,9 @@ const EXPECTED_COLUMNS = [
   "properties",
   "trace_id",
   "created_at",
+  "state",
+  "zipcode",
+  "event_date_et",
 ] as const
 
 const EVENTS_TABLE = "events_raw"
@@ -78,16 +81,16 @@ CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
     metric_value Float64 DEFAULT 0,
     properties String,
     trace_id String DEFAULT '',
-    created_at DateTime64(3) DEFAULT now64()
+    created_at DateTime64(3, 'UTC') DEFAULT now64(3, 'UTC'),
+    event_date_et Date MATERIALIZED toDate(created_at, 'America/New_York')
 ) ENGINE = MergeTree()
-PARTITION BY toYYYYMM(created_at)
-ORDER BY (workspace_id, toDate(created_at), event_name);
+PARTITION BY toYYYYMM(event_date_et)
+ORDER BY (workspace_id, event_date_et, event_name);
 `
 
 async function tableExists(): Promise<boolean> {
   const r = await client.query({
-    query:
-      `SELECT count() AS n FROM system.tables WHERE database = currentDatabase() AND name = '${EVENTS_TABLE}'`,
+    query: `SELECT count() AS n FROM system.tables WHERE database = currentDatabase() AND name = '${EVENTS_TABLE}'`,
     format: "JSON",
   })
   const json = (await r.json()) as { data: Array<{ n: string | number }> }
@@ -96,12 +99,23 @@ async function tableExists(): Promise<boolean> {
 
 async function readColumns(): Promise<string[]> {
   const r = await client.query({
-    query:
-      `SELECT name FROM system.columns WHERE database = currentDatabase() AND table = '${EVENTS_TABLE}' ORDER BY position`,
+    query: `SELECT name FROM system.columns WHERE database = currentDatabase() AND table = '${EVENTS_TABLE}' ORDER BY position`,
     format: "JSON",
   })
   const json = (await r.json()) as { data: Array<{ name: string }> }
   return json.data.map((row) => row.name)
+}
+
+async function ensureAdditiveColumns(): Promise<void> {
+  await client.command({
+    query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS state LowCardinality(String) DEFAULT ''`,
+  })
+  await client.command({
+    query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS zipcode LowCardinality(String) DEFAULT ''`,
+  })
+  await client.command({
+    query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS event_date_et Date MATERIALIZED toDate(created_at, 'America/New_York')`,
+  })
 }
 
 async function readTableMeta(): Promise<{
@@ -109,8 +123,7 @@ async function readTableMeta(): Promise<{
   sortingKey: string
 }> {
   const r = await client.query({
-    query:
-      `SELECT partition_key AS partitionKey, sorting_key AS sortingKey FROM system.tables WHERE database = currentDatabase() AND name = '${EVENTS_TABLE}'`,
+    query: `SELECT partition_key AS partitionKey, sorting_key AS sortingKey FROM system.tables WHERE database = currentDatabase() AND name = '${EVENTS_TABLE}'`,
     format: "JSON",
   })
   const json = (await r.json()) as {
@@ -122,15 +135,28 @@ async function readTableMeta(): Promise<{
   }
 }
 
-const EXPECTED_PARTITION_KEY = "toYYYYMM(created_at)"
-const EXPECTED_SORTING_KEY = "workspace_id, toDate(created_at), event_name"
+const EXPECTED_PARTITION_KEYS = [
+  "toYYYYMM(event_date_et)",
+  "toYYYYMM(created_at)",
+] as const
+const EXPECTED_SORTING_KEYS = [
+  "workspace_id, event_date_et, event_name",
+  "workspace_id, toDate(created_at), event_name",
+] as const
 
-function metaMatches(meta: { partitionKey: string; sortingKey: string }): boolean {
+function metaMatches(meta: {
+  partitionKey: string
+  sortingKey: string
+}): boolean {
+  const compactPartition = meta.partitionKey.replace(/\s+/g, "")
+  const compactSorting = meta.sortingKey.replace(/\s+/g, "")
   return (
-    meta.partitionKey.replace(/\s+/g, "") ===
-      EXPECTED_PARTITION_KEY.replace(/\s+/g, "") &&
-    meta.sortingKey.replace(/\s+/g, "") ===
-      EXPECTED_SORTING_KEY.replace(/\s+/g, "")
+    EXPECTED_PARTITION_KEYS.some(
+      (key) => key.replace(/\s+/g, "") === compactPartition
+    ) &&
+    EXPECTED_SORTING_KEYS.some(
+      (key) => key.replace(/\s+/g, "") === compactSorting
+    )
   )
 }
 
@@ -144,8 +170,8 @@ async function rowCount(): Promise<number> {
 }
 
 function columnsMatch(actual: string[]): boolean {
-  if (actual.length !== EXPECTED_COLUMNS.length) return false
-  return EXPECTED_COLUMNS.every((c, i) => actual[i] === c)
+  const names = new Set(actual)
+  return EXPECTED_COLUMNS.every((column) => names.has(column))
 }
 
 async function ensureDailyMetrics(): Promise<void> {
@@ -173,7 +199,7 @@ async function ensureDailyMetrics(): Promise<void> {
       TO daily_metrics AS
       SELECT
           workspace_id,
-          toDate(created_at) AS day,
+          toDate(created_at, 'America/New_York') AS day,
           sum(if(event_name = 'page_view', 1, 0)) AS pageviews,
           uniqStateIf(user_id, event_name = 'page_view') AS visitors,
           uniqState(session_id) AS sessions,
@@ -185,24 +211,41 @@ async function ensureDailyMetrics(): Promise<void> {
     `,
   })
 
-  const metricsCount = await client.query({
-    query: "SELECT count() AS n FROM daily_metrics",
+  await client.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS arohaa_schema_meta (
+        key String,
+        value String
+      ) ENGINE = ReplacingMergeTree()
+      ORDER BY key
+    `,
+  })
+
+  const versionResult = await client.query({
+    query: `
+      SELECT value
+      FROM arohaa_schema_meta FINAL
+      WHERE key = 'daily_metrics_tz'
+      LIMIT 1
+    `,
     format: "JSON",
   })
-  const metricsJson = (await metricsCount.json()) as {
-    data: Array<{ n: string | number }>
+  const versionJson = (await versionResult.json()) as {
+    data: Array<{ value: string }>
   }
-  const metricsRows = Number(metricsJson.data[0]?.n ?? 0)
+  if (versionJson.data[0]?.value === "america_new_york_v1") return
+
   const rawRows = await rowCount()
 
-  if (metricsRows === 0 && rawRows > 0) {
+  await client.command({ query: "TRUNCATE TABLE IF EXISTS daily_metrics" })
+  if (rawRows > 0) {
     console.log("Backfilling daily_metrics from events_raw...")
     await client.command({
       query: `
         INSERT INTO daily_metrics
         SELECT
             workspace_id,
-            toDate(created_at) AS day,
+            toDate(created_at, 'America/New_York') AS day,
             sum(if(event_name = 'page_view', 1, 0)) AS pageviews,
             uniqStateIf(user_id, event_name = 'page_view') AS visitors,
             uniqState(session_id) AS sessions,
@@ -214,6 +257,12 @@ async function ensureDailyMetrics(): Promise<void> {
       `,
     })
   }
+
+  await client.insert({
+    table: "arohaa_schema_meta",
+    values: [{ key: "daily_metrics_tz", value: "america_new_york_v1" }],
+    format: "JSONEachRow",
+  })
 }
 
 async function init() {
@@ -239,12 +288,15 @@ async function init() {
     const existsAfterRename = await tableExists()
 
     if (existsAfterRename) {
+      await ensureAdditiveColumns()
       const cols = await readColumns()
       const meta = await readTableMeta()
       const schemaOk = columnsMatch(cols) && metaMatches(meta)
 
       if (schemaOk) {
-        console.log(`${EVENTS_TABLE} schema matches. Ensuring daily_metrics views...`)
+        console.log(
+          `${EVENTS_TABLE} schema matches. Ensuring daily_metrics views...`
+        )
         await ensureDailyMetrics()
         return
       }
@@ -254,14 +306,18 @@ async function init() {
       console.warn(`  current columns:    ${cols.join(", ")}`)
       console.warn(`  expected columns:   ${EXPECTED_COLUMNS.join(", ")}`)
       console.warn(`  current partition:  ${meta.partitionKey || "(none)"}`)
-      console.warn(`  expected partition: ${EXPECTED_PARTITION_KEY}`)
+      console.warn(
+        `  expected partition: ${EXPECTED_PARTITION_KEYS.join(" or ")}`
+      )
       console.warn(`  current order:      ${meta.sortingKey}`)
-      console.warn(`  expected order:     ${EXPECTED_SORTING_KEY}`)
+      console.warn(
+        `  expected order:     ${EXPECTED_SORTING_KEYS.join(" or ")}`
+      )
       console.warn(`  current row count:  ${rows}`)
 
       if (rows > 0 && process.env.FORCE_DROP !== "1") {
         console.error(
-          "Refusing to drop a non-empty table. Re-run with FORCE_DROP=1 to confirm destructive migration.",
+          "Refusing to drop a non-empty table. Re-run with FORCE_DROP=1 to confirm destructive migration."
         )
         process.exitCode = 1
         return

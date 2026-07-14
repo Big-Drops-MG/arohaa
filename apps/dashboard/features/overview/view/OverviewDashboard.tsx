@@ -43,6 +43,25 @@ function valueSuffixForMetric(id: OverviewKpiMetricId): string | undefined {
   return undefined
 }
 
+const OVERVIEW_SERIES_METRICS: readonly OverviewKpiMetricId[] = [
+  "visitors",
+  "sessions",
+  "page-views",
+  "form-submitted",
+  "fsr",
+  "bounce-rate",
+]
+
+function hasCompleteKpiSeries(
+  data: OverviewDashboardData,
+  rangeId: OverviewDashboardData["defaultDateRangeId"]
+): boolean {
+  const series = data.kpiSeriesByDateRange?.[rangeId]
+  return OVERVIEW_SERIES_METRICS.every(
+    (metricId) => (series?.[metricId]?.length ?? 0) > 0
+  )
+}
+
 function funnelStepsFromApiPayload(
   payload: FunnelDashboardData
 ): OverviewFunnelStep[] {
@@ -58,6 +77,7 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
   const reduceMotion = useReducedMotion()
   const { dateRangeId, setDateRangeId } = useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
+  const [overviewData, setOverviewData] = useState(data)
   const [activeKpiId, setActiveKpiId] = useState<OverviewKpiMetricId>(
     data.defaultKpiMetricId
   )
@@ -69,9 +89,45 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
   const [chartNowNonce, setChartNowNonce] = useState(0)
 
   useEffect(() => {
+    setOverviewData(data)
     setFunnelSteps(data.funnel)
     setAlerts(data.alerts)
   }, [data])
+
+  useEffect(() => {
+    if (
+      shouldUseInitialTabData(
+        dateRangeId,
+        data.defaultDateRangeId,
+        utmFilter
+      ) &&
+      hasCompleteKpiSeries(data, dateRangeId)
+    ) {
+      setOverviewData(data)
+      return
+    }
+
+    const controller = new AbortController()
+    const url = buildAnalyticsApiPath(
+      `/api/landing-pages/${encodeURIComponent(projectId)}/overview`,
+      { rangeId: dateRangeId, utmFilter }
+    )
+
+    void fetch(url, { cache: "no-store", signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload) => {
+        if (!payload) return
+        setOverviewData(payload as OverviewDashboardData)
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return
+        if (process.env.NODE_ENV === "development") {
+          console.error("[overview] overview fetch failed", err)
+        }
+      })
+
+    return () => controller.abort()
+  }, [data, projectId, dateRangeId, utmFilter])
 
   useEffect(() => {
     let cancelled = false
@@ -151,21 +207,27 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
 
   const chartPoints = useMemo(() => {
     void chartNowNonce
-    const fromApi = data.kpiSeriesByDateRange?.[dateRangeId]?.[activeKpiId]
+    const fromApi =
+      overviewData.kpiSeriesByDateRange?.[dateRangeId]?.[activeKpiId]
     if (fromApi !== undefined && fromApi.length > 0) {
       return fromApi
     }
     return overviewChartPointsForRange(dateRangeId, new Date())
-  }, [data.kpiSeriesByDateRange, dateRangeId, activeKpiId, chartNowNonce])
+  }, [
+    overviewData.kpiSeriesByDateRange,
+    dateRangeId,
+    activeKpiId,
+    chartNowNonce,
+  ])
 
   const kpis = useMemo(
-    () => overviewKpisForDateRange(data, dateRangeId),
-    [data, dateRangeId]
+    () => overviewKpisForDateRange(overviewData, dateRangeId),
+    [overviewData, dateRangeId]
   )
 
   const activeKpiLabel = useMemo(() => {
-    return overviewKpiLabelsForFormType(data.formType)[activeKpiId]
-  }, [data.formType, activeKpiId])
+    return overviewKpiLabelsForFormType(overviewData.formType)[activeKpiId]
+  }, [overviewData.formType, activeKpiId])
 
   const chartKey = `${dateRangeId}-${activeKpiId}`
 
@@ -221,8 +283,8 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
         className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0"
       >
         <div className="flex min-h-0 flex-col gap-4">
-          <OverviewTrafficCard stats={data.traffic} />
-          <OverviewSegmentsCard segments={data.segments} />
+          <OverviewTrafficCard stats={overviewData.traffic} />
+          <OverviewSegmentsCard segments={overviewData.segments} />
         </div>
         <OverviewAlertsCard alerts={alerts} />
       </motion.div>
