@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, sql } from '@workspace/database'
+import { and, desc, eq, gte, lt, sql } from '@workspace/database'
 import { db, landingPages, seoResults } from '@workspace/database'
 import type {
   AnalyticsSeo,
@@ -12,18 +12,11 @@ import {
   readAnalyticsCache,
   writeAnalyticsCache,
 } from '../lib/analytics-cache.js'
-
-function getRangeStart(rangeId: RangeId): Date {
-  const now = new Date()
-  const start = new Date(now)
-  if (rangeId === '24h') start.setHours(start.getHours() - 24)
-  else if (rangeId === '7d') start.setDate(start.getDate() - 7)
-  else if (rangeId === '30d') start.setDate(start.getDate() - 30)
-  else if (rangeId === '3m') start.setMonth(start.getMonth() - 3)
-  else if (rangeId === '12m') start.setFullYear(start.getFullYear() - 1)
-  else start.setFullYear(start.getFullYear() - 2)
-  return start
-}
+import {
+  rangeCacheKey,
+  resolveAnalyticsWindow,
+  type AnalyticsCustomRange,
+} from '../lib/analytics-range.js'
 
 function sortRows(
   rows: SeoResultRow[],
@@ -61,14 +54,18 @@ export async function getAnalyticsSeo({
   rangeId,
   sortBy = 'clicks',
   sortOrder = 'desc',
+  custom,
 }: {
   workspaceId: string
   lpPublicId: string
   rangeId: RangeId
   sortBy?: SeoSortField
   sortOrder?: 'asc' | 'desc'
+  custom?: AnalyticsCustomRange
 }): Promise<AnalyticsSeo> {
-  const cacheKey = `analytics:seo:${workspaceId}:${lpPublicId}:${rangeId}:${sortBy}:${sortOrder}`
+  const now = new Date()
+  const window = resolveAnalyticsWindow(rangeId, now, custom)
+  const cacheKey = `analytics:seo:v2-abs:${workspaceId}:${lpPublicId}:${rangeCacheKey(window)}:${sortBy}:${sortOrder}`
   const cached = await readAnalyticsCache<AnalyticsSeo>(cacheKey)
   if (cached) return cached
 
@@ -77,17 +74,17 @@ export async function getAnalyticsSeo({
   })
 
   if (!lp || lp.id !== workspaceId) {
-    return emptyAnalyticsSeo(rangeId, sortBy, sortOrder)
+    return emptyAnalyticsSeo(window.rangeId, sortBy, sortOrder)
   }
 
-  const rangeStart = getRangeStart(rangeId)
   const dbRows = await db
     .select()
     .from(seoResults)
     .where(
       and(
         eq(seoResults.landingPageId, lp.id),
-        gte(seoResults.reportDate, rangeStart),
+        gte(seoResults.reportDate, window.start),
+        lt(seoResults.reportDate, window.end),
       ),
     )
     .orderBy(desc(seoResults.reportDate))
@@ -107,7 +104,7 @@ export async function getAnalyticsSeo({
       : 0
 
   const result = {
-    rangeId,
+    rangeId: window.rangeId,
     sortBy,
     sortOrder,
     summary: {

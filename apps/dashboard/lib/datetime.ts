@@ -138,12 +138,35 @@ export function formatDashboardDateLong(
   })
 }
 
-/** Live clock: HH:MM:SS AM/PM in Eastern Time. */
+/** Current Eastern abbreviation for the given instant: EST in winter, EDT in summer. */
+export function getDashboardTimezoneAbbreviation(date: Date): "EST" | "EDT" {
+  const parts = new Intl.DateTimeFormat(DASHBOARD_LOCALE, {
+    timeZone: DASHBOARD_TIMEZONE,
+    timeZoneName: "short",
+  }).formatToParts(date)
+  const name = parts.find((part) => part.type === "timeZoneName")?.value
+  if (name === "EST" || name === "EDT") return name
+
+  const zoned = getDashboardZonedParts(date)
+  const asUtcMs = Date.UTC(
+    zoned.year,
+    zoned.month - 1,
+    zoned.day,
+    zoned.hour,
+    zoned.minute,
+    zoned.second
+  )
+  const offsetHours = Math.round((asUtcMs - date.getTime()) / 3_600_000)
+  return offsetHours === -4 ? "EDT" : "EST"
+}
+
+/** Live clock: HH:MM:SS AM/PM EST|EDT in Eastern Time. */
 export function formatDashboardDigitalClock(date: Date): string {
   const { hour, minute, second } = getDashboardZonedParts(date)
   const period = hour >= 12 ? "PM" : "AM"
   const hours12 = hour % 12 || 12
-  return `${String(hours12).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")} ${period}`
+  const zone = getDashboardTimezoneAbbreviation(date)
+  return `${String(hours12).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")} ${period} ${zone}`
 }
 
 export function createDashboardDateTimeFormatter(

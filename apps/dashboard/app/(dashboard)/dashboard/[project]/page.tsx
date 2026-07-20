@@ -6,7 +6,10 @@ import { parseProjectTab } from "@/features/dashboard/model/project-tab"
 import { parseDashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
 import { getOverviewPlaceholderData } from "@/features/overview/controller/overview-placeholder-data"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
-import { parseTrafficRangeId } from "@/features/traffic/model/traffic-range"
+import {
+  parseTrafficRangeId,
+  parseDashboardCustomRange,
+} from "@/features/traffic/model/traffic-range"
 import { loadAlertsDashboardData } from "@/lib/server/alerts-dashboard-load"
 import { loadEventTrackingDashboardData } from "@/lib/server/event-tracking-dashboard-load"
 import { loadExperimentsDashboardData } from "@/lib/server/experiments-dashboard-load"
@@ -25,6 +28,8 @@ type ProjectPageProps = {
   params: Promise<{ project: string }>
   searchParams: Promise<{
     range_id?: string
+    from?: string
+    to?: string
     tab?: string
     utm_dim?: string
     utm_value?: string
@@ -53,11 +58,14 @@ export default async function ProjectPage({
   const { project } = await params
   const {
     range_id: rangeIdParam,
+    from,
+    to,
     tab: tabParam,
     utm_dim,
     utm_value,
   } = await searchParams
   const rangeId = parseTrafficRangeId(rangeIdParam)
+  const customRange = parseDashboardCustomRange(from, to)
   const tab = parseProjectTab(tabParam)
   const utmFilter = parseDashboardUtmFilter(utm_dim, utm_value)
 
@@ -83,13 +91,19 @@ export default async function ProjectPage({
 
   switch (tab) {
     case "overview":
-      overview = await loadOverviewDashboardData(project, rangeId, utmFilter)
+      overview = await loadOverviewDashboardData(
+        project,
+        rangeId,
+        utmFilter,
+        customRange
+      )
       break
     case "traffic":
       traffic = await loadTrafficDashboardData({
         landingPagePublicId: project,
         rangeId,
         utmFilter,
+        customRange,
       })
       break
     case "funnel":
@@ -97,6 +111,7 @@ export default async function ProjectPage({
         landingPagePublicId: project,
         rangeId,
         utmFilter,
+        customRange,
       })
       break
     case "event-tracking":
@@ -104,6 +119,7 @@ export default async function ProjectPage({
         landingPagePublicId: project,
         rangeId,
         utmFilter,
+        customRange,
       })
       break
     case "segments":
@@ -111,6 +127,7 @@ export default async function ProjectPage({
         landingPagePublicId: project,
         rangeId,
         utmFilter,
+        customRange,
       })
       break
     case "experiments":
@@ -118,12 +135,14 @@ export default async function ProjectPage({
         landingPagePublicId: project,
         rangeId,
         utmFilter,
+        customRange,
       })
       break
     case "seo":
       seo = await loadSeoDashboardData({
         landingPagePublicId: project,
         rangeId,
+        customRange,
       })
       break
     case "utm":
@@ -134,6 +153,7 @@ export default async function ProjectPage({
         landingPagePublicId: project,
         rangeId,
         utmFilter,
+        customRange,
       })
       break
     case "settings":

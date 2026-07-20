@@ -14,7 +14,11 @@ import {
   overviewSectionHeadingClassName,
 } from "@/features/overview/view/overview-card-density"
 import { overviewCardPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
-import type { TrafficReferrerRow } from "@/features/traffic/model/traffic"
+import type {
+  TrafficReferrerRow,
+  TrafficUtmParamKey,
+  TrafficUtmParamTab,
+} from "@/features/traffic/model/traffic"
 import { TrafficExpandableCard } from "@/features/traffic/view/TrafficExpandableCard"
 import {
   trafficBreakdownCardContentClassName,
@@ -23,19 +27,56 @@ import {
 
 type TrafficSourcesCardProps = {
   referrers: TrafficReferrerRow[]
-  utmParameters: TrafficReferrerRow[]
+  utmByParam: TrafficUtmParamTab[]
   expandable?: boolean
   previewRowLimit?: number
 }
 
 type SourcesTab = "referrers" | "utm"
 
+type SourceListRow = {
+  label: string
+  visitors: string
+}
+
 const tabButtonClassName = "pb-3 text-sm transition-colors outline-none"
 
 const trafficSourcesTabBarClassName =
   "flex shrink-0 items-end justify-between gap-4 border-b border-border px-5 !pt-3 !pb-0 sm:px-6"
 
+const utmParamTabBarClassName =
+  "flex shrink-0 gap-4 overflow-x-auto border-b border-border/60 px-5 pt-2.5 pb-0 sm:px-6"
+
 function SourcesTabButton({
+  active,
+  label,
+  onClick,
+  className,
+}: {
+  active: boolean
+  label: string
+  onClick: () => void
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        tabButtonClassName,
+        "-mb-px border-b-2",
+        active
+          ? "border-neutral-950 font-semibold text-neutral-950"
+          : "border-transparent font-normal text-neutral-600 hover:text-neutral-900",
+        className
+      )}
+    >
+      {label}
+    </button>
+  )
+}
+
+function UtmParamTabButton({
   active,
   label,
   onClick,
@@ -49,11 +90,10 @@ function SourcesTabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        tabButtonClassName,
-        "-mb-px border-b-2",
+        "-mb-px shrink-0 border-b-2 pb-2 text-xs transition-colors outline-none",
         active
           ? "border-neutral-950 font-semibold text-neutral-950"
-          : "border-transparent font-normal text-neutral-600 hover:text-neutral-900"
+          : "border-transparent font-normal text-neutral-500 hover:text-neutral-800"
       )}
     >
       {label}
@@ -61,10 +101,7 @@ function SourcesTabButton({
   )
 }
 
-function limitReferrerRows(
-  rows: TrafficReferrerRow[],
-  limit?: number
-): TrafficReferrerRow[] {
+function limitRows(rows: SourceListRow[], limit?: number): SourceListRow[] {
   if (limit == null) return rows
   return rows.slice(0, limit)
 }
@@ -73,7 +110,7 @@ function TrafficSourcesList({
   rows,
   emptyMessage,
 }: {
-  rows: TrafficReferrerRow[]
+  rows: SourceListRow[]
   emptyMessage: string
 }) {
   if (rows.length === 0) {
@@ -88,7 +125,7 @@ function TrafficSourcesList({
     <div className="min-h-0 flex-1 overflow-y-auto">
       {rows.map((row, index) => (
         <div
-          key={`${row.domain}-${index}`}
+          key={`${row.label}-${index}`}
           className={cn(
             "flex items-center justify-between gap-3 px-5 py-3 sm:px-6",
             index < rows.length - 1 && "border-b border-border/60"
@@ -100,7 +137,7 @@ function TrafficSourcesList({
               aria-hidden
             />
             <span className="truncate text-sm font-medium text-foreground">
-              {row.domain}
+              {row.label}
             </span>
           </div>
           <span className="shrink-0 text-sm font-medium text-foreground tabular-nums">
@@ -114,15 +151,44 @@ function TrafficSourcesList({
 
 function TrafficSourcesCardContent({
   referrers,
-  utmParameters,
+  utmByParam,
   previewRowLimit,
   emptyMessage = "No data for this period.",
 }: TrafficSourcesCardProps & { emptyMessage?: string }) {
   const [activeTab, setActiveTab] = useState<SourcesTab>("referrers")
+  const [activeUtmKey, setActiveUtmKey] = useState<TrafficUtmParamKey | null>(
+    null
+  )
+
+  const resolvedUtmKey =
+    activeUtmKey && utmByParam.some((tab) => tab.key === activeUtmKey)
+      ? activeUtmKey
+      : (utmByParam[0]?.key ?? null)
+
+  const activeUtmTab =
+    utmByParam.find((tab) => tab.key === resolvedUtmKey) ?? utmByParam[0]
+
   const rows =
     activeTab === "referrers"
-      ? limitReferrerRows(referrers, previewRowLimit)
-      : limitReferrerRows(utmParameters, previewRowLimit)
+      ? limitRows(
+          referrers.map((row) => ({
+            label: row.domain,
+            visitors: row.visitors,
+          })),
+          previewRowLimit
+        )
+      : limitRows(
+          (activeUtmTab?.rows ?? []).map((row) => ({
+            label: row.value,
+            visitors: row.visitors,
+          })),
+          previewRowLimit
+        )
+
+  const utmEmptyMessage =
+    utmByParam.length === 0
+      ? "No UTM parameters for this period."
+      : emptyMessage
 
   return (
     <>
@@ -148,14 +214,29 @@ function TrafficSourcesCardContent({
           Visitors
         </span>
       </div>
-      <TrafficSourcesList rows={rows} emptyMessage={emptyMessage} />
+      {activeTab === "utm" && utmByParam.length > 0 ? (
+        <div className={utmParamTabBarClassName}>
+          {utmByParam.map((tab) => (
+            <UtmParamTabButton
+              key={tab.key}
+              active={tab.key === resolvedUtmKey}
+              label={tab.label}
+              onClick={() => setActiveUtmKey(tab.key)}
+            />
+          ))}
+        </div>
+      ) : null}
+      <TrafficSourcesList
+        rows={rows}
+        emptyMessage={activeTab === "utm" ? utmEmptyMessage : emptyMessage}
+      />
     </>
   )
 }
 
 function TrafficSourcesCardBody({
   referrers,
-  utmParameters,
+  utmByParam,
   previewRowLimit,
   emptyMessage = "No data for this period.",
 }: TrafficSourcesCardProps & { emptyMessage?: string }) {
@@ -175,7 +256,7 @@ function TrafficSourcesCardBody({
       <CardContent className={trafficBreakdownCardContentClassName}>
         <TrafficSourcesCardContent
           referrers={referrers}
-          utmParameters={utmParameters}
+          utmByParam={utmByParam}
           previewRowLimit={previewRowLimit}
           emptyMessage={emptyMessage}
         />
@@ -186,14 +267,14 @@ function TrafficSourcesCardBody({
 
 export function TrafficSourcesCard({
   referrers,
-  utmParameters,
+  utmByParam,
   expandable = false,
   previewRowLimit,
 }: TrafficSourcesCardProps) {
   const body = (
     <TrafficSourcesCardBody
       referrers={referrers}
-      utmParameters={utmParameters}
+      utmByParam={utmByParam}
       previewRowLimit={previewRowLimit}
     />
   )
@@ -209,7 +290,7 @@ export function TrafficSourcesCard({
       expandedContent={
         <TrafficSourcesCardContent
           referrers={referrers}
-          utmParameters={utmParameters}
+          utmByParam={utmByParam}
         />
       }
     >

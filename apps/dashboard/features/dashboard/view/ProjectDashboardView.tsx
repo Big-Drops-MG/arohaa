@@ -70,7 +70,7 @@ export function ProjectDashboardView({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const activeTab = parseProjectTab(searchParams.get("tab") ?? initialTab)
-  const { dateRangeId } = useDashboardDateRange()
+  const { dateRangeId, customRange } = useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
 
   const {
@@ -89,6 +89,7 @@ export function ProjectDashboardView({
     projectId,
     activeTab,
     rangeId: dateRangeId,
+    customRange,
     utmFilter,
     formType,
     overviewPlaceholder,

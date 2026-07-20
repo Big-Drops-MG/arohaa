@@ -1,19 +1,23 @@
+import type { OverviewLandingFormType } from "@/features/overview/model/overview"
+import {
+  trafficFormSubmittedLabel,
+  trafficRateLabel,
+} from "@/features/traffic/controller/traffic-default-payload"
+import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-range"
 import type { TrafficDashboardData } from "@/features/traffic/model/traffic"
 
 export function getTrafficPlaceholderData(
-  _landingPagePublicId: string
+  _landingPagePublicId: string,
+  formType: OverviewLandingFormType = "single"
 ): TrafficDashboardData {
   void _landingPagePublicId
 
+  const formSubmitted = trafficFormSubmittedLabel(formType)
+  const rate = trafficRateLabel(formType)
+
   return {
-    dateRangeOptions: [
-      { id: "24h", label: "Last 24 hours" },
-      { id: "7d", label: "Last 7 days" },
-      { id: "30d", label: "Last 30 days" },
-      { id: "3m", label: "Last 3 months" },
-      { id: "12m", label: "Last 12 months" },
-      { id: "24m", label: "Last 24 months" },
-    ],
+    formType,
+    dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: "7d",
     defaultKpiMetricId: "active-users",
     kpis: [
@@ -33,7 +37,7 @@ export function getTrafficPlaceholderData(
         { key: "date", label: "Date" },
         { key: "visitors", label: "Visitors" },
         { key: "sessions", label: "Sessions" },
-        { key: "formSubmitted", label: "Form Submitted" },
+        { key: "formSubmitted", label: formSubmitted },
       ],
       rows: [
         {
@@ -61,8 +65,8 @@ export function getTrafficPlaceholderData(
       columns: [
         { key: "device", label: "Device" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
-        { key: "fsr", label: "FSR" },
+        { key: "formSubmitted", label: formSubmitted },
+        { key: "fsr", label: rate },
       ],
       rows: [
         {
@@ -102,8 +106,8 @@ export function getTrafficPlaceholderData(
       columns: [
         { key: "city", label: "City" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
-        { key: "fsr", label: "FSR" },
+        { key: "formSubmitted", label: formSubmitted },
+        { key: "fsr", label: rate },
       ],
       rows: [
         {
@@ -130,6 +134,7 @@ export function getTrafficPlaceholderData(
       { domain: "google.com", visitors: "19" },
       { domain: "bing.com", visitors: "2" },
     ],
+    utmByParam: [],
     utmParameters: [],
   }
 }

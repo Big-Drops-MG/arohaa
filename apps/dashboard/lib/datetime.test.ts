@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest"
 import {
   addDashboardDays,
   formatDashboardDateTime,
+  formatDashboardDigitalClock,
+  getDashboardTimezoneAbbreviation,
   getDashboardZonedParts,
   startOfDashboardDay,
 } from "./datetime"
@@ -14,6 +16,21 @@ describe("dashboard Eastern timezone", () => {
     expect(formatDashboardDateTime("2026-07-15T16:00:00.000Z")).toBe(
       "Jul 15, 2026, 12:00 PM"
     )
+  })
+
+  it("labels the live clock with EST in winter and EDT in summer", () => {
+    expect(
+      getDashboardTimezoneAbbreviation(new Date("2026-01-15T17:00:00.000Z"))
+    ).toBe("EST")
+    expect(
+      getDashboardTimezoneAbbreviation(new Date("2026-07-15T16:00:00.000Z"))
+    ).toBe("EDT")
+    expect(
+      formatDashboardDigitalClock(new Date("2026-01-15T17:00:00.000Z"))
+    ).toBe("12:00:00 PM EST")
+    expect(
+      formatDashboardDigitalClock(new Date("2026-07-15T16:00:00.000Z"))
+    ).toBe("12:00:00 PM EDT")
   })
 
   it("uses 23-hour and 25-hour Eastern calendar days at DST transitions", () => {

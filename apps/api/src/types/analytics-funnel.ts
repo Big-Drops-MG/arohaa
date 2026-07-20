@@ -1,18 +1,15 @@
-import type { AnalyticsRangeId } from '../lib/analytics-range.js'
+import {
+  ANALYTICS_RANGE_IDS,
+  isAnalyticsRangeId,
+  type AnalyticsRangeId,
+} from '../lib/analytics-range.js'
 
 export type FunnelRangeId = AnalyticsRangeId
 
-export const FUNNEL_RANGE_IDS = [
-  '24h',
-  '7d',
-  '30d',
-  '3m',
-  '12m',
-  '24m',
-] as const satisfies readonly FunnelRangeId[]
+export const FUNNEL_RANGE_IDS = ANALYTICS_RANGE_IDS
 
 export function isFunnelRangeId(value: string): value is FunnelRangeId {
-  return (FUNNEL_RANGE_IDS as readonly string[]).includes(value)
+  return isAnalyticsRangeId(value)
 }
 
 export interface FunnelMetricRow {

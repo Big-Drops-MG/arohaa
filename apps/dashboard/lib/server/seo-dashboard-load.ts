@@ -5,11 +5,18 @@ import type {
   SeoSortField,
   SeoSortOrder,
 } from "@/features/seo/model/seo"
+import {
+  DEFAULT_TRAFFIC_RANGE_ID,
+  TRAFFIC_DATE_RANGE_OPTIONS,
+  parseTrafficRangeId,
+  type DashboardCustomRange,
+} from "@/features/traffic/model/traffic-range"
 import type { RangeId } from "@/lib/server/analytics-types"
 import {
   resolveIngestApiBase,
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
+import { appendDashboardCustomRangeParams } from "@/lib/server/analytics-utm-params"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
@@ -25,14 +32,7 @@ export function buildSeoDashboardData(
   rangeId: RangeId
 ): SeoDashboardData {
   return {
-    dateRangeOptions: [
-      { id: "24h", label: "Last 24 hours" },
-      { id: "7d", label: "Last 7 days" },
-      { id: "30d", label: "Last 30 days" },
-      { id: "3m", label: "Last 3 months" },
-      { id: "12m", label: "Last 12 months" },
-      { id: "24m", label: "Last 24 months" },
-    ],
+    dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: rangeId as SeoDashboardData["defaultDateRangeId"],
     defaultSortBy: data.sortBy,
     defaultSortOrder: data.sortOrder,
@@ -54,25 +54,26 @@ async function fetchSeoAnalytics(
   lpPublicId: string,
   rangeId: RangeId,
   sortBy: SeoSortField,
-  sortOrder: SeoSortOrder
+  sortOrder: SeoSortOrder,
+  customRange?: DashboardCustomRange
 ): Promise<AnalyticsSeoResponse | null> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
   if (!apiBase || !secret) return null
 
-  const params = new URLSearchParams({
-    workspace_id: workspaceId,
-    lp_public_id: lpPublicId,
-    range_id: rangeId,
-    sort_by: sortBy,
-    sort_order: sortOrder,
-  })
-
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 8_000)
 
   try {
-    const res = await fetch(`${apiBase}/v1/analytics/seo?${params}`, {
+    const url = new URL(`${apiBase}/v1/analytics/seo`)
+    url.searchParams.set("workspace_id", workspaceId)
+    url.searchParams.set("lp_public_id", lpPublicId)
+    url.searchParams.set("range_id", rangeId)
+    url.searchParams.set("sort_by", sortBy)
+    url.searchParams.set("sort_order", sortOrder)
+    appendDashboardCustomRangeParams(url, rangeId, customRange)
+
+    const res = await fetch(url.toString(), {
       headers: { "x-arohaa-internal": secret },
       signal: controller.signal,
       cache: "no-store",
@@ -88,14 +89,16 @@ async function fetchSeoAnalytics(
 
 export async function loadSeoDashboardData({
   landingPagePublicId,
-  rangeId = "7d",
+  rangeId = DEFAULT_TRAFFIC_RANGE_ID,
   sortBy = "clicks",
   sortOrder = "desc",
+  customRange,
 }: {
   landingPagePublicId: string
   rangeId?: RangeId
   sortBy?: SeoSortField
   sortOrder?: SeoSortOrder
+  customRange?: DashboardCustomRange
 }): Promise<SeoDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
@@ -108,10 +111,11 @@ export async function loadSeoDashboardData({
     landingPagePublicId,
     rangeId,
     sortBy,
-    sortOrder
+    sortOrder,
+    customRange
   )
   if (!analytics) {
-    return getSeoEmptyDashboardData(landingPagePublicId, rangeId as any)
+    return getSeoEmptyDashboardData(landingPagePublicId, rangeId)
   }
 
   return buildSeoDashboardData(analytics, rangeId)
@@ -121,15 +125,13 @@ export async function loadSeoDashboardDataForApi(
   landingPagePublicId: string,
   rangeIdRaw: string | null | undefined,
   sortByRaw: string | null | undefined,
-  sortOrderRaw: string | null | undefined
+  sortOrderRaw: string | null | undefined,
+  customRange?: DashboardCustomRange
 ): Promise<
   | { ok: true; data: SeoDashboardData }
   | { ok: false; status: number; error: string }
 > {
-  const validRanges = ["24h", "7d", "30d", "3m", "12m", "24m"]
-  const rangeId = validRanges.includes(rangeIdRaw as string)
-    ? (rangeIdRaw as RangeId)
-    : "7d"
+  const rangeId = parseTrafficRangeId(rangeIdRaw)
 
   const sortFields: SeoSortField[] = [
     "clicks",
@@ -158,6 +160,7 @@ export async function loadSeoDashboardDataForApi(
     rangeId,
     sortBy,
     sortOrder,
+    customRange,
   })
   return { ok: true, data }
 }

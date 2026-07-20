@@ -2,9 +2,11 @@ import type {
   OverviewDateRangeId,
   OverviewTimeSeriesPoint,
 } from "@/features/overview/model/overview"
+import type { DashboardCustomRange } from "@/features/traffic/model/traffic-range"
 import {
   addDashboardDays,
   createDashboardDateTimeFormatter,
+  dashboardZonedTimeToUtcMs,
   getDashboardZonedParts,
   startOfDashboardDay,
 } from "@/lib/datetime"
@@ -14,21 +16,7 @@ const shortMonthDay = createDashboardDateTimeFormatter({
   day: "numeric",
 })
 
-const shortMonthYear = createDashboardDateTimeFormatter({
-  month: "short",
-  year: "numeric",
-})
-
-const shortMonth = createDashboardDateTimeFormatter({ month: "short" })
-
 const hour12 = createDashboardDateTimeFormatter({
-  hour: "numeric",
-  hour12: true,
-})
-
-const monthDayHour = createDashboardDateTimeFormatter({
-  month: "short",
-  day: "numeric",
   hour: "numeric",
   hour12: true,
 })
@@ -37,107 +25,152 @@ function zeros(labels: string[]): OverviewTimeSeriesPoint[] {
   return labels.map((label) => ({ label, value: 0 }))
 }
 
-function sameDashboardDay(a: Date, b: Date): boolean {
-  const left = getDashboardZonedParts(a)
-  const right = getDashboardZonedParts(b)
-  return (
-    left.year === right.year &&
-    left.month === right.month &&
-    left.day === right.day
+function parseDayKey(key: string): Date {
+  const [y, m, d] = key.split("-").map(Number)
+  return new Date(
+    dashboardZonedTimeToUtcMs(y ?? 1970, m ?? 1, d ?? 1, 12, 0, 0)
   )
 }
 
-function buckets24h(now: Date): string[] {
-  const labels: string[] = []
+function mondayOfWeek(day: Date): Date {
+  const start = startOfDashboardDay(day)
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+  }).format(start)
+  const map: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  }
+  const dow = map[weekday] ?? 0
+  const offset = dow === 0 ? -6 : 1 - dow
+  return addDashboardDays(start, offset)
+}
 
-  for (let h = 23; h >= 0; h--) {
-    const d = new Date(now.getTime() - h * 60 * 60 * 1000)
-    if (sameDashboardDay(d, now)) {
-      labels.push(hour12.format(d))
-    } else {
-      labels.push(monthDayHour.format(d))
-    }
+/** Full today calendar day hours (00–23 ET). */
+function bucketsToday(now: Date): string[] {
+  const start = startOfDashboardDay(now)
+  const end = addDashboardDays(start, 1)
+  const labels: string[] = []
+  for (
+    let cursor = start.getTime();
+    cursor < end.getTime();
+    cursor += 60 * 60 * 1000
+  ) {
+    labels.push(hour12.format(new Date(cursor)))
   }
   return labels
 }
 
-function buckets7d(now: Date): string[] {
+/** Full yesterday calendar day hours (00–23 ET). */
+function bucketsYesterday(now: Date): string[] {
+  const todayStart = startOfDashboardDay(now)
+  const yesterdayStart = addDashboardDays(todayStart, -1)
+  const labels: string[] = []
+  for (
+    let cursor = yesterdayStart.getTime();
+    cursor < todayStart.getTime();
+    cursor += 60 * 60 * 1000
+  ) {
+    labels.push(hour12.format(new Date(cursor)))
+  }
+  return labels
+}
+
+/** Always Mon–Sun (7 days) for the current week. */
+function bucketsThisWeek(now: Date): string[] {
+  const monday = mondayOfWeek(now)
+  return Array.from({ length: 7 }, (_, i) =>
+    shortMonthDay.format(addDashboardDays(monday, i))
+  )
+}
+
+/** Last 7 calendar days including today. */
+function bucketsLast7Days(now: Date): string[] {
   const end = startOfDashboardDay(now)
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = addDashboardDays(end, -(6 - i))
-    return shortMonthDay.format(d)
-  })
+  return Array.from({ length: 7 }, (_, i) =>
+    shortMonthDay.format(addDashboardDays(end, -(6 - i)))
+  )
 }
 
-function buckets30d(now: Date): string[] {
-  const n = 10
-  const end = startOfDashboardDay(now)
-  return Array.from({ length: n }, (_, i) => {
-    const dayOffset = Math.round((29 * i) / Math.max(1, n - 1))
-    const d = addDashboardDays(end, -29 + dayOffset)
-    return shortMonthDay.format(d)
-  })
+/** Previous Mon–Sun. */
+function bucketsLastWeek(now: Date): string[] {
+  const thisMonday = mondayOfWeek(now)
+  const lastMonday = addDashboardDays(thisMonday, -7)
+  return Array.from({ length: 7 }, (_, i) =>
+    shortMonthDay.format(addDashboardDays(lastMonday, i))
+  )
 }
 
-function buckets3m(now: Date): string[] {
-  const n = 12
-  const daysBack = 90
-  const end = startOfDashboardDay(now)
-  return Array.from({ length: n }, (_, i) => {
-    const dayOffset = Math.round((daysBack * i) / Math.max(1, n - 1))
-    const d = addDashboardDays(end, -daysBack + dayOffset)
-    return shortMonthDay.format(d)
-  })
+function bucketsLastMonth(now: Date): string[] {
+  const { year, month } = getDashboardZonedParts(now)
+  const thisMonthStart = new Date(dashboardZonedTimeToUtcMs(year, month, 1))
+  const prevMonth = month === 1 ? 12 : month - 1
+  const prevYear = month === 1 ? year - 1 : year
+  const prevMonthStart = new Date(
+    dashboardZonedTimeToUtcMs(prevYear, prevMonth, 1)
+  )
+  const labels: string[] = []
+  for (
+    let cursor = prevMonthStart;
+    cursor.getTime() < thisMonthStart.getTime();
+    cursor = addDashboardDays(cursor, 1)
+  ) {
+    labels.push(shortMonthDay.format(cursor))
+  }
+  return labels
 }
 
-function buckets12m(now: Date): string[] {
-  const parts = getDashboardZonedParts(now)
-  const firstMonthIndex = parts.month - 1 - 11
-  return Array.from({ length: 12 }, (_, m) => {
-    const cursor = new Date(Date.UTC(parts.year, firstMonthIndex + m, 1))
-    const d = new Date(
-      Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), 15)
-    )
-    const sameYear = getDashboardZonedParts(d).year === parts.year
-    return sameYear ? shortMonth.format(d) : shortMonthYear.format(d)
-  })
-}
-
-function buckets24m(now: Date): string[] {
-  const parts = getDashboardZonedParts(now)
-  const firstMonthIndex = parts.month - 1 - 23
-  return Array.from({ length: 24 }, (_, m) => {
-    const cursor = new Date(Date.UTC(parts.year, firstMonthIndex + m, 1))
-    const d = new Date(
-      Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), 15)
-    )
-    return shortMonthYear.format(d)
-  })
+/** Inclusive custom calendar days from `from` through `to` (YYYY-MM-DD). */
+function bucketsCustomRange(custom: DashboardCustomRange): string[] {
+  const start = startOfDashboardDay(parseDayKey(custom.from))
+  const endInclusive = startOfDashboardDay(parseDayKey(custom.to))
+  const labels: string[] = []
+  for (
+    let cursor = start;
+    cursor.getTime() <= endInclusive.getTime();
+    cursor = addDashboardDays(cursor, 1)
+  ) {
+    labels.push(shortMonthDay.format(cursor))
+  }
+  return labels
 }
 
 export function overviewChartLabelsForRange(
   rangeId: OverviewDateRangeId,
-  now: Date
+  now: Date,
+  customRange?: DashboardCustomRange | null
 ): string[] {
   switch (rangeId) {
-    case "24h":
-      return buckets24h(now)
+    case "today":
+      return bucketsToday(now)
+    case "yesterday":
+      return bucketsYesterday(now)
+    case "this_week":
+      return bucketsThisWeek(now)
     case "7d":
-      return buckets7d(now)
-    case "30d":
-      return buckets30d(now)
-    case "3m":
-      return buckets3m(now)
-    case "12m":
-      return buckets12m(now)
-    case "24m":
-      return buckets24m(now)
+      return bucketsLast7Days(now)
+    case "last_week":
+      return bucketsLastWeek(now)
+    case "last_month":
+      return bucketsLastMonth(now)
+    case "custom":
+      if (customRange?.from && customRange?.to) {
+        return bucketsCustomRange(customRange)
+      }
+      return bucketsLast7Days(now)
   }
 }
 
 export function overviewChartPointsForRange(
   rangeId: OverviewDateRangeId,
-  now: Date = new Date()
+  now: Date = new Date(),
+  customRange?: DashboardCustomRange | null
 ): OverviewTimeSeriesPoint[] {
-  return zeros(overviewChartLabelsForRange(rangeId, now))
+  return zeros(overviewChartLabelsForRange(rangeId, now, customRange))
 }

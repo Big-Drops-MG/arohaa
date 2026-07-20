@@ -1,4 +1,11 @@
-export type RangeId = "24h" | "7d" | "30d" | "3m" | "12m" | "24m"
+export type RangeId =
+  | "today"
+  | "yesterday"
+  | "this_week"
+  | "7d"
+  | "last_week"
+  | "last_month"
+  | "custom"
 
 export interface RangeKpis {
   visitors: number
@@ -22,20 +29,16 @@ export type OverviewKpiMetricId =
   | "fsr"
   | "bounce-rate"
 
-export type OverviewKpiSeriesByRange = Record<
-  RangeId,
-  Record<OverviewKpiMetricId, SeriesPoint[]>
->
-
 export interface FunnelStep {
   label: string
   count: number
 }
 
 export interface AnalyticsOverview {
-  kpis: Record<RangeId, RangeKpis>
-  series: Record<RangeId, SeriesPoint[]>
-  kpiSeries: OverviewKpiSeriesByRange
+  rangeId: RangeId
+  kpis: RangeKpis
+  series: SeriesPoint[]
+  kpiSeries: Record<OverviewKpiMetricId, SeriesPoint[]>
   funnel: FunnelStep[]
   uniqueVisitors7d: number
   avgEngagedSecPerSession: number
@@ -95,6 +98,26 @@ export interface AnalyticsTrafficUtmRow {
   visitors: number
 }
 
+export type AnalyticsTrafficUtmParamKey =
+  | "utm_source"
+  | "utm_medium"
+  | "utm_campaign"
+  | "utm_term"
+  | "utm_content"
+  | "utm_id"
+  | "utm_s1"
+
+export interface AnalyticsTrafficUtmParamValueRow {
+  value: string
+  visitors: number
+}
+
+export interface AnalyticsTrafficUtmParamTab {
+  key: AnalyticsTrafficUtmParamKey
+  label: string
+  rows: AnalyticsTrafficUtmParamValueRow[]
+}
+
 export interface AnalyticsTraffic {
   rangeId: RangeId
   kpis: AnalyticsTrafficKpis
@@ -103,6 +126,8 @@ export interface AnalyticsTraffic {
   topPages: AnalyticsTopPageRow[]
   trafficByLocation: AnalyticsTrafficByLocationRow[]
   referrers: AnalyticsTrafficReferrerRow[]
+  utmByParam?: AnalyticsTrafficUtmParamTab[]
+  /** @deprecated Prefer `utmByParam`. */
   utmParameters: AnalyticsTrafficUtmRow[]
 }
 

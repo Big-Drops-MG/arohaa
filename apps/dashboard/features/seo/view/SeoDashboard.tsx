@@ -14,6 +14,10 @@ import { SeoResultsTable } from "@/features/seo/view/SeoResultsTable"
 import { SeoImportPanel } from "@/features/seo/view/SeoImportPanel"
 import { formatSeoSummaryLabel } from "@/features/seo/utils/seo-format"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import {
+  buildAnalyticsApiPath,
+  shouldUseInitialTabData,
+} from "@/lib/dashboard/analytics-query"
 
 const SEO_REFETCH_MS = 60_000
 
@@ -45,7 +49,8 @@ export function SeoDashboard({
   projectId,
   isActive = true,
 }: SeoDashboardProps) {
-  const { dateRangeId, setDateRangeId } = useDashboardDateRange()
+  const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
+    useDashboardDateRange()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isLoading, setIsLoading] = useState(false)
   const [sortBy, setSortBy] = useState<SeoSortField>(initialData.defaultSortBy)
@@ -61,12 +66,17 @@ export function SeoDashboard({
       signal?: AbortSignal
     ) => {
       setIsLoading(true)
-      const params = new URLSearchParams({
-        range_id: rangeId,
-        sort_by: nextSortBy,
-        sort_order: nextSortOrder,
-      })
-      const url = `/api/landing-pages/${encodeURIComponent(projectId)}/seo?${params}`
+      const url = buildAnalyticsApiPath(
+        `/api/landing-pages/${encodeURIComponent(projectId)}/seo`,
+        {
+          rangeId,
+          customRange,
+          extra: {
+            sort_by: nextSortBy,
+            sort_order: nextSortOrder,
+          },
+        }
+      )
 
       try {
         const res = await fetch(url, { cache: "no-store", signal })
@@ -85,12 +95,17 @@ export function SeoDashboard({
         if (!signal?.aborted) setIsLoading(false)
       }
     },
-    [projectId]
+    [projectId, customRange]
   )
 
   useEffect(() => {
     if (
-      dateRangeId === initialData.defaultDateRangeId &&
+      shouldUseInitialTabData(
+        dateRangeId,
+        initialData.defaultDateRangeId,
+        undefined,
+        customRange
+      ) &&
       sortBy === initialData.defaultSortBy &&
       sortOrder === initialData.defaultSortOrder
     ) {
@@ -102,7 +117,14 @@ export function SeoDashboard({
     const controller = new AbortController()
     void fetchSeoForRange(dateRangeId, sortBy, sortOrder, controller.signal)
     return () => controller.abort()
-  }, [dateRangeId, fetchSeoForRange, initialData, sortBy, sortOrder])
+  }, [
+    customRange,
+    dateRangeId,
+    fetchSeoForRange,
+    initialData,
+    sortBy,
+    sortOrder,
+  ])
 
   useEffect(() => {
     if (!isActive) return
@@ -117,7 +139,7 @@ export function SeoDashboard({
       controller.abort()
       window.clearInterval(id)
     }
-  }, [dateRangeId, fetchSeoForRange, isActive, sortBy, sortOrder])
+  }, [customRange, dateRangeId, fetchSeoForRange, isActive, sortBy, sortOrder])
 
   const sortedRows = useMemo(
     () => sortSeoRows(dashboardData.rows, sortBy, sortOrder),
@@ -141,7 +163,9 @@ export function SeoDashboard({
         title="SEO"
         dateRangeOptions={dashboardData.dateRangeOptions}
         dateRangeId={dateRangeId}
+        customRange={customRange}
         onDateRangeChange={setDateRangeId}
+        onCustomRangeChange={setCustomRange}
       />
 
       <SeoImportPanel

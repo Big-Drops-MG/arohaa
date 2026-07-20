@@ -27,7 +27,8 @@ export function SegmentsDashboard({
   projectId,
   isActive = true,
 }: SegmentsDashboardProps) {
-  const { dateRangeId, setDateRangeId } = useDashboardDateRange()
+  const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
+    useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isLoading, setIsLoading] = useState(false)
@@ -41,7 +42,7 @@ export function SegmentsDashboard({
 
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/segments`,
-        { rangeId, utmFilter }
+        { rangeId, customRange, utmFilter }
       )
       try {
         const res = await fetch(url, { cache: "no-store", signal })
@@ -75,7 +76,7 @@ export function SegmentsDashboard({
         }
       }
     },
-    [projectId, utmFilter]
+    [projectId, customRange, utmFilter]
   )
 
   useEffect(() => {
@@ -83,7 +84,8 @@ export function SegmentsDashboard({
       shouldUseInitialTabData(
         dateRangeId,
         initialData.defaultDateRangeId,
-        utmFilter
+        utmFilter,
+        customRange
       )
     ) {
       setDashboardData(initialData)
@@ -95,7 +97,7 @@ export function SegmentsDashboard({
     const controller = new AbortController()
     void fetchSegmentsForRange(dateRangeId, controller.signal)
     return () => controller.abort()
-  }, [dateRangeId, utmFilter, initialData, fetchSegmentsForRange])
+  }, [customRange, dateRangeId, utmFilter, initialData, fetchSegmentsForRange])
 
   useEffect(() => {
     if (!isActive) return
@@ -110,7 +112,7 @@ export function SegmentsDashboard({
       controller.abort()
       window.clearInterval(id)
     }
-  }, [dateRangeId, utmFilter, fetchSegmentsForRange, isActive])
+  }, [customRange, dateRangeId, utmFilter, fetchSegmentsForRange, isActive])
 
   return (
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">
@@ -118,7 +120,9 @@ export function SegmentsDashboard({
         title="Segments"
         dateRangeOptions={dashboardData.dateRangeOptions}
         dateRangeId={dateRangeId}
+        customRange={customRange}
         onDateRangeChange={setDateRangeId}
+        onCustomRangeChange={setCustomRange}
       />
 
       <div

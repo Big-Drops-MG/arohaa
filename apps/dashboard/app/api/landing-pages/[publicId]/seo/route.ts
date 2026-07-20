@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import type { SeoResultRow } from "@/features/seo/model/seo"
+import { parseDashboardCustomRange } from "@/features/traffic/model/traffic-range"
 import {
   loadSeoDashboardDataForApi,
   syncSeoRowsForApi,
@@ -11,6 +12,10 @@ export async function GET(
 ) {
   const { searchParams } = new URL(request.url)
   const rangeId = searchParams.get("range_id")
+  const customRange = parseDashboardCustomRange(
+    searchParams.get("from"),
+    searchParams.get("to")
+  )
   const sortBy = searchParams.get("sort_by")
   const sortOrder = searchParams.get("sort_order")
   const { publicId } = await props.params
@@ -19,7 +24,8 @@ export async function GET(
     publicId,
     rangeId,
     sortBy,
-    sortOrder
+    sortOrder,
+    customRange
   )
 
   if (!res.ok) {

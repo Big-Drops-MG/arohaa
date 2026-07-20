@@ -32,7 +32,8 @@ export function TrafficDashboard({
   projectId,
   isActive = true,
 }: TrafficDashboardProps) {
-  const { dateRangeId, setDateRangeId } = useDashboardDateRange()
+  const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
+    useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
   const [activeKpiId, setActiveKpiId] = useState<TrafficKpiMetricId>(
     initialData.defaultKpiMetricId
@@ -46,7 +47,7 @@ export function TrafficDashboard({
 
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/traffic`,
-        { rangeId, utmFilter }
+        { rangeId, customRange, utmFilter }
       )
       try {
         const res = await fetch(url, { cache: "no-store", signal })
@@ -58,7 +59,13 @@ export function TrafficDashboard({
               body.slice(0, 200)
             )
           }
-          setDashboardData(getTrafficEmptyDashboardData(projectId, rangeId))
+          setDashboardData(
+            getTrafficEmptyDashboardData(
+              projectId,
+              rangeId,
+              dashboardData.formType
+            )
+          )
           return
         }
         const next = (await res.json()) as TrafficDashboardData
@@ -68,14 +75,20 @@ export function TrafficDashboard({
         if (process.env.NODE_ENV === "development") {
           console.error("[traffic] client fetch failed", err)
         }
-        setDashboardData(getTrafficEmptyDashboardData(projectId, rangeId))
+        setDashboardData(
+          getTrafficEmptyDashboardData(
+            projectId,
+            rangeId,
+            dashboardData.formType
+          )
+        )
       } finally {
         if (!signal?.aborted) {
           setIsLoading(false)
         }
       }
     },
-    [projectId, utmFilter]
+    [projectId, customRange, utmFilter, dashboardData.formType]
   )
 
   useEffect(() => {
@@ -83,7 +96,8 @@ export function TrafficDashboard({
       shouldUseInitialTabData(
         dateRangeId,
         initialData.defaultDateRangeId,
-        utmFilter
+        utmFilter,
+        customRange
       )
     ) {
       setDashboardData(initialData)
@@ -94,7 +108,7 @@ export function TrafficDashboard({
     const controller = new AbortController()
     void fetchTrafficForRange(dateRangeId, controller.signal)
     return () => controller.abort()
-  }, [dateRangeId, utmFilter, initialData, fetchTrafficForRange])
+  }, [customRange, dateRangeId, utmFilter, initialData, fetchTrafficForRange])
 
   useEffect(() => {
     if (!isActive) return
@@ -109,7 +123,7 @@ export function TrafficDashboard({
       controller.abort()
       window.clearInterval(id)
     }
-  }, [dateRangeId, utmFilter, fetchTrafficForRange, isActive])
+  }, [customRange, dateRangeId, utmFilter, fetchTrafficForRange, isActive])
 
   return (
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">
@@ -117,7 +131,9 @@ export function TrafficDashboard({
         title="Traffic"
         dateRangeOptions={dashboardData.dateRangeOptions}
         dateRangeId={dateRangeId}
+        customRange={customRange}
         onDateRangeChange={setDateRangeId}
+        onCustomRangeChange={setCustomRange}
       />
 
       <div
@@ -156,7 +172,7 @@ export function TrafficDashboard({
             />
             <TrafficSourcesCard
               referrers={dashboardData.referrers}
-              utmParameters={dashboardData.utmParameters}
+              utmByParam={dashboardData.utmByParam}
               expandable
               previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
             />

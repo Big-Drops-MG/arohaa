@@ -1,6 +1,11 @@
 import {
   previousRangeFilter,
+  previousRangeQueryParams,
+  rangeCacheKey,
   rangeFilter,
+  rangeQueryParams,
+  resolveAnalyticsWindow,
+  type AnalyticsCustomRange,
   type AnalyticsRangeId,
 } from '../lib/analytics-range.js'
 import {
@@ -279,6 +284,7 @@ export interface GetAnalyticsFunnelParams {
   rangeId: AnalyticsRangeId
   formType?: FunnelFormType
   utmFilter?: AnalyticsUtmFilter
+  custom?: AnalyticsCustomRange
 }
 
 export async function getAnalyticsFunnel({
@@ -286,8 +292,12 @@ export async function getAnalyticsFunnel({
   rangeId,
   formType = 'single',
   utmFilter,
+  custom,
 }: GetAnalyticsFunnelParams): Promise<FunnelDashboardResponse> {
-  const cacheKey = `analytics:funnel:v7:${workspaceId}:${rangeId}:${formType}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
+  const now = new Date()
+  const window = resolveAnalyticsWindow(rangeId, now, custom)
+  const utmKey = utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'
+  const cacheKey = `analytics:funnel:v8:${workspaceId}:${rangeCacheKey(window, utmKey)}:${formType}`
   try {
     const cachedStr = await redis.get(cacheKey)
     if (cachedStr) {
@@ -298,11 +308,16 @@ export async function getAnalyticsFunnel({
   }
 
   const ch = getClickHouseClient()
-  const p = { wid: workspaceId, ...utmFilterParams(utmFilter) }
+  const p = {
+    wid: workspaceId,
+    ...rangeQueryParams(window),
+    ...previousRangeQueryParams(window),
+    ...utmFilterParams(utmFilter),
+  }
   const q = (query: string) => ch.query({ format: 'JSON', query_params: p, query })
 
-  const currentWhere = rangeFilter(rangeId, utmFilter)
-  const previousWhere = previousRangeFilter(rangeId, utmFilter)
+  const currentWhere = rangeFilter(utmFilter)
+  const previousWhere = previousRangeFilter(utmFilter)
 
   const [
     currentCoreRes,
@@ -332,7 +347,7 @@ export async function getAnalyticsFunnel({
     ((await dropOffRes.json()) as CHJson<DropOffAggRow>).data ?? []
 
   const response: FunnelDashboardResponse = {
-    rangeId,
+    rangeId: window.rangeId,
     metrics: buildMetrics(currentCore, previousCore, formType),
     multiStepSteps: buildMultiStepSteps(
       currentSteps,

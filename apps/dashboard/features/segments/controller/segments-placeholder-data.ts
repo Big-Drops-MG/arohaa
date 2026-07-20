@@ -1,13 +1,5 @@
 import type { SegmentsDashboardData } from "@/features/segments/model/segments"
-
-const dateRangeOptions = [
-  { id: "24h" as const, label: "Last 24 hours" },
-  { id: "7d" as const, label: "Last 7 days" },
-  { id: "30d" as const, label: "Last 30 days" },
-  { id: "3m" as const, label: "Last 3 months" },
-  { id: "12m" as const, label: "Last 12 months" },
-  { id: "24m" as const, label: "Last 24 months" },
-]
+import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-range"
 
 export function getSegmentsPlaceholderData(
   _landingPagePublicId: string
@@ -15,7 +7,7 @@ export function getSegmentsPlaceholderData(
   void _landingPagePublicId
 
   return {
-    dateRangeOptions: [...dateRangeOptions],
+    dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: "7d",
     summaryKpis: [
       { label: "Top Region", value: "New York" },

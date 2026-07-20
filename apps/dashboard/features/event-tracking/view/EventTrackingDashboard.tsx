@@ -43,7 +43,8 @@ export function EventTrackingDashboard({
   projectId,
   isActive = true,
 }: EventTrackingDashboardProps) {
-  const { dateRangeId, setDateRangeId } = useDashboardDateRange()
+  const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
+    useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isLoading, setIsLoading] = useState(false)
@@ -57,7 +58,7 @@ export function EventTrackingDashboard({
 
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/events`,
-        { rangeId, utmFilter }
+        { rangeId, customRange, utmFilter }
       )
       try {
         const res = await fetch(url, { cache: "no-store", signal })
@@ -99,7 +100,7 @@ export function EventTrackingDashboard({
         }
       }
     },
-    [projectId, utmFilter]
+    [projectId, customRange, utmFilter]
   )
 
   useEffect(() => {
@@ -107,7 +108,8 @@ export function EventTrackingDashboard({
       shouldUseInitialTabData(
         dateRangeId,
         initialData.defaultDateRangeId,
-        utmFilter
+        utmFilter,
+        customRange
       )
     ) {
       setDashboardData(initialData)
@@ -119,7 +121,7 @@ export function EventTrackingDashboard({
     const controller = new AbortController()
     void fetchEventsForRange(dateRangeId, controller.signal)
     return () => controller.abort()
-  }, [dateRangeId, utmFilter, initialData, fetchEventsForRange])
+  }, [customRange, dateRangeId, utmFilter, initialData, fetchEventsForRange])
 
   useEffect(() => {
     if (!isActive) return
@@ -134,7 +136,7 @@ export function EventTrackingDashboard({
       controller.abort()
       window.clearInterval(id)
     }
-  }, [dateRangeId, utmFilter, fetchEventsForRange, isActive])
+  }, [customRange, dateRangeId, utmFilter, fetchEventsForRange, isActive])
 
   return (
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">
@@ -142,7 +144,9 @@ export function EventTrackingDashboard({
         title="Event Tracking"
         dateRangeOptions={dashboardData.dateRangeOptions}
         dateRangeId={dateRangeId}
+        customRange={customRange}
         onDateRangeChange={setDateRangeId}
+        onCustomRangeChange={setCustomRange}
       />
 
       <div

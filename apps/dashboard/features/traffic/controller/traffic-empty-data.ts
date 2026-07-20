@@ -1,14 +1,26 @@
-import type { OverviewDateRangeId } from "@/features/overview/model/overview"
+import type {
+  OverviewDateRangeId,
+  OverviewLandingFormType,
+} from "@/features/overview/model/overview"
+import {
+  trafficFormSubmittedLabel,
+  trafficRateLabel,
+} from "@/features/traffic/controller/traffic-default-payload"
 import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-range"
 import type { TrafficDashboardData } from "@/features/traffic/model/traffic"
 
 export function getTrafficEmptyDashboardData(
   _landingPagePublicId: string,
-  rangeId: OverviewDateRangeId = "7d"
+  rangeId: OverviewDateRangeId = "7d",
+  formType: OverviewLandingFormType = "single"
 ): TrafficDashboardData {
   void _landingPagePublicId
 
+  const formSubmitted = trafficFormSubmittedLabel(formType)
+  const rate = trafficRateLabel(formType)
+
   return {
+    formType,
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: rangeId,
     defaultKpiMetricId: "active-users",
@@ -29,7 +41,7 @@ export function getTrafficEmptyDashboardData(
         { key: "date", label: "Date" },
         { key: "visitors", label: "Visitors" },
         { key: "sessions", label: "Sessions" },
-        { key: "formSubmitted", label: "Form Submitted" },
+        { key: "formSubmitted", label: formSubmitted },
       ],
       rows: [],
     },
@@ -38,8 +50,8 @@ export function getTrafficEmptyDashboardData(
       columns: [
         { key: "device", label: "Device" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
-        { key: "fsr", label: "FSR" },
+        { key: "formSubmitted", label: formSubmitted },
+        { key: "fsr", label: rate },
       ],
       rows: [],
     },
@@ -56,12 +68,13 @@ export function getTrafficEmptyDashboardData(
       columns: [
         { key: "city", label: "City" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
-        { key: "fsr", label: "FSR" },
+        { key: "formSubmitted", label: formSubmitted },
+        { key: "fsr", label: rate },
       ],
       rows: [],
     },
     referrers: [],
+    utmByParam: [],
     utmParameters: [],
   }
 }

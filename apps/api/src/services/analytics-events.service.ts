@@ -7,8 +7,14 @@ import {
   parseAnalyticsEtDayKey,
 } from '../lib/analytics-timezone.js'
 import {
+  rangeCacheKey,
+  rangeFilter,
+  rangeQueryParams,
+  resolveAnalyticsWindow,
+  type AnalyticsCustomRange,
+} from '../lib/analytics-range.js'
+import {
   utmFilterParams,
-  utmFilterSql,
   type AnalyticsUtmFilter,
 } from '../lib/analytics-utm-filter.js'
 
@@ -23,33 +29,32 @@ function fsrPct(submitted: number, sessions: number): number {
   return sessions > 0 ? round1((submitted / sessions) * 100) : 0
 }
 
-function getInterval(rangeId: RangeId): string {
-  if (rangeId === '24h') return '24 HOUR'
-  if (rangeId === '7d') return '7 DAY'
-  if (rangeId === '30d') return '30 DAY'
-  if (rangeId === '3m') return '3 MONTH'
-  if (rangeId === '12m') return '12 MONTH'
-  return '24 MONTH'
-}
-
 export async function getAnalyticsEvents({
   workspaceId,
   rangeId,
   utmFilter,
+  custom,
 }: {
   workspaceId: string
   rangeId: RangeId
   utmFilter?: AnalyticsUtmFilter
+  custom?: AnalyticsCustomRange
 }): Promise<AnalyticsEvents> {
-  const cacheKey = `analytics:events:v2-et:${workspaceId}:${rangeId}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
+  const now = new Date()
+  const window = resolveAnalyticsWindow(rangeId, now, custom)
+  const utmKey = utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'
+  const cacheKey = `analytics:events:v3-abs:${workspaceId}:${rangeCacheKey(window, utmKey)}`
   const cached = await readAnalyticsCache<AnalyticsEvents>(cacheKey)
   if (cached) return cached
 
   const ch = getClickHouseClient()
-  const interval = getInterval(rangeId)
-  const utmSql = utmFilterSql(utmFilter)
-  const p = { wid: workspaceId, ...utmFilterParams(utmFilter) }
-  
+  const where = rangeFilter(utmFilter)
+  const p = {
+    wid: workspaceId,
+    ...rangeQueryParams(window),
+    ...utmFilterParams(utmFilter),
+  }
+
   const [kpiRes, dateRes] = await Promise.all([
     ch.query({
       format: 'JSON',
@@ -63,7 +68,7 @@ export async function getAnalyticsEvents({
           countIf(event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS total_sessions
         FROM events_raw
-        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}${utmSql}
+        WHERE ${where}
       `,
     }),
     ch.query({
@@ -76,7 +81,7 @@ export async function getAnalyticsEvents({
           countIf(event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS total_sessions
         FROM events_raw
-        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}${utmSql}
+        WHERE ${where}
         GROUP BY date_label
         ORDER BY date_label ASC
       `,
@@ -91,7 +96,7 @@ export async function getAnalyticsEvents({
     form_submitted: string
     total_sessions: string
   }
-  
+
   type DateRow = {
     date_label: string
     zip_submitted: string
@@ -122,7 +127,6 @@ export async function getAnalyticsEvents({
     }
   })
 
-  // To display nice dates, let's format them
   const formattedSubmissionRows = submissionRows.map(row => {
     const d = parseAnalyticsEtDayKey(row.date)
     const formattedDate = formatAnalyticsCalendarDate(d)

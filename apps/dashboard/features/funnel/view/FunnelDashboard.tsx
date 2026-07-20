@@ -28,7 +28,8 @@ export function FunnelDashboard({
   projectId,
   isActive = true,
 }: FunnelDashboardProps) {
-  const { dateRangeId, setDateRangeId } = useDashboardDateRange()
+  const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
+    useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
   const [activeKpiId, setActiveKpiId] = useState(FUNNEL_DEFAULT_KPI_METRIC_ID)
   const [dashboardData, setDashboardData] = useState(initialData)
@@ -40,7 +41,7 @@ export function FunnelDashboard({
 
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/funnel`,
-        { rangeId, utmFilter }
+        { rangeId, customRange, utmFilter }
       )
       try {
         const res = await fetch(url, { cache: "no-store", signal })
@@ -73,7 +74,7 @@ export function FunnelDashboard({
         }
       }
     },
-    [projectId, utmFilter]
+    [projectId, customRange, utmFilter]
   )
 
   useEffect(() => {
@@ -83,7 +84,8 @@ export function FunnelDashboard({
       shouldUseInitialTabData(
         dateRangeId,
         initialData.defaultDateRangeId,
-        utmFilter
+        utmFilter,
+        customRange
       )
     ) {
       setDashboardData(initialData)
@@ -94,7 +96,7 @@ export function FunnelDashboard({
     const controller = new AbortController()
     void fetchFunnelForRange(dateRangeId, controller.signal)
     return () => controller.abort()
-  }, [dateRangeId, utmFilter, initialData, fetchFunnelForRange])
+  }, [customRange, dateRangeId, utmFilter, initialData, fetchFunnelForRange])
 
   useEffect(() => {
     if (isActive) {
@@ -115,7 +117,7 @@ export function FunnelDashboard({
       controller.abort()
       window.clearInterval(id)
     }
-  }, [dateRangeId, utmFilter, fetchFunnelForRange, isActive])
+  }, [customRange, dateRangeId, utmFilter, fetchFunnelForRange, isActive])
 
   return (
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">
@@ -123,7 +125,9 @@ export function FunnelDashboard({
         title="Funnel"
         dateRangeOptions={dashboardData.dateRangeOptions}
         dateRangeId={dateRangeId}
+        customRange={customRange}
         onDateRangeChange={setDateRangeId}
+        onCustomRangeChange={setCustomRange}
       />
 
       <div

@@ -1,7 +1,10 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { formatDashboardDigitalClock } from "@/lib/datetime"
+import {
+  formatDashboardDigitalClock,
+  getDashboardTimezoneAbbreviation,
+} from "@/lib/datetime"
 
 export function NavbarClock() {
   const [now, setNow] = useState<Date | null>(null)
@@ -14,7 +17,8 @@ export function NavbarClock() {
     return () => window.clearInterval(id)
   }, [])
 
-  const label = now ? formatDashboardDigitalClock(now) : "--:--:-- --"
+  const label = now ? formatDashboardDigitalClock(now) : "--:--:-- -- ---"
+  const zone = now ? getDashboardTimezoneAbbreviation(now) : null
 
   return (
     <time
@@ -24,7 +28,7 @@ export function NavbarClock() {
       aria-label={
         now ? `Current Eastern time ${label}` : "Current Eastern time"
       }
-      title="Eastern Time (EST/EDT)"
+      title={zone ? `Eastern Time (${zone})` : "Eastern Time"}
     >
       {label}
     </time>

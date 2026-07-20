@@ -1,17 +1,8 @@
-import type { OverviewDateRangeId } from "@/features/overview/model/overview"
 import type {
   SegmentValuesByMetric,
   SegmentsByDateRange,
 } from "@/features/segments/model/segments"
-
-const RANGE_IDS: OverviewDateRangeId[] = [
-  "24h",
-  "7d",
-  "30d",
-  "3m",
-  "12m",
-  "24m",
-]
+import { TRAFFIC_RANGE_IDS } from "@/features/traffic/model/traffic-range"
 
 function emptySegmentValues(): SegmentValuesByMetric {
   return {
@@ -25,6 +16,6 @@ function emptySegmentValues(): SegmentValuesByMetric {
 
 export function defaultSegmentsByDateRange(): SegmentsByDateRange {
   return Object.fromEntries(
-    RANGE_IDS.map((id) => [id, emptySegmentValues()])
+    TRAFFIC_RANGE_IDS.map((id) => [id, emptySegmentValues()])
   ) as SegmentsByDateRange
 }

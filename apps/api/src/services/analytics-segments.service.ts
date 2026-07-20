@@ -7,8 +7,14 @@ import type { AnalyticsSegments, RangeId } from '../types/analytics-segments.js'
 import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
 import { chToDayOfWeek, chToHour } from '../lib/analytics-timezone.js'
 import {
+  rangeCacheKey,
+  rangeFilter,
+  rangeQueryParams,
+  resolveAnalyticsWindow,
+  type AnalyticsCustomRange,
+} from '../lib/analytics-range.js'
+import {
   utmFilterParams,
-  utmFilterSql,
   type AnalyticsUtmFilter,
 } from '../lib/analytics-utm-filter.js'
 
@@ -21,15 +27,6 @@ const round1 = (v: number) => Math.round(v * 10) / 10
 
 function fsrPct(formSuccessSessions: number, sessions: number): number {
   return sessions > 0 ? round1((formSuccessSessions / sessions) * 100) : 0
-}
-
-function getInterval(rangeId: RangeId): string {
-  if (rangeId === '24h') return '24 HOUR'
-  if (rangeId === '7d') return '7 DAY'
-  if (rangeId === '30d') return '30 DAY'
-  if (rangeId === '3m') return '3 MONTH'
-  if (rangeId === '12m') return '12 MONTH'
-  return '24 MONTH'
 }
 
 type SegmentRow = {
@@ -95,19 +92,27 @@ export async function getAnalyticsSegments({
   workspaceId,
   rangeId,
   utmFilter,
+  custom,
 }: {
   workspaceId: string
   rangeId: RangeId
   utmFilter?: AnalyticsUtmFilter
+  custom?: AnalyticsCustomRange
 }): Promise<AnalyticsSegments> {
-  const cacheKey = `analytics:segments:v2-et:${workspaceId}:${rangeId}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
+  const now = new Date()
+  const window = resolveAnalyticsWindow(rangeId, now, custom)
+  const utmKey = utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'
+  const cacheKey = `analytics:segments:v3-abs:${workspaceId}:${rangeCacheKey(window, utmKey)}`
   const cached = await readAnalyticsCache<AnalyticsSegments>(cacheKey)
   if (cached) return cached
 
   const ch = getClickHouseClient()
-  const interval = getInterval(rangeId)
-  const utmSql = utmFilterSql(utmFilter)
-  const p = { wid: workspaceId, ...utmFilterParams(utmFilter) }
+  const where = rangeFilter(utmFilter)
+  const p = {
+    wid: workspaceId,
+    ...rangeQueryParams(window),
+    ...utmFilterParams(utmFilter),
+  }
 
   const [locationRes, deviceRes, dayRes, timeRes] = await Promise.all([
     ch.query({
@@ -120,7 +125,7 @@ export async function getAnalyticsSegments({
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS sessions
         FROM events_raw
-        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}${utmSql}
+        WHERE ${where}
         GROUP BY label
         ORDER BY visitors DESC
         LIMIT 20
@@ -136,7 +141,7 @@ export async function getAnalyticsSegments({
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS sessions
         FROM events_raw
-        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}${utmSql}
+        WHERE ${where}
         GROUP BY label
         ORDER BY visitors DESC
         LIMIT 20
@@ -152,7 +157,7 @@ export async function getAnalyticsSegments({
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS sessions
         FROM events_raw
-        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}${utmSql}
+        WHERE ${where}
         GROUP BY label
         ORDER BY visitors DESC
       `,
@@ -165,7 +170,7 @@ export async function getAnalyticsSegments({
           ${chToHour('created_at')} AS label,
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted
         FROM events_raw
-        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}${utmSql}
+        WHERE ${where}
         GROUP BY label
         ORDER BY form_submitted DESC
         LIMIT 1
@@ -200,10 +205,9 @@ export async function getAnalyticsSegments({
   const performanceByDevice = deviceRows.map(r => processRow(r, formatDevice))
   const performanceByTime = aggregateByDayOfWeek(dayRows)
 
-  // Calculate Summary KPIs
   const topRegion = performanceByLocation[0]?.label ?? '-'
   const topDevice = performanceByDevice[0]?.label ?? '-'
-  
+
   let bestDayRow = performanceByTime[0]
   if (bestDayRow) {
     for (const row of performanceByTime) {
@@ -214,7 +218,7 @@ export async function getAnalyticsSegments({
   }
   const bestDay = bestDayRow?.label ?? '-'
   const bestTime = timeData ? formatHour(timeData.label) : '-'
-  
+
   let highestFsr = 0
   const allRows = [...performanceByLocation, ...performanceByDevice, ...performanceByTime]
   for (const row of allRows) {

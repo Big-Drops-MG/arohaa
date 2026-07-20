@@ -1,6 +1,7 @@
 import type { EventTrackingDashboardData } from "@/features/event-tracking/model/event-tracking"
 import { eventTrackingKpisForFormType } from "@/features/event-tracking/utils/event-tracking-kpis-for-form-type"
 import { withSubmissionShare } from "@/features/event-tracking/utils/event-tracking-submission-share"
+import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-range"
 
 export function getEventTrackingPlaceholderData(
   _landingPagePublicId: string
@@ -20,14 +21,7 @@ export function getEventTrackingPlaceholderData(
 
   return {
     formType,
-    dateRangeOptions: [
-      { id: "24h", label: "Last 24 hours" },
-      { id: "7d", label: "Last 7 days" },
-      { id: "30d", label: "Last 30 days" },
-      { id: "3m", label: "Last 3 months" },
-      { id: "12m", label: "Last 12 months" },
-      { id: "24m", label: "Last 24 months" },
-    ],
+    dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: "7d",
     kpis: eventTrackingKpisForFormType(formType, kpiSource),
     submissionRows: withSubmissionShare([

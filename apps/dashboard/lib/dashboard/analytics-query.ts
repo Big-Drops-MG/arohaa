@@ -1,9 +1,11 @@
 import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
+import type { DashboardCustomRange } from "@/features/traffic/model/traffic-range"
 
 export function buildAnalyticsApiPath(
   path: string,
   params: {
     rangeId?: string
+    customRange?: DashboardCustomRange | null
     utmFilter?: DashboardUtmFilter | null
     extra?: Record<string, string>
   }
@@ -11,6 +13,10 @@ export function buildAnalyticsApiPath(
   const url = new URL(path, "http://localhost")
   if (params.rangeId) {
     url.searchParams.set("range_id", params.rangeId)
+  }
+  if (params.rangeId === "custom" && params.customRange) {
+    url.searchParams.set("from", params.customRange.from)
+    url.searchParams.set("to", params.customRange.to)
   }
   if (params.utmFilter?.dimension && params.utmFilter.value) {
     url.searchParams.set("utm_dim", params.utmFilter.dimension)
@@ -27,7 +33,19 @@ export function buildAnalyticsApiPath(
 export function shouldUseInitialTabData(
   dateRangeId: string,
   defaultDateRangeId: string,
-  utmFilter?: DashboardUtmFilter | null
+  utmFilter?: DashboardUtmFilter | null,
+  customRange?: DashboardCustomRange | null,
+  defaultCustomRange?: DashboardCustomRange | null
 ): boolean {
-  return !utmFilter && dateRangeId === defaultDateRangeId
+  if (utmFilter) return false
+  if (dateRangeId !== defaultDateRangeId) return false
+  if (dateRangeId === "custom") {
+    return (
+      !!customRange &&
+      !!defaultCustomRange &&
+      customRange.from === defaultCustomRange.from &&
+      customRange.to === defaultCustomRange.to
+    )
+  }
+  return true
 }

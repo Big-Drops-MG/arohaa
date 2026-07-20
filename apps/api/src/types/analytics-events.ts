@@ -1,4 +1,6 @@
-export type RangeId = '24h' | '7d' | '30d' | '3m' | '12m' | '24m'
+import type { AnalyticsRangeId } from '../lib/analytics-range.js'
+
+export type RangeId = AnalyticsRangeId
 
 export interface AnalyticsEventsKpis {
   totalEvents: number

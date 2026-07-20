@@ -1,4 +1,5 @@
 import type { OverviewLandingFormType } from "@/features/overview/model/overview"
+import { TRAFFIC_RANGE_IDS } from "@/features/traffic/model/traffic-range"
 import type {
   TrafficBreakdownTable,
   TrafficSourcesData,
@@ -6,11 +7,13 @@ import type {
   TrafficTablesByDateRange,
 } from "@/features/traffic/model/traffic"
 
-function formSubmittedLabel(formType: OverviewLandingFormType): string {
+export function trafficFormSubmittedLabel(
+  formType: OverviewLandingFormType
+): string {
   return formType === "zip" ? "Zip Submitted" : "Form Submitted"
 }
 
-function rateLabel(formType: OverviewLandingFormType): string {
+export function trafficRateLabel(formType: OverviewLandingFormType): string {
   return formType === "zip" ? "ZSR" : "FSR"
 }
 
@@ -22,8 +25,8 @@ export function trafficTableColumns(formType: OverviewLandingFormType): {
   utmParameters: TrafficBreakdownTable["columns"]
   topPages: TrafficBreakdownTable["columns"]
 } {
-  const formSubmitted = formSubmittedLabel(formType)
-  const rate = rateLabel(formType)
+  const formSubmitted = trafficFormSubmittedLabel(formType)
+  const rate = trafficRateLabel(formType)
 
   return {
     byTime: [
@@ -83,7 +86,7 @@ export function defaultTrafficTabTables(
   }
 }
 
-const RANGE_IDS = ["24h", "7d", "30d", "3m", "12m", "24m"] as const
+const RANGE_IDS = TRAFFIC_RANGE_IDS
 
 export function defaultTrafficTablesByDateRange(
   formType: OverviewLandingFormType

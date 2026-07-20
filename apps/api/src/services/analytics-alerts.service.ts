@@ -6,21 +6,19 @@ import type {
 } from '../types/analytics-alerts.js'
 import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
 import {
+  previousRangeQueryParams,
+  rangeCacheKey,
+  rangeQueryParams,
+  resolveAnalyticsWindow,
+  type AnalyticsCustomRange,
+} from '../lib/analytics-range.js'
+import {
   utmFilterParams,
   utmFilterSql,
   type AnalyticsUtmFilter,
 } from '../lib/analytics-utm-filter.js'
 
 type CHJson<T> = { data: T[] }
-
-function getIntervals(rangeId: RangeId): { current: string; previous: string } {
-  if (rangeId === '24h') return { current: '24 HOUR', previous: '48 HOUR' }
-  if (rangeId === '7d') return { current: '7 DAY', previous: '14 DAY' }
-  if (rangeId === '30d') return { current: '30 DAY', previous: '60 DAY' }
-  if (rangeId === '3m') return { current: '3 MONTH', previous: '6 MONTH' }
-  if (rangeId === '12m') return { current: '12 MONTH', previous: '24 MONTH' }
-  return { current: '24 MONTH', previous: '48 MONTH' }
-}
 
 const n = (v: string | number | null | undefined): number =>
   typeof v === 'number' ? v : Number(v ?? 0) || 0
@@ -44,37 +42,74 @@ export async function getAnalyticsAlerts({
   lpPublicId,
   rangeId,
   utmFilter,
+  custom,
 }: {
   workspaceId: string
   lpPublicId: string
   rangeId: RangeId
   utmFilter?: AnalyticsUtmFilter
+  custom?: AnalyticsCustomRange
 }): Promise<AnalyticsAlertsResponse> {
-  const cacheKey = `analytics:alerts:${workspaceId}:${lpPublicId}:${rangeId}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
+  const now = new Date()
+  const window = resolveAnalyticsWindow(rangeId, now, custom)
+  const utmKey = utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'
+  const cacheKey = `analytics:alerts:v2-abs:${workspaceId}:${lpPublicId}:${rangeCacheKey(window, utmKey)}`
   const cached = await readAnalyticsCache<AnalyticsAlertsResponse>(cacheKey)
   if (cached) return cached
 
   const ch = getClickHouseClient()
-  const { current, previous } = getIntervals(rangeId)
   const utmSql = utmFilterSql(utmFilter)
-  const p = { wid: workspaceId, lp: lpPublicId, ...utmFilterParams(utmFilter) }
+  const p = {
+    wid: workspaceId,
+    lp: lpPublicId,
+    ...rangeQueryParams(window),
+    ...previousRangeQueryParams(window),
+    ...utmFilterParams(utmFilter),
+  }
 
   const res = await ch.query({
     format: 'JSON',
     query_params: p,
     query: `
       SELECT
-        uniqExactIf(session_id, created_at >= now() - INTERVAL ${current}) AS current_sessions,
-        uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL ${current}) AS current_form_success,
-        uniqExactIf(session_id, event_name = 'form_start' AND created_at >= now() - INTERVAL ${current}) AS current_form_starts,
+        uniqExactIf(
+          session_id,
+          created_at >= toDateTime64({range_from:String}, 3, 'UTC') AND created_at < toDateTime64({range_to:String}, 3, 'UTC')
+        ) AS current_sessions,
+        uniqExactIf(
+          session_id,
+          event_name = 'form_success'
+            AND created_at >= toDateTime64({range_from:String}, 3, 'UTC')
+            AND created_at < toDateTime64({range_to:String}, 3, 'UTC')
+        ) AS current_form_success,
+        uniqExactIf(
+          session_id,
+          event_name = 'form_start'
+            AND created_at >= toDateTime64({range_from:String}, 3, 'UTC')
+            AND created_at < toDateTime64({range_to:String}, 3, 'UTC')
+        ) AS current_form_starts,
 
-        uniqExactIf(session_id, created_at >= now() - INTERVAL ${previous} AND created_at < now() - INTERVAL ${current}) AS prev_sessions,
-        uniqExactIf(session_id, event_name = 'form_success' AND created_at >= now() - INTERVAL ${previous} AND created_at < now() - INTERVAL ${current}) AS prev_form_success,
-        uniqExactIf(session_id, event_name = 'form_start' AND created_at >= now() - INTERVAL ${previous} AND created_at < now() - INTERVAL ${current}) AS prev_form_starts
+        uniqExactIf(
+          session_id,
+          created_at >= toDateTime64({prev_from:String}, 3, 'UTC') AND created_at < toDateTime64({prev_to:String}, 3, 'UTC')
+        ) AS prev_sessions,
+        uniqExactIf(
+          session_id,
+          event_name = 'form_success'
+            AND created_at >= toDateTime64({prev_from:String}, 3, 'UTC')
+            AND created_at < toDateTime64({prev_to:String}, 3, 'UTC')
+        ) AS prev_form_success,
+        uniqExactIf(
+          session_id,
+          event_name = 'form_start'
+            AND created_at >= toDateTime64({prev_from:String}, 3, 'UTC')
+            AND created_at < toDateTime64({prev_to:String}, 3, 'UTC')
+        ) AS prev_form_starts
       FROM events_raw
       WHERE workspace_id = {wid:UUID}
         AND lp_public_id = {lp:String}
-        AND created_at >= now() - INTERVAL ${previous}${utmSql}
+        AND created_at >= toDateTime64({prev_from:String}, 3, 'UTC')
+        AND created_at < toDateTime64({range_to:String}, 3, 'UTC')${utmSql}
     `,
   })
 
@@ -119,7 +154,7 @@ export async function getAnalyticsAlerts({
   const sessDelta = curSess - prevSess
 
   if (sessPct !== null && curSess > prevSess && sessPct >= 15) {
-    if (rangeId === '7d') {
+    if (window.rangeId === '7d') {
       items.push({
         id: nextId(),
         message: `Best weekly hike: ${formatSignedPct(sessPct)} sessions vs prior 7 days`,
@@ -154,19 +189,18 @@ export async function getAnalyticsAlerts({
     })
   }
 
-  if (rangeId === '30d' && prevFS >= MIN_FORM_BASELINE) {
+  if (window.rangeId === 'last_month' && prevFS >= MIN_FORM_BASELINE) {
     const fsPct = Math.round(((curFS - prevFS) / prevFS) * 100)
     if (fsPct >= 10 && curFS > prevFS) {
       items.push({
         id: nextId(),
-        message: `Best monthly hike: ${formatSignedPct(fsPct)} form submissions vs prior 30 days`,
+        message: `Best monthly hike: ${formatSignedPct(fsPct)} form submissions vs prior month`,
         date: today,
         severity: 'info',
       })
     }
   }
 
-  // FSR drop (10% relative threshold)
   if (prevFSR > 0.05) {
     const fsrDiff = (curFSR - prevFSR) / prevFSR
     if (fsrDiff < -0.1) {
@@ -179,7 +213,6 @@ export async function getAnalyticsAlerts({
     }
   }
 
-  // Form starts drop (15% relative threshold)
   if (prevStarts >= MIN_FORM_BASELINE) {
     const startsDiff = (curStarts - prevStarts) / prevStarts
     if (startsDiff < -0.15) {

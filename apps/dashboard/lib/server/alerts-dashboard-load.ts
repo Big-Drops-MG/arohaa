@@ -5,13 +5,22 @@ import type {
   OverviewAlert,
   OverviewAlertSeverity,
 } from "@/features/overview/model/overview"
+import {
+  DEFAULT_TRAFFIC_RANGE_ID,
+  TRAFFIC_DATE_RANGE_OPTIONS,
+  parseTrafficRangeId,
+  type DashboardCustomRange,
+} from "@/features/traffic/model/traffic-range"
 import type { RangeId } from "@/lib/server/analytics-types"
 import {
   resolveIngestApiBase,
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
 import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
-import { appendDashboardUtmParams } from "@/lib/server/analytics-utm-params"
+import {
+  appendDashboardCustomRangeParams,
+  appendDashboardUtmParams,
+} from "@/lib/server/analytics-utm-params"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
@@ -49,15 +58,8 @@ export function buildAlertsDashboardData(
   rangeId: RangeId
 ): AlertsDashboardData {
   return {
-    dateRangeOptions: [
-      { id: "24h", label: "Last 24 hours" },
-      { id: "7d", label: "Last 7 days" },
-      { id: "30d", label: "Last 30 days" },
-      { id: "3m", label: "Last 3 months" },
-      { id: "12m", label: "Last 12 months" },
-      { id: "24m", label: "Last 24 months" },
-    ],
-    defaultDateRangeId: rangeId as any,
+    dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
+    defaultDateRangeId: rangeId,
     items: mapAnalyticsAlerts(data.items),
   }
 }
@@ -66,7 +68,8 @@ export async function fetchAlertsAnalytics(
   workspaceId: string,
   landingPagePublicId: string,
   rangeId: RangeId,
-  utmFilter?: DashboardUtmFilter
+  utmFilter?: DashboardUtmFilter,
+  customRange?: DashboardCustomRange
 ): Promise<AnalyticsAlertsResponse | null> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
@@ -81,6 +84,7 @@ export async function fetchAlertsAnalytics(
     url.searchParams.set("workspace_id", workspaceId)
     url.searchParams.set("lp_public_id", landingPagePublicId)
     url.searchParams.set("range_id", rangeId)
+    appendDashboardCustomRangeParams(url, rangeId, customRange)
     appendDashboardUtmParams(url, utmFilter)
 
     const resp = await fetch(url.toString(), {
@@ -119,12 +123,14 @@ export async function fetchAlertsAnalytics(
 
 export async function loadAlertsDashboardData({
   landingPagePublicId,
-  rangeId = "7d",
+  rangeId = DEFAULT_TRAFFIC_RANGE_ID,
   utmFilter,
+  customRange,
 }: {
   landingPagePublicId: string
   rangeId?: RangeId
   utmFilter?: DashboardUtmFilter
+  customRange?: DashboardCustomRange
 }): Promise<AlertsDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
@@ -136,10 +142,11 @@ export async function loadAlertsDashboardData({
     row.id,
     landingPagePublicId,
     rangeId,
-    utmFilter
+    utmFilter,
+    customRange
   )
   if (!analytics) {
-    return getAlertsEmptyDashboardData(landingPagePublicId, rangeId as any)
+    return getAlertsEmptyDashboardData(landingPagePublicId, rangeId)
   }
 
   return buildAlertsDashboardData(analytics, rangeId)
@@ -148,15 +155,13 @@ export async function loadAlertsDashboardData({
 export async function loadAlertsDashboardDataForApi(
   landingPagePublicId: string,
   rangeIdRaw: string | null | undefined,
-  utmFilter?: DashboardUtmFilter
+  utmFilter?: DashboardUtmFilter,
+  customRange?: DashboardCustomRange
 ): Promise<
   | { ok: true; data: AlertsDashboardData }
   | { ok: false; status: number; error: string }
 > {
-  const validRanges = ["24h", "7d", "30d", "3m", "12m", "24m"]
-  const rangeId = validRanges.includes(rangeIdRaw as string)
-    ? (rangeIdRaw as RangeId)
-    : "7d"
+  const rangeId = parseTrafficRangeId(rangeIdRaw)
 
   const actor = await requireLandingPageActor()
   if (!actor) {
@@ -172,12 +177,13 @@ export async function loadAlertsDashboardDataForApi(
     row.id,
     landingPagePublicId,
     rangeId,
-    utmFilter
+    utmFilter,
+    customRange
   )
   if (!analytics) {
     return {
       ok: true,
-      data: getAlertsEmptyDashboardData(landingPagePublicId, rangeId as any),
+      data: getAlertsEmptyDashboardData(landingPagePublicId, rangeId),
     }
   }
 

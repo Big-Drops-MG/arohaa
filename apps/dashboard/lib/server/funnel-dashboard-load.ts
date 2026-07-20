@@ -14,6 +14,7 @@ import {
   DEFAULT_TRAFFIC_RANGE_ID,
   TRAFFIC_DATE_RANGE_OPTIONS,
   parseTrafficRangeId,
+  type DashboardCustomRange,
 } from "@/features/traffic/model/traffic-range"
 import type { AnalyticsFunnel, RangeId } from "@/lib/server/analytics-types"
 import {
@@ -23,7 +24,10 @@ import {
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
-import { appendDashboardUtmParams } from "@/lib/server/analytics-utm-params"
+import {
+  appendDashboardCustomRangeParams,
+  appendDashboardUtmParams,
+} from "@/lib/server/analytics-utm-params"
 
 export { parseTrafficRangeId as parseFunnelRangeId } from "@/features/traffic/model/traffic-range"
 
@@ -112,7 +116,8 @@ export async function fetchFunnelAnalytics(
   workspaceId: string,
   rangeId: RangeId,
   formType?: OverviewLandingFormType,
-  utmFilter?: DashboardUtmFilter
+  utmFilter?: DashboardUtmFilter,
+  customRange?: DashboardCustomRange
 ): Promise<AnalyticsFunnel | null> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
@@ -126,6 +131,7 @@ export async function fetchFunnelAnalytics(
     const url = new URL(`${apiBase}/v1/analytics/funnel`)
     url.searchParams.set("workspace_id", workspaceId)
     url.searchParams.set("range_id", rangeId)
+    appendDashboardCustomRangeParams(url, rangeId, customRange)
     if (formType) url.searchParams.set("form_type", formType)
     appendDashboardUtmParams(url, utmFilter)
 
@@ -167,10 +173,12 @@ export async function loadFunnelDashboardData({
   landingPagePublicId,
   rangeId = DEFAULT_TRAFFIC_RANGE_ID,
   utmFilter,
+  customRange,
 }: {
   landingPagePublicId: string
   rangeId?: RangeId
   utmFilter?: DashboardUtmFilter
+  customRange?: DashboardCustomRange
 }): Promise<FunnelDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
@@ -184,7 +192,8 @@ export async function loadFunnelDashboardData({
     row.id,
     rangeId,
     formType,
-    utmFilter
+    utmFilter,
+    customRange
   )
   if (!analytics) {
     return getFunnelEmptyDashboardData(landingPagePublicId, rangeId, formType)
@@ -196,7 +205,8 @@ export async function loadFunnelDashboardData({
 export async function loadFunnelDashboardDataForApi(
   landingPagePublicId: string,
   rangeIdRaw: string | null | undefined,
-  utmFilter?: DashboardUtmFilter
+  utmFilter?: DashboardUtmFilter,
+  customRange?: DashboardCustomRange
 ): Promise<
   | { ok: true; data: FunnelDashboardData }
   | { ok: false; status: number; error: string }
@@ -219,7 +229,8 @@ export async function loadFunnelDashboardDataForApi(
     row.id,
     rangeId,
     formType,
-    utmFilter
+    utmFilter,
+    customRange
   )
   if (!analytics) {
     return {
@@ -235,10 +246,12 @@ export async function loadOverviewFunnelSteps({
   landingPagePublicId,
   rangeId = DEFAULT_TRAFFIC_RANGE_ID,
   utmFilter,
+  customRange,
 }: {
   landingPagePublicId: string
   rangeId?: RangeId
   utmFilter?: DashboardUtmFilter
+  customRange?: DashboardCustomRange
 }): Promise<OverviewFunnelStep[] | null> {
   const actor = await requireLandingPageActor()
   if (!actor) return null
@@ -252,7 +265,8 @@ export async function loadOverviewFunnelSteps({
     row.id,
     rangeId,
     formType,
-    utmFilter
+    utmFilter,
+    customRange
   )
   if (!analytics) return null
 

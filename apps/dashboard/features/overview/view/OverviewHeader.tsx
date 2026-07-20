@@ -1,42 +1,120 @@
 "use client"
 
-import { CalendarDays } from "lucide-react"
+import { useMemo, useState } from "react"
+import { CalendarDays, Check, ChevronDown } from "lucide-react"
 import { motion, useReducedMotion } from "motion/react"
+import type { DateRange } from "react-day-picker"
+import { format } from "date-fns"
 import { cn } from "@workspace/ui/lib/utils"
+import { Button } from "@workspace/ui/components/button"
+import { Calendar } from "@workspace/ui/components/calendar"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/ui/components/select"
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@workspace/ui/components/popover"
 import type {
   OverviewDateRangeId,
   OverviewDateRangeOption,
 } from "@/features/overview/model/overview"
 import {
-  overviewSelectContentClassName,
-  overviewSelectItemClassName,
-  overviewSelectTriggerClassName,
-} from "@/features/overview/view/overview-select-styles"
+  formatCustomRangeLabel,
+  trafficRangeLabel,
+  type DashboardCustomRange,
+} from "@/features/traffic/model/traffic-range"
+import { overviewSelectTriggerClassName } from "@/features/overview/view/overview-select-styles"
 
 type OverviewHeaderProps = {
   title: string
   dateRangeOptions: OverviewDateRangeOption[]
   dateRangeId: OverviewDateRangeId
+  customRange?: DashboardCustomRange | null
   onDateRangeChange: (id: OverviewDateRangeId) => void
+  onCustomRangeChange: (range: DashboardCustomRange) => void
+}
+
+type Panel = "presets" | "calendar"
+
+function toDateKey(date: Date): string {
+  return format(date, "yyyy-MM-dd")
+}
+
+function parseDateKey(key: string): Date {
+  const [y, m, d] = key.split("-").map(Number)
+  return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1)
+}
+
+/** First day of the month before `date` — used so dual-month view is prev | current. */
+function startOfPreviousMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth() - 1, 1)
 }
 
 export function OverviewHeader({
   title,
   dateRangeOptions,
   dateRangeId,
+  customRange,
   onDateRangeChange,
+  onCustomRangeChange,
 }: OverviewHeaderProps) {
   const reduceMotion = useReducedMotion()
-  const selectedLabel =
-    dateRangeOptions.find((opt) => opt.id === dateRangeId)?.label ??
-    "Last 7 days"
+  const [open, setOpen] = useState(false)
+  const [panel, setPanel] = useState<Panel>("presets")
+  const [draftRange, setDraftRange] = useState<DateRange | undefined>()
+
+  const selectedLabel = useMemo(() => {
+    if (dateRangeId === "custom" && customRange) {
+      return formatCustomRangeLabel(customRange.from, customRange.to)
+    }
+    return trafficRangeLabel(dateRangeId, customRange)
+  }, [customRange, dateRangeId])
+
+  const presetOptions = dateRangeOptions.filter((opt) => opt.id !== "custom")
+
+  function handleOpenChange(next: boolean) {
+    setOpen(next)
+    if (!next) {
+      setPanel("presets")
+      return
+    }
+    setPanel("presets")
+    if (customRange) {
+      setDraftRange({
+        from: parseDateKey(customRange.from),
+        to: parseDateKey(customRange.to),
+      })
+    } else {
+      setDraftRange(undefined)
+    }
+  }
+
+  function selectPreset(id: OverviewDateRangeId) {
+    onDateRangeChange(id)
+    setOpen(false)
+    setPanel("presets")
+  }
+
+  function openCustomCalendar() {
+    if (customRange) {
+      setDraftRange({
+        from: parseDateKey(customRange.from),
+        to: parseDateKey(customRange.to),
+      })
+    } else {
+      setDraftRange(undefined)
+    }
+    setPanel("calendar")
+  }
+
+  function applyCustomRange() {
+    if (!draftRange?.from || !draftRange?.to) return
+    onCustomRangeChange({
+      from: toDateKey(draftRange.from),
+      to: toDateKey(draftRange.to),
+    })
+    setOpen(false)
+    setPanel("presets")
+  }
 
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -48,44 +126,121 @@ export function OverviewHeader({
           Landing page performance at a glance
         </p>
       </div>
+
       <motion.div
         whileHover={reduceMotion ? undefined : { scale: 1.02 }}
         whileTap={reduceMotion ? undefined : { scale: 0.98 }}
       >
-        <Select
-          value={dateRangeId}
-          onValueChange={(v) => onDateRangeChange(v as OverviewDateRangeId)}
-        >
-          <SelectTrigger
-            size="sm"
-            className={cn(
-              overviewSelectTriggerClassName,
-              "h-9 w-full gap-2 sm:w-44"
-            )}
-            aria-label="Date range"
-          >
-            <CalendarDays className="size-3.5 shrink-0 text-white/70" />
-            <SelectValue placeholder="Date range">{selectedLabel}</SelectValue>
-          </SelectTrigger>
-          <SelectContent
+        <Popover open={open} onOpenChange={handleOpenChange}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className={cn(
+                overviewSelectTriggerClassName,
+                "inline-flex h-9 w-full items-center justify-between gap-2 sm:w-52"
+              )}
+              aria-label="Date range"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <CalendarDays className="size-3.5 shrink-0 text-white/70" />
+                <span className="truncate">{selectedLabel}</span>
+              </span>
+              <ChevronDown className="size-3.5 shrink-0 text-white/70" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
             align="end"
-            position="popper"
             side="bottom"
-            sideOffset={6}
-            avoidCollisions={false}
-            className={overviewSelectContentClassName}
+            sideOffset={8}
+            className={cn(
+              "p-0",
+              panel === "calendar" ? "w-auto max-w-[calc(100vw-2rem)]" : "w-52"
+            )}
+            onOpenAutoFocus={(event) => {
+              if (panel === "calendar") event.preventDefault()
+            }}
           >
-            {dateRangeOptions.map((opt) => (
-              <SelectItem
-                key={opt.id}
-                value={opt.id}
-                className={overviewSelectItemClassName}
-              >
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+            {panel === "presets" ? (
+              <div className="py-1" role="menu">
+                {presetOptions.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
+                    onClick={() => selectPreset(opt.id)}
+                  >
+                    <span>{opt.label}</span>
+                    {dateRangeId === opt.id ? (
+                      <Check className="size-3.5 shrink-0" />
+                    ) : null}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
+                  onClick={openCustomCalendar}
+                >
+                  <span>Custom Range</span>
+                  {dateRangeId === "custom" ? (
+                    <Check className="size-3.5 shrink-0" />
+                  ) : null}
+                </button>
+              </div>
+            ) : (
+              <>
+                <div
+                  className="overflow-x-auto p-4"
+                  role="group"
+                  aria-label="Custom date range calendar"
+                >
+                  <Calendar
+                    mode="range"
+                    numberOfMonths={2}
+                    selected={draftRange}
+                    onSelect={setDraftRange}
+                    disabled={{ after: new Date() }}
+                    defaultMonth={startOfPreviousMonth(
+                      draftRange?.to ?? draftRange?.from ?? new Date()
+                    )}
+                    className="mx-auto"
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-3 border-t border-border bg-neutral-50 px-4 py-3">
+                  <p className="min-w-0 truncate text-sm text-neutral-700">
+                    {draftRange?.from && draftRange?.to
+                      ? formatCustomRangeLabel(
+                          toDateKey(draftRange.from),
+                          toDateKey(draftRange.to)
+                        )
+                      : "Select a start and end date"}
+                  </p>
+                  <div className="flex shrink-0 gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="min-h-9 px-3"
+                      onClick={() => setPanel("presets")}
+                    >
+                      Back
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="min-h-9 min-w-[4.5rem] bg-neutral-950 px-3 text-white hover:bg-neutral-800 disabled:bg-neutral-300 disabled:text-white"
+                      disabled={!draftRange?.from || !draftRange?.to}
+                      onClick={applyCustomRange}
+                    >
+                      Apply
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
+          </PopoverContent>
+        </Popover>
       </motion.div>
     </div>
   )

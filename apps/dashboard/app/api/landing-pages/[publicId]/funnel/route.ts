@@ -1,6 +1,9 @@
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
-import { parseTrafficRangeId } from "@/features/traffic/model/traffic-range"
+import {
+  parseDashboardCustomRange,
+  parseTrafficRangeId,
+} from "@/features/traffic/model/traffic-range"
 import { loadFunnelDashboardDataForApi } from "@/lib/server/funnel-dashboard-load"
 import { parseUtmFilterFromSearchParams } from "@/lib/server/analytics-utm-params"
 import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
@@ -21,12 +24,17 @@ export async function GET(
   const rangeId = parseTrafficRangeId(
     request.nextUrl.searchParams.get("range_id")
   )
+  const customRange = parseDashboardCustomRange(
+    request.nextUrl.searchParams.get("from"),
+    request.nextUrl.searchParams.get("to")
+  )
   const utmFilter = parseUtmFilterFromSearchParams(request.nextUrl.searchParams)
 
   const result = await loadFunnelDashboardDataForApi(
     publicId,
     rangeId,
-    utmFilter
+    utmFilter,
+    customRange
   )
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status })

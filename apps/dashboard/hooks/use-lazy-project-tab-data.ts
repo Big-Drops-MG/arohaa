@@ -22,10 +22,11 @@ import type { UtmDashboardData } from "@/features/utm/model/utm"
 import { getUtmEmptyDashboardData } from "@/features/utm/controller/utm-empty-data"
 import type { LandingPageSettingsData } from "@/features/settings/model/landing-page-settings"
 import type { TrafficDashboardData } from "@/features/traffic/model/traffic"
+import type { DashboardCustomRange } from "@/features/traffic/model/traffic-range"
 import { getTrafficEmptyDashboardData } from "@/features/traffic/controller/traffic-empty-data"
 import type { ProjectTabValue } from "@/features/dashboard/model/project-tab"
 import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
-import { appendUtmFilterToQueryString } from "@/lib/server/analytics-utm-params"
+import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
 
 export type ProjectTabData = {
   overview: OverviewDashboardData
@@ -46,16 +47,16 @@ function tabApiPath(
   projectId: string,
   tab: ProjectTabValue,
   rangeId: OverviewDateRangeId,
-  utmFilter?: DashboardUtmFilter
+  utmFilter?: DashboardUtmFilter,
+  customRange?: DashboardCustomRange
 ): string {
   const base = `/api/landing-pages/${encodeURIComponent(projectId)}`
   if (tab === "settings") return `${base}/settings`
-
-  const utmQs = appendUtmFilterToQueryString("", utmFilter)
-  const qs = `?range_id=${encodeURIComponent(rangeId)}${utmQs ? utmQs.replace("?", "&") : ""}`
-  if (tab === "event-tracking") return `${base}/events${qs}`
   if (tab === "utm") return `${base}/utm`
-  return `${base}/${tab}${qs}`
+
+  const path = tab === "event-tracking" ? `${base}/events` : `${base}/${tab}`
+
+  return buildAnalyticsApiPath(path, { rangeId, customRange, utmFilter })
 }
 
 function emptyTabData(
@@ -66,7 +67,7 @@ function emptyTabData(
 ): ProjectTabData[typeof tab] {
   switch (tab) {
     case "traffic":
-      return getTrafficEmptyDashboardData(projectId, rangeId)
+      return getTrafficEmptyDashboardData(projectId, rangeId, formType)
     case "funnel":
       return getFunnelEmptyDashboardData(projectId, rangeId, formType)
     case "event-tracking":
@@ -88,6 +89,7 @@ export function useLazyProjectTabData({
   projectId,
   activeTab,
   rangeId,
+  customRange,
   utmFilter,
   formType,
   overviewPlaceholder,
@@ -96,6 +98,7 @@ export function useLazyProjectTabData({
   projectId: string
   activeTab: ProjectTabValue
   rangeId: OverviewDateRangeId
+  customRange?: DashboardCustomRange
   utmFilter?: DashboardUtmFilter
   formType: OverviewLandingFormType
   overviewPlaceholder: OverviewDashboardData
@@ -107,28 +110,40 @@ export function useLazyProjectTabData({
   const utmCacheKey = utmFilter
     ? `${utmFilter.dimension}:${utmFilter.value}`
     : "all"
-  const filterKeyRef = useRef({ rangeId, utmCacheKey })
+  const customRangeCacheKey = customRange
+    ? `${customRange.from}:${customRange.to}`
+    : "none"
+  const filterKeyRef = useRef({ rangeId, utmCacheKey, customRangeCacheKey })
 
   const fetchTab = useCallback(
     async (tab: ProjectTabValue, signal?: AbortSignal) => {
-      const res = await fetch(tabApiPath(projectId, tab, rangeId, utmFilter), {
-        cache: "no-store",
-        signal,
-      })
+      const res = await fetch(
+        tabApiPath(projectId, tab, rangeId, utmFilter, customRange),
+        {
+          cache: "no-store",
+          signal,
+        }
+      )
       if (!res.ok) {
         throw new Error(`Failed to load ${tab}: ${res.status}`)
       }
       return (await res.json()) as ProjectTabData[typeof tab]
     },
-    [projectId, rangeId, utmFilter]
+    [projectId, rangeId, customRange, utmFilter]
   )
 
   useEffect(() => {
     const prev = filterKeyRef.current
-    if (prev.rangeId === rangeId && prev.utmCacheKey === utmCacheKey) return
-    filterKeyRef.current = { rangeId, utmCacheKey }
+    if (
+      prev.rangeId === rangeId &&
+      prev.utmCacheKey === utmCacheKey &&
+      prev.customRangeCacheKey === customRangeCacheKey
+    ) {
+      return
+    }
+    filterKeyRef.current = { rangeId, utmCacheKey, customRangeCacheKey }
     setCache({})
-  }, [rangeId, utmCacheKey])
+  }, [rangeId, utmCacheKey, customRangeCacheKey])
 
   useEffect(() => {
     if (cache[activeTab] || inFlightRef.current === activeTab) return
@@ -170,11 +185,22 @@ export function useLazyProjectTabData({
         inFlightRef.current = null
       }
     }
-  }, [activeTab, cache, fetchTab, formType, projectId, rangeId, utmCacheKey])
+  }, [
+    activeTab,
+    cache,
+    customRangeCacheKey,
+    fetchTab,
+    formType,
+    projectId,
+    rangeId,
+    utmCacheKey,
+  ])
 
   return {
     overview: (cache.overview ?? overviewPlaceholder) as OverviewDashboardData,
-    traffic: cache.traffic ?? getTrafficEmptyDashboardData(projectId, rangeId),
+    traffic:
+      cache.traffic ??
+      getTrafficEmptyDashboardData(projectId, rangeId, formType),
     funnel:
       cache.funnel ?? getFunnelEmptyDashboardData(projectId, rangeId, formType),
     eventTracking:

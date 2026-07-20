@@ -1,6 +1,7 @@
 import type {
   OverviewDateRangeId,
   OverviewDateRangeOption,
+  OverviewLandingFormType,
 } from "@/features/overview/model/overview"
 
 export type TrafficKpiMetricId =
@@ -35,7 +36,28 @@ export type TrafficReferrerRow = {
   visitors: string
 }
 
+export type TrafficUtmParamKey =
+  | "utm_source"
+  | "utm_medium"
+  | "utm_campaign"
+  | "utm_term"
+  | "utm_content"
+  | "utm_id"
+  | "utm_s1"
+
+export type TrafficUtmParamValueRow = {
+  value: string
+  visitors: string
+}
+
+export type TrafficUtmParamTab = {
+  key: TrafficUtmParamKey
+  label: string
+  rows: TrafficUtmParamValueRow[]
+}
+
 export type TrafficDashboardData = {
+  formType: OverviewLandingFormType
   dateRangeOptions: OverviewDateRangeOption[]
   defaultDateRangeId: OverviewDateRangeId
   defaultKpiMetricId: TrafficKpiMetricId
@@ -45,6 +67,8 @@ export type TrafficDashboardData = {
   topPages: TrafficTableSection
   trafficByLocation: TrafficTableSection
   referrers: TrafficReferrerRow[]
+  utmByParam: TrafficUtmParamTab[]
+  /** @deprecated Prefer `utmByParam`. */
   utmParameters: TrafficReferrerRow[]
 }
 

@@ -13,7 +13,14 @@ import type { SegmentsByDateRange } from "@/features/segments/model/segments"
 import type { SegmentsPerformanceByDateRange } from "@/features/segments/model/segments-performance"
 import type { TrafficTablesByDateRange } from "@/features/traffic/model/traffic"
 
-export type OverviewDateRangeId = "24h" | "7d" | "30d" | "3m" | "12m" | "24m"
+export type OverviewDateRangeId =
+  | "today"
+  | "yesterday"
+  | "this_week"
+  | "7d"
+  | "last_week"
+  | "last_month"
+  | "custom"
 
 export type OverviewLandingFormType = "zip" | "single" | "multiple"
 
@@ -70,9 +77,8 @@ export type OverviewKpiValuesByMetric = Partial<
   Record<OverviewKpiMetricId, string>
 >
 
-export type OverviewKpiValuesByDateRange = Record<
-  OverviewDateRangeId,
-  OverviewKpiValuesByMetric
+export type OverviewKpiValuesByDateRange = Partial<
+  Record<OverviewDateRangeId, OverviewKpiValuesByMetric>
 >
 
 export type OverviewFunnelChangeVariant = "positive" | "negative" | "neutral"

@@ -1,5 +1,6 @@
 import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
 import { parseDashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
+import type { DashboardCustomRange } from "@/features/traffic/model/traffic-range"
 
 export function appendDashboardUtmParams(
   url: URL,
@@ -8,6 +9,16 @@ export function appendDashboardUtmParams(
   if (!utmFilter?.dimension || !utmFilter.value) return
   url.searchParams.set("utm_dim", utmFilter.dimension)
   url.searchParams.set("utm_value", utmFilter.value)
+}
+
+export function appendDashboardCustomRangeParams(
+  url: URL,
+  rangeId: string,
+  customRange?: DashboardCustomRange | null
+): void {
+  if (rangeId !== "custom" || !customRange) return
+  url.searchParams.set("from", customRange.from)
+  url.searchParams.set("to", customRange.to)
 }
 
 export function parseUtmFilterFromSearchParams(

@@ -1,12 +1,20 @@
-export type TrafficRangeId = '24h' | '7d' | '30d' | '3m' | '12m' | '24m'
+export type TrafficRangeId =
+  | 'today'
+  | 'yesterday'
+  | 'this_week'
+  | '7d'
+  | 'last_week'
+  | 'last_month'
+  | 'custom'
 
 export const TRAFFIC_RANGE_IDS: readonly TrafficRangeId[] = [
-  '24h',
+  'today',
+  'yesterday',
+  'this_week',
   '7d',
-  '30d',
-  '3m',
-  '12m',
-  '24m',
+  'last_week',
+  'last_month',
+  'custom',
 ] as const
 
 export function isTrafficRangeId(value: string): value is TrafficRangeId {
@@ -52,6 +60,27 @@ export interface ReferrerRow {
   visitors: number
 }
 
+export type TrafficUtmParamKey =
+  | 'utm_source'
+  | 'utm_medium'
+  | 'utm_campaign'
+  | 'utm_term'
+  | 'utm_content'
+  | 'utm_id'
+  | 'utm_s1'
+
+export interface UtmParamValueRow {
+  value: string
+  visitors: number
+}
+
+export interface UtmParamTab {
+  key: TrafficUtmParamKey
+  label: string
+  rows: UtmParamValueRow[]
+}
+
+/** @deprecated Prefer `utmByParam` tabs. Kept for older clients. */
 export interface UtmParameterRow {
   domain: string
   visitors: number
@@ -65,5 +94,7 @@ export interface TrafficDashboardResponse {
   topPages: TopPageRow[]
   trafficByLocation: TrafficByLocationRow[]
   referrers: ReferrerRow[]
+  utmByParam: UtmParamTab[]
+  /** @deprecated Prefer `utmByParam`. */
   utmParameters: UtmParameterRow[]
 }

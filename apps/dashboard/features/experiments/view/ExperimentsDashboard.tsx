@@ -26,7 +26,8 @@ export function ExperimentsDashboard({
   projectId,
   isActive = true,
 }: ExperimentsDashboardProps) {
-  const { dateRangeId, setDateRangeId } = useDashboardDateRange()
+  const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
+    useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isLoading, setIsLoading] = useState(false)
@@ -37,7 +38,7 @@ export function ExperimentsDashboard({
 
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/experiments`,
-        { rangeId, utmFilter }
+        { rangeId, customRange, utmFilter }
       )
       try {
         const res = await fetch(url, { cache: "no-store", signal })
@@ -70,7 +71,7 @@ export function ExperimentsDashboard({
         }
       }
     },
-    [projectId, utmFilter]
+    [projectId, customRange, utmFilter]
   )
 
   useEffect(() => {
@@ -78,7 +79,8 @@ export function ExperimentsDashboard({
       shouldUseInitialTabData(
         dateRangeId,
         initialData.defaultDateRangeId,
-        utmFilter
+        utmFilter,
+        customRange
       )
     ) {
       setDashboardData(initialData)
@@ -89,7 +91,13 @@ export function ExperimentsDashboard({
     const controller = new AbortController()
     void fetchExperimentsForRange(dateRangeId, controller.signal)
     return () => controller.abort()
-  }, [dateRangeId, utmFilter, initialData, fetchExperimentsForRange])
+  }, [
+    customRange,
+    dateRangeId,
+    utmFilter,
+    initialData,
+    fetchExperimentsForRange,
+  ])
 
   useEffect(() => {
     if (!isActive) return
@@ -104,7 +112,7 @@ export function ExperimentsDashboard({
       controller.abort()
       window.clearInterval(id)
     }
-  }, [dateRangeId, utmFilter, fetchExperimentsForRange, isActive])
+  }, [customRange, dateRangeId, utmFilter, fetchExperimentsForRange, isActive])
 
   return (
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">
@@ -112,7 +120,9 @@ export function ExperimentsDashboard({
         title="Experiments"
         dateRangeOptions={dashboardData.dateRangeOptions}
         dateRangeId={dateRangeId}
+        customRange={customRange}
         onDateRangeChange={setDateRangeId}
+        onCustomRangeChange={setCustomRange}
       />
 
       <div

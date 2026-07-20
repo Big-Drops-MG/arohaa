@@ -26,6 +26,7 @@
     "@workspace/lp-core": "workspace:*",
     "@workspace/ui": "workspace:*",
     "bcryptjs": "^3.0.3",
+    "date-fns": "^4.4.0",
     "drizzle-orm": "^0.45.2",
     "ioredis": "^5.10.1",
     "lucide-react": "^1.8.0",
@@ -36,11 +37,13 @@
     "otplib": "^13.4.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.4",
+    "react-day-picker": "^10.0.1",
     "react-dom": "^19.2.4",
     "react-email": "6.1.1",
     "recharts": "^3.8.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "@react-email/ui": "6.1.1",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/bcryptjs": "^3.0.0",
@@ -50,7 +53,6 @@
     "@types/react-dom": "^19.2.3",
     "@workspace/eslint-config": "workspace:^",
     "@workspace/typescript-config": "workspace:*",
-    "@playwright/test": "^1.55.0",
     "eslint": "^9.39.2",
     "typescript": "^5.9.3"
   }

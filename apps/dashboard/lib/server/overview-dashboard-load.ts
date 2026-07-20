@@ -9,14 +9,22 @@ import {
   defaultMultiStepFormTracking,
 } from "@/features/funnel/controller/funnel-default-payload"
 import { getOverviewPlaceholderData } from "@/features/overview/controller/overview-placeholder-data"
+import { overviewChartPointsForRange } from "@/features/overview/utils/overview-chart-buckets"
+import { OVERVIEW_KPI_METRIC_ORDER } from "@/features/overview/model/overview"
 import { defaultSegmentsByDateRange } from "@/features/segments/controller/segments-default-payload"
 import { defaultSegmentsPerformanceByDateRange } from "@/features/segments/controller/segments-performance-default-payload"
 import { defaultTrafficTablesByDateRange } from "@/features/traffic/controller/traffic-default-payload"
-import { parseTrafficRangeId } from "@/features/traffic/model/traffic-range"
+import {
+  DEFAULT_TRAFFIC_RANGE_ID,
+  TRAFFIC_DATE_RANGE_OPTIONS,
+  parseTrafficRangeId,
+  type DashboardCustomRange,
+} from "@/features/traffic/model/traffic-range"
 import type {
   OverviewAlert,
   OverviewDashboardData,
   OverviewFunnelStep,
+  OverviewKpiMetricId,
   OverviewKpiSeriesByDateRange,
   OverviewKpiValuesByDateRange,
   OverviewLandingFormType,
@@ -24,7 +32,10 @@ import type {
 } from "@/features/overview/model/overview"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
 import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
-import { appendDashboardUtmParams } from "@/lib/server/analytics-utm-params"
+import {
+  appendDashboardCustomRangeParams,
+  appendDashboardUtmParams,
+} from "@/lib/server/analytics-utm-params"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import type { AnalyticsOverview, RangeId } from "@/lib/server/analytics-types"
@@ -80,31 +91,21 @@ function buildOverviewFromAnalytics(
   formType: ReturnType<typeof parseOverviewLandingFormType>,
   rangeId: RangeId
 ): OverviewDashboardData {
-  const RANGES: RangeId[] = ["24h", "7d", "30d", "3m", "12m", "24m"]
+  const k = data.kpis
+  const kpisByDateRange: OverviewKpiValuesByDateRange = {
+    [rangeId]: {
+      visitors: fmtCount(k.visitors),
+      sessions: fmtCount(k.sessions),
+      "page-views": fmtCount(k.pageViews),
+      "form-submitted": fmtCount(k.formSubmitted),
+      fsr: fmtPct(k.fsr),
+      "bounce-rate": fmtPct(k.bounceRate),
+    },
+  }
 
-  const kpisByDateRange = Object.fromEntries(
-    RANGES.map((rid) => {
-      const k = data.kpis[rid]
-      return [
-        rid,
-        {
-          visitors: fmtCount(k.visitors),
-          sessions: fmtCount(k.sessions),
-          "page-views": fmtCount(k.pageViews),
-          "form-submitted": fmtCount(k.formSubmitted),
-          fsr: fmtPct(k.fsr),
-          "bounce-rate": fmtPct(k.bounceRate),
-        },
-      ]
-    })
-  ) as OverviewKpiValuesByDateRange
-
-  const kpiSeriesByDateRange = Object.fromEntries(
-    RANGES.map((rid) => [
-      rid,
-      data.kpiSeries?.[rid] ?? { visitors: data.series[rid] },
-    ])
-  ) as OverviewKpiSeriesByDateRange
+  const kpiSeriesByDateRange: OverviewKpiSeriesByDateRange = {
+    [rangeId]: data.kpiSeries ?? { visitors: data.series },
+  }
 
   const funnel: OverviewFunnelStep[] = funnelStepsFromOverviewApi(
     data,
@@ -137,14 +138,7 @@ function buildOverviewFromAnalytics(
 
   return {
     formType,
-    dateRangeOptions: [
-      { id: "24h", label: "Last 24 hours" },
-      { id: "7d", label: "Last 7 days" },
-      { id: "30d", label: "Last 30 days" },
-      { id: "3m", label: "Last 3 months" },
-      { id: "12m", label: "Last 12 months" },
-      { id: "24m", label: "Last 24 months" },
-    ],
+    dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: rangeId,
     kpisByDateRange,
     defaultKpiMetricId: "visitors",
@@ -170,12 +164,51 @@ function buildOverviewFromAnalytics(
   }
 }
 
+export function buildEmptyOverviewForRange(
+  landingPagePublicId: string,
+  formType: OverviewLandingFormType,
+  rangeId: RangeId,
+  customRange?: DashboardCustomRange
+): OverviewDashboardData {
+  const base = getOverviewPlaceholderData(landingPagePublicId, formType)
+  const zeroSeries = overviewChartPointsForRange(
+    rangeId,
+    new Date(),
+    customRange
+  )
+  const kpiSeries = Object.fromEntries(
+    OVERVIEW_KPI_METRIC_ORDER.map((metricId: OverviewKpiMetricId) => [
+      metricId,
+      zeroSeries,
+    ])
+  ) as Record<OverviewKpiMetricId, typeof zeroSeries>
+
+  return {
+    ...base,
+    defaultDateRangeId: rangeId,
+    kpisByDateRange: {
+      [rangeId]: {
+        visitors: "0",
+        sessions: "0",
+        "page-views": "0",
+        "form-submitted": "0",
+        fsr: "0.0%",
+        "bounce-rate": "0.0%",
+      },
+    },
+    kpiSeriesByDateRange: {
+      [rangeId]: kpiSeries,
+    },
+  }
+}
+
 // ── loader ────────────────────────────────────────────────────────────────────
 
 export async function loadOverviewDashboardData(
   landingPagePublicId: string,
-  rangeId: RangeId = "7d",
-  utmFilter?: DashboardUtmFilter
+  rangeId: RangeId = DEFAULT_TRAFFIC_RANGE_ID,
+  utmFilter?: DashboardUtmFilter,
+  customRange?: DashboardCustomRange
 ): Promise<OverviewDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
@@ -199,6 +232,8 @@ export async function loadOverviewDashboardData(
     const url = new URL(`${apiBase}/v1/analytics/overview`)
     url.searchParams.set("workspace_id", row.id)
     url.searchParams.set("form_type", formType)
+    url.searchParams.set("range_id", rangeId)
+    appendDashboardCustomRangeParams(url, rangeId, customRange)
     appendDashboardUtmParams(url, utmFilter)
 
     const overviewResp = await fetch(url.toString(), {
@@ -215,16 +250,26 @@ export async function loadOverviewDashboardData(
           body.slice(0, 200)
         )
       }
-      return getOverviewPlaceholderData(landingPagePublicId, formType)
+      return buildEmptyOverviewForRange(
+        landingPagePublicId,
+        formType,
+        rangeId,
+        customRange
+      )
     }
 
     const data = (await overviewResp.json()) as AnalyticsOverview
-    return buildOverviewFromAnalytics(data, formType, rangeId)
+    return buildOverviewFromAnalytics(data, formType, data.rangeId ?? rangeId)
   } catch (err) {
     if (process.env.NODE_ENV === "development") {
       console.error("[overview] analytics fetch failed", err)
     }
-    return getOverviewPlaceholderData(landingPagePublicId, formType)
+    return buildEmptyOverviewForRange(
+      landingPagePublicId,
+      formType,
+      rangeId,
+      customRange
+    )
   } finally {
     clearTimeout(timer)
   }
@@ -233,7 +278,8 @@ export async function loadOverviewDashboardData(
 export async function loadOverviewDashboardDataForApi(
   landingPagePublicId: string,
   rangeIdRaw: string | null | undefined,
-  utmFilter?: DashboardUtmFilter
+  utmFilter?: DashboardUtmFilter,
+  customRange?: DashboardCustomRange
 ): Promise<
   | { ok: true; data: OverviewDashboardData }
   | { ok: false; status: number; error: string }
@@ -253,7 +299,8 @@ export async function loadOverviewDashboardDataForApi(
   const data = await loadOverviewDashboardData(
     landingPagePublicId,
     rangeId,
-    utmFilter
+    utmFilter,
+    customRange
   )
   return { ok: true, data }
 }

@@ -1,9 +1,16 @@
 import { notFound } from "next/navigation"
+import type { OverviewLandingFormType } from "@/features/overview/model/overview"
+import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
+import {
+  trafficFormSubmittedLabel,
+  trafficRateLabel,
+} from "@/features/traffic/controller/traffic-default-payload"
 import { getTrafficEmptyDashboardData } from "@/features/traffic/controller/traffic-empty-data"
 import {
   DEFAULT_TRAFFIC_RANGE_ID,
   TRAFFIC_DATE_RANGE_OPTIONS,
   parseTrafficRangeId,
+  type DashboardCustomRange,
 } from "@/features/traffic/model/traffic-range"
 import type { TrafficDashboardData } from "@/features/traffic/model/traffic"
 import type { AnalyticsTraffic, RangeId } from "@/lib/server/analytics-types"
@@ -14,7 +21,10 @@ import {
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
-import { appendDashboardUtmParams } from "@/lib/server/analytics-utm-params"
+import {
+  appendDashboardCustomRangeParams,
+  appendDashboardUtmParams,
+} from "@/lib/server/analytics-utm-params"
 
 export { parseTrafficRangeId } from "@/features/traffic/model/traffic-range"
 
@@ -37,11 +47,15 @@ function fmtPct(v: number): string {
 const DATE_RANGE_OPTIONS = TRAFFIC_DATE_RANGE_OPTIONS
 
 export function buildTrafficDashboardData(
-  data: AnalyticsTraffic
+  data: AnalyticsTraffic,
+  formType: OverviewLandingFormType
 ): TrafficDashboardData {
   const { kpis } = data
+  const formSubmitted = trafficFormSubmittedLabel(formType)
+  const rate = trafficRateLabel(formType)
 
   return {
+    formType,
     dateRangeOptions: DATE_RANGE_OPTIONS,
     defaultDateRangeId: data.rangeId,
     defaultKpiMetricId: "active-users",
@@ -70,7 +84,7 @@ export function buildTrafficDashboardData(
         { key: "date", label: "Date" },
         { key: "visitors", label: "Visitors" },
         { key: "sessions", label: "Sessions" },
-        { key: "formSubmitted", label: "Form Submitted" },
+        { key: "formSubmitted", label: formSubmitted },
       ],
       rows: data.trafficByTime.map((row) => ({
         date: row.date,
@@ -84,8 +98,8 @@ export function buildTrafficDashboardData(
       columns: [
         { key: "device", label: "Device" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
-        { key: "fsr", label: "FSR" },
+        { key: "formSubmitted", label: formSubmitted },
+        { key: "fsr", label: rate },
       ],
       rows: data.trafficByDevice.map((row) => ({
         device: row.device,
@@ -110,8 +124,8 @@ export function buildTrafficDashboardData(
       columns: [
         { key: "city", label: "City" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
-        { key: "fsr", label: "FSR" },
+        { key: "formSubmitted", label: formSubmitted },
+        { key: "fsr", label: rate },
       ],
       rows: data.trafficByLocation.map((row) => ({
         city: row.city || "Unknown",
@@ -124,7 +138,15 @@ export function buildTrafficDashboardData(
       domain: row.domain || "Direct",
       visitors: fmtCount(row.visitors),
     })),
-    utmParameters: data.utmParameters.map((row) => ({
+    utmByParam: (data.utmByParam ?? []).map((tab) => ({
+      key: tab.key,
+      label: tab.label,
+      rows: tab.rows.map((row) => ({
+        value: row.value,
+        visitors: fmtCount(row.visitors),
+      })),
+    })),
+    utmParameters: (data.utmParameters ?? []).map((row) => ({
       domain: row.domain,
       visitors: fmtCount(row.visitors),
     })),
@@ -134,7 +156,8 @@ export function buildTrafficDashboardData(
 export async function fetchTrafficAnalytics(
   workspaceId: string,
   rangeId: RangeId,
-  utmFilter?: DashboardUtmFilter
+  utmFilter?: DashboardUtmFilter,
+  customRange?: DashboardCustomRange
 ): Promise<AnalyticsTraffic | null> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
@@ -148,6 +171,7 @@ export async function fetchTrafficAnalytics(
     const url = new URL(`${apiBase}/v1/analytics/traffic`)
     url.searchParams.set("workspace_id", workspaceId)
     url.searchParams.set("range_id", rangeId)
+    appendDashboardCustomRangeParams(url, rangeId, customRange)
     appendDashboardUtmParams(url, utmFilter)
 
     const resp = await fetch(url.toString(), {
@@ -188,10 +212,12 @@ export async function loadTrafficDashboardData({
   landingPagePublicId,
   rangeId = DEFAULT_TRAFFIC_RANGE_ID,
   utmFilter,
+  customRange,
 }: {
   landingPagePublicId: string
   rangeId?: RangeId
   utmFilter?: DashboardUtmFilter
+  customRange?: DashboardCustomRange
 }): Promise<TrafficDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
@@ -199,18 +225,25 @@ export async function loadTrafficDashboardData({
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
 
-  const analytics = await fetchTrafficAnalytics(row.id, rangeId, utmFilter)
+  const formType = parseOverviewLandingFormType(row.formType)
+  const analytics = await fetchTrafficAnalytics(
+    row.id,
+    rangeId,
+    utmFilter,
+    customRange
+  )
   if (!analytics) {
-    return getTrafficEmptyDashboardData(landingPagePublicId, rangeId)
+    return getTrafficEmptyDashboardData(landingPagePublicId, rangeId, formType)
   }
 
-  return buildTrafficDashboardData(analytics)
+  return buildTrafficDashboardData(analytics, formType)
 }
 
 export async function loadTrafficDashboardDataForApi(
   landingPagePublicId: string,
   rangeIdRaw: string | null | undefined,
-  utmFilter?: DashboardUtmFilter
+  utmFilter?: DashboardUtmFilter,
+  customRange?: DashboardCustomRange
 ): Promise<
   | { ok: true; data: TrafficDashboardData }
   | { ok: false; status: number; error: string }
@@ -227,13 +260,23 @@ export async function loadTrafficDashboardDataForApi(
     return { ok: false, status: 404, error: "Not found" }
   }
 
-  const analytics = await fetchTrafficAnalytics(row.id, rangeId, utmFilter)
+  const formType = parseOverviewLandingFormType(row.formType)
+  const analytics = await fetchTrafficAnalytics(
+    row.id,
+    rangeId,
+    utmFilter,
+    customRange
+  )
   if (!analytics) {
     return {
       ok: true,
-      data: getTrafficEmptyDashboardData(landingPagePublicId, rangeId),
+      data: getTrafficEmptyDashboardData(
+        landingPagePublicId,
+        rangeId,
+        formType
+      ),
     }
   }
 
-  return { ok: true, data: buildTrafficDashboardData(analytics) }
+  return { ok: true, data: buildTrafficDashboardData(analytics, formType) }
 }

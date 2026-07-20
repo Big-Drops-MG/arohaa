@@ -10,16 +10,8 @@ import {
   segmentPerformanceLocationColumns,
   segmentPerformancePeriodColumns,
 } from "@/features/segments/utils/segment-performance-columns"
+import { TRAFFIC_RANGE_IDS } from "@/features/traffic/model/traffic-range"
 import type { TrafficBreakdownTable } from "@/features/traffic/model/traffic"
-
-const RANGE_IDS: OverviewDateRangeId[] = [
-  "24h",
-  "7d",
-  "30d",
-  "3m",
-  "12m",
-  "24m",
-]
 
 function emptyTable(
   columns: TrafficBreakdownTable["columns"]
@@ -43,6 +35,9 @@ export function defaultSegmentsPerformanceByDateRange(
   formType: OverviewLandingFormType
 ): SegmentsPerformanceByDateRange {
   return Object.fromEntries(
-    RANGE_IDS.map((id) => [id, defaultSegmentsPerformanceTables(formType, id)])
+    TRAFFIC_RANGE_IDS.map((id) => [
+      id,
+      defaultSegmentsPerformanceTables(formType, id),
+    ])
   ) as SegmentsPerformanceByDateRange
 }

@@ -47,30 +47,20 @@ export function segmentPerformanceHourColumns(
 
 export function segmentPerformancePeriodColumns(
   formType: OverviewLandingFormType,
-  rangeId: OverviewDateRangeId
+  _rangeId: OverviewDateRangeId
 ): TrafficBreakdownTable["columns"] {
-  const dimension =
-    rangeId === "3m" || rangeId === "12m" || rangeId === "24m"
-      ? { id: "month", label: "Month" }
-      : { id: "day", label: "Day" }
-
-  return performanceMetricColumns(formType, dimension)
+  return performanceMetricColumns(formType, { id: "day", label: "Day" })
 }
 
 export function segmentPerformancePeriodTitle(
   rangeId: OverviewDateRangeId
 ): string | null {
-  if (rangeId === "24h") return null
-
-  if (rangeId === "3m" || rangeId === "12m" || rangeId === "24m") {
-    return "Performance by Month"
-  }
-
+  if (rangeId === "today" || rangeId === "yesterday") return null
   return "Performance by Day"
 }
 
 export function showSegmentPerformancePeriodCard(
   rangeId: OverviewDateRangeId
 ): boolean {
-  return rangeId !== "24h"
+  return rangeId !== "today" && rangeId !== "yesterday"
 }

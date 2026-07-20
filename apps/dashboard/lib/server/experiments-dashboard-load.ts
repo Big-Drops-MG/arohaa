@@ -6,13 +6,22 @@ import {
   experimentVariantPerformanceSubmitLabel,
 } from "@/features/experiments/utils/experiment-table-columns"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
+import {
+  DEFAULT_TRAFFIC_RANGE_ID,
+  TRAFFIC_DATE_RANGE_OPTIONS,
+  parseTrafficRangeId,
+  type DashboardCustomRange,
+} from "@/features/traffic/model/traffic-range"
 import type { RangeId } from "@/lib/server/analytics-types"
 import {
   resolveIngestApiBase,
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
 import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
-import { appendDashboardUtmParams } from "@/lib/server/analytics-utm-params"
+import {
+  appendDashboardCustomRangeParams,
+  appendDashboardUtmParams,
+} from "@/lib/server/analytics-utm-params"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
@@ -120,15 +129,8 @@ export function buildExperimentsDashboardData(
 
   return {
     formType,
-    dateRangeOptions: [
-      { id: "24h", label: "Last 24 hours" },
-      { id: "7d", label: "Last 7 days" },
-      { id: "30d", label: "Last 30 days" },
-      { id: "3m", label: "Last 3 months" },
-      { id: "12m", label: "Last 12 months" },
-      { id: "24m", label: "Last 24 months" },
-    ],
-    defaultDateRangeId: rangeId as any,
+    dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
+    defaultDateRangeId: rangeId,
     experiments,
     variantPerformance: {
       title: "Variant performance",
@@ -179,7 +181,8 @@ export async function fetchExperimentsAnalytics(
   workspaceId: string,
   landingPagePublicId: string,
   rangeId: RangeId,
-  utmFilter?: DashboardUtmFilter
+  utmFilter?: DashboardUtmFilter,
+  customRange?: DashboardCustomRange
 ): Promise<AnalyticsExperiments | null> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
@@ -194,6 +197,7 @@ export async function fetchExperimentsAnalytics(
     url.searchParams.set("workspace_id", workspaceId)
     url.searchParams.set("lp_public_id", landingPagePublicId)
     url.searchParams.set("range_id", rangeId)
+    appendDashboardCustomRangeParams(url, rangeId, customRange)
     appendDashboardUtmParams(url, utmFilter)
 
     const resp = await fetch(url.toString(), {
@@ -232,12 +236,14 @@ export async function fetchExperimentsAnalytics(
 
 export async function loadExperimentsDashboardData({
   landingPagePublicId,
-  rangeId = "7d",
+  rangeId = DEFAULT_TRAFFIC_RANGE_ID,
   utmFilter,
+  customRange,
 }: {
   landingPagePublicId: string
   rangeId?: RangeId
   utmFilter?: DashboardUtmFilter
+  customRange?: DashboardCustomRange
 }): Promise<ExperimentsDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
@@ -251,12 +257,13 @@ export async function loadExperimentsDashboardData({
     row.id,
     landingPagePublicId,
     rangeId,
-    utmFilter
+    utmFilter,
+    customRange
   )
   if (!analytics) {
     return getExperimentsEmptyDashboardData(
       landingPagePublicId,
-      rangeId as any,
+      rangeId,
       formType
     )
   }
@@ -267,15 +274,13 @@ export async function loadExperimentsDashboardData({
 export async function loadExperimentsDashboardDataForApi(
   landingPagePublicId: string,
   rangeIdRaw: string | null | undefined,
-  utmFilter?: DashboardUtmFilter
+  utmFilter?: DashboardUtmFilter,
+  customRange?: DashboardCustomRange
 ): Promise<
   | { ok: true; data: ExperimentsDashboardData }
   | { ok: false; status: number; error: string }
 > {
-  const validRanges = ["24h", "7d", "30d", "3m", "12m", "24m"]
-  const rangeId = validRanges.includes(rangeIdRaw as string)
-    ? (rangeIdRaw as RangeId)
-    : "7d"
+  const rangeId = parseTrafficRangeId(rangeIdRaw)
 
   const actor = await requireLandingPageActor()
   if (!actor) {
@@ -293,14 +298,15 @@ export async function loadExperimentsDashboardDataForApi(
     row.id,
     landingPagePublicId,
     rangeId,
-    utmFilter
+    utmFilter,
+    customRange
   )
   if (!analytics) {
     return {
       ok: true,
       data: getExperimentsEmptyDashboardData(
         landingPagePublicId,
-        rangeId as any,
+        rangeId,
         formType
       ),
     }

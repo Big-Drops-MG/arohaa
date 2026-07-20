@@ -22,7 +22,9 @@ export function chToMonday(expr = 'created_at'): string {
 }
 
 export function chToDayOfWeek(expr = 'created_at', mode = 1): string {
-  return `toDayOfWeek(${expr}, ${mode}, ${CH_TZ})`
+  // Prefer date-in-TZ then weekday so older ClickHouse builds without
+  // toDayOfWeek(datetime, mode, timezone) still work.
+  return `toDayOfWeek(${chToDate(expr)}, ${mode})`
 }
 
 export function chToHour(expr = 'created_at'): string {

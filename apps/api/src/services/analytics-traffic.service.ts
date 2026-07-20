@@ -1,8 +1,14 @@
 import { redis } from './redis.service.js'
 import { getClickHouseClient } from './clickhouse.service.js'
 import {
+  rangeCacheKey,
   rangeFilter,
   rangeLookbackFilter,
+  rangeQueryParams,
+  resolveAnalyticsWindow,
+  type AnalyticsCustomRange,
+  type AnalyticsGranularity,
+  type AnalyticsWindow,
 } from '../lib/analytics-range.js'
 import {
   utmFilterParams,
@@ -11,17 +17,19 @@ import {
 import {
   addAnalyticsEtDays,
   analyticsDayKey,
+  analyticsEtToUtcMs,
   analyticsHourKey,
   analyticsMondayKey,
   analyticsMonthKey,
   chDayBucketKey,
   chHourBucketKey,
   chMonthBucketKey,
-  chToday,
+  chToDate,
   chWeekBucketKey,
   formatAnalyticsSeriesHour,
   formatAnalyticsSeriesMonthDay,
   formatAnalyticsSeriesMonthYear,
+  getAnalyticsEtParts,
   parseAnalyticsEtDayKey,
   parseAnalyticsEtMonthKey,
   startOfAnalyticsEtDay,
@@ -35,6 +43,8 @@ import type {
   TrafficByTimeRow,
   TrafficDashboardResponse,
   TrafficRangeId,
+  TrafficUtmParamKey,
+  UtmParamTab,
   UtmParameterRow,
 } from '../types/analytics-traffic.js'
 
@@ -42,6 +52,19 @@ type CHJson<T> = { data: T[] }
 
 const TOP_N = 20
 const UTM_TOP_PER_SOURCE = 30
+
+const UTM_PARAM_TABS: ReadonlyArray<{
+  key: TrafficUtmParamKey
+  label: string
+}> = [
+  { key: 'utm_source', label: 'Source' },
+  { key: 'utm_medium', label: 'Medium' },
+  { key: 'utm_campaign', label: 'Campaign' },
+  { key: 'utm_term', label: 'Term' },
+  { key: 'utm_content', label: 'Content' },
+  { key: 'utm_id', label: 'ID' },
+  { key: 'utm_s1', label: 'S1' },
+] as const
 
 const n = (v: string | number | null | undefined): number =>
   typeof v === 'number' ? v : Number(v ?? 0) || 0
@@ -56,27 +79,17 @@ function fsrPct(formSuccessSessions: number, sessions: number): number {
   return sessions > 0 ? round2((formSuccessSessions / sessions) * 100) : 0
 }
 
-const RANGE_CLICKHOUSE_INTERVAL: Record<TrafficRangeId, string> = {
-  '24h': '24 HOUR',
-  '7d': '7 DAY',
-  '30d': '30 DAY',
-  '3m': '3 MONTH',
-  '12m': '12 MONTH',
-  '24m': '24 MONTH',
+function useEventsRaw(
+  window: AnalyticsWindow,
+  utmFilter?: AnalyticsUtmFilter,
+): boolean {
+  return window.granularity === 'hour' || Boolean(utmFilter)
 }
 
-/** Slightly wider lookback so the first bucket is not clipped at range boundaries. */
-const RANGE_QUERY_LOOKBACK: Record<TrafficRangeId, string> = {
-  '24h': '25 HOUR',
-  '7d': '7 DAY',
-  '30d': '30 DAY',
-  '3m': '3 MONTH',
-  '12m': '12 MONTH',
-  '24m': '24 MONTH',
+/** Map half-open [range_from, range_to) onto daily_metrics `day` (ET calendar). */
+function dailyMetricsDayFilter(): string {
+  return `workspace_id = {wid:UUID} AND day >= ${chToDate("toDateTime64({range_from:String}, 3, 'UTC')")} AND day <= ${chToDate("toDateTime64({range_to:String}, 3, 'UTC') - INTERVAL 1 MILLISECOND")}`
 }
-
-const RANGE_FILTER = rangeFilter
-const RANGE_LOOKBACK_FILTER = rangeLookbackFilter
 
 // Strip query strings from URLs before path() so top pages are not split by UTM params.
 const PAGE_PATH_EXPR = `
@@ -127,15 +140,15 @@ const ACTIVE_USERS_QUERY = (utmFilter?: AnalyticsUtmFilter) => `
   WHERE workspace_id = {wid:UUID}${utmFilter ? ` AND ${utmFilter.dimension} = {utm_value:String}` : ''}
 `
 
-function kpiQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): string {
-  if (rangeId === '24h' || utmFilter) {
+function kpiQuery(window: AnalyticsWindow, utmFilter?: AnalyticsUtmFilter): string {
+  if (useEventsRaw(window, utmFilter)) {
     return `
       SELECT
         uniqExactIf(user_id, event_name = 'page_view') AS visitors,
         uniqExact(session_id) AS sessions,
         countIf(event_name = 'page_view') AS page_views
       FROM events_raw
-      WHERE ${RANGE_FILTER(rangeId, utmFilter)}
+      WHERE ${rangeFilter(utmFilter)}
     `
   }
   return `
@@ -144,13 +157,12 @@ function kpiQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): stri
       uniqMerge(sessions) AS sessions,
       sum(pageviews) AS page_views
     FROM daily_metrics
-    WHERE workspace_id = {wid:UUID} AND day >= ${chToday()} - INTERVAL ${RANGE_CLICKHOUSE_INTERVAL[rangeId]}
+    WHERE ${dailyMetricsDayFilter()}
   `
 }
 
 /** Bounce = session with exactly one event in the range. */
-function bounceQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): string {
-  const interval = RANGE_CLICKHOUSE_INTERVAL[rangeId]
+function bounceQuery(utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
       sumIf(1, is_bounce = 1) AS bounces,
@@ -158,57 +170,59 @@ function bounceQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): s
     FROM (
       SELECT session_id, toUInt8(count() = 1) AS is_bounce
       FROM events_raw
-      WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL ${interval}${utmFilter ? ` AND ${utmFilter.dimension} = {utm_value:String}` : ''}
+      WHERE ${rangeFilter(utmFilter)}
       GROUP BY session_id
     )
   `
 }
 
-function trafficByTimeQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): string {
-  if (rangeId === '24h' || utmFilter) {
-    const bucketExpr =
-      rangeId === '24h'
-        ? chHourBucketKey('created_at')
-        : rangeId === '7d' || rangeId === '30d'
-          ? chDayBucketKey('created_at')
-          : rangeId === '3m'
-            ? chWeekBucketKey('created_at')
-            : chMonthBucketKey('created_at')
+function timeBucketExpr(
+  granularity: AnalyticsGranularity,
+  source: 'events' | 'daily',
+): string {
+  if (source === 'events') {
+    if (granularity === 'hour') return chHourBucketKey('created_at')
+    if (granularity === 'day') return chDayBucketKey('created_at')
+    if (granularity === 'week') return chWeekBucketKey('created_at')
+    return chMonthBucketKey('created_at')
+  }
+  if (granularity === 'day') return 'toString(day)'
+  if (granularity === 'week') return 'toString(toMonday(day))'
+  return "formatDateTime(toDateTime(day), '%Y-%m')"
+}
 
+function trafficByTimeQuery(
+  window: AnalyticsWindow,
+  utmFilter?: AnalyticsUtmFilter,
+): string {
+  if (useEventsRaw(window, utmFilter)) {
     return `
       SELECT
-        ${bucketExpr} AS bucket,
+        ${timeBucketExpr(window.granularity, 'events')} AS bucket,
         uniqExactIf(user_id, event_name = 'page_view') AS visitors,
         uniqExact(session_id) AS sessions,
         uniqExactIf(session_id, event_name = 'form_success') AS form_submitted
       FROM events_raw
-      WHERE ${RANGE_LOOKBACK_FILTER(rangeId, utmFilter)}
+      WHERE ${rangeLookbackFilter(utmFilter)}
       GROUP BY bucket
       ORDER BY bucket ASC
     `
   }
 
-  const bucketExpr =
-    rangeId === '7d' || rangeId === '30d'
-      ? 'toString(day)'
-      : rangeId === '3m'
-        ? 'toString(toMonday(day))'
-        : "formatDateTime(toDateTime(day), '%Y-%m')"
-
   return `
     SELECT
-      ${bucketExpr} AS bucket,
+      ${timeBucketExpr(window.granularity, 'daily')} AS bucket,
       uniqMerge(visitors) AS visitors,
       uniqMerge(sessions) AS sessions,
       uniqMerge(form_submitted) AS form_submitted
     FROM daily_metrics
-    WHERE workspace_id = {wid:UUID} AND day >= ${chToday()} - INTERVAL ${RANGE_QUERY_LOOKBACK[rangeId]}
+    WHERE ${dailyMetricsDayFilter()}
     GROUP BY bucket
     ORDER BY bucket ASC
   `
 }
 
-function trafficByDeviceQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): string {
+function trafficByDeviceQuery(utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
       lower(device) AS device,
@@ -216,14 +230,14 @@ function trafficByDeviceQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmF
       uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
       uniqExact(session_id) AS sessions
     FROM events_raw
-    WHERE ${RANGE_FILTER(rangeId, utmFilter)}
+    WHERE ${rangeFilter(utmFilter)}
     GROUP BY device
     ORDER BY visitors DESC
     LIMIT ${TOP_N}
   `
 }
 
-function topPagesQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): string {
+function topPagesQuery(utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
       page,
@@ -233,7 +247,7 @@ function topPagesQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter):
         user_id,
         ${PAGE_PATH_EXPR} AS page
       FROM events_raw
-      WHERE ${RANGE_FILTER(rangeId, utmFilter)} AND event_name = 'page_view'
+      WHERE ${rangeFilter(utmFilter)} AND event_name = 'page_view'
     )
     GROUP BY page
     ORDER BY visitors DESC
@@ -241,7 +255,7 @@ function topPagesQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter):
   `
 }
 
-function trafficByLocationQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): string {
+function trafficByLocationQuery(utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
       city_label AS city,
@@ -255,7 +269,7 @@ function trafficByLocationQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUt
         session_id,
         event_name
       FROM events_raw
-      WHERE ${RANGE_FILTER(rangeId, utmFilter)}
+      WHERE ${rangeFilter(utmFilter)}
     )
     GROUP BY city_label
     ORDER BY visitors DESC
@@ -263,7 +277,7 @@ function trafficByLocationQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUt
   `
 }
 
-function referrersQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): string {
+function referrersQuery(utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
       if(referrer_domain = '', 'Direct', referrer_domain) AS domain,
@@ -273,7 +287,7 @@ function referrersQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter)
         user_id,
         ${REFERRER_DOMAIN_EXPR} AS referrer_domain
       FROM events_raw
-      WHERE ${RANGE_FILTER(rangeId, utmFilter)} AND event_name = 'page_view'
+      WHERE ${rangeFilter(utmFilter)} AND event_name = 'page_view'
     )
     GROUP BY domain
     ORDER BY visitors DESC
@@ -281,7 +295,7 @@ function referrersQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter)
   `
 }
 
-function utmParametersQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFilter): string {
+function utmParametersQuery(utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
       ${UTM_LABEL_EXPR} AS domain,
@@ -304,7 +318,7 @@ function utmParametersQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFil
           anyIf(utm_id, utm_id != '') AS sess_utm_id,
           anyIf(utm_s1, utm_s1 != '') AS sess_utm_s1
         FROM events_raw
-        WHERE ${RANGE_FILTER(rangeId, utmFilter)}
+        WHERE ${rangeFilter(utmFilter)}
         GROUP BY session_id
         HAVING max(event_name = 'page_view') = 1
       )
@@ -321,21 +335,48 @@ function utmParametersQuery(rangeId: TrafficRangeId, utmFilter?: AnalyticsUtmFil
   `
 }
 
-function bucketLabel(bucket: Date, rangeId: TrafficRangeId): string {
-  if (rangeId === '24h') {
+function utmParamDimensionQuery(
+  dimension: TrafficUtmParamKey,
+  utmFilter?: AnalyticsUtmFilter,
+): string {
+  return `
+    SELECT
+      value,
+      uniqExact(user_id) AS visitors
+    FROM (
+      SELECT
+        any(user_id) AS user_id,
+        anyIf(${dimension}, ${dimension} != '') AS value
+      FROM events_raw
+      WHERE ${rangeFilter(utmFilter)}
+      GROUP BY session_id
+      HAVING max(event_name = 'page_view') = 1
+    )
+    WHERE value != ''
+    GROUP BY value
+    ORDER BY visitors DESC
+    LIMIT ${TOP_N}
+  `
+}
+
+function bucketLabel(bucket: Date, granularity: AnalyticsGranularity): string {
+  if (granularity === 'hour') {
     return formatAnalyticsSeriesHour(bucket)
   }
-  if (rangeId === '12m' || rangeId === '24m') {
+  if (granularity === 'month') {
     return formatAnalyticsSeriesMonthYear(bucket)
   }
   return formatAnalyticsSeriesMonthDay(bucket)
 }
 
-function normalizeBucketKey(raw: string, rangeId: TrafficRangeId): string {
-  if (rangeId === '24h') {
+function normalizeBucketKey(
+  raw: string,
+  granularity: AnalyticsGranularity,
+): string {
+  if (granularity === 'hour') {
     return raw.slice(0, 13).replace(' ', 'T')
   }
-  if (rangeId === '12m' || rangeId === '24m') {
+  if (granularity === 'month') {
     return raw.slice(0, 7)
   }
   return raw.slice(0, 10)
@@ -353,17 +394,37 @@ type TimeAggRow = {
   form_submitted: string
 }
 
+function startOfAnalyticsEtMonth(date: Date): Date {
+  const { year, month } = getAnalyticsEtParts(date)
+  return new Date(analyticsEtToUtcMs(year, month, 1, 0, 0, 0))
+}
+
+function addAnalyticsEtMonths(date: Date, months: number): Date {
+  const { year, month } = getAnalyticsEtParts(date)
+  const cursor = new Date(Date.UTC(year, month - 1 + months, 1))
+  return new Date(
+    analyticsEtToUtcMs(
+      cursor.getUTCFullYear(),
+      cursor.getUTCMonth() + 1,
+      1,
+      0,
+      0,
+      0,
+    ),
+  )
+}
+
 function buildTrafficByTime(
-  rangeId: TrafficRangeId,
+  window: AnalyticsWindow,
   rows: TimeAggRow[],
-  now: Date,
 ): TrafficByTimeRow[] {
+  const { granularity } = window
   const agg = new Map<
     string,
     { visitors: number; sessions: number; formSubmitted: number }
   >()
   for (const row of rows) {
-    const key = normalizeBucketKey(row.bucket, rangeId)
+    const key = normalizeBucketKey(row.bucket, granularity)
     agg.set(key, {
       visitors: n(row.visitors),
       sessions: n(row.sessions),
@@ -373,85 +434,50 @@ function buildTrafficByTime(
 
   const out: TrafficByTimeRow[] = []
 
-  if (rangeId === '24h') {
-    const end = startOfAnalyticsEtHour(now)
-    for (let i = 23; i >= 0; i--) {
-      const d = new Date(end.getTime() - i * 60 * 60 * 1000)
-      const key = analyticsHourKey(d)
-      const m = agg.get(key)
-      out.push({
-        date: bucketLabel(d, rangeId),
-        visitors: m?.visitors ?? 0,
-        sessions: m?.sessions ?? 0,
-        formSubmitted: m?.formSubmitted ?? 0,
-      })
-    }
-    return out
-  }
-
-  if (rangeId === '7d') {
-    const end = startOfAnalyticsEtDay(now)
-    for (let i = 6; i >= 0; i--) {
-      const d = addAnalyticsEtDays(end, -i)
-      const key = analyticsDayKey(d)
-      const m = agg.get(key)
-      out.push({
-        date: bucketLabel(d, rangeId),
-        visitors: m?.visitors ?? 0,
-        sessions: m?.sessions ?? 0,
-        formSubmitted: m?.formSubmitted ?? 0,
-      })
-    }
-    return out
-  }
-
-  if (rangeId === '30d') {
-    const end = startOfAnalyticsEtDay(now)
-    for (let i = 29; i >= 0; i--) {
-      const d = addAnalyticsEtDays(end, -i)
-      const key = analyticsDayKey(d)
-      const m = agg.get(key)
-      out.push({
-        date: bucketLabel(d, rangeId),
-        visitors: m?.visitors ?? 0,
-        sessions: m?.sessions ?? 0,
-        formSubmitted: m?.formSubmitted ?? 0,
-      })
-    }
-    return out
-  }
-
-  if (rangeId === '3m') {
-    const monday = parseAnalyticsEtDayKey(analyticsMondayKey(now))
-    for (let i = 12; i >= 0; i--) {
-      const d = addAnalyticsEtDays(monday, -i * 7)
-      const key = analyticsDayKey(d)
-      const m = agg.get(key)
-      out.push({
-        date: bucketLabel(d, rangeId),
-        visitors: m?.visitors ?? 0,
-        sessions: m?.sessions ?? 0,
-        formSubmitted: m?.formSubmitted ?? 0,
-      })
-    }
-    return out
-  }
-
-  const monthCount = rangeId === '12m' ? 12 : 24
-  const parts = analyticsMonthKey(now).split('-').map(Number)
-  const year = parts[0] ?? 1970
-  const month = parts[1] ?? 1
-  for (let i = monthCount - 1; i >= 0; i--) {
-    const cursor = new Date(Date.UTC(year, month - 1 - i, 1))
-    const key = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`
-    const d = parseAnalyticsEtMonthKey(key)
+  const pushBucket = (d: Date, key: string) => {
     const m = agg.get(key)
     out.push({
-      date: bucketLabel(d, rangeId),
+      date: bucketLabel(d, granularity),
       visitors: m?.visitors ?? 0,
       sessions: m?.sessions ?? 0,
       formSubmitted: m?.formSubmitted ?? 0,
     })
+  }
+
+  if (granularity === 'hour') {
+    let cursor = startOfAnalyticsEtHour(window.start)
+    while (cursor < window.seriesEnd) {
+      pushBucket(cursor, analyticsHourKey(cursor))
+      cursor = new Date(cursor.getTime() + 60 * 60 * 1000)
+    }
+    return out
+  }
+
+  if (granularity === 'day') {
+    let cursor = startOfAnalyticsEtDay(window.start)
+    while (cursor < window.seriesEnd) {
+      pushBucket(cursor, analyticsDayKey(cursor))
+      cursor = addAnalyticsEtDays(cursor, 1)
+    }
+    return out
+  }
+
+  if (granularity === 'week') {
+    let cursor = startOfAnalyticsEtDay(
+      parseAnalyticsEtDayKey(analyticsMondayKey(window.start)),
+    )
+    while (cursor < window.seriesEnd) {
+      pushBucket(cursor, analyticsDayKey(cursor))
+      cursor = addAnalyticsEtDays(cursor, 7)
+    }
+    return out
+  }
+
+  let cursor = startOfAnalyticsEtMonth(window.start)
+  while (cursor < window.seriesEnd) {
+    const key = analyticsMonthKey(cursor)
+    pushBucket(parseAnalyticsEtMonthKey(key), key)
+    cursor = addAnalyticsEtMonths(cursor, 1)
   }
   return out
 }
@@ -459,15 +485,22 @@ function buildTrafficByTime(
 export interface GetAnalyticsTrafficParams {
   workspaceId: string
   rangeId: TrafficRangeId
+  custom?: AnalyticsCustomRange
   utmFilter?: AnalyticsUtmFilter
 }
 
 export async function getAnalyticsTraffic({
   workspaceId,
   rangeId,
+  custom,
   utmFilter,
 }: GetAnalyticsTrafficParams): Promise<TrafficDashboardResponse> {
-  const cacheKey = `analytics:traffic:v2-et:${workspaceId}:${rangeId}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
+  const now = new Date()
+  const window = resolveAnalyticsWindow(rangeId, now, custom)
+  const utmKey = utmFilter
+    ? `${utmFilter.dimension}:${utmFilter.value}`
+    : 'all'
+  const cacheKey = `analytics:traffic:v4:${workspaceId}:${rangeCacheKey(window, utmKey)}`
   try {
     const cachedStr = await redis.get(cacheKey)
     if (cachedStr) {
@@ -478,7 +511,11 @@ export async function getAnalyticsTraffic({
   }
 
   const ch = getClickHouseClient()
-  const p = { wid: workspaceId, ...utmFilterParams(utmFilter) }
+  const p = {
+    wid: workspaceId,
+    ...rangeQueryParams(window),
+    ...utmFilterParams(utmFilter),
+  }
   const q = (query: string) => ch.query({ format: 'JSON', query_params: p, query })
 
   const [
@@ -491,16 +528,20 @@ export async function getAnalyticsTraffic({
     locationRes,
     referrersRes,
     utmRes,
+    ...utmParamResults
   ] = await Promise.all([
     q(ACTIVE_USERS_QUERY(utmFilter)),
-    q(kpiQuery(rangeId, utmFilter)),
-    q(bounceQuery(rangeId, utmFilter)),
-    q(trafficByTimeQuery(rangeId, utmFilter)),
-    q(trafficByDeviceQuery(rangeId, utmFilter)),
-    q(topPagesQuery(rangeId, utmFilter)),
-    q(trafficByLocationQuery(rangeId, utmFilter)),
-    q(referrersQuery(rangeId, utmFilter)),
-    q(utmParametersQuery(rangeId, utmFilter)),
+    q(kpiQuery(window, utmFilter)),
+    q(bounceQuery(utmFilter)),
+    q(trafficByTimeQuery(window, utmFilter)),
+    q(trafficByDeviceQuery(utmFilter)),
+    q(topPagesQuery(utmFilter)),
+    q(trafficByLocationQuery(utmFilter)),
+    q(referrersQuery(utmFilter)),
+    q(utmParametersQuery(utmFilter)),
+    ...UTM_PARAM_TABS.map((tab) =>
+      q(utmParamDimensionQuery(tab.key, utmFilter)),
+    ),
   ])
 
   type KpiRow = { visitors: string; sessions: string; page_views: string }
@@ -566,6 +607,26 @@ export async function getAnalyticsTraffic({
     visitors: n(row.visitors),
   }))
 
+  const utmByParam: UtmParamTab[] = []
+  for (let i = 0; i < UTM_PARAM_TABS.length; i++) {
+    const tab = UTM_PARAM_TABS[i]!
+    const result = utmParamResults[i]
+    if (!result) continue
+    const rows =
+      (
+        (await result.json()) as CHJson<{ value: string; visitors: string }>
+      ).data ?? []
+    if (rows.length === 0) continue
+    utmByParam.push({
+      key: tab.key,
+      label: tab.label,
+      rows: rows.map((row) => ({
+        value: row.value,
+        visitors: n(row.visitors),
+      })),
+    })
+  }
+
   const response: TrafficDashboardResponse = {
     rangeId,
     kpis: {
@@ -575,11 +636,12 @@ export async function getAnalyticsTraffic({
       pageViews,
       bounceRate: bouncePct(n(bounceRow?.bounces), bounceSessions),
     },
-    trafficByTime: buildTrafficByTime(rangeId, timeRows, new Date()),
+    trafficByTime: buildTrafficByTime(window, timeRows),
     trafficByDevice,
     topPages,
     trafficByLocation,
     referrers,
+    utmByParam,
     utmParameters,
   }
 
@@ -592,6 +654,7 @@ export async function getAnalyticsTraffic({
 }
 
 export function emptyAnalyticsTraffic(rangeId: TrafficRangeId): TrafficDashboardResponse {
+  const window = resolveAnalyticsWindow(rangeId)
   return {
     rangeId,
     kpis: {
@@ -601,11 +664,12 @@ export function emptyAnalyticsTraffic(rangeId: TrafficRangeId): TrafficDashboard
       pageViews: 0,
       bounceRate: 0,
     },
-    trafficByTime: buildTrafficByTime(rangeId, [], new Date()),
+    trafficByTime: buildTrafficByTime(window, []),
     trafficByDevice: [],
     topPages: [],
     trafficByLocation: [],
     referrers: [],
+    utmByParam: [],
     utmParameters: [],
   }
 }

@@ -23,15 +23,15 @@ import { defaultAlertsByDateRange } from "@/features/alerts/controller/alerts-de
 import { defaultExperimentsByDateRange } from "@/features/experiments/controller/experiments-default-payload"
 import { defaultSegmentsByDateRange } from "@/features/segments/controller/segments-default-payload"
 import { defaultSegmentsPerformanceByDateRange } from "@/features/segments/controller/segments-performance-default-payload"
+import {
+  DEFAULT_TRAFFIC_RANGE_ID,
+  TRAFFIC_DATE_RANGE_OPTIONS,
+  TRAFFIC_RANGE_IDS,
+} from "@/features/traffic/model/traffic-range"
 
-const emptyKpisByDateRange: OverviewKpiValuesByDateRange = {
-  "24h": {},
-  "7d": {},
-  "30d": {},
-  "3m": {},
-  "12m": {},
-  "24m": {},
-}
+const emptyKpisByDateRange: OverviewKpiValuesByDateRange = Object.fromEntries(
+  TRAFFIC_RANGE_IDS.map((id) => [id, {}])
+) as OverviewKpiValuesByDateRange
 
 const overviewPlaceholderShell: Omit<
   OverviewDashboardData,
@@ -48,15 +48,8 @@ const overviewPlaceholderShell: Omit<
   | "experimentsByDateRange"
   | "alertsByDateRange"
 > = {
-  dateRangeOptions: [
-    { id: "24h", label: "Last 24 hours" },
-    { id: "7d", label: "Last 7 days" },
-    { id: "30d", label: "Last 30 days" },
-    { id: "3m", label: "Last 3 months" },
-    { id: "12m", label: "Last 12 months" },
-    { id: "24m", label: "Last 24 months" },
-  ],
-  defaultDateRangeId: "7d",
+  dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
+  defaultDateRangeId: DEFAULT_TRAFFIC_RANGE_ID,
   kpisByDateRange: emptyKpisByDateRange,
   defaultKpiMetricId: "visitors",
   traffic: defaultTrafficStats(),

@@ -75,7 +75,8 @@ function funnelStepsFromApiPayload(
 
 export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
   const reduceMotion = useReducedMotion()
-  const { dateRangeId, setDateRangeId } = useDashboardDateRange()
+  const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
+    useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
   const [overviewData, setOverviewData] = useState(data)
   const [activeKpiId, setActiveKpiId] = useState<OverviewKpiMetricId>(
@@ -99,7 +100,8 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
       shouldUseInitialTabData(
         dateRangeId,
         data.defaultDateRangeId,
-        utmFilter
+        utmFilter,
+        customRange
       ) &&
       hasCompleteKpiSeries(data, dateRangeId)
     ) {
@@ -110,7 +112,7 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
     const controller = new AbortController()
     const url = buildAnalyticsApiPath(
       `/api/landing-pages/${encodeURIComponent(projectId)}/overview`,
-      { rangeId: dateRangeId, utmFilter }
+      { rangeId: dateRangeId, customRange, utmFilter }
     )
 
     void fetch(url, { cache: "no-store", signal: controller.signal })
@@ -127,13 +129,13 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
       })
 
     return () => controller.abort()
-  }, [data, projectId, dateRangeId, utmFilter])
+  }, [customRange, data, projectId, dateRangeId, utmFilter])
 
   useEffect(() => {
     let cancelled = false
     const url = buildAnalyticsApiPath(
       `/api/landing-pages/${encodeURIComponent(projectId)}/alerts`,
-      { rangeId: dateRangeId, utmFilter }
+      { rangeId: dateRangeId, customRange, utmFilter }
     )
 
     void fetch(url, { cache: "no-store" })
@@ -155,7 +157,7 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
     return () => {
       cancelled = true
     }
-  }, [projectId, dateRangeId, utmFilter])
+  }, [customRange, projectId, dateRangeId, utmFilter])
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -170,7 +172,7 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
 
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/funnel`,
-        { rangeId, utmFilter }
+        { rangeId, customRange, utmFilter }
       )
       try {
         const res = await fetch(url, { cache: "no-store", signal })
@@ -188,12 +190,17 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
         }
       }
     },
-    [projectId, utmFilter]
+    [projectId, customRange, utmFilter]
   )
 
   useEffect(() => {
     if (
-      shouldUseInitialTabData(dateRangeId, data.defaultDateRangeId, utmFilter)
+      shouldUseInitialTabData(
+        dateRangeId,
+        data.defaultDateRangeId,
+        utmFilter,
+        customRange
+      )
     ) {
       setFunnelSteps(data.funnel)
       setIsFunnelLoading(false)
@@ -203,7 +210,7 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
     const controller = new AbortController()
     void fetchFunnelForRange(dateRangeId, controller.signal)
     return () => controller.abort()
-  }, [dateRangeId, utmFilter, data, fetchFunnelForRange])
+  }, [customRange, dateRangeId, utmFilter, data, fetchFunnelForRange])
 
   const chartPoints = useMemo(() => {
     void chartNowNonce
@@ -212,12 +219,13 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
     if (fromApi !== undefined && fromApi.length > 0) {
       return fromApi
     }
-    return overviewChartPointsForRange(dateRangeId, new Date())
+    return overviewChartPointsForRange(dateRangeId, new Date(), customRange)
   }, [
     overviewData.kpiSeriesByDateRange,
     dateRangeId,
     activeKpiId,
     chartNowNonce,
+    customRange,
   ])
 
   const kpis = useMemo(
@@ -229,7 +237,7 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
     return overviewKpiLabelsForFormType(overviewData.formType)[activeKpiId]
   }, [overviewData.formType, activeKpiId])
 
-  const chartKey = `${dateRangeId}-${activeKpiId}`
+  const chartKey = `${dateRangeId}-${customRange?.from ?? ""}-${customRange?.to ?? ""}-${activeKpiId}`
 
   return (
     <motion.div
@@ -246,7 +254,9 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
           title="Overview"
           dateRangeOptions={data.dateRangeOptions}
           dateRangeId={dateRangeId}
+          customRange={customRange}
           onDateRangeChange={setDateRangeId}
+          onCustomRangeChange={setCustomRange}
         />
       </motion.div>
 

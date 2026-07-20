@@ -9,8 +9,14 @@ import type {
 } from '../types/analytics-experiments.js'
 import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
 import {
+  rangeCacheKey,
+  rangeFilter,
+  rangeQueryParams,
+  resolveAnalyticsWindow,
+  type AnalyticsCustomRange,
+} from '../lib/analytics-range.js'
+import {
   utmFilterParams,
-  utmFilterSql,
   type AnalyticsUtmFilter,
 } from '../lib/analytics-utm-filter.js'
 
@@ -25,15 +31,6 @@ function fsrPct(formSuccessSessions: number, sessions: number): number {
   return sessions > 0 ? round1((formSuccessSessions / sessions) * 100) : 0
 }
 
-function getInterval(rangeId: RangeId): string {
-  if (rangeId === '24h') return '24 HOUR'
-  if (rangeId === '7d') return '7 DAY'
-  if (rangeId === '30d') return '30 DAY'
-  if (rangeId === '3m') return '3 MONTH'
-  if (rangeId === '12m') return '12 MONTH'
-  return '24 MONTH'
-}
-
 type LocationDimension = 'city' | 'state' | 'zipcode'
 
 type LocationRow = {
@@ -43,7 +40,7 @@ type LocationRow = {
   sessions: string
 }
 
-function zipcodeBreakdownQuery(interval: string, utmSql: string): string {
+function zipcodeBreakdownQuery(utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
       if(session_zip = '', 'Unknown', session_zip) AS location_label,
@@ -60,9 +57,8 @@ function zipcodeBreakdownQuery(interval: string, utmSql: string): string {
           zipcode != '' OR JSONExtractString(properties, 'zip') != ''
         ) AS session_zip
       FROM events_raw
-      WHERE workspace_id = {wid:UUID}
+      WHERE ${rangeFilter(utmFilter)}
         AND lp_public_id = {lp:String}
-        AND created_at >= now() - INTERVAL ${interval}${utmSql}
       GROUP BY session_id
     )
     GROUP BY location_label, variant_label
@@ -72,8 +68,7 @@ function zipcodeBreakdownQuery(interval: string, utmSql: string): string {
 
 function locationBreakdownQuery(
   dimension: LocationDimension,
-  interval: string,
-  utmSql: string,
+  utmFilter?: AnalyticsUtmFilter,
 ): string {
   const labelExpr =
     dimension === 'state'
@@ -87,9 +82,8 @@ function locationBreakdownQuery(
       uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
       uniqExact(session_id) AS sessions
     FROM events_raw
-    WHERE workspace_id = {wid:UUID} 
+    WHERE ${rangeFilter(utmFilter)}
       AND lp_public_id = {lp:String}
-      AND created_at >= now() - INTERVAL ${interval}${utmSql}
     GROUP BY location_label, variant_label
     ORDER BY sessions DESC
   `
@@ -133,13 +127,18 @@ export async function getAnalyticsExperiments({
   lpPublicId,
   rangeId,
   utmFilter,
+  custom,
 }: {
   workspaceId: string
   lpPublicId: string
   rangeId: RangeId
   utmFilter?: AnalyticsUtmFilter
+  custom?: AnalyticsCustomRange
 }): Promise<AnalyticsExperiments> {
-  const cacheKey = `analytics:experiments:${workspaceId}:${lpPublicId}:${rangeId}:${utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'}`
+  const now = new Date()
+  const window = resolveAnalyticsWindow(rangeId, now, custom)
+  const utmKey = utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'
+  const cacheKey = `analytics:experiments:v2-abs:${workspaceId}:${lpPublicId}:${rangeCacheKey(window, utmKey)}`
   const cached = await readAnalyticsCache<AnalyticsExperiments>(cacheKey)
   if (cached) return cached
 
@@ -165,9 +164,13 @@ export async function getAnalyticsExperiments({
   }))
 
   const ch = getClickHouseClient()
-  const interval = getInterval(rangeId)
-  const utmSql = utmFilterSql(utmFilter)
-  const p = { wid: workspaceId, lp: lpPublicId, ...utmFilterParams(utmFilter) }
+  const where = rangeFilter(utmFilter)
+  const p = {
+    wid: workspaceId,
+    lp: lpPublicId,
+    ...rangeQueryParams(window),
+    ...utmFilterParams(utmFilter),
+  }
 
   const [variantRes, cityRes, stateRes, zipcodeRes] = await Promise.all([
     ch.query({
@@ -180,9 +183,8 @@ export async function getAnalyticsExperiments({
           uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
           uniqExact(session_id) AS sessions
         FROM events_raw
-        WHERE workspace_id = {wid:UUID} 
+        WHERE ${where}
           AND lp_public_id = {lp:String}
-          AND created_at >= now() - INTERVAL ${interval}${utmSql}
         GROUP BY variant_label
         ORDER BY visitors DESC
       `,
@@ -190,17 +192,17 @@ export async function getAnalyticsExperiments({
     ch.query({
       format: 'JSON',
       query_params: p,
-      query: locationBreakdownQuery('city', interval, utmSql),
+      query: locationBreakdownQuery('city', utmFilter),
     }),
     ch.query({
       format: 'JSON',
       query_params: p,
-      query: locationBreakdownQuery('state', interval, utmSql),
+      query: locationBreakdownQuery('state', utmFilter),
     }),
     ch.query({
       format: 'JSON',
       query_params: p,
-      query: zipcodeBreakdownQuery(interval, utmSql),
+      query: zipcodeBreakdownQuery(utmFilter),
     }),
   ])
 
