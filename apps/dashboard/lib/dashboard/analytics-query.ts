@@ -1,4 +1,8 @@
-import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
+import {
+  hasDashboardUtmFilter,
+  normalizeDashboardUtmFilter,
+  type DashboardUtmFilter,
+} from "@/features/dashboard/model/utm-attribution-filter"
 import type { DashboardCustomRange } from "@/features/traffic/model/traffic-range"
 
 export function buildAnalyticsApiPath(
@@ -18,10 +22,9 @@ export function buildAnalyticsApiPath(
     url.searchParams.set("from", params.customRange.from)
     url.searchParams.set("to", params.customRange.to)
   }
-  if (params.utmFilter?.dimension && params.utmFilter.value) {
-    url.searchParams.set("utm_dim", params.utmFilter.dimension)
-    url.searchParams.set("utm_value", params.utmFilter.value)
-  }
+  const utm = normalizeDashboardUtmFilter(params.utmFilter)
+  if (utm?.utm_source) url.searchParams.set("utm_source", utm.utm_source)
+  if (utm?.utm_medium) url.searchParams.set("utm_medium", utm.utm_medium)
   if (params.extra) {
     for (const [key, value] of Object.entries(params.extra)) {
       url.searchParams.set(key, value)
@@ -37,7 +40,7 @@ export function shouldUseInitialTabData(
   customRange?: DashboardCustomRange | null,
   defaultCustomRange?: DashboardCustomRange | null
 ): boolean {
-  if (utmFilter) return false
+  if (hasDashboardUtmFilter(utmFilter)) return false
   if (dateRangeId !== defaultDateRangeId) return false
   if (dateRangeId === "custom") {
     return (

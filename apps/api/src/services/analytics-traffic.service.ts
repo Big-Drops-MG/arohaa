@@ -12,6 +12,8 @@ import {
 } from '../lib/analytics-range.js'
 import {
   utmFilterParams,
+  utmFilterSql,
+  utmFilterCacheKey,
   type AnalyticsUtmFilter,
 } from '../lib/analytics-utm-filter.js'
 import {
@@ -137,7 +139,7 @@ const ACTIVE_USERS_QUERY = (utmFilter?: AnalyticsUtmFilter) => `
       AND event_name IN ('heartbeat', 'page_view')
   ) AS active_users
   FROM events_raw
-  WHERE workspace_id = {wid:UUID}${utmFilter ? ` AND ${utmFilter.dimension} = {utm_value:String}` : ''}
+  WHERE workspace_id = {wid:UUID}${utmFilterSql(utmFilter)}
 `
 
 function kpiQuery(window: AnalyticsWindow, utmFilter?: AnalyticsUtmFilter): string {
@@ -497,9 +499,7 @@ export async function getAnalyticsTraffic({
 }: GetAnalyticsTrafficParams): Promise<TrafficDashboardResponse> {
   const now = new Date()
   const window = resolveAnalyticsWindow(rangeId, now, custom)
-  const utmKey = utmFilter
-    ? `${utmFilter.dimension}:${utmFilter.value}`
-    : 'all'
+  const utmKey = utmFilterCacheKey(utmFilter)
   const cacheKey = `analytics:traffic:v4:${workspaceId}:${rangeCacheKey(window, utmKey)}`
   try {
     const cachedStr = await redis.get(cacheKey)

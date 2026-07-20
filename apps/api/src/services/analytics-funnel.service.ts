@@ -10,6 +10,7 @@ import {
 } from '../lib/analytics-range.js'
 import {
   utmFilterParams,
+  utmFilterCacheKey,
   type AnalyticsUtmFilter,
 } from '../lib/analytics-utm-filter.js'
 import { computePeriodChangePct } from '../lib/funnel-trend.js'
@@ -296,7 +297,7 @@ export async function getAnalyticsFunnel({
 }: GetAnalyticsFunnelParams): Promise<FunnelDashboardResponse> {
   const now = new Date()
   const window = resolveAnalyticsWindow(rangeId, now, custom)
-  const utmKey = utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'
+  const utmKey = utmFilterCacheKey(utmFilter)
   const cacheKey = `analytics:funnel:v8:${workspaceId}:${rangeCacheKey(window, utmKey)}:${formType}`
   try {
     const cachedStr = await redis.get(cacheKey)

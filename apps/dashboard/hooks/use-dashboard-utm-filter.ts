@@ -3,8 +3,9 @@
 import { useCallback, useMemo } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
-  isUtmFilterDimension,
-  parseDashboardUtmFilter,
+  hasDashboardUtmFilter,
+  normalizeDashboardUtmFilter,
+  parseDashboardUtmFilterFromParams,
   type DashboardUtmFilter,
   type UtmFilterDimension,
 } from "@/features/dashboard/model/utm-attribution-filter"
@@ -16,28 +17,34 @@ export function useDashboardUtmFilter() {
 
   const utmFilter = useMemo(
     () =>
-      parseDashboardUtmFilter(
-        searchParams.get("utm_dim"),
-        searchParams.get("utm_value")
-      ),
+      parseDashboardUtmFilterFromParams({
+        utm_source: searchParams.get("utm_source"),
+        utm_medium: searchParams.get("utm_medium"),
+        utm_dim: searchParams.get("utm_dim"),
+        utm_value: searchParams.get("utm_value"),
+      }),
     [searchParams]
   )
 
-  const utmDimension = useMemo(
-    () => searchParams.get("utm_dim"),
-    [searchParams]
-  )
-
-  const setUtmDimension = useCallback(
-    (dimension: UtmFilterDimension | "all") => {
+  const writeFilter = useCallback(
+    (next: DashboardUtmFilter | null) => {
       const params = new URLSearchParams(searchParams.toString())
-      if (dimension === "all") {
-        params.delete("utm_dim")
-        params.delete("utm_value")
+      params.delete("utm_dim")
+      params.delete("utm_value")
+
+      const normalized = normalizeDashboardUtmFilter(next)
+      if (!normalized) {
+        params.delete("utm_source")
+        params.delete("utm_medium")
       } else {
-        params.set("utm_dim", dimension)
-        params.delete("utm_value")
+        if (normalized.utm_source)
+          params.set("utm_source", normalized.utm_source)
+        else params.delete("utm_source")
+        if (normalized.utm_medium)
+          params.set("utm_medium", normalized.utm_medium)
+        else params.delete("utm_medium")
       }
+
       const query = params.toString()
       router.replace(query ? `${pathname}?${query}` : pathname, {
         scroll: false,
@@ -48,30 +55,43 @@ export function useDashboardUtmFilter() {
 
   const setUtmFilter = useCallback(
     (next: DashboardUtmFilter | null) => {
-      const params = new URLSearchParams(searchParams.toString())
-      if (!next) {
-        params.delete("utm_dim")
-        params.delete("utm_value")
-      } else {
-        params.set("utm_dim", next.dimension)
-        params.set("utm_value", next.value)
-      }
-      const query = params.toString()
-      router.replace(query ? `${pathname}?${query}` : pathname, {
-        scroll: false,
-      })
+      writeFilter(next)
     },
-    [pathname, router, searchParams]
+    [writeFilter]
   )
 
-  const activeDimension = isUtmFilterDimension(utmDimension)
-    ? utmDimension
-    : ("all" as const)
+  const clearUtmFilter = useCallback(() => {
+    writeFilter(null)
+  }, [writeFilter])
+
+  const setDimensionValue = useCallback(
+    (dimension: UtmFilterDimension, value: string | null) => {
+      const current = normalizeDashboardUtmFilter(utmFilter) ?? {}
+      const next: DashboardUtmFilter = { ...current }
+      if (!value) {
+        delete next[dimension]
+      } else {
+        next[dimension] = value
+      }
+      writeFilter(hasDashboardUtmFilter(next) ? next : null)
+    },
+    [utmFilter, writeFilter]
+  )
+
+  const toggleDimensionValue = useCallback(
+    (dimension: UtmFilterDimension, value: string) => {
+      const current = normalizeDashboardUtmFilter(utmFilter) ?? {}
+      const selected = current[dimension]
+      setDimensionValue(dimension, selected === value ? null : value)
+    },
+    [setDimensionValue, utmFilter]
+  )
 
   return {
     utmFilter,
-    activeDimension,
-    setUtmDimension,
     setUtmFilter,
+    clearUtmFilter,
+    setDimensionValue,
+    toggleDimensionValue,
   }
 }

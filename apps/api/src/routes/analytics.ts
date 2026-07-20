@@ -62,6 +62,8 @@ const ANALYTICS_RATE_LIMIT = {
 } as const
 
 const utmFilterSchemaProps = {
+  utm_source: { type: 'string', minLength: 1, maxLength: 100 },
+  utm_medium: { type: 'string', minLength: 1, maxLength: 100 },
   utm_dim: { type: 'string', enum: ['utm_source', 'utm_medium'] },
   utm_value: { type: 'string', minLength: 1, maxLength: 100 },
 } as const
@@ -221,6 +223,8 @@ export async function analyticsRoutes(server: FastifyInstance) {
       range_id?: string
       from?: string
       to?: string
+      utm_source?: string
+      utm_medium?: string
       utm_dim?: string
       utm_value?: string
     }
@@ -243,12 +247,12 @@ export async function analyticsRoutes(server: FastifyInstance) {
       config: ANALYTICS_RATE_LIMIT,
     },
     async (request, reply) => {
-      const { workspace_id, form_type, utm_dim, utm_value } = request.query
+      const { workspace_id, form_type } = request.query
       const parsed = parseRangeQuery(request.query)
       if (!parsed.ok) {
         return reply.code(400).send({ error: parsed.error })
       }
-      const utmFilter = parseAnalyticsUtmFilter(utm_dim, utm_value)
+      const utmFilter = parseAnalyticsUtmFilter(request.query)
       await sendAnalyticsQuery({
         request,
         reply,
@@ -274,6 +278,8 @@ export async function analyticsRoutes(server: FastifyInstance) {
       range_id?: string
       from?: string
       to?: string
+      utm_source?: string
+      utm_medium?: string
       utm_dim?: string
       utm_value?: string
     }
@@ -281,12 +287,12 @@ export async function analyticsRoutes(server: FastifyInstance) {
     '/v1/analytics/traffic',
     { schema: rangeSchema, config: ANALYTICS_RATE_LIMIT },
     async (request, reply) => {
-      const { workspace_id, utm_dim, utm_value } = request.query
+      const { workspace_id } = request.query
       const parsed = parseRangeQuery(request.query)
       if (!parsed.ok) {
         return reply.code(400).send({ error: parsed.error })
       }
-      const utmFilter = parseAnalyticsUtmFilter(utm_dim, utm_value)
+      const utmFilter = parseAnalyticsUtmFilter(request.query)
 
       await sendAnalyticsQuery({
         request,
@@ -313,6 +319,8 @@ export async function analyticsRoutes(server: FastifyInstance) {
       from?: string
       to?: string
       form_type?: string
+      utm_source?: string
+      utm_medium?: string
       utm_dim?: string
       utm_value?: string
     }
@@ -320,12 +328,12 @@ export async function analyticsRoutes(server: FastifyInstance) {
     '/v1/analytics/funnel',
     { schema: funnelSchema, config: ANALYTICS_RATE_LIMIT },
     async (request, reply) => {
-      const { workspace_id, form_type, utm_dim, utm_value } = request.query
+      const { workspace_id, form_type } = request.query
       const parsed = parseRangeQuery(request.query)
       if (!parsed.ok) {
         return reply.code(400).send({ error: parsed.error })
       }
-      const utmFilter = parseAnalyticsUtmFilter(utm_dim, utm_value)
+      const utmFilter = parseAnalyticsUtmFilter(request.query)
 
       const formType =
         form_type === 'zip' || form_type === 'single' || form_type === 'multiple'
@@ -357,6 +365,8 @@ export async function analyticsRoutes(server: FastifyInstance) {
       range_id?: string
       from?: string
       to?: string
+      utm_source?: string
+      utm_medium?: string
       utm_dim?: string
       utm_value?: string
     }
@@ -364,12 +374,12 @@ export async function analyticsRoutes(server: FastifyInstance) {
     '/v1/analytics/events',
     { schema: rangeSchema, config: ANALYTICS_RATE_LIMIT },
     async (request, reply) => {
-      const { workspace_id, utm_dim, utm_value } = request.query
+      const { workspace_id } = request.query
       const parsed = parseRangeQuery(request.query)
       if (!parsed.ok) {
         return reply.code(400).send({ error: parsed.error })
       }
-      const utmFilter = parseAnalyticsUtmFilter(utm_dim, utm_value)
+      const utmFilter = parseAnalyticsUtmFilter(request.query)
 
       await sendAnalyticsQuery({
         request,
@@ -395,6 +405,8 @@ export async function analyticsRoutes(server: FastifyInstance) {
       range_id?: string
       from?: string
       to?: string
+      utm_source?: string
+      utm_medium?: string
       utm_dim?: string
       utm_value?: string
     }
@@ -402,12 +414,12 @@ export async function analyticsRoutes(server: FastifyInstance) {
     '/v1/analytics/segments',
     { schema: rangeSchema, config: ANALYTICS_RATE_LIMIT },
     async (request, reply) => {
-      const { workspace_id, utm_dim, utm_value } = request.query
+      const { workspace_id } = request.query
       const parsed = parseRangeQuery(request.query)
       if (!parsed.ok) {
         return reply.code(400).send({ error: parsed.error })
       }
-      const utmFilter = parseAnalyticsUtmFilter(utm_dim, utm_value)
+      const utmFilter = parseAnalyticsUtmFilter(request.query)
 
       await sendAnalyticsQuery({
         request,
@@ -434,6 +446,8 @@ export async function analyticsRoutes(server: FastifyInstance) {
       range_id?: string
       from?: string
       to?: string
+      utm_source?: string
+      utm_medium?: string
       utm_dim?: string
       utm_value?: string
     }
@@ -456,12 +470,12 @@ export async function analyticsRoutes(server: FastifyInstance) {
       config: ANALYTICS_RATE_LIMIT,
     },
     async (request, reply) => {
-      const { workspace_id, lp_public_id, utm_dim, utm_value } = request.query
+      const { workspace_id, lp_public_id } = request.query
       const parsed = parseRangeQuery(request.query)
       if (!parsed.ok) {
         return reply.code(400).send({ error: parsed.error })
       }
-      const utmFilter = parseAnalyticsUtmFilter(utm_dim, utm_value)
+      const utmFilter = parseAnalyticsUtmFilter(request.query)
 
       await sendAnalyticsQuery({
         request,
@@ -553,6 +567,8 @@ export async function analyticsRoutes(server: FastifyInstance) {
       range_id?: string
       from?: string
       to?: string
+      utm_source?: string
+      utm_medium?: string
       utm_dim?: string
       utm_value?: string
     }
@@ -575,12 +591,12 @@ export async function analyticsRoutes(server: FastifyInstance) {
       config: ANALYTICS_RATE_LIMIT,
     },
     async (request, reply) => {
-      const { workspace_id, lp_public_id, utm_dim, utm_value } = request.query
+      const { workspace_id, lp_public_id } = request.query
       const parsed = parseRangeQuery(request.query)
       if (!parsed.ok) {
         return reply.code(400).send({ error: parsed.error })
       }
-      const utmFilter = parseAnalyticsUtmFilter(utm_dim, utm_value)
+      const utmFilter = parseAnalyticsUtmFilter(request.query)
 
       await sendAnalyticsQuery({
         request,

@@ -1,58 +1,86 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { Filter } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { Check, ChevronDown, Filter, Search } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
+import { Input } from "@workspace/ui/components/input"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/ui/components/select"
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@workspace/ui/components/popover"
 import {
   UTM_FILTER_DIMENSION_OPTIONS,
-  utmFilterDimensionLabel,
+  formatDashboardUtmFilterLabel,
+  hasDashboardUtmFilter,
+  normalizeDashboardUtmFilter,
   type UtmFilterDimension,
 } from "@/features/dashboard/model/utm-attribution-filter"
-import {
-  overviewSelectContentClassName,
-  overviewSelectItemClassName,
-  overviewSelectTriggerClassName,
-} from "@/features/overview/view/overview-select-styles"
+import { overviewSelectTriggerClassName } from "@/features/overview/view/overview-select-styles"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 
 type ProjectAttributionFiltersProps = {
   projectId: string
 }
 
+type ValuesByDimension = Record<UtmFilterDimension, string[]>
+
+const EMPTY_VALUES: ValuesByDimension = {
+  utm_source: [],
+  utm_medium: [],
+}
+
+function filterValues(values: string[], query: string): string[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return values
+  return values.filter((value) => value.toLowerCase().includes(q))
+}
+
 export function ProjectAttributionFilters({
   projectId,
 }: ProjectAttributionFiltersProps) {
-  const { utmFilter, activeDimension, setUtmDimension, setUtmFilter } =
+  const { utmFilter, clearUtmFilter, toggleDimensionValue } =
     useDashboardUtmFilter()
-  const [values, setValues] = useState<string[]>([])
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState("")
+  const [valuesByDimension, setValuesByDimension] =
+    useState<ValuesByDimension>(EMPTY_VALUES)
   const [isLoadingValues, setIsLoadingValues] = useState(false)
 
+  const selected = normalizeDashboardUtmFilter(utmFilter)
+  const triggerLabel = formatDashboardUtmFilterLabel(selected)
+
   useEffect(() => {
-    if (activeDimension === "all") {
-      setValues([])
-      return
-    }
+    if (!open) return
 
     let cancelled = false
     setIsLoadingValues(true)
 
-    const url = `/api/landing-pages/${encodeURIComponent(projectId)}/utm-values?dim=${encodeURIComponent(activeDimension)}`
-
-    void fetch(url, { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : []))
-      .then((payload) => {
-        if (cancelled) return
-        setValues(Array.isArray(payload) ? payload : [])
+    void Promise.all(
+      UTM_FILTER_DIMENSION_OPTIONS.map(async (opt) => {
+        const url = `/api/landing-pages/${encodeURIComponent(projectId)}/utm-values?dim=${encodeURIComponent(opt.id)}`
+        try {
+          const res = await fetch(url, { cache: "no-store" })
+          const payload = res.ok ? await res.json() : []
+          return [
+            opt.id,
+            Array.isArray(payload) ? (payload as string[]) : [],
+          ] as const
+        } catch {
+          return [opt.id, []] as const
+        }
       })
-      .catch(() => {
-        if (!cancelled) setValues([])
+    )
+      .then((entries) => {
+        if (cancelled) return
+        const source =
+          entries.find(([id]) => id === "utm_source")?.[1] ?? ([] as string[])
+        const medium =
+          entries.find(([id]) => id === "utm_medium")?.[1] ?? ([] as string[])
+        setValuesByDimension({
+          utm_source: [...source],
+          utm_medium: [...medium],
+        })
       })
       .finally(() => {
         if (!cancelled) setIsLoadingValues(false)
@@ -61,107 +89,147 @@ export function ProjectAttributionFilters({
     return () => {
       cancelled = true
     }
-  }, [activeDimension, projectId])
+  }, [open, projectId])
 
-  const dimensionLabel =
-    UTM_FILTER_DIMENSION_OPTIONS.find((opt) => opt.id === activeDimension)
-      ?.label ?? "All traffic"
+  useEffect(() => {
+    if (!open) setSearch("")
+  }, [open])
 
-  const valueLabel = utmFilter?.value ?? "Select value"
+  const filteredByDimension = useMemo(() => {
+    return {
+      utm_source: filterValues(valuesByDimension.utm_source, search),
+      utm_medium: filterValues(valuesByDimension.utm_medium, search),
+    }
+  }, [search, valuesByDimension])
+
+  const searchActive = search.trim().length > 0
+  const hasAnyFiltered =
+    filteredByDimension.utm_source.length > 0 ||
+    filteredByDimension.utm_medium.length > 0
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-2 sm:px-6">
-      <Select
-        value={activeDimension}
-        onValueChange={(value) =>
-          setUtmDimension(value as UtmFilterDimension | "all")
-        }
-      >
-        <SelectTrigger
-          size="sm"
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
           className={cn(
             overviewSelectTriggerClassName,
-            "h-9 w-full gap-2 sm:w-44"
+            "inline-flex w-full max-w-full items-center justify-between sm:w-auto sm:max-w-72 sm:min-w-44"
           )}
-          aria-label="UTM filter dimension"
+          aria-label="Traffic attribution filter"
         >
-          <Filter className="size-3.5 shrink-0 text-white/70" />
-          <SelectValue placeholder="All traffic">{dimensionLabel}</SelectValue>
-        </SelectTrigger>
-        <SelectContent
-          align="end"
-          position="popper"
-          side="bottom"
-          sideOffset={6}
-          avoidCollisions={false}
-          className={overviewSelectContentClassName}
-        >
-          {UTM_FILTER_DIMENSION_OPTIONS.map((opt) => (
-            <SelectItem
-              key={opt.id}
-              value={opt.id}
-              className={overviewSelectItemClassName}
-            >
-              {opt.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+          <span className="flex min-w-0 items-center gap-2">
+            <Filter className="size-3.5 shrink-0 text-neutral-500" />
+            <span className="truncate">{triggerLabel}</span>
+          </span>
+          <ChevronDown className="size-3.5 shrink-0 text-neutral-400" />
+        </button>
+      </PopoverTrigger>
 
-      {activeDimension !== "all" ? (
-        <Select
-          value={utmFilter?.value ?? ""}
-          onValueChange={(value) =>
-            setUtmFilter({
-              dimension: activeDimension,
-              value,
-            })
-          }
-          disabled={isLoadingValues || values.length === 0}
-        >
-          <SelectTrigger
-            size="sm"
-            className={cn(
-              overviewSelectTriggerClassName,
-              "h-9 w-full gap-2 sm:max-w-64 sm:min-w-44"
-            )}
-            aria-label={`${utmFilterDimensionLabel(activeDimension)} value`}
-          >
-            <SelectValue
-              placeholder={
-                isLoadingValues
-                  ? "Loading…"
-                  : values.length === 0
-                    ? "No values found"
-                    : "Select value"
-              }
+      <PopoverContent
+        align="start"
+        side="bottom"
+        sideOffset={8}
+        className="w-[min(100vw-2rem,20rem)] overflow-hidden rounded-lg border border-neutral-200 bg-white p-0 text-neutral-900 shadow-lg ring-1 shadow-neutral-950/8 ring-black/5"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+        }}
+      >
+        <div className="border-b border-neutral-200 p-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-neutral-400" />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search source or medium…"
+              className="h-9 border-neutral-200 bg-white pl-8 text-sm shadow-none focus-visible:border-neutral-400 focus-visible:ring-neutral-900/10"
+              aria-label="Search UTM values"
+            />
+          </div>
+        </div>
+
+        <div className="max-h-80 overflow-y-auto py-1">
+          {!searchActive ? (
+            <button
+              type="button"
+              className={cn(
+                "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-100",
+                !hasDashboardUtmFilter(selected) && "bg-neutral-100 font-medium"
+              )}
+              onClick={() => {
+                clearUtmFilter()
+              }}
             >
-              {valueLabel}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent
-            align="end"
-            position="popper"
-            side="bottom"
-            sideOffset={6}
-            avoidCollisions={false}
-            className={cn(
-              overviewSelectContentClassName,
-              "max-h-72 max-w-[min(100vw-2rem,20rem)]"
-            )}
-          >
-            {values.map((value) => (
-              <SelectItem
-                key={value}
-                value={value}
-                className={overviewSelectItemClassName}
-              >
-                {value}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      ) : null}
-    </div>
+              <span>All traffic</span>
+              {!hasDashboardUtmFilter(selected) ? (
+                <Check className="size-3.5 shrink-0 text-neutral-900" />
+              ) : null}
+            </button>
+          ) : null}
+
+          {isLoadingValues ? (
+            <p className="px-3 py-6 text-center text-sm text-neutral-500">
+              Loading values…
+            </p>
+          ) : searchActive && !hasAnyFiltered ? (
+            <p className="px-3 py-6 text-center text-sm text-neutral-500">
+              No matching values
+            </p>
+          ) : (
+            UTM_FILTER_DIMENSION_OPTIONS.map((opt) => {
+              const values = filteredByDimension[opt.id]
+              if (searchActive && values.length === 0) return null
+
+              return (
+                <div key={opt.id} className="mt-1 first:mt-0">
+                  <div className="px-3 pt-2 pb-1 text-[11px] font-semibold tracking-wide text-neutral-500 uppercase">
+                    {opt.label}
+                  </div>
+                  {values.length === 0 ? (
+                    <p className="px-3 py-2 text-sm text-neutral-400">
+                      No values found
+                    </p>
+                  ) : (
+                    values.map((value) => {
+                      const isSelected = selected?.[opt.id] === value
+                      return (
+                        <button
+                          key={`${opt.id}:${value}`}
+                          type="button"
+                          className={cn(
+                            "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-100",
+                            isSelected && "bg-neutral-100 font-medium"
+                          )}
+                          onClick={() => {
+                            toggleDimensionValue(opt.id, value)
+                          }}
+                        >
+                          <span className="truncate">{value}</span>
+                          {isSelected ? (
+                            <Check className="size-3.5 shrink-0 text-neutral-900" />
+                          ) : null}
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+              )
+            })
+          )}
+        </div>
+
+        {hasDashboardUtmFilter(selected) ? (
+          <div className="border-t border-neutral-200 bg-neutral-50 px-3 py-2">
+            <button
+              type="button"
+              className="text-sm font-medium text-neutral-700 hover:text-neutral-950"
+              onClick={() => clearUtmFilter()}
+            >
+              Clear filters
+            </button>
+          </div>
+        ) : null}
+      </PopoverContent>
+    </Popover>
   )
 }

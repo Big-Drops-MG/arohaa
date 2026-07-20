@@ -123,6 +123,7 @@ export function FunnelDashboard({
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">
       <OverviewHeader
         title="Funnel"
+        projectId={projectId}
         dateRangeOptions={dashboardData.dateRangeOptions}
         dateRangeId={dateRangeId}
         customRange={customRange}

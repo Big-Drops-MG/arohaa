@@ -15,6 +15,7 @@ import {
 import {
   utmFilterParams,
   utmFilterSql,
+  utmFilterCacheKey,
   type AnalyticsUtmFilter,
 } from '../lib/analytics-utm-filter.js'
 
@@ -52,7 +53,7 @@ export async function getAnalyticsAlerts({
 }): Promise<AnalyticsAlertsResponse> {
   const now = new Date()
   const window = resolveAnalyticsWindow(rangeId, now, custom)
-  const utmKey = utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'
+  const utmKey = utmFilterCacheKey(utmFilter)
   const cacheKey = `analytics:alerts:v2-abs:${workspaceId}:${lpPublicId}:${rangeCacheKey(window, utmKey)}`
   const cached = await readAnalyticsCache<AnalyticsAlertsResponse>(cacheKey)
   if (cached) return cached

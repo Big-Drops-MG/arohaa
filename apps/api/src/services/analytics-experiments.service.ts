@@ -17,6 +17,7 @@ import {
 } from '../lib/analytics-range.js'
 import {
   utmFilterParams,
+  utmFilterCacheKey,
   type AnalyticsUtmFilter,
 } from '../lib/analytics-utm-filter.js'
 
@@ -137,7 +138,7 @@ export async function getAnalyticsExperiments({
 }): Promise<AnalyticsExperiments> {
   const now = new Date()
   const window = resolveAnalyticsWindow(rangeId, now, custom)
-  const utmKey = utmFilter ? `${utmFilter.dimension}:${utmFilter.value}` : 'all'
+  const utmKey = utmFilterCacheKey(utmFilter)
   const cacheKey = `analytics:experiments:v2-abs:${workspaceId}:${lpPublicId}:${rangeCacheKey(window, utmKey)}`
   const cached = await readAnalyticsCache<AnalyticsExperiments>(cacheKey)
   if (cached) return cached

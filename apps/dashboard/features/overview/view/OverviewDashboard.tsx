@@ -252,6 +252,7 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
       <motion.div variants={overviewStaggerItem}>
         <OverviewHeader
           title="Overview"
+          projectId={projectId}
           dateRangeOptions={data.dateRangeOptions}
           dateRangeId={dateRangeId}
           customRange={customRange}

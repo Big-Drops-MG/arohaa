@@ -26,6 +26,7 @@ import type { DashboardCustomRange } from "@/features/traffic/model/traffic-rang
 import { getTrafficEmptyDashboardData } from "@/features/traffic/controller/traffic-empty-data"
 import type { ProjectTabValue } from "@/features/dashboard/model/project-tab"
 import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
+import { utmFilterCacheKey } from "@/features/dashboard/model/utm-attribution-filter"
 import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
 
 export type ProjectTabData = {
@@ -107,9 +108,7 @@ export function useLazyProjectTabData({
   const [cache, setCache] = useState<InitialTabData>(() => ({ ...initial }))
   const [loadingTab, setLoadingTab] = useState<ProjectTabValue | null>(null)
   const inFlightRef = useRef<ProjectTabValue | null>(null)
-  const utmCacheKey = utmFilter
-    ? `${utmFilter.dimension}:${utmFilter.value}`
-    : "all"
+  const utmCacheKey = utmFilterCacheKey(utmFilter)
   const customRangeCacheKey = customRange
     ? `${customRange.from}:${customRange.to}`
     : "none"

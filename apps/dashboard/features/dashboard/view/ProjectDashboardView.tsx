@@ -32,7 +32,6 @@ import {
   useLazyProjectTabData,
   type ProjectTabData,
 } from "@/hooks/use-lazy-project-tab-data"
-import { ProjectAttributionFilters } from "@/features/dashboard/view/ProjectAttributionFilters"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
@@ -115,7 +114,7 @@ export function ProjectDashboardView({
         className="w-full"
       >
         <div className="w-full border-b border-neutral-200 bg-neutral-50/90">
-          <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-0 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mx-auto w-full max-w-[1440px]">
             <TabsList className="h-auto min-h-11 justify-start rounded-none border-0 bg-transparent px-0">
               {PROJECT_TABS.map((tab) => (
                 <TabsTrigger key={tab.value} value={tab.value}>
@@ -123,7 +122,6 @@ export function ProjectDashboardView({
                 </TabsTrigger>
               ))}
             </TabsList>
-            <ProjectAttributionFilters projectId={projectId} />
           </div>
         </div>
 

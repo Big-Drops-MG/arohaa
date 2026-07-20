@@ -3,7 +3,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { ProjectDashboardView } from "@/features/dashboard/view/ProjectDashboardView"
 import { parseProjectTab } from "@/features/dashboard/model/project-tab"
-import { parseDashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
+import { parseDashboardUtmFilterFromParams } from "@/features/dashboard/model/utm-attribution-filter"
 import { getOverviewPlaceholderData } from "@/features/overview/controller/overview-placeholder-data"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
 import {
@@ -31,6 +31,8 @@ type ProjectPageProps = {
     from?: string
     to?: string
     tab?: string
+    utm_source?: string
+    utm_medium?: string
     utm_dim?: string
     utm_value?: string
   }>
@@ -61,13 +63,20 @@ export default async function ProjectPage({
     from,
     to,
     tab: tabParam,
+    utm_source,
+    utm_medium,
     utm_dim,
     utm_value,
   } = await searchParams
   const rangeId = parseTrafficRangeId(rangeIdParam)
   const customRange = parseDashboardCustomRange(from, to)
   const tab = parseProjectTab(tabParam)
-  const utmFilter = parseDashboardUtmFilter(utm_dim, utm_value)
+  const utmFilter = parseDashboardUtmFilterFromParams({
+    utm_source,
+    utm_medium,
+    utm_dim,
+    utm_value,
+  })
 
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
