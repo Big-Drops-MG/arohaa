@@ -156,7 +156,6 @@ export function TrafficDashboard({
               section={dashboardData.trafficByTime}
               expandable
               previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
-              sortByColumnId=""
             />
             <TrafficDataTableCard
               section={dashboardData.trafficByLocation}

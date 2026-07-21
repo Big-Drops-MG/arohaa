@@ -30,7 +30,6 @@ export function SegmentsPerformanceCards({
           table={byTime}
           expandable
           previewRowLimit={SEGMENTS_PREVIEW_ROW_LIMIT}
-          sortByColumnId=""
         />
       </div>
 

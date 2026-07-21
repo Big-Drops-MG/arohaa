@@ -91,7 +91,7 @@ export function SegmentsPerformanceBreakdownCard({
   title,
   table,
   emptyMessage = "No data for this period.",
-  sortByColumnId = "visitors",
+  sortByColumnId,
   expandable = false,
   previewRowLimit,
   size = "compact",

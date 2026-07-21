@@ -21,24 +21,24 @@ export function OpsAutoRefresh() {
   }, [auto, router])
 
   return (
-    <div className="flex items-center gap-3">
-      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+    <div className="flex shrink-0 flex-wrap items-center gap-3">
+      <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs font-medium text-neutral-700 shadow-xs">
         <input
           type="checkbox"
           checked={auto}
           onChange={(e) => setAuto(e.target.checked)}
-          className="size-3.5 rounded border-neutral-300"
+          className="size-3.5 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900/20"
         />
-        Auto-refresh (20s)
+        Auto-refresh every 20s
       </label>
       <button
         type="button"
         onClick={() => startTransition(() => router.refresh())}
         disabled={isPending}
-        className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-neutral-50 disabled:opacity-60 dark:border-neutral-800 dark:bg-neutral-900"
+        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-900 shadow-xs transition hover:bg-neutral-50 disabled:opacity-60"
       >
         <RefreshCw className={cn("size-3.5", isPending && "animate-spin")} />
-        Refresh
+        Refresh now
       </button>
     </div>
   )

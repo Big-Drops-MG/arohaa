@@ -11,7 +11,10 @@ export interface AnalyticsSegmentsSummaryKpis {
 }
 
 export interface AnalyticsSegmentsRow {
+  /** Weekday name (e.g. Monday) or device/city label. */
   label: string
+  /** Calendar date label for day-series rows (e.g. Jul 14). */
+  date?: string
   visitors: number
   formSubmitted: number
   fsr: number

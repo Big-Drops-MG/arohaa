@@ -79,6 +79,7 @@ export function getSegmentsPlaceholderData(
       title: "Performance by time",
       columns: [
         { key: "label", label: "Day" },
+        { key: "date", label: "Date" },
         { key: "visitors", label: "Visitors" },
         { key: "formSubmitted", label: "Form Submitted" },
         { key: "fsr", label: "FSR" },
@@ -86,18 +87,21 @@ export function getSegmentsPlaceholderData(
       rows: [
         {
           label: "Monday",
+          date: "Jul 14",
           visitors: "1,200",
           formSubmitted: "200",
           fsr: "16%",
         },
         {
           label: "Tuesday",
+          date: "Jul 15",
           visitors: "1,400",
           formSubmitted: "250",
           fsr: "18%",
         },
         {
           label: "Wednesday",
+          date: "Jul 16",
           visitors: "1,100",
           formSubmitted: "180",
           fsr: "16%",

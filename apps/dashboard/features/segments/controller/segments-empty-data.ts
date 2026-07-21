@@ -2,6 +2,24 @@ import type { SegmentsDashboardData } from "@/features/segments/model/segments"
 import type { OverviewDateRangeId } from "@/features/overview/model/overview"
 import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-range"
 
+function performanceByTimeColumns(rangeId: OverviewDateRangeId) {
+  const showDate = rangeId !== "today" && rangeId !== "yesterday"
+  return showDate
+    ? [
+        { key: "label", label: "Day" },
+        { key: "date", label: "Date" },
+        { key: "visitors", label: "Visitors" },
+        { key: "formSubmitted", label: "Form Submitted" },
+        { key: "fsr", label: "FSR" },
+      ]
+    : [
+        { key: "label", label: "Day" },
+        { key: "visitors", label: "Visitors" },
+        { key: "formSubmitted", label: "Form Submitted" },
+        { key: "fsr", label: "FSR" },
+      ]
+}
+
 export function getSegmentsEmptyDashboardData(
   _landingPagePublicId: string,
   rangeId: OverviewDateRangeId = "7d"
@@ -40,12 +58,7 @@ export function getSegmentsEmptyDashboardData(
     },
     performanceByTime: {
       title: "Performance by time",
-      columns: [
-        { key: "label", label: "Day" },
-        { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
-        { key: "fsr", label: "FSR" },
-      ],
+      columns: performanceByTimeColumns(rangeId),
       rows: [],
     },
   }

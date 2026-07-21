@@ -8,7 +8,10 @@ export function segmentsSectionToBreakdownTable(
     columns: section.columns.map((col) => ({
       id: col.key,
       label: col.label,
-      align: col.key === "label" ? "left" : "right",
+      align:
+        col.key === "label" || col.key === "date" || col.key === "device"
+          ? "left"
+          : "right",
     })),
     rows: section.rows,
   }

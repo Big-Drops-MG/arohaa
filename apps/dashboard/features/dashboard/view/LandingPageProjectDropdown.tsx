@@ -16,7 +16,7 @@ import {
 } from "@workspace/ui/components/dropdown-menu"
 import type { LandingPageNavItem } from "@/features/dashboard/model/landing-page"
 
-const RESERVED_SEGMENTS = new Set(["new-landing", "profile"])
+const RESERVED_SEGMENTS = new Set(["new-landing", "profile", "ops"])
 const SEARCH_DEBOUNCE_MS = 220
 
 function projectPublicIdFromPath(pathname: string): string | null {

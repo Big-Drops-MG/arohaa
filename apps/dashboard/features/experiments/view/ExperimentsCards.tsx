@@ -7,6 +7,7 @@ import {
 import { experimentsSectionToBreakdownTable } from "@/features/experiments/utils/experiments-section-to-table"
 import {
   parseTrafficNumericValue,
+  sortTrafficTableRows,
   sortTrafficTableRowsByMaxRate,
 } from "@/features/traffic/utils/sort-traffic-table-rows"
 import { ExperimentsTableCard } from "@/features/experiments/view/ExperimentsTableCard"
@@ -38,8 +39,8 @@ function winningVariantIdFromPerformance(
 }
 
 export function ExperimentsCards({ data }: ExperimentsCardsProps) {
-  const variantPerformance = experimentsSectionToBreakdownTable(
-    data.variantPerformance
+  const variantPerformance = sortTrafficTableRows(
+    experimentsSectionToBreakdownTable(data.variantPerformance)
   )
   const performanceByLocation = sortTrafficTableRowsByMaxRate(
     experimentsSectionToBreakdownTable(data.performanceByLocation)

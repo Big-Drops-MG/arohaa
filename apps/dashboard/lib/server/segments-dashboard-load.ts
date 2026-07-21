@@ -30,6 +30,7 @@ interface AnalyticsSegmentsSummaryKpis {
 
 interface AnalyticsSegmentsRow {
   label: string
+  date?: string
   visitors: number
   formSubmitted: number
   fsr: number
@@ -58,6 +59,23 @@ function fmtPct(v: number): string {
   return `${safeNum(v).toFixed(1)}%`
 }
 
+function performanceByTimeColumns(showDate: boolean) {
+  return showDate
+    ? [
+        { key: "label", label: "Day" },
+        { key: "date", label: "Date" },
+        { key: "visitors", label: "Visitors" },
+        { key: "formSubmitted", label: "Form Submitted" },
+        { key: "fsr", label: "FSR" },
+      ]
+    : [
+        { key: "label", label: "Day" },
+        { key: "visitors", label: "Visitors" },
+        { key: "formSubmitted", label: "Form Submitted" },
+        { key: "fsr", label: "FSR" },
+      ]
+}
+
 export function buildSegmentsDashboardData(
   data: AnalyticsSegments,
   rangeId: RangeId
@@ -76,6 +94,19 @@ export function buildSegmentsDashboardData(
       formSubmitted: fmtCount(row.formSubmitted),
       fsr: fmtPct(row.fsr),
     }))
+
+  const showDate = performanceByTime.some((row) => Boolean(row.date))
+  const mapTimeRows = (rows: AnalyticsSegmentsRow[]) =>
+    rows.map((row) => {
+      const base = {
+        label: row.label,
+        visitors: fmtCount(row.visitors),
+        formSubmitted: fmtCount(row.formSubmitted),
+        fsr: fmtPct(row.fsr),
+      }
+      if (!showDate) return base
+      return { ...base, date: row.date ?? "" }
+    })
 
   return {
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
@@ -109,13 +140,8 @@ export function buildSegmentsDashboardData(
     },
     performanceByTime: {
       title: "Performance by time",
-      columns: [
-        { key: "label", label: "Day" },
-        { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
-        { key: "fsr", label: "FSR" },
-      ],
-      rows: mapRows(performanceByTime),
+      columns: performanceByTimeColumns(showDate),
+      rows: mapTimeRows(performanceByTime),
     },
   }
 }
