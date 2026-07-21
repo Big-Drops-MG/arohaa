@@ -3,6 +3,7 @@ import {
   hasDashboardUtmFilter,
   normalizeDashboardUtmFilter,
   parseDashboardUtmFilterFromParams,
+  serializeUtmValueList,
 } from "@/features/dashboard/model/utm-attribution-filter"
 import type { DashboardCustomRange } from "@/features/traffic/model/traffic-range"
 
@@ -12,12 +13,10 @@ export function appendDashboardUtmParams(
 ): void {
   const normalized = normalizeDashboardUtmFilter(utmFilter)
   if (!normalized) return
-  if (normalized.utm_source) {
-    url.searchParams.set("utm_source", normalized.utm_source)
-  }
-  if (normalized.utm_medium) {
-    url.searchParams.set("utm_medium", normalized.utm_medium)
-  }
+  const source = serializeUtmValueList(normalized.utm_source)
+  const s1 = serializeUtmValueList(normalized.utm_s1)
+  if (source) url.searchParams.set("utm_source", source)
+  if (s1) url.searchParams.set("utm_s1", s1)
 }
 
 export function appendDashboardCustomRangeParams(
@@ -35,7 +34,7 @@ export function parseUtmFilterFromSearchParams(
 ): DashboardUtmFilter | undefined {
   return parseDashboardUtmFilterFromParams({
     utm_source: searchParams.get("utm_source"),
-    utm_medium: searchParams.get("utm_medium"),
+    utm_s1: searchParams.get("utm_s1"),
     utm_dim: searchParams.get("utm_dim"),
     utm_value: searchParams.get("utm_value"),
   })
@@ -50,10 +49,13 @@ export function appendUtmFilterToQueryString(
   const params = new URLSearchParams(baseQuery.replace(/^\?/, ""))
   params.delete("utm_dim")
   params.delete("utm_value")
-  if (normalized.utm_source) params.set("utm_source", normalized.utm_source)
+  params.delete("utm_medium")
+  const source = serializeUtmValueList(normalized.utm_source)
+  const s1 = serializeUtmValueList(normalized.utm_s1)
+  if (source) params.set("utm_source", source)
   else params.delete("utm_source")
-  if (normalized.utm_medium) params.set("utm_medium", normalized.utm_medium)
-  else params.delete("utm_medium")
+  if (s1) params.set("utm_s1", s1)
+  else params.delete("utm_s1")
   const qs = params.toString()
   return qs ? `?${qs}` : ""
 }

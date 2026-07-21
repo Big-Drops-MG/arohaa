@@ -13,6 +13,7 @@ import {
   UTM_FILTER_DIMENSION_OPTIONS,
   formatDashboardUtmFilterLabel,
   hasDashboardUtmFilter,
+  isDimensionValueSelected,
   normalizeDashboardUtmFilter,
   type UtmFilterDimension,
 } from "@/features/dashboard/model/utm-attribution-filter"
@@ -27,7 +28,7 @@ type ValuesByDimension = Record<UtmFilterDimension, string[]>
 
 const EMPTY_VALUES: ValuesByDimension = {
   utm_source: [],
-  utm_medium: [],
+  utm_s1: [],
 }
 
 function filterValues(values: string[], query: string): string[] {
@@ -67,7 +68,7 @@ export function ProjectAttributionFilters({
             Array.isArray(payload) ? (payload as string[]) : [],
           ] as const
         } catch {
-          return [opt.id, []] as const
+          return [opt.id, [] as string[]] as const
         }
       })
     )
@@ -75,11 +76,11 @@ export function ProjectAttributionFilters({
         if (cancelled) return
         const source =
           entries.find(([id]) => id === "utm_source")?.[1] ?? ([] as string[])
-        const medium =
-          entries.find(([id]) => id === "utm_medium")?.[1] ?? ([] as string[])
+        const s1 =
+          entries.find(([id]) => id === "utm_s1")?.[1] ?? ([] as string[])
         setValuesByDimension({
           utm_source: [...source],
-          utm_medium: [...medium],
+          utm_s1: [...s1],
         })
       })
       .finally(() => {
@@ -98,14 +99,14 @@ export function ProjectAttributionFilters({
   const filteredByDimension = useMemo(() => {
     return {
       utm_source: filterValues(valuesByDimension.utm_source, search),
-      utm_medium: filterValues(valuesByDimension.utm_medium, search),
+      utm_s1: filterValues(valuesByDimension.utm_s1, search),
     }
   }, [search, valuesByDimension])
 
   const searchActive = search.trim().length > 0
   const hasAnyFiltered =
     filteredByDimension.utm_source.length > 0 ||
-    filteredByDimension.utm_medium.length > 0
+    filteredByDimension.utm_s1.length > 0
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -114,7 +115,7 @@ export function ProjectAttributionFilters({
           type="button"
           className={cn(
             overviewSelectTriggerClassName,
-            "inline-flex w-full max-w-full items-center justify-between sm:w-auto sm:max-w-72 sm:min-w-44"
+            "inline-flex w-full max-w-full items-center justify-between sm:w-auto sm:max-w-80 sm:min-w-44"
           )}
           aria-label="Traffic attribution filter"
         >
@@ -141,7 +142,7 @@ export function ProjectAttributionFilters({
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search source or medium…"
+              placeholder="Search source or S1…"
               className="h-9 border-neutral-200 bg-white pl-8 text-sm shadow-none focus-visible:border-neutral-400 focus-visible:ring-neutral-900/10"
               aria-label="Search UTM values"
             />
@@ -191,23 +192,37 @@ export function ProjectAttributionFilters({
                     </p>
                   ) : (
                     values.map((value) => {
-                      const isSelected = selected?.[opt.id] === value
+                      const isSelected = isDimensionValueSelected(
+                        selected,
+                        opt.id,
+                        value
+                      )
                       return (
                         <button
                           key={`${opt.id}:${value}`}
                           type="button"
                           className={cn(
-                            "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-100",
+                            "flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-100",
                             isSelected && "bg-neutral-100 font-medium"
                           )}
                           onClick={() => {
                             toggleDimensionValue(opt.id, value)
                           }}
                         >
-                          <span className="truncate">{value}</span>
-                          {isSelected ? (
-                            <Check className="size-3.5 shrink-0 text-neutral-900" />
-                          ) : null}
+                          <span
+                            className={cn(
+                              "flex size-4 shrink-0 items-center justify-center rounded border",
+                              isSelected
+                                ? "border-neutral-900 bg-neutral-900 text-white"
+                                : "border-neutral-300 bg-white text-transparent"
+                            )}
+                            aria-hidden
+                          >
+                            <Check className="size-2.5" strokeWidth={3} />
+                          </span>
+                          <span className="min-w-0 flex-1 truncate">
+                            {value}
+                          </span>
                         </button>
                       )
                     })

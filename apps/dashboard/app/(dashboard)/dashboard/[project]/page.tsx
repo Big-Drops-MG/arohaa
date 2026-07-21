@@ -32,6 +32,7 @@ type ProjectPageProps = {
     to?: string
     tab?: string
     utm_source?: string
+    utm_s1?: string
     utm_medium?: string
     utm_dim?: string
     utm_value?: string
@@ -64,7 +65,7 @@ export default async function ProjectPage({
     to,
     tab: tabParam,
     utm_source,
-    utm_medium,
+    utm_s1,
     utm_dim,
     utm_value,
   } = await searchParams
@@ -73,7 +74,7 @@ export default async function ProjectPage({
   const tab = parseProjectTab(tabParam)
   const utmFilter = parseDashboardUtmFilterFromParams({
     utm_source,
-    utm_medium,
+    utm_s1,
     utm_dim,
     utm_value,
   })

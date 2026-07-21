@@ -62,9 +62,9 @@ const ANALYTICS_RATE_LIMIT = {
 } as const
 
 const utmFilterSchemaProps = {
-  utm_source: { type: 'string', minLength: 1, maxLength: 100 },
-  utm_medium: { type: 'string', minLength: 1, maxLength: 100 },
-  utm_dim: { type: 'string', enum: ['utm_source', 'utm_medium'] },
+  utm_source: { type: 'string', minLength: 1, maxLength: 2000 },
+  utm_s1: { type: 'string', minLength: 1, maxLength: 2000 },
+  utm_dim: { type: 'string', enum: ['utm_source', 'utm_s1', 'utm_medium'] },
   utm_value: { type: 'string', minLength: 1, maxLength: 100 },
 } as const
 
@@ -224,7 +224,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       from?: string
       to?: string
       utm_source?: string
-      utm_medium?: string
+      utm_s1?: string
       utm_dim?: string
       utm_value?: string
     }
@@ -279,7 +279,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       from?: string
       to?: string
       utm_source?: string
-      utm_medium?: string
+      utm_s1?: string
       utm_dim?: string
       utm_value?: string
     }
@@ -320,7 +320,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       to?: string
       form_type?: string
       utm_source?: string
-      utm_medium?: string
+      utm_s1?: string
       utm_dim?: string
       utm_value?: string
     }
@@ -366,7 +366,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       from?: string
       to?: string
       utm_source?: string
-      utm_medium?: string
+      utm_s1?: string
       utm_dim?: string
       utm_value?: string
     }
@@ -406,7 +406,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       from?: string
       to?: string
       utm_source?: string
-      utm_medium?: string
+      utm_s1?: string
       utm_dim?: string
       utm_value?: string
     }
@@ -447,7 +447,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       from?: string
       to?: string
       utm_source?: string
-      utm_medium?: string
+      utm_s1?: string
       utm_dim?: string
       utm_value?: string
     }
@@ -537,7 +537,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
           required: ['workspace_id', 'dim'],
           properties: {
             workspace_id: { type: 'string', format: 'uuid' },
-            dim: { type: 'string', enum: ['utm_source', 'utm_medium'] },
+            dim: { type: 'string', enum: ['utm_source', 'utm_s1'] },
           },
         },
       },
@@ -545,7 +545,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       const { workspace_id, dim } = request.query
-      if (dim !== 'utm_source' && dim !== 'utm_medium') {
+      if (dim !== 'utm_source' && dim !== 'utm_s1') {
         return reply.code(400).send({ error: 'Invalid dim' })
       }
       await sendAnalyticsQuery({
@@ -568,7 +568,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       from?: string
       to?: string
       utm_source?: string
-      utm_medium?: string
+      utm_s1?: string
       utm_dim?: string
       utm_value?: string
     }

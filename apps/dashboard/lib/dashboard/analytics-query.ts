@@ -1,6 +1,7 @@
 import {
   hasDashboardUtmFilter,
   normalizeDashboardUtmFilter,
+  serializeUtmValueList,
   type DashboardUtmFilter,
 } from "@/features/dashboard/model/utm-attribution-filter"
 import type { DashboardCustomRange } from "@/features/traffic/model/traffic-range"
@@ -23,8 +24,10 @@ export function buildAnalyticsApiPath(
     url.searchParams.set("to", params.customRange.to)
   }
   const utm = normalizeDashboardUtmFilter(params.utmFilter)
-  if (utm?.utm_source) url.searchParams.set("utm_source", utm.utm_source)
-  if (utm?.utm_medium) url.searchParams.set("utm_medium", utm.utm_medium)
+  const source = serializeUtmValueList(utm?.utm_source)
+  const s1 = serializeUtmValueList(utm?.utm_s1)
+  if (source) url.searchParams.set("utm_source", source)
+  if (s1) url.searchParams.set("utm_s1", s1)
   if (params.extra) {
     for (const [key, value] of Object.entries(params.extra)) {
       url.searchParams.set(key, value)

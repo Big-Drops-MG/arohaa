@@ -7,33 +7,50 @@ import {
 } from './analytics-utm-filter.js'
 
 describe('analytics utm filter', () => {
-  it('parses dual source and medium params', () => {
+  it('parses multi source and s1 params', () => {
     expect(
       parseAnalyticsUtmFilter({
-        utm_source: 'google',
-        utm_medium: 'S1',
+        utm_source: 'google,facebook',
+        utm_s1: 'S1,S2',
       }),
-    ).toEqual({ utm_source: 'google', utm_medium: 'S1' })
+    ).toEqual({
+      utm_source: ['google', 'facebook'],
+      utm_s1: ['S1', 'S2'],
+    })
   })
 
-  it('falls back to legacy dim/value', () => {
+  it('falls back to legacy dim/value for source and s1', () => {
+    expect(
+      parseAnalyticsUtmFilter({
+        utm_dim: 'utm_s1',
+        utm_value: 'S1',
+      }),
+    ).toEqual({ utm_s1: ['S1'] })
+  })
+
+  it('ignores legacy medium-only filters', () => {
     expect(
       parseAnalyticsUtmFilter({
         utm_dim: 'utm_medium',
-        utm_value: 'S1',
+        utm_value: 'cpc',
       }),
-    ).toEqual({ utm_medium: 'S1' })
+    ).toBeUndefined()
   })
 
-  it('builds AND sql and params for both dimensions', () => {
-    const filter = { utm_source: 'google', utm_medium: 'S1' }
+  it('builds AND IN sql and array params', () => {
+    const filter = {
+      utm_source: ['google', 'facebook'],
+      utm_s1: ['S1'],
+    }
     expect(utmFilterSql(filter)).toBe(
-      ' AND utm_source = {utm_source:String} AND utm_medium = {utm_medium:String}',
+      ' AND utm_source IN {utm_sources:Array(String)} AND utm_s1 IN {utm_s1s:Array(String)}',
     )
     expect(utmFilterParams(filter)).toEqual({
-      utm_source: 'google',
-      utm_medium: 'S1',
+      utm_sources: ['google', 'facebook'],
+      utm_s1s: ['S1'],
     })
-    expect(utmFilterCacheKey(filter)).toBe('utm_source:google|utm_medium:S1')
+    expect(utmFilterCacheKey(filter)).toBe(
+      'utm_source:facebook,google|utm_s1:S1',
+    )
   })
 })
