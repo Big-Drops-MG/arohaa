@@ -5,7 +5,10 @@ import {
   type ExperimentsDashboardData,
 } from "@/features/experiments/model/experiments"
 import { experimentsSectionToBreakdownTable } from "@/features/experiments/utils/experiments-section-to-table"
-import { parseTrafficNumericValue } from "@/features/traffic/utils/sort-traffic-table-rows"
+import {
+  parseTrafficNumericValue,
+  sortTrafficTableRowsByMaxRate,
+} from "@/features/traffic/utils/sort-traffic-table-rows"
 import { ExperimentsTableCard } from "@/features/experiments/view/ExperimentsTableCard"
 import { EXPERIMENTS_PREVIEW_ROW_LIMIT } from "@/features/experiments/view/experiments-card-layout"
 
@@ -38,14 +41,14 @@ export function ExperimentsCards({ data }: ExperimentsCardsProps) {
   const variantPerformance = experimentsSectionToBreakdownTable(
     data.variantPerformance
   )
-  const performanceByLocation = experimentsSectionToBreakdownTable(
-    data.performanceByLocation
+  const performanceByLocation = sortTrafficTableRowsByMaxRate(
+    experimentsSectionToBreakdownTable(data.performanceByLocation)
   )
-  const performanceByState = experimentsSectionToBreakdownTable(
-    data.performanceByState
+  const performanceByState = sortTrafficTableRowsByMaxRate(
+    experimentsSectionToBreakdownTable(data.performanceByState)
   )
-  const performanceByZipcode = experimentsSectionToBreakdownTable(
-    data.performanceByZipcode
+  const performanceByZipcode = sortTrafficTableRowsByMaxRate(
+    experimentsSectionToBreakdownTable(data.performanceByZipcode)
   )
 
   const highlights = experimentHighlightForTables({

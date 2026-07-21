@@ -57,31 +57,39 @@ export function ProjectAttributionFilters({
     let cancelled = false
     setIsLoadingValues(true)
 
-    void Promise.all(
-      UTM_FILTER_DIMENSION_OPTIONS.map(async (opt) => {
-        const url = `/api/landing-pages/${encodeURIComponent(projectId)}/utm-values?dim=${encodeURIComponent(opt.id)}`
-        try {
-          const res = await fetch(url, { cache: "no-store" })
-          const payload = res.ok ? await res.json() : []
-          return [
-            opt.id,
-            Array.isArray(payload) ? (payload as string[]) : [],
-          ] as const
-        } catch {
-          return [opt.id, [] as string[]] as const
+    const url = `/api/landing-pages/${encodeURIComponent(projectId)}/utm`
+
+    void fetch(url, { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) return null
+        return (await res.json()) as {
+          items?: Array<{ key: string; value: string }>
+          activeItems?: Array<{ key: string; value: string }>
+          blockedItems?: Array<{ key: string; value: string }>
         }
       })
-    )
-      .then((entries) => {
+      .then((payload) => {
         if (cancelled) return
-        const source =
-          entries.find(([id]) => id === "utm_source")?.[1] ?? ([] as string[])
-        const s1 =
-          entries.find(([id]) => id === "utm_s1")?.[1] ?? ([] as string[])
+        const pairs = payload?.items ?? [
+          ...(payload?.activeItems ?? []),
+          ...(payload?.blockedItems ?? []),
+        ]
+        const source = new Set<string>()
+        const s1 = new Set<string>()
+        for (const item of pairs) {
+          if (!item?.value) continue
+          if (item.key === "utm_source") source.add(item.value)
+          if (item.key === "utm_s1") s1.add(item.value)
+        }
+        const byLocale = (a: string, b: string) =>
+          a.localeCompare(b, undefined, { sensitivity: "base" })
         setValuesByDimension({
-          utm_source: [...source],
-          utm_s1: [...s1],
+          utm_source: [...source].sort(byLocale),
+          utm_s1: [...s1].sort(byLocale),
         })
+      })
+      .catch(() => {
+        if (!cancelled) setValuesByDimension(EMPTY_VALUES)
       })
       .finally(() => {
         if (!cancelled) setIsLoadingValues(false)

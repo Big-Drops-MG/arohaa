@@ -50,3 +50,31 @@ export function sortTrafficTableRows(
 
   return { ...table, rows }
 }
+
+/** Desc by best rate across right-aligned columns (FSR/ZSR), then by first rate col. */
+export function sortTrafficTableRowsByMaxRate(
+  table: TrafficBreakdownTable
+): TrafficBreakdownTable {
+  const rateColumnIds = table.columns
+    .filter((col) => col.align === "right")
+    .map((col) => col.id)
+  if (rateColumnIds.length === 0 || table.rows.length <= 1) {
+    return sortTrafficTableRows(table)
+  }
+
+  const rows = [...table.rows].sort((a, b) => {
+    const maxA = Math.max(
+      ...rateColumnIds.map((id) => parseTrafficNumericValue(a[id]))
+    )
+    const maxB = Math.max(
+      ...rateColumnIds.map((id) => parseTrafficNumericValue(b[id]))
+    )
+    if (maxB !== maxA) return maxB - maxA
+    return (
+      parseTrafficNumericValue(b[rateColumnIds[0]]) -
+      parseTrafficNumericValue(a[rateColumnIds[0]])
+    )
+  })
+
+  return { ...table, rows }
+}

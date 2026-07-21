@@ -90,6 +90,17 @@ function locationBreakdownQuery(
   `
 }
 
+function maxVariantFsr(row: Record<string, string | number>): number {
+  let max = 0
+  for (const [key, value] of Object.entries(row)) {
+    if (typeof value !== 'string' || !value.endsWith('%')) continue
+    if (!key.startsWith('variant')) continue
+    const parsed = Number.parseFloat(value)
+    if (Number.isFinite(parsed) && parsed > max) max = parsed
+  }
+  return max
+}
+
 function aggregatePerformanceByDimension<T extends Record<string, string | number>>(
   rows: LocationRow[],
   outputKey: keyof T & string,
@@ -119,7 +130,12 @@ function aggregatePerformanceByDimension<T extends Record<string, string | numbe
   }
 
   return Array.from(map.values())
-    .sort((a, b) => b.conversions - a.conversions || b.sessions - a.sessions)
+    .sort(
+      (a, b) =>
+        maxVariantFsr(b.row) - maxVariantFsr(a.row) ||
+        b.conversions - a.conversions ||
+        b.sessions - a.sessions,
+    )
     .map((entry) => entry.row as T)
 }
 
@@ -139,7 +155,7 @@ export async function getAnalyticsExperiments({
   const now = new Date()
   const window = resolveAnalyticsWindow(rangeId, now, custom)
   const utmKey = utmFilterCacheKey(utmFilter)
-  const cacheKey = `analytics:experiments:v2-abs:${workspaceId}:${lpPublicId}:${rangeCacheKey(window, utmKey)}`
+  const cacheKey = `analytics:experiments:v3-abs:${workspaceId}:${lpPublicId}:${rangeCacheKey(window, utmKey)}`
   const cached = await readAnalyticsCache<AnalyticsExperiments>(cacheKey)
   if (cached) return cached
 
