@@ -48,8 +48,13 @@ FROM base AS runner
 
 WORKDIR /app
 
+ARG API_VERSION=0.0.0
+ARG GIT_SHA=
+
 ENV NODE_ENV=production
 ENV PORT=3001
+ENV API_VERSION=$API_VERSION
+ENV GIT_SHA=$GIT_SHA
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules

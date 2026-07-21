@@ -8,6 +8,7 @@ import {
 import { redis } from '../services/redis.service.js'
 import { sendAlertWebhook } from '../lib/alert-webhook.js'
 import { verifyInternalApiRequest } from '../lib/internal-api-secret.js'
+import { resolveApiVersion } from '../lib/api-version.js'
 import { db, sql } from '@workspace/database'
 
 const PING_TIMEOUT_MS = 3000
@@ -191,7 +192,7 @@ export async function healthRoutes(server: FastifyInstance) {
       return {
         status: allOk ? 'ok' : 'degraded',
         service: 'arohaa-ingestion-api',
-        version: process.env.API_VERSION?.trim() || process.env.GIT_SHA?.trim() || 'unknown',
+        version: resolveApiVersion(),
         environment: process.env.NODE_ENV || 'development',
         region: process.env.AWS_REGION?.trim() || 'unknown',
         uptime_s: Math.round(process.uptime()),
