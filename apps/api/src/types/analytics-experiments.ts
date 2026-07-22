@@ -8,6 +8,8 @@ export interface AnalyticsExperimentRow {
   status: string
   variants: string
   startDate: string
+  endDate?: string | null
+  noEndDate?: boolean
   highlighted?: boolean
 }
 
@@ -16,6 +18,13 @@ export interface AnalyticsVariantPerformanceRow {
   visitors: number
   formSubmitted: number
   fsr: number
+  isControl?: boolean
+  visitorsLiftAbs?: number | null
+  visitorsLiftPct?: number | null
+  formSubmittedLiftAbs?: number | null
+  formSubmittedLiftPct?: number | null
+  fsrLiftAbs?: number | null
+  fsrLiftPct?: number | null
 }
 
 export interface AnalyticsLocationPerformanceRow {
@@ -39,4 +48,6 @@ export interface AnalyticsExperiments {
   performanceByLocation: AnalyticsLocationPerformanceRow[]
   performanceByState: AnalyticsStatePerformanceRow[]
   performanceByZipcode: AnalyticsZipcodePerformanceRow[]
+  controlVariant?: string | null
+  mode?: 'multi_domain' | 'data_variant'
 }

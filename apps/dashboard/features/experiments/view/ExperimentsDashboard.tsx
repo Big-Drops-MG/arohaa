@@ -6,6 +6,7 @@ import { getExperimentsEmptyDashboardData } from "@/features/experiments/control
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import type { ExperimentsDashboardData } from "@/features/experiments/model/experiments"
 import { ExperimentsCards } from "@/features/experiments/view/ExperimentsCards"
+import { ExperimentsSetupCard } from "@/features/experiments/view/ExperimentsSetupCard"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import {
@@ -51,7 +52,13 @@ export function ExperimentsDashboard({
             )
           }
           setDashboardData((prev) =>
-            getExperimentsEmptyDashboardData(projectId, rangeId, prev.formType)
+            getExperimentsEmptyDashboardData(
+              projectId,
+              rangeId,
+              prev.formType,
+              prev.config,
+              prev.siblings
+            )
           )
           return
         }
@@ -63,7 +70,13 @@ export function ExperimentsDashboard({
           console.error("[experiments] client fetch failed", err)
         }
         setDashboardData((prev) =>
-          getExperimentsEmptyDashboardData(projectId, rangeId, prev.formType)
+          getExperimentsEmptyDashboardData(
+            projectId,
+            rangeId,
+            prev.formType,
+            prev.config,
+            prev.siblings
+          )
         )
       } finally {
         if (!signal?.aborted) {
@@ -133,6 +146,14 @@ export function ExperimentsDashboard({
         )}
         aria-busy={isLoading}
       >
+        <ExperimentsSetupCard
+          projectId={projectId}
+          config={dashboardData.config}
+          siblings={dashboardData.siblings}
+          onChanged={() => {
+            void fetchExperimentsForRange(dateRangeId)
+          }}
+        />
         <ExperimentsCards data={dashboardData} />
       </div>
     </div>

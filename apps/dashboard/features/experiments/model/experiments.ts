@@ -2,6 +2,10 @@ import type { OverviewDateRangeId } from "@/features/overview/model/overview"
 import type { OverviewLandingFormType } from "@/features/overview/model/overview"
 import type { TrafficBreakdownTable } from "@/features/traffic/model/traffic"
 import type { OverviewDateRangeOption } from "@/features/overview/model/overview"
+import type {
+  ExperimentConfigView,
+  SiblingLandingPageOption,
+} from "@/lib/server/experiments-store"
 
 export type ExperimentVariantId = string
 
@@ -58,6 +62,8 @@ export type ExperimentListRow = {
   status: string
   variants: string
   startDate: string
+  endDate?: string | null
+  noEndDate?: boolean
   highlighted?: boolean
 }
 
@@ -83,4 +89,9 @@ export type ExperimentsDashboardData = {
   performanceByLocation: ExperimentsTableSection
   performanceByState: ExperimentsTableSection
   performanceByZipcode: ExperimentsTableSection
+  controlVariant: string | null
+  mode: "multi_domain" | "data_variant"
+  winnerCallout: string | null
+  config: ExperimentConfigView | null
+  siblings: SiblingLandingPageOption[]
 }

@@ -24,44 +24,39 @@ import {
 } from "@/lib/server/analytics-utm-params"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
-
-interface AnalyticsExperimentRow {
-  id: string
-  name: string
-  status: string
-  variants: string
-  startDate: string
-  highlighted?: boolean
-}
+import { getExperimentConfigForLandingPage } from "@/lib/server/experiments-store"
 
 interface AnalyticsVariantPerformanceRow {
   variant: string
   visitors: number
   formSubmitted: number
   fsr: number
-}
-
-interface AnalyticsLocationPerformanceRow {
-  city: string
-  [variantKey: string]: string | number
-}
-
-interface AnalyticsStatePerformanceRow {
-  state: string
-  [variantKey: string]: string | number
-}
-
-interface AnalyticsZipcodePerformanceRow {
-  zipcode: string
-  [variantKey: string]: string | number
+  isControl?: boolean
+  visitorsLiftAbs?: number | null
+  visitorsLiftPct?: number | null
+  formSubmittedLiftAbs?: number | null
+  formSubmittedLiftPct?: number | null
+  fsrLiftAbs?: number | null
+  fsrLiftPct?: number | null
 }
 
 interface AnalyticsExperiments {
-  experiments: AnalyticsExperimentRow[]
+  experiments: Array<{
+    id: string
+    name: string
+    status: string
+    variants: string
+    startDate: string
+    endDate?: string | null
+    noEndDate?: boolean
+    highlighted?: boolean
+  }>
   variantPerformance: AnalyticsVariantPerformanceRow[]
-  performanceByLocation: AnalyticsLocationPerformanceRow[]
-  performanceByState: AnalyticsStatePerformanceRow[]
-  performanceByZipcode: AnalyticsZipcodePerformanceRow[]
+  performanceByLocation: Array<Record<string, string | number>>
+  performanceByState: Array<Record<string, string | number>>
+  performanceByZipcode: Array<Record<string, string | number>>
+  controlVariant?: string | null
+  mode?: "multi_domain" | "data_variant"
 }
 
 function safeNum(value: number): number {
@@ -78,6 +73,18 @@ function fmtCount(v: number): string {
 
 function fmtPct(v: number): string {
   return `${safeNum(v).toFixed(1)}%`
+}
+
+function fmtLiftAbs(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "—"
+  const sign = v > 0 ? "+" : ""
+  return `${sign}${fmtCount(v)}`
+}
+
+function fmtLiftPct(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "—"
+  const sign = v > 0 ? "+" : ""
+  return `${sign}${safeNum(v).toFixed(1)}%`
 }
 
 function buildDimensionPerformanceSection(
@@ -111,10 +118,43 @@ function buildDimensionPerformanceSection(
   }
 }
 
+function buildWinnerCallout(
+  rows: AnalyticsVariantPerformanceRow[],
+  controlVariant: string | null
+): string | null {
+  if (rows.length === 0) return null
+
+  if (controlVariant) {
+    let best: AnalyticsVariantPerformanceRow | null = null
+    for (const row of rows) {
+      if (row.variant === controlVariant) continue
+      if (row.fsrLiftAbs == null) continue
+      if (
+        !best ||
+        (row.fsrLiftAbs ?? -Infinity) > (best.fsrLiftAbs ?? -Infinity)
+      ) {
+        best = row
+      }
+    }
+    if (best && (best.fsrLiftAbs ?? 0) > 0) {
+      return `${best.variant} leads vs ${controlVariant} by ${fmtLiftPct(best.fsrLiftAbs)} FSR points (${fmtLiftPct(best.fsrLiftPct)} relative)`
+    }
+    return `Control ${controlVariant} is ahead or tied on FSR`
+  }
+
+  let best = rows[0]!
+  for (const row of rows) {
+    if (row.fsr > best.fsr) best = row
+  }
+  return `${best.variant} leads with ${fmtPct(best.fsr)} FSR`
+}
+
 export function buildExperimentsDashboardData(
   data: AnalyticsExperiments,
   formType: ReturnType<typeof parseOverviewLandingFormType>,
-  rangeId: RangeId
+  rangeId: RangeId,
+  config: ExperimentsDashboardData["config"],
+  siblings: ExperimentsDashboardData["siblings"]
 ): ExperimentsDashboardData {
   const {
     experiments,
@@ -126,6 +166,24 @@ export function buildExperimentsDashboardData(
 
   const variants = variantPerformance.map((v) => v.variant)
   const rateLabel = experimentVariantPerformanceRateLabel(formType)
+  const controlVariant = data.controlVariant ?? null
+  const showLift = Boolean(controlVariant)
+
+  const columns = [
+    { key: "variant", label: "Variant" },
+    { key: "visitors", label: "Visitors" },
+    {
+      key: "formSubmitted",
+      label: experimentVariantPerformanceSubmitLabel(formType),
+    },
+    { key: "fsr", label: rateLabel },
+  ]
+  if (showLift) {
+    columns.push(
+      { key: "fsrLift", label: `${rateLabel} lift` },
+      { key: "visitorsLift", label: "Visitors lift" }
+    )
+  }
 
   return {
     formType,
@@ -134,21 +192,22 @@ export function buildExperimentsDashboardData(
     experiments,
     variantPerformance: {
       title: "Variant performance",
-      columns: [
-        { key: "variant", label: "Variant" },
-        { key: "visitors", label: "Visitors" },
-        {
-          key: "formSubmitted",
-          label: experimentVariantPerformanceSubmitLabel(formType),
-        },
-        { key: "fsr", label: rateLabel },
-      ],
-      rows: variantPerformance.map((row) => ({
-        variant: row.variant,
-        visitors: fmtCount(row.visitors),
-        formSubmitted: fmtCount(row.formSubmitted),
-        fsr: fmtPct(row.fsr),
-      })),
+      columns,
+      rows: variantPerformance.map((row) => {
+        const base: Record<string, string> = {
+          variant: row.variant,
+          visitors: fmtCount(row.visitors),
+          formSubmitted: fmtCount(row.formSubmitted),
+          fsr: fmtPct(row.fsr),
+        }
+        if (showLift) {
+          base.fsrLift = row.isControl ? "Control" : fmtLiftAbs(row.fsrLiftAbs)
+          base.visitorsLift = row.isControl
+            ? "Control"
+            : fmtLiftPct(row.visitorsLiftPct)
+        }
+        return base
+      }),
     },
     performanceByLocation: buildDimensionPerformanceSection(
       "Performance by location",
@@ -174,6 +233,11 @@ export function buildExperimentsDashboardData(
       variants,
       rateLabel
     ),
+    controlVariant,
+    mode: data.mode ?? "data_variant",
+    winnerCallout: buildWinnerCallout(variantPerformance, controlVariant),
+    config,
+    siblings,
   }
 }
 
@@ -218,15 +282,19 @@ export async function fetchExperimentsAnalytics(
     }
 
     return (await resp.json()) as AnalyticsExperiments
-  } catch (err: any) {
-    if (err.name === "AbortError") {
+  } catch (err: unknown) {
+    const name =
+      err && typeof err === "object" && "name" in err
+        ? String((err as { name?: string }).name)
+        : ""
+    if (name === "AbortError") {
       if (process.env.NODE_ENV === "development") {
         console.warn("[experiments] analytics fetch timed out")
       }
       return null
     }
     if (process.env.NODE_ENV === "development") {
-      console.error("[experiments] analytics fetch failed", err?.message || err)
+      console.error("[experiments] analytics fetch failed", err)
     }
     return null
   } finally {
@@ -252,6 +320,7 @@ export async function loadExperimentsDashboardData({
   if (!row) notFound()
 
   const formType = parseOverviewLandingFormType(row.formType)
+  const configBundle = await getExperimentConfigForLandingPage(row)
 
   const analytics = await fetchExperimentsAnalytics(
     row.id,
@@ -264,11 +333,19 @@ export async function loadExperimentsDashboardData({
     return getExperimentsEmptyDashboardData(
       landingPagePublicId,
       rangeId,
-      formType
+      formType,
+      configBundle.experiment,
+      configBundle.siblings
     )
   }
 
-  return buildExperimentsDashboardData(analytics, formType, rangeId)
+  return buildExperimentsDashboardData(
+    analytics,
+    formType,
+    rangeId,
+    configBundle.experiment,
+    configBundle.siblings
+  )
 }
 
 export async function loadExperimentsDashboardDataForApi(
@@ -293,6 +370,7 @@ export async function loadExperimentsDashboardDataForApi(
   }
 
   const formType = parseOverviewLandingFormType(row.formType)
+  const configBundle = await getExperimentConfigForLandingPage(row)
 
   const analytics = await fetchExperimentsAnalytics(
     row.id,
@@ -307,13 +385,21 @@ export async function loadExperimentsDashboardDataForApi(
       data: getExperimentsEmptyDashboardData(
         landingPagePublicId,
         rangeId,
-        formType
+        formType,
+        configBundle.experiment,
+        configBundle.siblings
       ),
     }
   }
 
   return {
     ok: true,
-    data: buildExperimentsDashboardData(analytics, formType, rangeId),
+    data: buildExperimentsDashboardData(
+      analytics,
+      formType,
+      rangeId,
+      configBundle.experiment,
+      configBundle.siblings
+    ),
   }
 }
