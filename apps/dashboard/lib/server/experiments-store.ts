@@ -91,7 +91,6 @@ function resolveHealth(
 }
 
 export async function listSiblingLandingPages(
-  workspaceId: string,
   excludeLandingPageId?: string
 ): Promise<SiblingLandingPageOption[]> {
   const rows = await db
@@ -105,7 +104,6 @@ export async function listSiblingLandingPages(
     .from(landingPages)
     .where(
       and(
-        eq(landingPages.workspaceId, workspaceId),
         isNull(landingPages.deletedAt),
         excludeLandingPageId
           ? ne(landingPages.id, excludeLandingPageId)
@@ -165,7 +163,7 @@ export async function getExperimentConfigForLandingPage(
       .where(eq(experiments.landingPageId, hub.id))
       .orderBy(asc(experiments.createdAt))
       .limit(1),
-    listSiblingLandingPages(hub.workspaceId),
+    listSiblingLandingPages(hub.id),
   ])
 
   const exp = expRows[0]
@@ -205,8 +203,7 @@ function validateStatus(value: unknown): ExperimentStatus | null {
     : null
 }
 
-async function assertLinksInWorkspace(
-  workspaceId: string,
+async function assertVariantLinksExist(
   links: ExperimentVariantLink[]
 ): Promise<string | null> {
   if (links.length === 0) return null
@@ -221,21 +218,15 @@ async function assertLinksInWorkspace(
 
   const ids = [...new Set(links.map((l) => l.landingPageId))]
   const rows = await db
-    .select({ id: landingPages.id, workspaceId: landingPages.workspaceId })
+    .select({ id: landingPages.id })
     .from(landingPages)
-    .where(
-      and(
-        inArray(landingPages.id, ids),
-        eq(landingPages.workspaceId, workspaceId),
-        isNull(landingPages.deletedAt)
-      )
-    )
+    .where(and(inArray(landingPages.id, ids), isNull(landingPages.deletedAt)))
 
   const allowed = new Set(rows.map((row) => row.id))
 
   for (const id of ids) {
     if (!allowed.has(id)) {
-      return "Each variant must be a landing page in this workspace"
+      return "Each variant must be an active landing page"
     }
   }
   return null
@@ -287,7 +278,7 @@ export async function createExperimentForLandingPage(
     variants = [{ label: "Control", landingPageId: hub.id }]
   }
 
-  const linkError = await assertLinksInWorkspace(hub.workspaceId, variants)
+  const linkError = await assertVariantLinksExist(variants)
   if (linkError) return { ok: false, error: linkError }
 
   const controlLandingPageId =
@@ -386,10 +377,7 @@ export async function updateExperimentForLandingPage(
     if (nextVariants.length === 0) {
       return { ok: false, error: "Add at least one variant" }
     }
-    const linkError = await assertLinksInWorkspace(
-      hub.workspaceId,
-      nextVariants
-    )
+    const linkError = await assertVariantLinksExist(nextVariants)
     if (linkError) return { ok: false, error: linkError }
     patch.variants = nextVariants
   }
