@@ -19,6 +19,7 @@ export type OverviewDateRangeId =
   | "this_week"
   | "7d"
   | "last_week"
+  | "this_month"
   | "last_month"
   | "custom"
 

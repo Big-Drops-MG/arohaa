@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Check, ChevronDown, Filter, Search } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
+import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import {
   Popover,
@@ -15,6 +16,9 @@ import {
   hasDashboardUtmFilter,
   isDimensionValueSelected,
   normalizeDashboardUtmFilter,
+  toggleDimensionValueInFilter,
+  utmFilterCacheKey,
+  type DashboardUtmFilter,
   type UtmFilterDimension,
 } from "@/features/dashboard/model/utm-attribution-filter"
 import { overviewSelectTriggerClassName } from "@/features/overview/view/overview-select-styles"
@@ -37,19 +41,34 @@ function filterValues(values: string[], query: string): string[] {
   return values.filter((value) => value.toLowerCase().includes(q))
 }
 
+function filtersEqual(
+  a: DashboardUtmFilter | null | undefined,
+  b: DashboardUtmFilter | null | undefined
+): boolean {
+  return utmFilterCacheKey(a) === utmFilterCacheKey(b)
+}
+
 export function ProjectAttributionFilters({
   projectId,
 }: ProjectAttributionFiltersProps) {
-  const { utmFilter, clearUtmFilter, toggleDimensionValue } =
-    useDashboardUtmFilter()
+  const { utmFilter, setUtmFilter } = useDashboardUtmFilter()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
+  const [draft, setDraft] = useState<DashboardUtmFilter | undefined>(undefined)
   const [valuesByDimension, setValuesByDimension] =
     useState<ValuesByDimension>(EMPTY_VALUES)
   const [isLoadingValues, setIsLoadingValues] = useState(false)
 
-  const selected = normalizeDashboardUtmFilter(utmFilter)
-  const triggerLabel = formatDashboardUtmFilterLabel(selected)
+  const applied = normalizeDashboardUtmFilter(utmFilter)
+  const draftNormalized = normalizeDashboardUtmFilter(draft)
+  const triggerLabel = formatDashboardUtmFilterLabel(applied)
+  const isDirty = !filtersEqual(draftNormalized, applied)
+  const draftHasFilter = hasDashboardUtmFilter(draftNormalized)
+
+  useEffect(() => {
+    if (!open) return
+    setDraft(normalizeDashboardUtmFilter(utmFilter))
+  }, [open, utmFilter])
 
   useEffect(() => {
     if (!open) return
@@ -116,6 +135,19 @@ export function ProjectAttributionFilters({
     filteredByDimension.utm_source.length > 0 ||
     filteredByDimension.utm_s1.length > 0
 
+  function toggleDraftValue(dimension: UtmFilterDimension, value: string) {
+    setDraft(toggleDimensionValueInFilter(draft, dimension, value))
+  }
+
+  function applyDraft() {
+    setUtmFilter(draftNormalized ?? null)
+    setOpen(false)
+  }
+
+  function clearDraft() {
+    setDraft(undefined)
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -163,14 +195,12 @@ export function ProjectAttributionFilters({
               type="button"
               className={cn(
                 "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-100",
-                !hasDashboardUtmFilter(selected) && "bg-neutral-100 font-medium"
+                !draftHasFilter && "bg-neutral-100 font-medium"
               )}
-              onClick={() => {
-                clearUtmFilter()
-              }}
+              onClick={() => clearDraft()}
             >
               <span>All traffic</span>
-              {!hasDashboardUtmFilter(selected) ? (
+              {!draftHasFilter ? (
                 <Check className="size-3.5 shrink-0 text-neutral-900" />
               ) : null}
             </button>
@@ -201,7 +231,7 @@ export function ProjectAttributionFilters({
                   ) : (
                     values.map((value) => {
                       const isSelected = isDimensionValueSelected(
-                        selected,
+                        draftNormalized,
                         opt.id,
                         value
                       )
@@ -214,7 +244,7 @@ export function ProjectAttributionFilters({
                             isSelected && "bg-neutral-100 font-medium"
                           )}
                           onClick={() => {
-                            toggleDimensionValue(opt.id, value)
+                            toggleDraftValue(opt.id, value)
                           }}
                         >
                           <span
@@ -241,17 +271,30 @@ export function ProjectAttributionFilters({
           )}
         </div>
 
-        {hasDashboardUtmFilter(selected) ? (
-          <div className="border-t border-neutral-200 bg-neutral-50 px-3 py-2">
-            <button
-              type="button"
-              className="text-sm font-medium text-neutral-700 hover:text-neutral-950"
-              onClick={() => clearUtmFilter()}
-            >
-              Clear filters
-            </button>
-          </div>
-        ) : null}
+        <div className="flex items-center justify-between gap-2 border-t border-neutral-200 bg-neutral-50 px-3 py-2">
+          <button
+            type="button"
+            className={cn(
+              "text-sm font-medium",
+              draftHasFilter
+                ? "text-neutral-700 hover:text-neutral-950"
+                : "cursor-default text-neutral-400"
+            )}
+            disabled={!draftHasFilter}
+            onClick={() => clearDraft()}
+          >
+            Clear
+          </button>
+          <Button
+            type="button"
+            size="sm"
+            className="h-8 px-3"
+            disabled={!isDirty}
+            onClick={() => applyDraft()}
+          >
+            Apply
+          </Button>
+        </div>
       </PopoverContent>
     </Popover>
   )

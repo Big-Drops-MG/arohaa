@@ -126,6 +126,26 @@ function bucketsLastMonth(now: Date): string[] {
   return labels
 }
 
+/** Full current ET calendar month (1 → last day). */
+function bucketsThisMonth(now: Date): string[] {
+  const { year, month } = getDashboardZonedParts(now)
+  const thisMonthStart = new Date(dashboardZonedTimeToUtcMs(year, month, 1))
+  const nextMonth = month === 12 ? 1 : month + 1
+  const nextYear = month === 12 ? year + 1 : year
+  const nextMonthStart = new Date(
+    dashboardZonedTimeToUtcMs(nextYear, nextMonth, 1)
+  )
+  const labels: string[] = []
+  for (
+    let cursor = thisMonthStart;
+    cursor.getTime() < nextMonthStart.getTime();
+    cursor = addDashboardDays(cursor, 1)
+  ) {
+    labels.push(shortMonthDay.format(cursor))
+  }
+  return labels
+}
+
 /** Inclusive custom calendar days from `from` through `to` (YYYY-MM-DD). */
 function bucketsCustomRange(custom: DashboardCustomRange): string[] {
   const start = startOfDashboardDay(parseDayKey(custom.from))
@@ -157,6 +177,8 @@ export function overviewChartLabelsForRange(
       return bucketsLast7Days(now)
     case "last_week":
       return bucketsLastWeek(now)
+    case "this_month":
+      return bucketsThisMonth(now)
     case "last_month":
       return bucketsLastMonth(now)
     case "custom":

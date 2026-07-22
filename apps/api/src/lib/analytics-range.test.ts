@@ -78,6 +78,18 @@ describe('resolveAnalyticsWindow', () => {
     ).toBe(7)
   })
 
+  it('resolves this_month as month start→now for queries and full month for charts', () => {
+    const window = resolveAnalyticsWindow('this_month', wed)
+    expect(analyticsDayKey(window.start)).toBe('2026-07-01')
+    expect(window.end.getTime()).toBe(wed.getTime())
+    expect(analyticsDayKey(window.seriesEnd)).toBe('2026-08-01')
+    expect(window.granularity).toBe('day')
+    expect(
+      (window.seriesEnd.getTime() - window.start.getTime()) /
+        (24 * 60 * 60 * 1000),
+    ).toBe(31)
+  })
+
   it('resolves custom inclusive range', () => {
     const custom = parseAnalyticsCustomRange('2026-07-01', '2026-07-10')
     expect(custom).toEqual({ from: '2026-07-01', to: '2026-07-10' })

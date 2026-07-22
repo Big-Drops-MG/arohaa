@@ -18,6 +18,7 @@ export type AnalyticsRangeId =
   | 'this_week'
   | '7d'
   | 'last_week'
+  | 'this_month'
   | 'last_month'
   | 'custom'
 
@@ -27,6 +28,7 @@ export const ANALYTICS_RANGE_IDS: readonly AnalyticsRangeId[] = [
   'this_week',
   '7d',
   'last_week',
+  'this_month',
   'last_month',
   'custom',
 ] as const
@@ -206,6 +208,24 @@ export function resolveAnalyticsWindow(
       start,
       end: thisMonday,
       seriesEnd: thisMonday,
+      granularity: 'day',
+    }
+  }
+
+  if (rangeId === 'this_month') {
+    // Month start → now for queries; chart spans the full ET calendar month.
+    const start = startOfAnalyticsEtMonth(now)
+    const { year, month } = getAnalyticsEtParts(start)
+    const nextMonth = month === 12 ? 1 : month + 1
+    const nextYear = month === 12 ? year + 1 : year
+    const seriesEnd = new Date(
+      analyticsEtToUtcMs(nextYear, nextMonth, 1, 0, 0, 0),
+    )
+    return {
+      rangeId,
+      start,
+      end: now,
+      seriesEnd,
       granularity: 'day',
     }
   }

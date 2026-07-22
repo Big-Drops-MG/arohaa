@@ -9,6 +9,7 @@ export const TRAFFIC_RANGE_IDS: readonly OverviewDateRangeId[] = [
   "this_week",
   "7d",
   "last_week",
+  "this_month",
   "last_month",
   "custom",
 ] as const
@@ -19,6 +20,7 @@ export const TRAFFIC_DATE_RANGE_OPTIONS: OverviewDateRangeOption[] = [
   { id: "this_week", label: "This Week" },
   { id: "7d", label: "Last 7 Days" },
   { id: "last_week", label: "Last Week" },
+  { id: "this_month", label: "This Month" },
   { id: "last_month", label: "Last Month" },
   { id: "custom", label: "Custom Range" },
 ]

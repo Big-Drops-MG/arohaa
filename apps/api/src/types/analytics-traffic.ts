@@ -4,6 +4,7 @@ export type TrafficRangeId =
   | 'this_week'
   | '7d'
   | 'last_week'
+  | 'this_month'
   | 'last_month'
   | 'custom'
 
@@ -13,6 +14,7 @@ export const TRAFFIC_RANGE_IDS: readonly TrafficRangeId[] = [
   'this_week',
   '7d',
   'last_week',
+  'this_month',
   'last_month',
   'custom',
 ] as const
