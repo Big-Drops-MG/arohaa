@@ -41,8 +41,10 @@ ORDER BY (workspace_id, event_date_et, event_name)
 `
 
 let client: ClickHouseClient | null = null
+let pingClient: ClickHouseClient | null = null
 let clickHouseBackoffUntil = 0
 const CLICKHOUSE_BACKOFF_MS = 30_000
+const ANALYTICS_MAX_OPEN_CONNECTIONS = 32
 
 export function shouldSkipClickHouse(): boolean {
   return Date.now() < clickHouseBackoffUntil
@@ -61,20 +63,36 @@ function getEnv(name: string): string | undefined {
   return value && value.length > 0 ? value : undefined
 }
 
-export function getClickHouseClient(): ClickHouseClient {
-  if (client) return client
-
+function requireClickHouseUrl(): string {
   const url = getEnv('CLICKHOUSE_URL')
   if (!url) {
     throw new Error(
       'CLICKHOUSE_URL is not configured. The api requires CLICKHOUSE_URL, CLICKHOUSE_USER, CLICKHOUSE_PASSWORD.',
     )
   }
+  return url
+}
 
-  client = createClient({
-    url,
+function createClickHouseClient(options: {
+  max_open_connections: number
+  request_timeout: number
+  clickhouse_settings?: Record<string, string | number>
+}): ClickHouseClient {
+  return createClient({
+    url: requireClickHouseUrl(),
     username: getEnv('CLICKHOUSE_USER') ?? 'default',
     password: getEnv('CLICKHOUSE_PASSWORD'),
+    max_open_connections: options.max_open_connections,
+    request_timeout: options.request_timeout,
+    clickhouse_settings: options.clickhouse_settings,
+  })
+}
+
+export function getClickHouseClient(): ClickHouseClient {
+  if (client) return client
+
+  client = createClickHouseClient({
+    max_open_connections: ANALYTICS_MAX_OPEN_CONNECTIONS,
     request_timeout: 60_000,
     clickhouse_settings: {
       async_insert: 1,
@@ -83,6 +101,17 @@ export function getClickHouseClient(): ClickHouseClient {
   })
 
   return client
+}
+
+function getClickHousePingClient(): ClickHouseClient {
+  if (pingClient) return pingClient
+
+  pingClient = createClickHouseClient({
+    max_open_connections: 2,
+    request_timeout: 5_000,
+  })
+
+  return pingClient
 }
 
 export async function ensureEventsTable(): Promise<void> {
@@ -234,7 +263,7 @@ async function migrateLegacyEventsTable(ch: ClickHouseClient): Promise<void> {
 
 export async function pingClickHouse(timeoutMs: number = 3000): Promise<boolean> {
   try {
-    const ch = getClickHouseClient()
+    const ch = getClickHousePingClient()
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
@@ -242,6 +271,10 @@ export async function pingClickHouse(timeoutMs: number = 3000): Promise<boolean>
         query: 'SELECT 1 AS ok',
         format: 'JSON',
         abort_signal: controller.signal,
+        clickhouse_settings: {
+          max_threads: 1,
+          max_execution_time: Math.max(1, Math.ceil(timeoutMs / 1000)),
+        },
       })
       const json = (await result.json()) as { data: Array<{ ok: number }> }
       return json.data?.[0]?.ok === 1
@@ -271,8 +304,12 @@ export async function insertEvents(rows: EventRow[]): Promise<void> {
 }
 
 export async function closeClickHouseClient(): Promise<void> {
-  if (!client) return
-  const c = client
+  const main = client
+  const ping = pingClient
   client = null
-  await c.close()
+  pingClient = null
+  await Promise.all([
+    main ? main.close() : Promise.resolve(),
+    ping ? ping.close() : Promise.resolve(),
+  ])
 }

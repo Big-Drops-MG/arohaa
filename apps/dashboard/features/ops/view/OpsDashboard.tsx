@@ -214,13 +214,19 @@ function KpiTile({
 }
 
 function LatencyBar({ ms, maxMs = 500 }: { ms: number; maxMs?: number }) {
+  const timedOut = ms >= 3000
   const pct = Math.min(100, Math.round((ms / maxMs) * 100))
-  const tone =
-    ms < 80 ? "bg-emerald-500" : ms < 200 ? "bg-amber-500" : "bg-red-500"
+  const tone = timedOut
+    ? "bg-red-500"
+    : ms < 80
+      ? "bg-emerald-500"
+      : ms < 200
+        ? "bg-amber-500"
+        : "bg-red-500"
   return (
     <div className="flex min-w-28 flex-col items-end gap-1">
       <span className="text-xs font-medium text-neutral-700 tabular-nums">
-        {ms} ms
+        {timedOut ? `timeout (≥${ms} ms)` : `${ms} ms`}
       </span>
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
         <div
@@ -233,29 +239,18 @@ function LatencyBar({ ms, maxMs = 500 }: { ms: number; maxMs?: number }) {
 }
 
 function MemoryBar({ usedMb, totalMb }: { usedMb: number; totalMb: number }) {
-  const pct =
-    totalMb > 0 ? Math.min(100, Math.round((usedMb / totalMb) * 100)) : 0
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between text-sm">
-        <span className="text-neutral-500">Heap usage</span>
+        <span className="text-neutral-500">Heap (V8 arena)</span>
         <span className="font-medium text-neutral-900 tabular-nums">
-          {usedMb} / {totalMb} MB ({pct}%)
+          {usedMb} / {totalMb} MB
         </span>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-neutral-100">
-        <div
-          className={cn(
-            "h-full rounded-full",
-            pct < 70
-              ? "bg-neutral-900"
-              : pct < 85
-                ? "bg-amber-500"
-                : "bg-red-500"
-          )}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
+      <p className="text-xs text-neutral-500">
+        Not process or Droplet RAM — V8 grows this arena as needed. See RSS
+        above for actual process memory.
+      </p>
     </div>
   )
 }
