@@ -28,9 +28,9 @@ export function buildLandingPageMetrics(
     { label: "Active Users", value: fmtCount(data.activeUsers) },
     {
       label: submissionMetricLabel(formType),
-      value: fmtCount(data.formSubmissions7d),
+      value: fmtCount(data.formSubmissions),
     },
-    { label: "Bounce Rate", value: fmtPct(data.bounceRate7d) },
+    { label: "Bounce Rate", value: fmtPct(data.bounceRate) },
   ]
 }
 
@@ -49,20 +49,27 @@ export async function fetchLandingPageCardMetrics(
   const timer = setTimeout(() => controller.abort(), 15_000)
 
   try {
-    const resp = await fetch(
-      `${apiBase}/v1/analytics/landing-summary?workspace_id=${encodeURIComponent(landingPageId)}`,
-      {
-        headers: { "x-arohaa-internal": secret },
-        signal: controller.signal,
-        cache: "no-store",
-      }
-    )
+    const url = new URL(`${apiBase}/v1/analytics/landing-summary`)
+    url.searchParams.set("workspace_id", landingPageId)
+    if (
+      formType === "zip" ||
+      formType === "single" ||
+      formType === "multiple"
+    ) {
+      url.searchParams.set("form_type", formType)
+    }
+
+    const resp = await fetch(url.toString(), {
+      headers: { "x-arohaa-internal": secret },
+      signal: controller.signal,
+      cache: "no-store",
+    })
 
     if (!resp.ok) {
       if (process.env.NODE_ENV === "development") {
         const body = await resp.text().catch(() => "")
         console.error(
-          `[landing-metrics] API ${resp.status} ${apiBase}/v1/analytics/landing-summary`,
+          `[landing-metrics] API ${resp.status} ${url.pathname}`,
           body.slice(0, 200)
         )
       }

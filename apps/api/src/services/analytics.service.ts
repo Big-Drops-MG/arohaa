@@ -612,14 +612,17 @@ export function emptyAnalyticsOverview(
 
 export interface LandingPageCardMetrics {
   activeUsers: number
-  formSubmissions7d: number
-  bounceRate7d: number
+  formSubmissions: number
+  bounceRate: number
 }
 
 export async function getLandingPageCardMetrics(
-  workspaceId: string
+  workspaceId: string,
+  formTypeRaw?: string,
 ): Promise<LandingPageCardMetrics> {
-  const cacheKey = `analytics:landing-summary:${workspaceId}`
+  const formType = parseLandingFormType(formTypeRaw)
+  const submitEvent = submissionEventName(formType)
+  const cacheKey = `analytics:landing-summary:v2-lifetime:${workspaceId}:${formType}`
   const cached = await readAnalyticsCache<LandingPageCardMetrics>(cacheKey)
   if (cached) return cached
 
@@ -634,31 +637,30 @@ export async function getLandingPageCardMetrics(
         ) AS active_users,
         uniqExactIf(
           session_id,
-          event_name = 'form_success'
-            AND created_at >= now() - INTERVAL 7 DAY
-        ) AS form_submissions_7d
+          event_name = {submit_event:String}
+        ) AS form_submissions
       FROM events_raw
       WHERE workspace_id = {wid:UUID}
     `,
-    query_params: { wid: workspaceId },
+    query_params: { wid: workspaceId, submit_event: submitEvent },
     format: 'JSON',
   })
   const [row] = (
     (await metricsRes.json()) as CHJson<{
       active_users: string
-      form_submissions_7d: string
+      form_submissions: string
     }>
   ).data
 
   const bounceRes = await ch.query({
     query: `
       SELECT
-        sumIf(1, first_at >= now() - INTERVAL 7 DAY AND is_bounce = 1) AS bounce_7d,
-        sumIf(1, first_at >= now() - INTERVAL 7 DAY) AS ses_7d
+        sumIf(1, is_bounce = 1) AS bounces,
+        count() AS sessions
       FROM (
-        SELECT session_id, min(created_at) AS first_at, toUInt8(count() = 1) AS is_bounce
+        SELECT session_id, toUInt8(count() = 1) AS is_bounce
         FROM events_raw
-        WHERE workspace_id = {wid:UUID} AND created_at >= now() - INTERVAL 24 MONTH
+        WHERE workspace_id = {wid:UUID}
         GROUP BY session_id
       )
     `,
@@ -666,14 +668,13 @@ export async function getLandingPageCardMetrics(
     format: 'JSON',
   })
   const [bounceRow] = (
-    (await bounceRes.json()) as CHJson<{ ses_7d: string; bounce_7d: string }>
+    (await bounceRes.json()) as CHJson<{ sessions: string; bounces: string }>
   ).data
 
-  const ses7d = n(bounceRow?.ses_7d)
   const result = {
     activeUsers: n(row?.active_users),
-    formSubmissions7d: n(row?.form_submissions_7d),
-    bounceRate7d: bouncePct(n(bounceRow?.bounce_7d), ses7d),
+    formSubmissions: n(row?.form_submissions),
+    bounceRate: bouncePct(n(bounceRow?.bounces), n(bounceRow?.sessions)),
   }
 
   await writeAnalyticsCache(cacheKey, result)
@@ -683,7 +684,7 @@ export async function getLandingPageCardMetrics(
 export function emptyLandingPageCardMetrics(): LandingPageCardMetrics {
   return {
     activeUsers: 0,
-    formSubmissions7d: 0,
-    bounceRate7d: 0,
+    formSubmissions: 0,
+    bounceRate: 0,
   }
 }

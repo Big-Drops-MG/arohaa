@@ -51,8 +51,8 @@ export interface AnalyticsOverview {
 
 export interface LandingPageCardMetrics {
   activeUsers: number
-  formSubmissions7d: number
-  bounceRate7d: number
+  formSubmissions: number
+  bounceRate: number
 }
 
 export interface AnalyticsTrafficKpis {
