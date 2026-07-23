@@ -496,17 +496,33 @@ export async function analyticsRoutes(server: FastifyInstance) {
     },
   )
 
-  server.get<{ Querystring: { workspace_id: string } }>(
+  server.get<{ Querystring: { workspace_id: string; form_type?: string } }>(
     '/v1/analytics/landing-summary',
-    { schema: workspaceSchema, config: ANALYTICS_RATE_LIMIT },
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['workspace_id'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            form_type: {
+              type: 'string',
+              enum: ['zip', 'single', 'multiple'],
+            },
+            ...utmFilterSchemaProps,
+          },
+        },
+      },
+      config: ANALYTICS_RATE_LIMIT,
+    },
     async (request, reply) => {
-      const { workspace_id } = request.query
+      const { workspace_id, form_type } = request.query
       await sendAnalyticsQuery({
         request,
         reply,
         workspaceId: workspace_id,
         emptyValue: emptyLandingPageCardMetrics(),
-        run: () => getLandingPageCardMetrics(workspace_id),
+        run: () => getLandingPageCardMetrics(workspace_id, form_type),
         logLabel: 'landing summary query ok',
       })
     },
