@@ -74,3 +74,76 @@ export function validateEvent(event) {
 
   return true;
 }
+
+const HEATMAP_EVENT_TYPES = ['click', 'mousemove', 'scroll'];
+
+export function validateHeatmapEvent(event) {
+  if (!event || typeof event !== 'object') {
+    return false;
+  }
+
+  const workspaceId =
+    typeof event.workspace_id === 'string' ? event.workspace_id.trim() : '';
+  if (!workspaceId || !UUID_RE.test(workspaceId)) {
+    console.warn(
+      `[Validator] Dropping heatmap event: Missing or invalid workspace_id.`,
+    );
+    return false;
+  }
+
+  const pageUrl =
+    typeof event.page_url === 'string' ? event.page_url.trim() : '';
+  if (!pageUrl || pageUrl.length > 2000) {
+    console.warn(
+      `[Validator] Dropping heatmap event: Missing or invalid page_url for workspace ${workspaceId}`,
+    );
+    return false;
+  }
+
+  const eventType =
+    typeof event.event_type === 'string' ? event.event_type.trim() : '';
+  if (!HEATMAP_EVENT_TYPES.includes(eventType)) {
+    console.warn(
+      `[Validator] Dropping heatmap event: Invalid event_type '${eventType}' for workspace ${workspaceId}`,
+    );
+    return false;
+  }
+
+  if (!event.timestamp || typeof event.timestamp !== 'string') {
+    console.warn(
+      `[Validator] Dropping heatmap event: Missing timestamp for workspace ${workspaceId}`,
+    );
+    return false;
+  }
+
+  const ts = Date.parse(event.timestamp.replace(' ', 'T'));
+  if (Number.isNaN(ts)) {
+    console.warn(
+      `[Validator] Dropping heatmap event: Corrupted timestamp = ${event.timestamp}`,
+    );
+    return false;
+  }
+
+  if (ts < MIN_CREATED_AT || ts > Date.now() + MAX_FUTURE_SKEW_MS) {
+    console.warn(
+      `[Validator] Dropping heatmap event: timestamp out of range = ${event.timestamp}`,
+    );
+    return false;
+  }
+
+  if (typeof event.x !== 'number' || typeof event.y !== 'number') {
+    console.warn(
+      `[Validator] Dropping heatmap event: Missing or invalid x, y coordinates for workspace ${workspaceId}`,
+    );
+    return false;
+  }
+
+  if (typeof event.viewport_width !== 'number' || typeof event.viewport_height !== 'number') {
+    console.warn(
+      `[Validator] Dropping heatmap event: Missing or invalid viewport dimensions for workspace ${workspaceId}`,
+    );
+    return false;
+  }
+
+  return true;
+}
