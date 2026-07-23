@@ -12,6 +12,7 @@ import rateLimit from '@fastify/rate-limit'
 import fastifyRedis from '@fastify/redis'
 import { redis } from './services/redis.service.js'
 import { ingestRoutes } from './routes/ingest.js'
+import { sdkConfigRoutes } from './routes/sdk-config.js'
 import { healthRoutes } from './routes/health.js'
 import { devRoutes } from './routes/dev.js'
 import { analyticsRoutes } from './routes/analytics.js'
@@ -186,6 +187,7 @@ server.setErrorHandler((error: FastifyError, request, reply) => {
 
 server.register(ingestRoutes)
 server.register(utmRoutes)
+server.register(sdkConfigRoutes)
 server.register(analyticsRoutes)
 server.register(healthRoutes)
 if (isDev) {

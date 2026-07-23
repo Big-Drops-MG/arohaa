@@ -2,6 +2,7 @@ import { initializeConfig } from "../model/config"
 import { initIdentity } from "../model/identity"
 import { installFormFetchTracking } from "../events/form-tracking"
 import { setupLifecycle } from "./lifecycle"
+import { loadSdkRemoteConfig } from "./sdk-config"
 import { enforceUtmBlockGate } from "./utm-gate"
 
 let isSDKInitialized = false
@@ -26,6 +27,8 @@ export async function initSDK(): Promise<void> {
 
   const blocked = await enforceUtmBlockGate(config)
   if (blocked) return
+
+  await loadSdkRemoteConfig()
 
   installFormFetchTracking()
   initIdentity()
