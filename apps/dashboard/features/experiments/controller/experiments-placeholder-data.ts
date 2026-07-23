@@ -119,5 +119,10 @@ export function getExperimentsPlaceholderData(
         { zipcode: "75201", variantA: "12%", variantB: "16%", variantC: "9%" },
       ],
     },
+    controlVariant: "A",
+    mode: "data_variant",
+    winnerCallout: "B leads with 20.0% FSR",
+    config: null,
+    siblings: [],
   }
 }

@@ -8,11 +8,17 @@ import type {
   OverviewLandingFormType,
 } from "@/features/overview/model/overview"
 import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-range"
+import type {
+  ExperimentConfigView,
+  SiblingLandingPageOption,
+} from "@/lib/server/experiments-store"
 
 export function getExperimentsEmptyDashboardData(
   _landingPagePublicId: string,
   rangeId: OverviewDateRangeId = "7d",
-  formType: OverviewLandingFormType = "single"
+  formType: OverviewLandingFormType = "single",
+  config: ExperimentConfigView | null = null,
+  siblings: SiblingLandingPageOption[] = []
 ): ExperimentsDashboardData {
   void _landingPagePublicId
 
@@ -20,7 +26,19 @@ export function getExperimentsEmptyDashboardData(
     formType,
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: rangeId,
-    experiments: [],
+    experiments: config
+      ? [
+          {
+            id: config.id,
+            name: config.name,
+            status: config.status,
+            variants: config.variantLabels,
+            startDate: config.startDate,
+            endDate: config.endDate,
+            noEndDate: config.noEndDate,
+          },
+        ]
+      : [],
     variantPerformance: {
       title: "Variant performance",
       columns: [
@@ -49,5 +67,13 @@ export function getExperimentsEmptyDashboardData(
       columns: [{ key: "zipcode", label: "Zipcode" }],
       rows: [],
     },
+    controlVariant: config?.controlLandingPageId
+      ? (config.variants.find((v) => v.isControl)?.label ?? null)
+      : null,
+    mode:
+      config && config.variants.length > 0 ? "multi_domain" : "data_variant",
+    winnerCallout: null,
+    config,
+    siblings,
   }
 }

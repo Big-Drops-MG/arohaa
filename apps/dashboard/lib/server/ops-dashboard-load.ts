@@ -128,12 +128,15 @@ const DASH_PROBE_ID = "__ops_probe__"
 
 type EndpointDef = { name: string; method: string; path: string }
 
-const INGEST_ENDPOINTS: EndpointDef[] = [
+const INGEST_HEALTH_ENDPOINTS: EndpointDef[] = [
   { name: "Health", method: "GET", path: "/health" },
   { name: "Readiness", method: "GET", path: "/health/ready" },
   { name: "Metrics", method: "GET", path: "/health/metrics" },
   { name: "Detailed", method: "GET", path: "/health/detailed" },
   { name: "Ingest", method: "POST", path: "/v1/ingest" },
+]
+
+const INGEST_ANALYTICS_ENDPOINTS: EndpointDef[] = [
   {
     name: "Analytics: overview",
     method: "GET",
@@ -289,9 +292,28 @@ async function probeEndpoint(
 async function probeGroup(
   base: string,
   defs: EndpointDef[],
-  headersInit: Record<string, string>
+  headersInit: Record<string, string>,
+  concurrency = 8
 ): Promise<OpsEndpointCheck[]> {
-  return Promise.all(defs.map((def) => probeEndpoint(base, def, headersInit)))
+  const results: OpsEndpointCheck[] = new Array(defs.length)
+  let next = 0
+
+  async function worker() {
+    while (next < defs.length) {
+      const index = next
+      next += 1
+      const def = defs[index]
+      if (!def) continue
+      results[index] = await probeEndpoint(base, def, headersInit)
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(concurrency, Math.max(1, defs.length)) },
+    () => worker()
+  )
+  await Promise.all(workers)
+  return results
 }
 
 async function resolveDashboardOrigin(): Promise<string | null> {
@@ -353,7 +375,7 @@ export async function loadOpsDashboardData(): Promise<OpsDashboardData> {
     metricsResult,
     detailedResult,
     queuesResult,
-    ingestChecks,
+    healthChecks,
   ] = await Promise.all([
     Promise.allSettled([
       fetchJson<OpsReadySnapshot>(`${apiBase}/health/ready`),
@@ -370,14 +392,25 @@ export async function loadOpsDashboardData(): Promise<OpsDashboardData> {
         ingestHeaders
       ),
     ]).then((r) => r[0]),
-    probeGroup(apiBase, INGEST_ENDPOINTS, ingestHeaders),
+    probeGroup(apiBase, INGEST_HEALTH_ENDPOINTS, ingestHeaders, 5),
   ])
+
+  const analyticsChecks = await probeGroup(
+    apiBase,
+    INGEST_ANALYTICS_ENDPOINTS,
+    ingestHeaders,
+    2
+  )
+  const ingestChecks = [...healthChecks, ...analyticsChecks]
 
   const dashboardChecks =
     dashboardOrigin && cookieHeader
-      ? await probeGroup(dashboardOrigin, DASHBOARD_ENDPOINTS, {
-          cookie: cookieHeader,
-        })
+      ? await probeGroup(
+          dashboardOrigin,
+          DASHBOARD_ENDPOINTS,
+          { cookie: cookieHeader },
+          2
+        )
       : []
 
   const endpointGroups: OpsEndpointGroup[] = [
