@@ -2,7 +2,7 @@ import type { EventPayload } from "../types"
 import { getConfig } from "../model/config"
 
 const FLUSH_INTERVAL_MS = 2000
-const FLUSH_SIZE = 20
+const FLUSH_SIZE = 50
 const MAX_QUEUE = 100
 
 let queue: EventPayload[] = []
@@ -61,8 +61,11 @@ async function postBatch(events: EventPayload[]): Promise<boolean> {
 
 export function enqueueHeatmapEvent(payload: EventPayload): void {
   if (queue.length >= MAX_QUEUE) {
-    queue.shift()
+    clearFlushTimer()
+    void flushBatcher()
+    if (queue.length >= MAX_QUEUE) return
   }
+
   queue.push(payload)
 
   if (queue.length >= FLUSH_SIZE) {
@@ -82,7 +85,8 @@ export async function flushBatcher(): Promise<void> {
   const batch = queue.splice(0, FLUSH_SIZE)
   const ok = await postBatch(batch)
   if (!ok) {
-    queue = batch.concat(queue).slice(0, MAX_QUEUE)
+    const merged = batch.concat(queue)
+    queue = merged.length <= MAX_QUEUE ? merged : merged.slice(0, MAX_QUEUE)
   }
 
   flushing = false

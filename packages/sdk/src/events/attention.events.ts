@@ -1,15 +1,21 @@
 import { track } from "../core/tracker"
+import { getHeatmapSampleRate } from "../core/sdk-config"
 import { getStableSelector } from "../utils/selector"
 
 type DeviceType = "mobile" | "tablet" | "desktop"
 
-const MOVE_THROTTLE_MS = 100
+const MOVE_THROTTLE_MS = 500
 const MIN_DWELL_MS = 250
 const MAX_SECTIONS = 40
 const SECTION_SELECTOR =
   "main, section, [data-arohaa-section], [data-section]"
 
-const sectionEnteredAt = new WeakMap<Element, number>()
+type OpenSection = {
+  enteredAt: number
+  selector: string
+}
+
+const openSections = new Map<Element, OpenSection>()
 let lastMoveAt = 0
 let attentionSetup = false
 
@@ -36,24 +42,23 @@ function hasFinePointer(): boolean {
 }
 
 function emitSectionDwell(el: Element, endedAt: number): void {
-  const started = sectionEnteredAt.get(el)
-  if (started == null) return
-  sectionEnteredAt.delete(el)
+  const open = openSections.get(el)
+  if (!open) return
+  openSections.delete(el)
 
-  const dwell_ms = Math.max(0, endedAt - started)
+  const dwell_ms = Math.max(0, endedAt - open.enteredAt)
   if (dwell_ms < MIN_DWELL_MS) return
 
   track("heatmap_section", {
-    selector: getStableSelector(el),
+    selector: open.selector,
     dwell_ms,
   })
 }
 
 function flushOpenSections(): void {
   const now = Date.now()
-  const nodes = document.querySelectorAll(SECTION_SELECTOR)
-  for (const el of Array.from(nodes).slice(0, MAX_SECTIONS)) {
-    if (sectionEnteredAt.has(el)) emitSectionDwell(el, now)
+  for (const el of Array.from(openSections.keys())) {
+    emitSectionDwell(el, now)
   }
 }
 
@@ -67,6 +72,10 @@ function setupMousemoveSampling(): void {
       const now = Date.now()
       if (now - lastMoveAt < MOVE_THROTTLE_MS) return
       lastMoveAt = now
+
+
+      const rate = getHeatmapSampleRate()
+      if (rate < 1 && Math.random() >= rate) return
 
       const vw = window.innerWidth || 1
       const vh = window.innerHeight || 1
@@ -91,7 +100,12 @@ function setupSectionObserver(): void {
       for (const entry of entries) {
         const el = entry.target
         if (entry.isIntersecting) {
-          if (!sectionEnteredAt.has(el)) sectionEnteredAt.set(el, now)
+          if (!openSections.has(el)) {
+            openSections.set(el, {
+              enteredAt: now,
+              selector: getStableSelector(el),
+            })
+          }
         } else {
           emitSectionDwell(el, now)
         }
