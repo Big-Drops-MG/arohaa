@@ -35,6 +35,8 @@ type OverviewHeaderProps = {
   onCustomRangeChange: (range: DashboardCustomRange) => void
   /** Shown as an info tooltip next to the title. */
   helpContent?: ReactNode
+  /** Extra controls rendered in the header row before attribution / date filters. */
+  actions?: ReactNode
 }
 
 type Panel = "presets" | "calendar"
@@ -62,6 +64,7 @@ export function OverviewHeader({
   onDateRangeChange,
   onCustomRangeChange,
   helpContent,
+  actions,
 }: OverviewHeaderProps) {
   const reduceMotion = useReducedMotion()
   const [open, setOpen] = useState(false)
@@ -152,7 +155,8 @@ export function OverviewHeader({
         </p>
       </div>
 
-      <div className="flex w-full flex-col gap-2.5 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
+      <div className="flex w-full flex-col gap-2.5 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+        {actions}
         {projectId ? <ProjectAttributionFilters projectId={projectId} /> : null}
 
         <motion.div

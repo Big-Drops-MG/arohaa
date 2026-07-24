@@ -27,9 +27,12 @@ type HeatmapCanvasProps = {
   emptyMessage?: string
 }
 
+// Widths are chosen to match the viewport widths visitors actually browse at, so
+// the embedded page reflows the same way it did on capture. Page-relative click
+// fractions (px/py) then land on the correct element instead of drifting.
 const DEVICE_WIDTH: Record<HeatmapDevice, number> = {
-  all: 960,
-  desktop: 960,
+  all: 1280,
+  desktop: 1280,
   tablet: 768,
   mobile: 390,
 }
@@ -148,7 +151,7 @@ function renderPointsHeatmap(
   const octx = off.getContext("2d")
   if (!octx) return
 
-  const radius = Math.max(26, width * 0.055)
+  const radius = Math.max(16, width * 0.026)
   const max = Math.max(1, maxValue)
 
   for (const p of points) {

@@ -186,6 +186,86 @@ export function HeatmapDashboard({
             </ul>
           </div>
         }
+        actions={
+          <>
+            <Select
+              value={mode}
+              onValueChange={(value) => setMode(value as HeatmapMode)}
+            >
+              <SelectTrigger
+                aria-label="Heatmap mode"
+                className={cn(
+                  overviewSelectTriggerClassName,
+                  "w-full sm:w-auto sm:min-w-32"
+                )}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent
+                align="end"
+                className={overviewSelectContentClassName}
+              >
+                {HEATMAP_MODES.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value}
+                    className={overviewSelectItemClassName}
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={device === "all" ? "desktop" : device}
+              onValueChange={(value) => setDevice(parseHeatmapDevice(value))}
+            >
+              <SelectTrigger
+                aria-label="Heatmap device"
+                className={cn(
+                  overviewSelectTriggerClassName,
+                  "w-full sm:w-auto sm:min-w-32"
+                )}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent
+                align="end"
+                className={overviewSelectContentClassName}
+              >
+                {HEATMAP_DEVICES.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value}
+                    className={overviewSelectItemClassName}
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div
+              className="flex h-9 items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 shadow-xs"
+              title="Heat intensity legend"
+            >
+              <div className="flex min-w-24 flex-col gap-0.5 sm:min-w-28">
+                <div
+                  className="h-1.5 w-full rounded-full"
+                  style={{
+                    background:
+                      "linear-gradient(to right, #3b82f6, #22d3ee, #facc15, #ef4444)",
+                  }}
+                />
+                <div className="flex justify-between text-[9px] leading-none text-neutral-400">
+                  <span>Low</span>
+                  <span>High</span>
+                </div>
+              </div>
+            </div>
+          </>
+        }
       />
 
       <div
@@ -207,93 +287,6 @@ export function HeatmapDashboard({
           emptyState={!hasData}
           emptyMessage="No heatmap data for this range yet. Clicks, scroll depth, and attention will appear here after the SDK starts collecting."
         />
-      </div>
-
-      <div className="flex justify-center px-1">
-        <div className="flex max-w-full flex-wrap items-center justify-center gap-2 rounded-full border border-neutral-200/90 bg-white px-2.5 py-1.5 shadow-md shadow-neutral-950/5 sm:gap-2.5 sm:px-3">
-          <Select
-            value={mode}
-            onValueChange={(value) => setMode(value as HeatmapMode)}
-          >
-            <SelectTrigger
-              size="sm"
-              aria-label="Heatmap mode"
-              className={cn(
-                overviewSelectTriggerClassName,
-                "h-8 min-w-[6.5rem] rounded-full border-neutral-200/80 bg-neutral-50 px-2.5 text-xs shadow-none"
-              )}
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent
-              align="center"
-              className={overviewSelectContentClassName}
-            >
-              {HEATMAP_MODES.map((option) => (
-                <SelectItem
-                  key={option.value}
-                  value={option.value}
-                  className={overviewSelectItemClassName}
-                >
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <div className="h-4 w-px bg-neutral-200" aria-hidden />
-
-          <Select
-            value={device === "all" ? "desktop" : device}
-            onValueChange={(value) => setDevice(parseHeatmapDevice(value))}
-          >
-            <SelectTrigger
-              size="sm"
-              aria-label="Heatmap device"
-              className={cn(
-                overviewSelectTriggerClassName,
-                "h-8 min-w-[7rem] rounded-full border-neutral-200/80 bg-neutral-50 px-2.5 text-xs shadow-none"
-              )}
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent
-              align="center"
-              className={overviewSelectContentClassName}
-            >
-              {HEATMAP_DEVICES.map((option) => (
-                <SelectItem
-                  key={option.value}
-                  value={option.value}
-                  className={overviewSelectItemClassName}
-                >
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <div className="h-4 w-px bg-neutral-200" aria-hidden />
-
-          <div
-            className="flex items-center gap-2 pr-1"
-            title="Heat intensity legend"
-          >
-            <div className="flex flex-col gap-0.5">
-              <div
-                className="h-1.5 w-24 rounded-full sm:w-28"
-                style={{
-                  background:
-                    "linear-gradient(to right, #3b82f6, #22d3ee, #facc15, #ef4444)",
-                }}
-              />
-              <div className="flex justify-between text-[9px] text-neutral-400">
-                <span>Low</span>
-                <span>High</span>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
       {mode === "attention" && dashboardData.sections.length > 0 ? (

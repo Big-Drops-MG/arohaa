@@ -32,7 +32,7 @@ export function HeatmapDeviceFrame({
   screenWidth,
 }: HeatmapDeviceFrameProps) {
   const kind = frameKind(device)
-  const lidWidth = Math.min(screenWidth + 32, 1040)
+  const lidWidth = Math.min(screenWidth + 32, 1600)
   const mobileWidth = Math.min(screenWidth + 20, 430)
   const tabletWidth = Math.min(screenWidth + 24, 820)
   const outerWidth =
