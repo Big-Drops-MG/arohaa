@@ -12,6 +12,7 @@ import * as seoSchema from './schema/seo.js';
 import * as workspaceApiKeysSchema from './schema/workspace-api-keys.js';
 import * as workspaceAlertWebhooksSchema from './schema/workspace-alert-webhooks.js';
 import * as landingPageUtmParamsSchema from './schema/landing-page-utm-params.js';
+import * as rolesSchema from './schema/roles.js';
 
 const schema = {
   ...authSchema,
@@ -24,6 +25,7 @@ const schema = {
   ...workspaceApiKeysSchema,
   ...workspaceAlertWebhooksSchema,
   ...landingPageUtmParamsSchema,
+  ...rolesSchema,
 };
 
 bootstrapDatabaseEnv(import.meta.url);
@@ -54,6 +56,7 @@ export * from './schema/seo.js';
 export * from './schema/workspace-api-keys.js';
 export * from './schema/workspace-alert-webhooks.js';
 export * from './schema/landing-page-utm-params.js';
+export * from './schema/roles.js';
 export * from './email.js';
 export * from './notifications/create-notification.js';
 export * from './landing/normalizeLandingPageUrl.js';

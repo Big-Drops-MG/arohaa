@@ -1,6 +1,8 @@
 import { auth } from "@/auth"
 import { LoginPage } from "@/features/auth/view/LoginPage"
+import { resolvePostAuthPath } from "@/lib/server/access-status"
 import { pageMetadata } from "@/lib/site-metadata"
+import { db, normalizeUserEmail, whereUserEmail } from "@workspace/database"
 import { redirect } from "next/navigation"
 import { cookies } from "next/headers"
 import { Suspense } from "react"
@@ -32,6 +34,16 @@ export default async function AuthPage(props: {
       )
     ) {
       redirect("/login?requiresTwoFactor=true")
+    }
+
+    const email = session.user.email
+    if (email) {
+      const user = await db.query.users.findFirst({
+        where: whereUserEmail(normalizeUserEmail(email)),
+      })
+      if (user) {
+        redirect(resolvePostAuthPath(user))
+      }
     }
 
     redirect("/dashboard")

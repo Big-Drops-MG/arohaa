@@ -22,6 +22,11 @@ export const users = pgTable('user', {
   isTwoFactorEnabled: boolean('isTwoFactorEnabled').default(false),
   pendingTwoFactorSecret: text('pendingTwoFactorSecret'),
   twoFactorSecret: text('twoFactorSecret'),
+  lastSeenAt: timestamp('lastSeenAt', { mode: 'date' }),
+  /** pending → awaiting team approval; approved → full access; rejected → blocked */
+  accessStatus: text('accessStatus').notNull().default('pending'),
+  accessReviewedAt: timestamp('accessReviewedAt', { mode: 'date' }),
+  accessReviewedByUserId: text('accessReviewedByUserId'),
 });
 
 export const accounts = pgTable(

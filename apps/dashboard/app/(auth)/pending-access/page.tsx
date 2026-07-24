@@ -1,15 +1,14 @@
 import { auth } from "@/auth"
-import { OnboardingPage } from "@/features/auth/view/OnboardingPage"
+import { PendingAccessPage } from "@/features/auth/view/PendingAccessPage"
 import { isApprovedAccess } from "@/lib/server/access-status"
-import { listRoleNames } from "@/lib/server/roles"
 import { pageMetadata } from "@/lib/site-metadata"
 import { db, normalizeUserEmail, whereUserEmail } from "@workspace/database"
 import { redirect } from "next/navigation"
 import { cookies } from "next/headers"
 
-export const metadata = pageMetadata("Complete Your Profile")
+export const metadata = pageMetadata("Access Pending")
 
-export default async function OnboardingRoutePage() {
+export default async function PendingAccessRoutePage() {
   const session = await auth()
   const email = session?.user?.email
   if (!email) {
@@ -33,14 +32,15 @@ export default async function OnboardingRoutePage() {
     }
   }
 
-  if (user.firstName?.trim() && user.lastName?.trim() && user.role?.trim()) {
-    if (isApprovedAccess(user.accessStatus)) {
-      redirect("/dashboard")
-    }
-    redirect("/pending-access")
+  if (!user.firstName?.trim() || !user.lastName?.trim() || !user.role?.trim()) {
+    redirect("/onboarding")
   }
 
-  const roleOptions = await listRoleNames()
+  if (isApprovedAccess(user.accessStatus)) {
+    redirect("/dashboard")
+  }
 
-  return <OnboardingPage roleOptions={roleOptions} />
+  const status = user.accessStatus === "rejected" ? "rejected" : "pending"
+
+  return <PendingAccessPage status={status} />
 }
