@@ -24,6 +24,12 @@ function frameKind(device: HeatmapDevice): "laptop" | "tablet" | "mobile" {
   return "laptop"
 }
 
+const LAPTOP_PAD_X = 12
+const LAPTOP_PAD_TOP = 12
+const LAPTOP_PAD_BOTTOM = 8
+const MOBILE_BEZEL = 10
+const TABLET_BEZEL = 12
+
 export function HeatmapDeviceFrame({
   device,
   children,
@@ -32,9 +38,9 @@ export function HeatmapDeviceFrame({
   screenWidth,
 }: HeatmapDeviceFrameProps) {
   const kind = frameKind(device)
-  const lidWidth = Math.min(screenWidth + 32, 1600)
-  const mobileWidth = Math.min(screenWidth + 20, 430)
-  const tabletWidth = Math.min(screenWidth + 24, 820)
+  const lidWidth = screenWidth + LAPTOP_PAD_X * 2
+  const mobileWidth = screenWidth + MOBILE_BEZEL * 2
+  const tabletWidth = screenWidth + TABLET_BEZEL * 2
   const outerWidth =
     kind === "laptop"
       ? lidWidth * 1.12
@@ -67,10 +73,14 @@ export function HeatmapDeviceFrame({
     setNaturalHeight(el.offsetHeight)
   }, [device, screenHeight, screenWidth, scale])
 
+  // Screen is exactly screenWidth × screenHeight so the page fills the bezel
+  // edge-to-edge. Scrollbars are overlaid (not layout) so they never carve a
+  // white gutter into the right or bottom of the preview.
   const screen = (
     <div
       className="overflow-hidden bg-white"
       style={{
+        width: screenWidth,
         height: screenHeight,
         borderRadius:
           kind === "mobile"
@@ -80,7 +90,14 @@ export function HeatmapDeviceFrame({
               : "0.375rem",
       }}
     >
-      <div className="h-full overflow-auto overscroll-contain">{children}</div>
+      <div
+        className={cn(
+          "h-full w-full overflow-x-hidden overflow-y-auto overscroll-contain",
+          "[-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        )}
+      >
+        {children}
+      </div>
     </div>
   )
 
@@ -88,20 +105,26 @@ export function HeatmapDeviceFrame({
   if (kind === "mobile") {
     deviceNode = (
       <div
-        className="relative rounded-[2.25rem] bg-neutral-900 p-[10px] shadow-[0_20px_50px_-20px_rgba(0,0,0,0.45)] ring-1 ring-black/40"
-        style={{ width: mobileWidth }}
+        className="relative rounded-[2.25rem] bg-neutral-900 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.45)] ring-1 ring-black/40"
+        style={{
+          width: mobileWidth,
+          padding: MOBILE_BEZEL,
+        }}
       >
         {screen}
-        <div className="pointer-events-none absolute inset-y-16 -left-[2px] w-[3px] rounded-l-sm bg-neutral-700" />
-        <div className="pointer-events-none absolute top-28 -right-[2px] h-12 w-[3px] rounded-r-sm bg-neutral-700" />
-        <div className="pointer-events-none absolute top-44 -right-[2px] h-12 w-[3px] rounded-r-sm bg-neutral-700" />
+        <div className="pointer-events-none absolute inset-y-16 -left-0.5 w-0.75 rounded-l-sm bg-neutral-700" />
+        <div className="pointer-events-none absolute top-28 -right-0.5 h-12 w-0.75 rounded-r-sm bg-neutral-700" />
+        <div className="pointer-events-none absolute top-44 -right-0.5 h-12 w-0.75 rounded-r-sm bg-neutral-700" />
       </div>
     )
   } else if (kind === "tablet") {
     deviceNode = (
       <div
-        className="relative rounded-[1.75rem] bg-neutral-800 p-3 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.4)] ring-1 ring-black/30"
-        style={{ width: tabletWidth }}
+        className="relative rounded-[1.75rem] bg-neutral-800 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.4)] ring-1 ring-black/30"
+        style={{
+          width: tabletWidth,
+          padding: TABLET_BEZEL,
+        }}
       >
         <div className="absolute top-1.5 left-1/2 z-30 size-2 -translate-x-1/2 rounded-full bg-neutral-950/80" />
         <div className="ring-1 ring-black/10">{screen}</div>
@@ -112,11 +135,17 @@ export function HeatmapDeviceFrame({
     deviceNode = (
       <div className="flex flex-col items-center">
         <div
-          className="relative rounded-t-xl bg-neutral-800 px-3 pt-3 pb-2 shadow-[0_18px_40px_-18px_rgba(0,0,0,0.45)] ring-1 ring-black/25"
-          style={{ width: lidWidth }}
+          className="relative rounded-t-xl bg-neutral-800 shadow-[0_18px_40px_-18px_rgba(0,0,0,0.45)] ring-1 ring-black/25"
+          style={{
+            width: lidWidth,
+            paddingLeft: LAPTOP_PAD_X,
+            paddingRight: LAPTOP_PAD_X,
+            paddingTop: LAPTOP_PAD_TOP,
+            paddingBottom: LAPTOP_PAD_BOTTOM,
+          }}
         >
           <div className="absolute top-1.5 left-1/2 size-1.5 -translate-x-1/2 rounded-full bg-neutral-950/70" />
-          <div className="ring-1 ring-black/10">{screen}</div>
+          <div className="overflow-hidden ring-1 ring-black/10">{screen}</div>
         </div>
         <div
           className="relative h-3 rounded-b-md bg-neutral-700"

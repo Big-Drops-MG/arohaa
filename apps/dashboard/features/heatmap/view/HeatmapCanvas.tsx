@@ -377,8 +377,8 @@ export function HeatmapCanvas({
         screenHeight={viewportHeight}
       >
         <div
-          className="relative bg-white"
-          style={{ width: frameWidth, height: contentHeight, maxWidth: "100%" }}
+          className="relative block bg-white"
+          style={{ width: frameWidth, height: contentHeight }}
         >
           {hasLivePage ? (
             <iframe
@@ -386,11 +386,10 @@ export function HeatmapCanvas({
               ref={iframeRef}
               src={backgroundUrl ?? undefined}
               title="Landing page preview"
-              className="pointer-events-none absolute top-0 left-0 z-0 border-0"
+              className="pointer-events-none absolute inset-x-0 top-0 z-0 block border-0"
               style={{
                 width: frameWidth,
                 height: pageHeight,
-                maxWidth: "100%",
               }}
               sandbox="allow-scripts allow-same-origin"
               loading="lazy"
