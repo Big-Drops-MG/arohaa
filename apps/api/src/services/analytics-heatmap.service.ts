@@ -11,6 +11,7 @@ import type {
   HeatmapCell,
   HeatmapDevice,
   HeatmapMode,
+  HeatmapPoint,
   HeatmapScrollBucket,
   HeatmapSection,
 } from '../types/analytics-heatmap.js'
@@ -38,12 +39,19 @@ export function emptyAnalyticsHeatmap(
     pageUrl: null,
     pageUrls: [],
     cells: [],
+    points: [],
     scrollBuckets: [],
     sections: [],
     maxValue: 0,
     totalEvents: 0,
   }
 }
+
+const RAW_TIME_FILTER = `
+  workspace_id = {wid:UUID}
+  AND timestamp >= toDateTime64({range_from:String}, 3, 'UTC')
+  AND timestamp <= toDateTime64({range_to:String}, 3, 'UTC') - INTERVAL 1 MILLISECOND
+`
 
 function deviceSql(device: HeatmapDevice): string {
   if (device === 'all') return ''
@@ -238,6 +246,48 @@ async function querySections(
   }))
 }
 
+async function queryPoints(
+  workspaceId: string,
+  pageUrl: string,
+  device: HeatmapDevice,
+  eventType: 'click' | 'mousemove',
+  rangeParams: { range_from: string; range_to: string },
+): Promise<HeatmapPoint[]> {
+  const ch = getClickHouseClient()
+  const res = await ch.query({
+    format: 'JSON',
+    query_params: {
+      wid: workspaceId,
+      page_url: pageUrl,
+      device,
+      etype: eventType,
+      ...rangeParams,
+    },
+    query: `
+      SELECT
+        round(x, 4) AS x,
+        round(y, 4) AS y,
+        count() AS value
+      FROM heatmap_events
+      WHERE ${RAW_TIME_FILTER}
+        AND event_type = {etype:String}${pageUrlSql(pageUrl)}${deviceSql(device)}
+      GROUP BY x, y
+      ORDER BY value DESC
+      LIMIT 8000
+    `,
+  })
+  const json = (await res.json()) as CHJson<{
+    x: string | number
+    y: string | number
+    value: string | number
+  }>
+  return json.data.map((row) => ({
+    x: n(row.x),
+    y: n(row.y),
+    value: n(row.value),
+  }))
+}
+
 export async function getAnalyticsHeatmap({
   workspaceId,
   mode,
@@ -269,11 +319,19 @@ export async function getAnalyticsHeatmap({
   }
 
   let cells: HeatmapCell[] = []
+  let points: HeatmapPoint[] = []
   let scrollBuckets: HeatmapScrollBucket[] = []
   let sections: HeatmapSection[] = []
 
   if (mode === 'click') {
     cells = await queryClickCells(workspaceId, pageUrl, device, rangeParams)
+    points = await queryPoints(
+      workspaceId,
+      pageUrl,
+      device,
+      'click',
+      rangeParams,
+    )
   } else if (mode === 'scroll') {
     scrollBuckets = await queryScrollBuckets(
       workspaceId,
@@ -283,13 +341,22 @@ export async function getAnalyticsHeatmap({
     )
   } else {
     cells = await queryMoveCells(workspaceId, pageUrl, device, rangeParams)
+    points = await queryPoints(
+      workspaceId,
+      pageUrl,
+      device,
+      'mousemove',
+      rangeParams,
+    )
     sections = await querySections(workspaceId, pageUrl, device, rangeParams)
   }
 
   const values =
     mode === 'scroll'
       ? scrollBuckets.map((b) => b.value)
-      : cells.map((c) => c.value)
+      : points.length > 0
+        ? points.map((p) => p.value)
+        : cells.map((c) => c.value)
   const maxValue = values.reduce((m, v) => (v > m ? v : m), 0)
   const totalEvents = values.reduce((s, v) => s + v, 0)
 
@@ -300,6 +367,7 @@ export async function getAnalyticsHeatmap({
     pageUrl,
     pageUrls: urls,
     cells,
+    points,
     scrollBuckets,
     sections,
     maxValue,

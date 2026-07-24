@@ -147,6 +147,7 @@ export function HeatmapDashboard({
   const hasData =
     dashboardData.totalEvents > 0 ||
     dashboardData.cells.length > 0 ||
+    dashboardData.points.length > 0 ||
     dashboardData.scrollBuckets.length > 0
 
   return (
@@ -263,6 +264,7 @@ export function HeatmapDashboard({
             mode={dashboardData.mode}
             device={device}
             cells={dashboardData.cells}
+            points={dashboardData.points}
             scrollBuckets={dashboardData.scrollBuckets}
             maxValue={dashboardData.maxValue}
             opacity={opacity}

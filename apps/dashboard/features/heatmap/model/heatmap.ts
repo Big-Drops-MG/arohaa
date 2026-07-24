@@ -12,6 +12,12 @@ export type HeatmapCell = {
   value: number
 }
 
+export type HeatmapPoint = {
+  x: number
+  y: number
+  value: number
+}
+
 export type HeatmapScrollBucket = {
   bucket: number
   value: number
@@ -31,6 +37,7 @@ export type HeatmapDashboardData = {
   pageUrl: string | null
   pageUrls: string[]
   cells: HeatmapCell[]
+  points: HeatmapPoint[]
   scrollBuckets: HeatmapScrollBucket[]
   sections: HeatmapSection[]
   maxValue: number

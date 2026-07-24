@@ -29,6 +29,7 @@ type AnalyticsHeatmapResponse = {
   pageUrl: string | null
   pageUrls: string[]
   cells: HeatmapDashboardData["cells"]
+  points: HeatmapDashboardData["points"]
   scrollBuckets: HeatmapDashboardData["scrollBuckets"]
   sections: HeatmapDashboardData["sections"]
   maxValue: number
@@ -47,6 +48,7 @@ export function buildHeatmapDashboardData(
     pageUrl: data.pageUrl,
     pageUrls: data.pageUrls,
     cells: data.cells,
+    points: data.points ?? [],
     scrollBuckets: data.scrollBuckets,
     sections: data.sections,
     maxValue: data.maxValue,

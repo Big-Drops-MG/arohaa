@@ -6,6 +6,7 @@ import type {
   HeatmapCell,
   HeatmapDevice,
   HeatmapMode,
+  HeatmapPoint,
   HeatmapScrollBucket,
 } from "@/features/heatmap/model/heatmap"
 
@@ -13,6 +14,7 @@ type HeatmapCanvasProps = {
   mode: HeatmapMode
   device: HeatmapDevice
   cells: HeatmapCell[]
+  points: HeatmapPoint[]
   scrollBuckets: HeatmapScrollBucket[]
   maxValue: number
   opacity: number
@@ -126,6 +128,63 @@ function renderIntensityHeatmap(
   ctx.drawImage(off, 0, 0, width, height)
 }
 
+function renderPointsHeatmap(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  points: HeatmapPoint[],
+  maxValue: number,
+  opacity: number
+) {
+  if (points.length === 0) return
+
+  const off = document.createElement("canvas")
+  off.width = width
+  off.height = height
+  const octx = off.getContext("2d")
+  if (!octx) return
+
+  const radius = Math.max(26, width * 0.055)
+  const max = Math.max(1, maxValue)
+
+  for (const p of points) {
+    const cx = p.x * width
+    const cy = p.y * height
+    const weight = Math.max(0, Math.min(1, p.value / max))
+    const cx0 = Math.max(0, Math.min(width, cx))
+    const cy0 = Math.max(0, Math.min(height, cy))
+
+    octx.globalAlpha = Math.max(0.16, Math.min(0.8, 0.2 + weight * 0.55))
+    const grad = octx.createRadialGradient(cx0, cy0, 0, cx0, cy0, radius)
+    grad.addColorStop(0, "rgba(0,0,0,1)")
+    grad.addColorStop(1, "rgba(0,0,0,0)")
+    octx.fillStyle = grad
+    octx.beginPath()
+    octx.arc(cx0, cy0, radius, 0, Math.PI * 2)
+    octx.fill()
+  }
+  octx.globalAlpha = 1
+
+  const img = octx.getImageData(0, 0, width, height)
+  const data = img.data
+  for (let i = 0; i < data.length; i += 4) {
+    const density = data[i + 3]! / 255
+    if (density < 0.1) {
+      data[i + 3] = 0
+      continue
+    }
+    const t = Math.min(1, Math.pow(density, 0.7))
+    const [r, g, b] = PALETTE[Math.round(t * 255)]!
+    data[i] = r
+    data[i + 1] = g
+    data[i + 2] = b
+    data[i + 3] = Math.round(255 * opacity * Math.min(1, 0.25 + density))
+  }
+  octx.putImageData(img, 0, 0)
+
+  ctx.drawImage(off, 0, 0, width, height)
+}
+
 function drawScrollOverlay(
   ctx: CanvasRenderingContext2D,
   width: number,
@@ -154,6 +213,7 @@ export function HeatmapCanvas({
   mode,
   device,
   cells,
+  points,
   scrollBuckets,
   maxValue,
   opacity,
@@ -237,6 +297,15 @@ export function HeatmapCanvas({
     const paintOverlay = () => {
       if (mode === "scroll") {
         drawScrollOverlay(ctx, frameWidth, pageHeight, scrollBuckets, opacity)
+      } else if (points.length > 0) {
+        renderPointsHeatmap(
+          ctx,
+          frameWidth,
+          pageHeight,
+          points,
+          maxValue,
+          opacity
+        )
       } else {
         renderIntensityHeatmap(
           ctx,
@@ -270,6 +339,7 @@ export function HeatmapCanvas({
     mode,
     opacity,
     pageHeight,
+    points,
     scrollBuckets,
   ])
 

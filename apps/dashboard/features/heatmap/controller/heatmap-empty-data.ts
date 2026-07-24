@@ -22,6 +22,7 @@ export function getHeatmapEmptyDashboardData(
     pageUrl: null,
     pageUrls: [],
     cells: [],
+    points: [],
     scrollBuckets: [],
     sections: [],
     maxValue: 0,
