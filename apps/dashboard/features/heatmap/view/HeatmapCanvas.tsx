@@ -245,7 +245,7 @@ export function HeatmapCanvas({
       )}
     >
       <div
-        className="relative mx-auto overflow-hidden rounded-md border border-neutral-300 bg-white shadow-sm"
+        className="relative mx-auto rounded-md border border-neutral-300 bg-white shadow-sm"
         style={{ width: frameWidth, height: frameHeight, maxWidth: "100%" }}
       >
         {hasLivePage ? (
@@ -253,8 +253,7 @@ export function HeatmapCanvas({
             key={backgroundUrl}
             src={backgroundUrl ?? undefined}
             title="Landing page preview"
-            className="absolute inset-0 h-full w-full border-0"
-            style={{ pointerEvents: "none" }}
+            className="absolute inset-0 z-0 h-full w-full border-0"
             sandbox="allow-scripts allow-same-origin"
             loading="lazy"
             referrerPolicy="no-referrer"
@@ -264,13 +263,13 @@ export function HeatmapCanvas({
         ) : null}
 
         {hasLivePage && !pageLoaded && !pageFailed ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-neutral-50 text-xs text-neutral-400">
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-neutral-50 text-xs text-neutral-400">
             Loading page preview…
           </div>
         ) : null}
 
         {hasLivePage && pageFailed ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-neutral-50 px-6 text-center text-xs text-neutral-400">
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-neutral-50 px-6 text-center text-xs text-neutral-400">
             Could not embed this page. Showing overlay only.
           </div>
         ) : null}
@@ -278,8 +277,7 @@ export function HeatmapCanvas({
         <canvas
           ref={canvasRef}
           aria-label={`${mode} heatmap overlay`}
-          className="absolute inset-0"
-          style={{ pointerEvents: "none" }}
+          className="pointer-events-none absolute inset-0 z-20"
         />
       </div>
     </div>

@@ -162,8 +162,9 @@ export function HeatmapDashboard({
       />
 
       <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-        Live page preview behind the overlay. Click positions are
-        viewport-relative, so they align best with the top of the page.
+        Scroll the page preview with your mouse wheel or the scrollbar. Heatmap
+        positions are viewport-relative, so they align best at the top of the
+        page.
       </div>
 
       <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-3 sm:flex-row sm:flex-wrap sm:items-end">
