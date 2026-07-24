@@ -28,27 +28,38 @@ const DEVICE_WIDTH: Record<HeatmapDevice, number> = {
   mobile: 390,
 }
 
-function intensityColor(t: number, alpha: number): string {
-  const clamped = Math.max(0, Math.min(1, t))
-  // blue -> cyan -> yellow -> red
-  const stops = [
-    { t: 0, r: 59, g: 130, b: 246 },
-    { t: 0.35, r: 34, g: 211, b: 238 },
-    { t: 0.65, r: 250, g: 204, b: 21 },
-    { t: 1, r: 239, g: 68, b: 68 },
-  ]
-  let i = 0
-  while (i < stops.length - 2 && clamped > stops[i + 1]!.t) i += 1
-  const a = stops[i]!
-  const b = stops[i + 1]!
-  const local = (clamped - a.t) / Math.max(0.0001, b.t - a.t)
-  const r = Math.round(a.r + (b.r - a.r) * local)
-  const g = Math.round(a.g + (b.g - a.g) * local)
-  const bl = Math.round(a.b + (b.b - a.b) * local)
-  return `rgba(${r},${g},${bl},${alpha})`
+const COLOR_STOPS = [
+  { t: 0, r: 59, g: 130, b: 246 },
+  { t: 0.35, r: 34, g: 211, b: 238 },
+  { t: 0.65, r: 250, g: 204, b: 21 },
+  { t: 1, r: 239, g: 68, b: 68 },
+] as const
+
+const PALETTE: ReadonlyArray<readonly [number, number, number]> = (() => {
+  const out: [number, number, number][] = []
+  for (let i = 0; i < 256; i += 1) {
+    const t = i / 255
+    let s = 0
+    while (s < COLOR_STOPS.length - 2 && t > COLOR_STOPS[s + 1]!.t) s += 1
+    const a = COLOR_STOPS[s]!
+    const b = COLOR_STOPS[s + 1]!
+    const local = (t - a.t) / Math.max(0.0001, b.t - a.t)
+    out.push([
+      Math.round(a.r + (b.r - a.r) * local),
+      Math.round(a.g + (b.g - a.g) * local),
+      Math.round(a.b + (b.b - a.b) * local),
+    ])
+  }
+  return out
+})()
+
+function rgba(t: number, alpha: number): string {
+  const idx = Math.max(0, Math.min(255, Math.round(t * 255)))
+  const [r, g, b] = PALETTE[idx]!
+  return `rgba(${r},${g},${b},${alpha})`
 }
 
-function drawGridOverlay(
+function renderIntensityHeatmap(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
@@ -58,27 +69,53 @@ function drawGridOverlay(
 ) {
   if (maxValue <= 0 || cells.length === 0) return
 
+  const off = document.createElement("canvas")
+  off.width = width
+  off.height = height
+  const octx = off.getContext("2d")
+  if (!octx) return
+
   const cellW = width / 10
   const cellH = height / 10
+  const radius = Math.max(width, height) * 0.11
 
   for (const cell of cells) {
     const col = Math.max(0, Math.min(9, Math.floor(cell.gridX / 10)))
     const row = Math.max(0, Math.min(9, Math.floor(cell.gridY / 10)))
-    const t = cell.value / maxValue
+    const weight = cell.value / maxValue
+    if (weight <= 0) continue
     const cx = (col + 0.5) * cellW
     const cy = (row + 0.5) * cellH
-    const radius = Math.max(cellW, cellH) * (0.55 + t * 0.45)
 
-    const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius)
-    gradient.addColorStop(0, intensityColor(t, opacity * (0.55 + t * 0.45)))
-    gradient.addColorStop(0.55, intensityColor(t, opacity * 0.22))
-    gradient.addColorStop(1, intensityColor(t, 0))
-
-    ctx.fillStyle = gradient
-    ctx.beginPath()
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2)
-    ctx.fill()
+    octx.globalAlpha = Math.max(0.08, weight)
+    const grad = octx.createRadialGradient(cx, cy, 0, cx, cy, radius)
+    grad.addColorStop(0, "rgba(0,0,0,1)")
+    grad.addColorStop(1, "rgba(0,0,0,0)")
+    octx.fillStyle = grad
+    octx.beginPath()
+    octx.arc(cx, cy, radius, 0, Math.PI * 2)
+    octx.fill()
   }
+  octx.globalAlpha = 1
+
+  const img = octx.getImageData(0, 0, width, height)
+  const data = img.data
+  for (let i = 0; i < data.length; i += 4) {
+    const density = data[i + 3]! / 255
+    if (density < 0.12) {
+      data[i + 3] = 0
+      continue
+    }
+    const t = Math.min(1, Math.pow(density, 0.75))
+    const [r, g, b] = PALETTE[Math.round(t * 255)]!
+    data[i] = r
+    data[i + 1] = g
+    data[i + 2] = b
+    data[i + 3] = Math.round(255 * opacity * Math.min(1, 0.2 + density))
+  }
+  octx.putImageData(img, 0, 0)
+
+  ctx.drawImage(off, 0, 0, width, height)
 }
 
 function drawScrollOverlay(
@@ -86,18 +123,23 @@ function drawScrollOverlay(
   width: number,
   height: number,
   buckets: HeatmapScrollBucket[],
-  maxValue: number,
   opacity: number
 ) {
-  if (maxValue <= 0 || buckets.length === 0) return
+  const total = buckets.reduce((s, b) => s + b.value, 0)
+  if (total <= 0) return
 
-  const bandH = height / 10
-  for (const bucket of buckets) {
-    const row = Math.max(0, Math.min(9, Math.floor(bucket.bucket / 10)))
-    const t = bucket.value / maxValue
-    ctx.fillStyle = intensityColor(t, opacity * (0.25 + t * 0.55))
-    ctx.fillRect(0, row * bandH, width, bandH)
+  const grad = ctx.createLinearGradient(0, 0, 0, height)
+  for (let r = 0; r <= 10; r += 1) {
+    const depth = r * 10
+    const reached = buckets.reduce(
+      (s, b) => (b.bucket >= depth ? s + b.value : s),
+      0
+    )
+    const reach = reached / total
+    grad.addColorStop(r / 10, rgba(reach, opacity * (0.15 + 0.55 * reach)))
   }
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, width, height)
 }
 
 export function HeatmapCanvas({
@@ -141,8 +183,6 @@ export function HeatmapCanvas({
 
     ctx.clearRect(0, 0, frameWidth, frameHeight)
 
-    // Only paint a placeholder surface when there is no live page or snapshot
-    // behind the overlay.
     if (!hasLivePage && !backgroundImage) {
       ctx.fillStyle = "#f4f4f5"
       ctx.fillRect(0, 0, frameWidth, frameHeight)
@@ -160,16 +200,16 @@ export function HeatmapCanvas({
 
     const paintOverlay = () => {
       if (mode === "scroll") {
-        drawScrollOverlay(
+        drawScrollOverlay(ctx, frameWidth, frameHeight, scrollBuckets, opacity)
+      } else {
+        renderIntensityHeatmap(
           ctx,
           frameWidth,
           frameHeight,
-          scrollBuckets,
+          cells,
           maxValue,
           opacity
         )
-      } else {
-        drawGridOverlay(ctx, frameWidth, frameHeight, cells, maxValue, opacity)
       }
     }
 
