@@ -183,7 +183,109 @@ export async function ensureEventsTable(): Promise<void> {
     `,
   })
 
+  await ensureHeatmapSchema(ch)
   await rebuildDailyMetricsIfNeeded(ch)
+}
+
+const HEATMAP_EVENTS_TABLE = 'heatmap_events'
+const HEATMAP_GRID_X =
+  'toInt32(floor(least(greatest(x, 0.), 1.) * 10.)) * 10'
+const HEATMAP_GRID_Y =
+  'toInt32(floor(least(greatest(y, 0.), 1.) * 10.)) * 10'
+const HEATMAP_DEVICE_EXPR =
+  "if(device != '', device, multiIf(viewport_width < 768, 'mobile', viewport_width < 1024, 'tablet', 'desktop'))"
+
+async function ensureHeatmapSchema(ch: ClickHouseClient): Promise<void> {
+  await ch.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS ${HEATMAP_EVENTS_TABLE} (
+          workspace_id UUID,
+          page_url String,
+          event_type LowCardinality(String),
+          timestamp DateTime64(3) DEFAULT now64(3),
+          x Float64 DEFAULT 0,
+          y Float64 DEFAULT 0,
+          viewport_width Int32 DEFAULT 0,
+          viewport_height Int32 DEFAULT 0,
+          device LowCardinality(String) DEFAULT '',
+          element_selector String DEFAULT '',
+          properties String DEFAULT ''
+      ) ENGINE = MergeTree()
+      PARTITION BY toYYYYMM(timestamp)
+      ORDER BY (workspace_id, page_url, event_type, timestamp)
+      TTL toDateTime(timestamp) + toIntervalDay(180)
+    `,
+  })
+  await ch.command({
+    query: `ALTER TABLE ${HEATMAP_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS device LowCardinality(String) DEFAULT ''`,
+  })
+  await ch.command({
+    query: `ALTER TABLE ${HEATMAP_EVENTS_TABLE} MODIFY TTL toDateTime(timestamp) + toIntervalDay(180)`,
+  })
+
+  await ch.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS heatmap_clicks_rollup (
+          workspace_id UUID,
+          page_url String,
+          device LowCardinality(String),
+          day Date,
+          grid_x Int32,
+          grid_y Int32,
+          clicks AggregateFunction(count)
+      ) ENGINE = AggregatingMergeTree()
+      ORDER BY (workspace_id, page_url, device, day, grid_x, grid_y)
+    `,
+  })
+  await ch.command({ query: 'DROP VIEW IF EXISTS heatmap_clicks_mv' })
+  await ch.command({
+    query: `
+      CREATE MATERIALIZED VIEW IF NOT EXISTS heatmap_clicks_mv
+      TO heatmap_clicks_rollup
+      AS SELECT
+          workspace_id,
+          page_url,
+          ${HEATMAP_DEVICE_EXPR} AS device,
+          toDate(timestamp) AS day,
+          ${HEATMAP_GRID_X} AS grid_x,
+          ${HEATMAP_GRID_Y} AS grid_y,
+          countState() AS clicks
+      FROM ${HEATMAP_EVENTS_TABLE}
+      WHERE event_type = 'click'
+      GROUP BY workspace_id, page_url, device, day, grid_x, grid_y
+    `,
+  })
+
+  await ch.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS heatmap_scroll_rollup (
+          workspace_id UUID,
+          page_url String,
+          device LowCardinality(String),
+          day Date,
+          scroll_depth_bucket Int32,
+          events AggregateFunction(count)
+      ) ENGINE = AggregatingMergeTree()
+      ORDER BY (workspace_id, page_url, device, day, scroll_depth_bucket)
+    `,
+  })
+  await ch.command({ query: 'DROP VIEW IF EXISTS heatmap_scroll_mv' })
+  await ch.command({
+    query: `
+      CREATE MATERIALIZED VIEW IF NOT EXISTS heatmap_scroll_mv
+      TO heatmap_scroll_rollup
+      AS SELECT
+          workspace_id,
+          page_url,
+          ${HEATMAP_DEVICE_EXPR} AS device,
+          toDate(timestamp) AS day,
+          ${HEATMAP_GRID_Y} AS scroll_depth_bucket,
+          countState() AS events
+      FROM ${HEATMAP_EVENTS_TABLE}
+      WHERE event_type = 'scroll'
+      GROUP BY workspace_id, page_url, device, day, scroll_depth_bucket
+    `,
+  })
 }
 
 const DAILY_METRICS_TZ_VERSION = 'america_new_york_v1'

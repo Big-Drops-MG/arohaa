@@ -75,7 +75,7 @@ export function validateEvent(event) {
   return true;
 }
 
-const HEATMAP_EVENT_TYPES = ['click', 'mousemove', 'scroll'];
+const HEATMAP_EVENT_TYPES = ['click', 'mousemove', 'scroll', 'section'];
 
 export function validateHeatmapEvent(event) {
   if (!event || typeof event !== 'object') {
@@ -131,18 +131,26 @@ export function validateHeatmapEvent(event) {
     return false;
   }
 
-  if (typeof event.x !== 'number' || typeof event.y !== 'number') {
-    console.warn(
-      `[Validator] Dropping heatmap event: Missing or invalid x, y coordinates for workspace ${workspaceId}`,
-    );
-    return false;
-  }
+  if (eventType === 'click' || eventType === 'mousemove') {
+    if (typeof event.x !== 'number' || typeof event.y !== 'number') {
+      console.warn(
+        `[Validator] Dropping heatmap event: Missing or invalid x, y coordinates for workspace ${workspaceId}`,
+      );
+      return false;
+    }
 
-  if (typeof event.viewport_width !== 'number' || typeof event.viewport_height !== 'number') {
-    console.warn(
-      `[Validator] Dropping heatmap event: Missing or invalid viewport dimensions for workspace ${workspaceId}`,
-    );
-    return false;
+    if (
+      typeof event.viewport_width !== 'number' ||
+      typeof event.viewport_height !== 'number'
+    ) {
+      console.warn(
+        `[Validator] Dropping heatmap event: Missing or invalid viewport dimensions for workspace ${workspaceId}`,
+      );
+      return false;
+    }
+  } else {
+    if (event.x != null && typeof event.x !== 'number') return false;
+    if (event.y != null && typeof event.y !== 'number') return false;
   }
 
   return true;
