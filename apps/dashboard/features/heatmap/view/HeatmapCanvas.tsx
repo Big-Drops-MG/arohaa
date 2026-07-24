@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { cn } from "@workspace/ui/lib/utils"
 import type {
   HeatmapCell,
@@ -17,6 +17,7 @@ type HeatmapCanvasProps = {
   maxValue: number
   opacity: number
   backgroundImage?: string | null
+  backgroundUrl?: string | null
   className?: string
 }
 
@@ -107,6 +108,7 @@ export function HeatmapCanvas({
   maxValue,
   opacity,
   backgroundImage,
+  backgroundUrl,
   className,
 }: HeatmapCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -114,6 +116,15 @@ export function HeatmapCanvas({
   const frameHeight = Math.round(
     frameWidth * (device === "mobile" ? 1.9 : 0.72)
   )
+  const [pageLoaded, setPageLoaded] = useState(false)
+  const [pageFailed, setPageFailed] = useState(false)
+
+  const hasLivePage = Boolean(backgroundUrl && !backgroundImage)
+
+  useEffect(() => {
+    setPageLoaded(false)
+    setPageFailed(false)
+  }, [backgroundUrl])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -130,18 +141,35 @@ export function HeatmapCanvas({
 
     ctx.clearRect(0, 0, frameWidth, frameHeight)
 
-    // Placeholder page frame
-    ctx.fillStyle = "#f4f4f5"
-    ctx.fillRect(0, 0, frameWidth, frameHeight)
+    // Only paint a placeholder surface when there is no live page or snapshot
+    // behind the overlay.
+    if (!hasLivePage && !backgroundImage) {
+      ctx.fillStyle = "#f4f4f5"
+      ctx.fillRect(0, 0, frameWidth, frameHeight)
 
-    // Checker pattern so empty states still read as a page surface
-    const step = 24
-    ctx.fillStyle = "#e4e4e7"
-    for (let y = 0; y < frameHeight; y += step) {
-      for (let x = 0; x < frameWidth; x += step) {
-        if ((x / step + y / step) % 2 === 0) {
-          ctx.fillRect(x, y, step, step)
+      const step = 24
+      ctx.fillStyle = "#e4e4e7"
+      for (let y = 0; y < frameHeight; y += step) {
+        for (let x = 0; x < frameWidth; x += step) {
+          if ((x / step + y / step) % 2 === 0) {
+            ctx.fillRect(x, y, step, step)
+          }
         }
+      }
+    }
+
+    const paintOverlay = () => {
+      if (mode === "scroll") {
+        drawScrollOverlay(
+          ctx,
+          frameWidth,
+          frameHeight,
+          scrollBuckets,
+          maxValue,
+          opacity
+        )
+      } else {
+        drawGridOverlay(ctx, frameWidth, frameHeight, cells, maxValue, opacity)
       }
     }
 
@@ -149,48 +177,20 @@ export function HeatmapCanvas({
       const img = new Image()
       img.onload = () => {
         ctx.drawImage(img, 0, 0, frameWidth, frameHeight)
-        if (mode === "scroll") {
-          drawScrollOverlay(
-            ctx,
-            frameWidth,
-            frameHeight,
-            scrollBuckets,
-            maxValue,
-            opacity
-          )
-        } else {
-          drawGridOverlay(
-            ctx,
-            frameWidth,
-            frameHeight,
-            cells,
-            maxValue,
-            opacity
-          )
-        }
+        paintOverlay()
       }
       img.src = backgroundImage
       return
     }
 
-    if (mode === "scroll") {
-      drawScrollOverlay(
-        ctx,
-        frameWidth,
-        frameHeight,
-        scrollBuckets,
-        maxValue,
-        opacity
-      )
-    } else {
-      drawGridOverlay(ctx, frameWidth, frameHeight, cells, maxValue, opacity)
-    }
+    paintOverlay()
   }, [
     backgroundImage,
     cells,
     device,
     frameHeight,
     frameWidth,
+    hasLivePage,
     maxValue,
     mode,
     opacity,
@@ -205,10 +205,42 @@ export function HeatmapCanvas({
       )}
     >
       <div
-        className="mx-auto overflow-hidden rounded-md border border-neutral-300 bg-white shadow-sm"
-        style={{ width: frameWidth, maxWidth: "100%" }}
+        className="relative mx-auto overflow-hidden rounded-md border border-neutral-300 bg-white shadow-sm"
+        style={{ width: frameWidth, height: frameHeight, maxWidth: "100%" }}
       >
-        <canvas ref={canvasRef} aria-label={`${mode} heatmap overlay`} />
+        {hasLivePage ? (
+          <iframe
+            key={backgroundUrl}
+            src={backgroundUrl ?? undefined}
+            title="Landing page preview"
+            className="absolute inset-0 h-full w-full border-0"
+            style={{ pointerEvents: "none" }}
+            sandbox="allow-scripts allow-same-origin"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onLoad={() => setPageLoaded(true)}
+            onError={() => setPageFailed(true)}
+          />
+        ) : null}
+
+        {hasLivePage && !pageLoaded && !pageFailed ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-neutral-50 text-xs text-neutral-400">
+            Loading page preview…
+          </div>
+        ) : null}
+
+        {hasLivePage && pageFailed ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-neutral-50 px-6 text-center text-xs text-neutral-400">
+            Could not embed this page. Showing overlay only.
+          </div>
+        ) : null}
+
+        <canvas
+          ref={canvasRef}
+          aria-label={`${mode} heatmap overlay`}
+          className="absolute inset-0"
+          style={{ pointerEvents: "none" }}
+        />
       </div>
     </div>
   )
