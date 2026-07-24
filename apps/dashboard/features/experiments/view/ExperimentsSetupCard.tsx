@@ -12,14 +12,28 @@ import {
 } from "@workspace/ui/components/card"
 import { Input } from "@workspace/ui/components/input"
 import { Label } from "@workspace/ui/components/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/ui/components/select"
 import { cn } from "@workspace/ui/lib/utils"
 import { newVariantPath } from "@/features/dashboard/model/new-landing-mode"
 import { experimentVariantDisplayLabel } from "@/features/experiments/utils/experiment-table-columns"
+import {
+  overviewSelectContentClassName,
+  overviewSelectItemClassName,
+  overviewSelectTriggerClassName,
+} from "@/features/overview/view/overview-select-styles"
 import type {
   ExperimentConfigView,
   SiblingLandingPageOption,
 } from "@/lib/server/experiments-store"
 import type { ExperimentVariantLink } from "@workspace/database"
+
+const CONTROL_NONE = "__none__"
 
 type ExperimentsSetupCardProps = {
   projectId: string
@@ -327,17 +341,32 @@ export function ExperimentsSetupCard({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="exp-status">Status</Label>
-                <select
-                  id="exp-status"
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                >
-                  <option value="Draft">Draft</option>
-                  <option value="Running">Running</option>
-                  <option value="Paused">Paused</option>
-                  <option value="Completed">Completed</option>
-                </select>
+                <Select value={status} onValueChange={setStatus}>
+                  <SelectTrigger
+                    id="exp-status"
+                    aria-label="Experiment status"
+                    className={cn(overviewSelectTriggerClassName, "w-full")}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent
+                    position="popper"
+                    align="start"
+                    className={overviewSelectContentClassName}
+                  >
+                    {(["Draft", "Running", "Paused", "Completed"] as const).map(
+                      (option) => (
+                        <SelectItem
+                          key={option}
+                          value={option}
+                          className={overviewSelectItemClassName}
+                        >
+                          {option}
+                        </SelectItem>
+                      )
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="exp-start">Start date</Label>
@@ -371,19 +400,41 @@ export function ExperimentsSetupCard({
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="exp-control">Control variant</Label>
-                <select
-                  id="exp-control"
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                  value={controlLandingPageId}
-                  onChange={(e) => setControlLandingPageId(e.target.value)}
+                <Select
+                  value={controlLandingPageId || CONTROL_NONE}
+                  onValueChange={(value) =>
+                    setControlLandingPageId(value === CONTROL_NONE ? "" : value)
+                  }
                 >
-                  <option value="">None</option>
-                  {config.variants.map((v) => (
-                    <option key={v.landingPageId} value={v.landingPageId}>
-                      {experimentVariantDisplayLabel(v.label)} ({v.hostname})
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger
+                    id="exp-control"
+                    aria-label="Control variant"
+                    className={cn(overviewSelectTriggerClassName, "w-full")}
+                  >
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent
+                    position="popper"
+                    align="start"
+                    className={overviewSelectContentClassName}
+                  >
+                    <SelectItem
+                      value={CONTROL_NONE}
+                      className={overviewSelectItemClassName}
+                    >
+                      None
+                    </SelectItem>
+                    {config.variants.map((v) => (
+                      <SelectItem
+                        key={v.landingPageId}
+                        value={v.landingPageId}
+                        className={overviewSelectItemClassName}
+                      >
+                        {experimentVariantDisplayLabel(v.label)} ({v.hostname})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -471,37 +522,64 @@ export function ExperimentsSetupCard({
             <div className="grid gap-3 sm:grid-cols-[1fr_10rem_auto] sm:items-end">
               <div className="space-y-1.5">
                 <Label htmlFor="add-lp">Landing page</Label>
-                <select
-                  id="add-lp"
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                  value={landingPageId}
-                  onChange={(e) => setLandingPageId(e.target.value)}
+                <Select
+                  value={landingPageId || undefined}
+                  onValueChange={setLandingPageId}
                 >
-                  <option value="">Select project…</option>
-                  {availableSiblings.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.brandName} ({s.hostname})
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger
+                    id="add-lp"
+                    aria-label="Landing page to add as variant"
+                    className={cn(overviewSelectTriggerClassName, "w-full")}
+                  >
+                    <SelectValue placeholder="Select project…" />
+                  </SelectTrigger>
+                  <SelectContent
+                    position="popper"
+                    align="start"
+                    className={overviewSelectContentClassName}
+                  >
+                    {availableSiblings.map((s) => (
+                      <SelectItem
+                        key={s.id}
+                        value={s.id}
+                        className={overviewSelectItemClassName}
+                      >
+                        {s.brandName} ({s.hostname})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="add-label">Variant</Label>
-                <select
-                  id="add-label"
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                  value={label}
-                  onChange={(e) => setLabel(e.target.value)}
+                <Select
+                  value={label || undefined}
+                  onValueChange={setLabel}
+                  disabled={labelOptions.length === 0}
                 >
-                  {labelOptions.length === 0 ? (
-                    <option value="">—</option>
-                  ) : null}
-                  {labelOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {experimentVariantDisplayLabel(option)}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger
+                    id="add-label"
+                    aria-label="Variant label"
+                    className={cn(overviewSelectTriggerClassName, "w-full")}
+                  >
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent
+                    position="popper"
+                    align="start"
+                    className={overviewSelectContentClassName}
+                  >
+                    {labelOptions.map((option) => (
+                      <SelectItem
+                        key={option}
+                        value={option}
+                        className={overviewSelectItemClassName}
+                      >
+                        {experimentVariantDisplayLabel(option)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <Button
                 type="button"

@@ -6,7 +6,20 @@ import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import { Label } from "@workspace/ui/components/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/ui/components/select"
+import { cn } from "@workspace/ui/lib/utils"
 import { experimentVariantDisplayLabel } from "@/features/experiments/utils/experiment-table-columns"
+import {
+  overviewSelectContentClassName,
+  overviewSelectItemClassName,
+  overviewSelectTriggerClassName,
+} from "@/features/overview/view/overview-select-styles"
 import type { LandingPageRecord } from "@/features/settings/model/landing-page-settings"
 import { SettingsSectionCard } from "@/features/settings/view/SettingsSectionCard"
 import { formatLandingFormType } from "@/features/settings/utils/settings-format"
@@ -337,22 +350,37 @@ export function SettingsExperimentSection({
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                   <div className="w-full space-y-1.5 sm:max-w-48">
                     <Label htmlFor="variant-relabel">Variant label</Label>
-                    <select
-                      id="variant-relabel"
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                    <Select
                       value={membership.label}
                       disabled={isSaving}
-                      onChange={(e) => void handleRelabel(e.target.value)}
+                      onValueChange={(value) => void handleRelabel(value)}
                     >
-                      {[
-                        membership.label,
-                        ...(labelPlan?.availableLabels ?? []),
-                      ].map((option) => (
-                        <option key={option} value={option}>
-                          {experimentVariantDisplayLabel(option)}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger
+                        id="variant-relabel"
+                        aria-label="Variant label"
+                        className={cn(overviewSelectTriggerClassName, "w-full")}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent
+                        position="popper"
+                        align="start"
+                        className={overviewSelectContentClassName}
+                      >
+                        {[
+                          membership.label,
+                          ...(labelPlan?.availableLabels ?? []),
+                        ].map((option) => (
+                          <SelectItem
+                            key={option}
+                            value={option}
+                            className={overviewSelectItemClassName}
+                          >
+                            {experimentVariantDisplayLabel(option)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <Button asChild variant="outline">
                     <Link
@@ -424,40 +452,65 @@ export function SettingsExperimentSection({
               <div className="grid gap-3 sm:grid-cols-[1fr_10rem]">
                 <div className="space-y-1.5">
                   <Label htmlFor="join-parent">Compare against</Label>
-                  <select
-                    id="join-parent"
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                    value={parentPublicId}
+                  <Select
+                    value={parentPublicId || undefined}
                     disabled={isSaving}
-                    onChange={(e) => setParentPublicId(e.target.value)}
+                    onValueChange={setParentPublicId}
                   >
-                    <option value="">Select a project…</option>
-                    {candidates.map((candidate) => (
-                      <option
-                        key={candidate.publicId}
-                        value={candidate.publicId}
-                      >
-                        {candidate.brandName} ({candidate.hostname})
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger
+                      id="join-parent"
+                      aria-label="Compare against project"
+                      className={cn(overviewSelectTriggerClassName, "w-full")}
+                    >
+                      <SelectValue placeholder="Select a project…" />
+                    </SelectTrigger>
+                    <SelectContent
+                      position="popper"
+                      align="start"
+                      className={overviewSelectContentClassName}
+                    >
+                      {candidates.map((candidate) => (
+                        <SelectItem
+                          key={candidate.publicId}
+                          value={candidate.publicId}
+                          className={overviewSelectItemClassName}
+                        >
+                          {candidate.brandName} ({candidate.hostname})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="join-label">This project becomes</Label>
-                  <select
-                    id="join-label"
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                    value={label}
+                  <Select
+                    value={label || undefined}
                     disabled={!labelPlan || isSaving}
-                    onChange={(e) => setLabel(e.target.value)}
+                    onValueChange={setLabel}
                   >
-                    {labelPlan ? null : <option value="">—</option>}
-                    {joinLabelOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {experimentVariantDisplayLabel(option)}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger
+                      id="join-label"
+                      aria-label="Variant label for this project"
+                      className={cn(overviewSelectTriggerClassName, "w-full")}
+                    >
+                      <SelectValue placeholder="—" />
+                    </SelectTrigger>
+                    <SelectContent
+                      position="popper"
+                      align="start"
+                      className={overviewSelectContentClassName}
+                    >
+                      {joinLabelOptions.map((option) => (
+                        <SelectItem
+                          key={option}
+                          value={option}
+                          className={overviewSelectItemClassName}
+                        >
+                          {experimentVariantDisplayLabel(option)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 

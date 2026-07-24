@@ -5,9 +5,21 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import { Label } from "@workspace/ui/components/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/ui/components/select"
 import { cn } from "@workspace/ui/lib/utils"
 import { CheckCircle2, XCircle, Loader2, Copy, Check } from "lucide-react"
 import type { OverviewLandingFormType } from "@/features/overview/model/overview"
+import {
+  overviewSelectContentClassName,
+  overviewSelectItemClassName,
+  overviewSelectTriggerClassName,
+} from "@/features/overview/view/overview-select-styles"
 import type { NewLandingMode } from "@/features/dashboard/model/new-landing-mode"
 
 type Step = 1 | 2 | 3
@@ -338,41 +350,77 @@ export function NewLandingPage({
             <div className="grid gap-4 sm:grid-cols-[1fr_10rem]">
               <div className="space-y-1.5">
                 <Label htmlFor="variant-parent">Project on Arohaa</Label>
-                <select
-                  id="variant-parent"
-                  className="flex h-12 w-full rounded-lg border border-input bg-transparent px-4 text-base disabled:opacity-60"
-                  value={parentPublicId}
+                <Select
+                  value={parentPublicId || undefined}
                   disabled={isLoadingParents || currentStep > 1}
-                  onChange={(e) => setParentPublicId(e.target.value)}
+                  onValueChange={setParentPublicId}
                 >
-                  <option value="">
-                    {isLoadingParents
-                      ? "Loading projects…"
-                      : "Select a project…"}
-                  </option>
-                  {parentOptions.map((option) => (
-                    <option key={option.publicId} value={option.publicId}>
-                      {option.brandName} ({option.hostname})
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger
+                    id="variant-parent"
+                    aria-label="Project on Arohaa"
+                    className={cn(
+                      overviewSelectTriggerClassName,
+                      "h-12 w-full text-base"
+                    )}
+                  >
+                    <SelectValue
+                      placeholder={
+                        isLoadingParents
+                          ? "Loading projects…"
+                          : "Select a project…"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent
+                    position="popper"
+                    align="start"
+                    className={overviewSelectContentClassName}
+                  >
+                    {parentOptions.map((option) => (
+                      <SelectItem
+                        key={option.publicId}
+                        value={option.publicId}
+                        className={overviewSelectItemClassName}
+                      >
+                        {option.brandName} ({option.hostname})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="variant-label">Variant</Label>
-                <select
-                  id="variant-label"
-                  className="flex h-12 w-full rounded-lg border border-input bg-transparent px-4 text-base disabled:opacity-60"
-                  value={variantLabel}
+                <Select
+                  value={variantLabel || undefined}
                   disabled={!labelPlan || currentStep > 1}
-                  onChange={(e) => setVariantLabel(e.target.value)}
+                  onValueChange={setVariantLabel}
                 >
-                  {labelPlan ? null : <option value="">—</option>}
-                  {labelPlan?.availableLabels.map((label) => (
-                    <option key={label} value={label}>
-                      Variant {label}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger
+                    id="variant-label"
+                    aria-label="Variant label"
+                    className={cn(
+                      overviewSelectTriggerClassName,
+                      "h-12 w-full text-base"
+                    )}
+                  >
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent
+                    position="popper"
+                    align="start"
+                    className={overviewSelectContentClassName}
+                  >
+                    {labelPlan?.availableLabels.map((labelOption) => (
+                      <SelectItem
+                        key={labelOption}
+                        value={labelOption}
+                        className={overviewSelectItemClassName}
+                      >
+                        Variant {labelOption}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           ) : null}
