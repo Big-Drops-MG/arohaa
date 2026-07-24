@@ -161,6 +161,11 @@ const nextAuth = NextAuth({
         })
         token.sub = dbUser?.id || user.id
         token.isTwoFactorEnabled = dbUser?.isTwoFactorEnabled || false
+        if (dbUser?.id) {
+          const { touchUserLastSeen } =
+            await import("@/lib/server/user-last-seen")
+          void touchUserLastSeen(dbUser.id)
+        }
       }
       return token
     },

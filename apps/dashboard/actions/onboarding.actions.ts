@@ -8,17 +8,20 @@ import {
   whereUserEmail,
 } from "@workspace/database"
 import {
-  ROLE_OPTIONS,
-  type RoleOption,
+  isValidRoleName,
+  normalizeRoleName,
 } from "@/features/auth/model/role-options"
-
-function isValidRole(role: string): role is RoleOption {
-  return ROLE_OPTIONS.includes(role as RoleOption)
-}
+import {
+  countApprovedUsers,
+  notifyApprovedUsersOfAccessRequest,
+  setUserAccessStatus,
+} from "@/lib/server/access-requests"
+import { ensureRoleExists } from "@/lib/server/roles"
 
 export async function completeOnboarding(formData: FormData): Promise<{
   error?: string
   success?: true
+  redirectTo?: string
 }> {
   const session = await auth()
   if (!session?.user?.email) return { error: "Not authenticated." }
@@ -29,20 +32,64 @@ export async function completeOnboarding(formData: FormData): Promise<{
 
   const firstName = typeof firstNameRaw === "string" ? firstNameRaw.trim() : ""
   const lastName = typeof lastNameRaw === "string" ? lastNameRaw.trim() : ""
-  const role = typeof roleRaw === "string" ? roleRaw.trim() : ""
+  const roleInput = typeof roleRaw === "string" ? roleRaw : ""
+  const role = normalizeRoleName(roleInput)
 
   if (!firstName || !lastName || !role) {
     return { error: "First name, last name, and role are required." }
   }
 
-  if (!isValidRole(role)) {
-    return { error: "Please select a valid role." }
+  if (!isValidRoleName(role)) {
+    return { error: "Role must be between 2 and 80 characters." }
+  }
+
+  const email = normalizeUserEmail(session.user.email)
+  const existing = await db.query.users.findFirst({
+    where: whereUserEmail(email),
+  })
+  if (!existing) return { error: "User not found." }
+
+  let savedRole: string
+  try {
+    savedRole = await ensureRoleExists(role)
+  } catch {
+    return { error: "Could not save role. Please try again." }
   }
 
   await db
     .update(users)
-    .set({ firstName, lastName, role })
-    .where(whereUserEmail(normalizeUserEmail(session.user.email)))
+    .set({ firstName, lastName, role: savedRole })
+    .where(whereUserEmail(email))
 
-  return { success: true }
+  const approvedCount = await countApprovedUsers()
+  const isBootstrap = approvedCount === 0
+  const alreadyApproved = existing.accessStatus === "approved"
+
+  if (isBootstrap || alreadyApproved) {
+    if (!alreadyApproved) {
+      await setUserAccessStatus({
+        userId: existing.id,
+        status: "approved",
+        reviewedByUserId: existing.id,
+      })
+    }
+    return { success: true, redirectTo: "/dashboard" }
+  }
+
+  if (existing.accessStatus !== "pending") {
+    await setUserAccessStatus({
+      userId: existing.id,
+      status: "pending",
+      reviewedByUserId: null,
+    })
+  }
+
+  const requesterName = `${firstName} ${lastName}`.trim()
+  void notifyApprovedUsersOfAccessRequest({
+    requesterUserId: existing.id,
+    requesterName,
+    requesterEmail: existing.email ?? email,
+  })
+
+  return { success: true, redirectTo: "/pending-access" }
 }

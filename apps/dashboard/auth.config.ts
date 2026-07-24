@@ -29,6 +29,7 @@ export const authConfig = {
       const isOnDashboard = path.startsWith("/dashboard")
       const isAuthenticate = path.startsWith("/authenticate")
       const isOnboarding = path.startsWith("/onboarding")
+      const isPendingAccess = path.startsWith("/pending-access")
       const isApi = path.startsWith("/api")
 
       if (isOnDashboard) {
@@ -55,7 +56,7 @@ export const authConfig = {
         return true
       }
 
-      if (isLoggedIn && !isAuthenticate && !isOnboarding) {
+      if (isLoggedIn && !isAuthenticate && !isOnboarding && !isPendingAccess) {
         return Response.redirect(new URL("/dashboard", nextUrl))
       }
 

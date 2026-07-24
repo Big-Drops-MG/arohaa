@@ -1,5 +1,5 @@
 import Image from "next/image"
-import { CircleUserRound, LogOut, Server, User } from "lucide-react"
+import { CircleUserRound, LogOut, Server, User, Users } from "lucide-react"
 import Link from "next/link"
 import { logout } from "@/actions/auth.actions"
 import type { LandingPageNavItem } from "@/features/dashboard/model/landing-page"
@@ -91,6 +91,17 @@ export function Navbar({
                   <Link href="/dashboard/ops">
                     <Server className="size-4" aria-hidden />
                     Ops
+                  </Link>
+                </Button>
+                <Button
+                  asChild
+                  variant="ghost"
+                  size="sm"
+                  className="justify-start px-2.5"
+                >
+                  <Link href="/dashboard/team">
+                    <Users className="size-4" aria-hidden />
+                    Team
                   </Link>
                 </Button>
                 <Button
