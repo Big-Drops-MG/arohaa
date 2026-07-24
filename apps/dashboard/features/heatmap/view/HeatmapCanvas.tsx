@@ -9,6 +9,7 @@ import type {
   HeatmapPoint,
   HeatmapScrollBucket,
 } from "@/features/heatmap/model/heatmap"
+import { HeatmapDeviceFrame } from "@/features/heatmap/view/HeatmapDeviceFrame"
 
 type HeatmapCanvasProps = {
   mode: HeatmapMode
@@ -21,6 +22,9 @@ type HeatmapCanvasProps = {
   backgroundImage?: string | null
   backgroundUrl?: string | null
   className?: string
+  /** When true, skip heat overlay and show device + page (or empty screen). */
+  emptyState?: boolean
+  emptyMessage?: string
 }
 
 const DEVICE_WIDTH: Record<HeatmapDevice, number> = {
@@ -220,12 +224,14 @@ export function HeatmapCanvas({
   backgroundImage,
   backgroundUrl,
   className,
+  emptyState = false,
+  emptyMessage = "No heatmap data for this range yet. Clicks, scroll depth, and attention will appear here after the SDK starts collecting.",
 }: HeatmapCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const frameWidth = DEVICE_WIDTH[device]
   const viewportHeight = Math.round(
-    frameWidth * (device === "mobile" ? 1.9 : 0.72)
+    frameWidth * (device === "mobile" ? 1.9 : device === "tablet" ? 1.25 : 0.62)
   )
 
   const [pageLoaded, setPageLoaded] = useState(false)
@@ -241,7 +247,7 @@ export function HeatmapCanvas({
     setPageLoaded(false)
     setPageFailed(false)
     setMeasuredHeight(null)
-  }, [backgroundUrl])
+  }, [backgroundUrl, device])
 
   useEffect(() => {
     if (!hasLivePage) return
@@ -265,6 +271,7 @@ export function HeatmapCanvas({
   }, [frameWidth, hasLivePage, backgroundUrl])
 
   useEffect(() => {
+    if (emptyState) return
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext("2d")
@@ -333,6 +340,7 @@ export function HeatmapCanvas({
     backgroundImage,
     cells,
     device,
+    emptyState,
     frameWidth,
     hasLivePage,
     maxValue,
@@ -343,33 +351,37 @@ export function HeatmapCanvas({
     scrollBuckets,
   ])
 
+  const contentHeight =
+    hasLivePage || backgroundImage ? pageHeight : viewportHeight
+
   return (
     <div
       className={cn(
-        "rounded-lg border border-neutral-200 bg-neutral-100 p-4",
+        "rounded-xl border border-neutral-200 bg-neutral-100/80",
         className
       )}
     >
-      <div
-        className="mx-auto overflow-auto rounded-md border border-neutral-300 bg-white shadow-sm"
-        style={{
-          width: frameWidth,
-          height: viewportHeight,
-          maxWidth: "100%",
-        }}
+      <HeatmapDeviceFrame
+        device={device}
+        screenWidth={frameWidth}
+        screenHeight={viewportHeight}
       >
         <div
-          className="relative"
-          style={{ width: frameWidth, height: pageHeight }}
+          className="relative bg-white"
+          style={{ width: frameWidth, height: contentHeight, maxWidth: "100%" }}
         >
           {hasLivePage ? (
             <iframe
-              key={backgroundUrl}
+              key={`${backgroundUrl}-${device}`}
               ref={iframeRef}
               src={backgroundUrl ?? undefined}
               title="Landing page preview"
-              className="pointer-events-none absolute top-0 left-0 z-0 w-full border-0"
-              style={{ height: pageHeight }}
+              className="pointer-events-none absolute top-0 left-0 z-0 border-0"
+              style={{
+                width: frameWidth,
+                height: pageHeight,
+                maxWidth: "100%",
+              }}
               sandbox="allow-scripts allow-same-origin"
               loading="lazy"
               referrerPolicy="no-referrer"
@@ -377,6 +389,24 @@ export function HeatmapCanvas({
               onLoad={() => setPageLoaded(true)}
               onError={() => setPageFailed(true)}
             />
+          ) : null}
+
+          {!hasLivePage && !backgroundImage ? (
+            <div className="absolute inset-0 z-0 bg-gradient-to-b from-neutral-50 to-neutral-100">
+              <div className="border-b border-neutral-200 bg-white px-4 py-3">
+                <div className="h-2.5 w-24 rounded bg-neutral-200" />
+                <div className="mt-2 h-2 w-40 rounded bg-neutral-100" />
+              </div>
+              <div className="space-y-3 p-4">
+                <div className="h-28 rounded-lg bg-neutral-200/80" />
+                <div className="h-2.5 w-3/4 rounded bg-neutral-200" />
+                <div className="h-2.5 w-1/2 rounded bg-neutral-100" />
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <div className="h-16 rounded-md bg-neutral-200/70" />
+                  <div className="h-16 rounded-md bg-neutral-200/70" />
+                </div>
+              </div>
+            </div>
           ) : null}
 
           {hasLivePage && !pageLoaded && !pageFailed ? (
@@ -391,13 +421,21 @@ export function HeatmapCanvas({
             </div>
           ) : null}
 
-          <canvas
-            ref={canvasRef}
-            aria-label={`${mode} heatmap overlay`}
-            className="pointer-events-none absolute top-0 left-0 z-20"
-          />
+          {emptyState ? (
+            <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-white/70 px-6 backdrop-blur-[1px]">
+              <p className="max-w-sm text-center text-sm leading-relaxed text-neutral-600">
+                {emptyMessage}
+              </p>
+            </div>
+          ) : (
+            <canvas
+              ref={canvasRef}
+              aria-label={`${mode} heatmap overlay`}
+              className="pointer-events-none absolute top-0 left-0 z-20"
+            />
+          )}
         </div>
-      </div>
+      </HeatmapDeviceFrame>
     </div>
   )
 }

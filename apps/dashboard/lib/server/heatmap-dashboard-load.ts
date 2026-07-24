@@ -127,7 +127,7 @@ export async function loadHeatmapDashboardData({
   landingPagePublicId,
   rangeId = DEFAULT_TRAFFIC_RANGE_ID,
   mode = "click",
-  device = "all",
+  device = "desktop",
   pageUrl,
   customRange,
 }: {

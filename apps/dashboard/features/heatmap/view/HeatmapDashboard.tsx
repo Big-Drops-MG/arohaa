@@ -2,12 +2,26 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { cn } from "@workspace/ui/lib/utils"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/ui/components/select"
 import type { OverviewDateRangeId } from "@/features/overview/model/overview"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
+import {
+  overviewSelectContentClassName,
+  overviewSelectItemClassName,
+  overviewSelectTriggerClassName,
+} from "@/features/overview/view/overview-select-styles"
 import { getHeatmapEmptyDashboardData } from "@/features/heatmap/controller/heatmap-empty-data"
 import {
+  HEATMAP_DEFAULT_OPACITY,
   HEATMAP_DEVICES,
   HEATMAP_MODES,
+  parseHeatmapDevice,
   type HeatmapDashboardData,
   type HeatmapDevice,
   type HeatmapMode,
@@ -34,6 +48,10 @@ function shortUrl(url: string): string {
   }
 }
 
+function normalizeDevice(device: HeatmapDevice): HeatmapDevice {
+  return device === "all" ? "desktop" : parseHeatmapDevice(device)
+}
+
 export function HeatmapDashboard({
   data: initialData,
   projectId,
@@ -43,9 +61,9 @@ export function HeatmapDashboard({
     useDashboardDateRange()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [mode, setMode] = useState<HeatmapMode>(initialData.mode)
-  const [device, setDevice] = useState<HeatmapDevice>(initialData.device)
-  const [pageUrl, setPageUrl] = useState<string | null>(initialData.pageUrl)
-  const [opacity, setOpacity] = useState(initialData.opacity)
+  const [device, setDevice] = useState<HeatmapDevice>(
+    normalizeDevice(initialData.device)
+  )
   const [isLoading, setIsLoading] = useState(false)
 
   const fetchHeatmap = useCallback(
@@ -54,7 +72,6 @@ export function HeatmapDashboard({
       next: {
         mode: HeatmapMode
         device: HeatmapDevice
-        pageUrl: string | null
       },
       signal?: AbortSignal
     ) => {
@@ -67,7 +84,6 @@ export function HeatmapDashboard({
           extra: {
             mode: next.mode,
             device: next.device,
-            ...(next.pageUrl ? { page_url: next.pageUrl } : {}),
           },
         }
       )
@@ -86,9 +102,6 @@ export function HeatmapDashboard({
         }
         const payload = (await res.json()) as HeatmapDashboardData
         setDashboardData(payload)
-        if (!next.pageUrl && payload.pageUrl) {
-          setPageUrl(payload.pageUrl)
-        }
       } catch (err) {
         if (signal?.aborted) return
         if (process.env.NODE_ENV === "development") {
@@ -112,6 +125,7 @@ export function HeatmapDashboard({
   useEffect(() => {
     if (!isActive) return
 
+    const initialDevice = normalizeDevice(initialData.device)
     const canUseInitial =
       shouldUseInitialTabData(
         dateRangeId,
@@ -120,9 +134,7 @@ export function HeatmapDashboard({
         customRange
       ) &&
       mode === initialData.mode &&
-      device === initialData.device &&
-      (pageUrl === initialData.pageUrl ||
-        (pageUrl == null && initialData.pageUrl == null))
+      device === initialDevice
 
     if (canUseInitial) {
       setDashboardData(initialData)
@@ -131,7 +143,7 @@ export function HeatmapDashboard({
     }
 
     const controller = new AbortController()
-    void fetchHeatmap(dateRangeId, { mode, device, pageUrl }, controller.signal)
+    void fetchHeatmap(dateRangeId, { mode, device }, controller.signal)
     return () => controller.abort()
   }, [
     isActive,
@@ -141,7 +153,6 @@ export function HeatmapDashboard({
     fetchHeatmap,
     initialData,
     mode,
-    pageUrl,
   ])
 
   const hasData =
@@ -151,7 +162,7 @@ export function HeatmapDashboard({
     dashboardData.scrollBuckets.length > 0
 
   return (
-    <div className="flex flex-col gap-4 px-4 pt-4 sm:px-6">
+    <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">
       <OverviewHeader
         title="Heatmap"
         projectId={projectId}
@@ -160,92 +171,22 @@ export function HeatmapDashboard({
         onDateRangeChange={setDateRangeId}
         customRange={customRange}
         onCustomRangeChange={setCustomRange}
+        helpContent={
+          <div className="space-y-2">
+            <p className="font-semibold text-white">How to read this heatmap</p>
+            <ul className="list-disc space-y-1.5 pl-4 text-neutral-200">
+              <li>Scroll the preview to move down the landing page.</li>
+              <li>
+                Heat is tied to page position, so lower sections light up after
+                document-relative events are collected.
+              </li>
+              <li>
+                Older viewport-only events stay near the top of the preview.
+              </li>
+            </ul>
+          </div>
+        }
       />
-
-      <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-        Scroll the preview to move down the page. Heat is mapped to page
-        position, so lower sections show activity once document-relative events
-        are collected. Older viewport-only events stay near the top.
-      </div>
-
-      <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-3 sm:flex-row sm:flex-wrap sm:items-end">
-        <label className="flex min-w-[140px] flex-col gap-1 text-xs font-medium text-neutral-600">
-          Mode
-          <select
-            className="h-9 rounded-md border border-neutral-200 bg-white px-2 text-sm text-neutral-900"
-            value={mode}
-            onChange={(e) => setMode(e.target.value as HeatmapMode)}
-          >
-            {HEATMAP_MODES.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="flex min-w-[160px] flex-col gap-1 text-xs font-medium text-neutral-600">
-          Device
-          <select
-            className="h-9 rounded-md border border-neutral-200 bg-white px-2 text-sm text-neutral-900"
-            value={device}
-            onChange={(e) => setDevice(e.target.value as HeatmapDevice)}
-          >
-            {HEATMAP_DEVICES.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="flex min-w-[220px] flex-1 flex-col gap-1 text-xs font-medium text-neutral-600">
-          Page URL
-          <select
-            className="h-9 rounded-md border border-neutral-200 bg-white px-2 text-sm text-neutral-900"
-            value={pageUrl ?? ""}
-            onChange={(e) => setPageUrl(e.target.value || null)}
-            disabled={dashboardData.pageUrls.length === 0}
-          >
-            {dashboardData.pageUrls.length === 0 ? (
-              <option value="">No heatmap pages yet</option>
-            ) : (
-              dashboardData.pageUrls.map((url) => (
-                <option key={url} value={url}>
-                  {shortUrl(url)}
-                </option>
-              ))
-            )}
-          </select>
-        </label>
-
-        <label className="flex min-w-[160px] flex-col gap-1 text-xs font-medium text-neutral-600">
-          Opacity {Math.round(opacity * 100)}%
-          <input
-            type="range"
-            min={0.15}
-            max={1}
-            step={0.05}
-            value={opacity}
-            onChange={(e) => setOpacity(Number(e.target.value))}
-            className="h-9"
-          />
-        </label>
-
-        <div className="flex flex-col gap-1 text-xs text-neutral-500">
-          <span className="font-medium text-neutral-600">Legend</span>
-          <div className="flex h-3 w-40 overflow-hidden rounded-sm">
-            <div className="flex-1 bg-blue-500" />
-            <div className="flex-1 bg-cyan-400" />
-            <div className="flex-1 bg-yellow-400" />
-            <div className="flex-1 bg-red-500" />
-          </div>
-          <div className="flex justify-between text-[10px]">
-            <span>Low</span>
-            <span>High</span>
-          </div>
-        </div>
-      </div>
 
       <div
         className={cn(
@@ -254,23 +195,105 @@ export function HeatmapDashboard({
         )}
         aria-busy={isLoading}
       >
-        {!hasData ? (
-          <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-neutral-50 px-6 text-center text-sm text-neutral-500">
-            No heatmap data for this range yet. Clicks, scroll depth, and
-            attention will appear here after the SDK starts collecting.
+        <HeatmapCanvas
+          mode={dashboardData.mode}
+          device={device}
+          cells={dashboardData.cells}
+          points={dashboardData.points}
+          scrollBuckets={dashboardData.scrollBuckets}
+          maxValue={dashboardData.maxValue}
+          opacity={HEATMAP_DEFAULT_OPACITY}
+          backgroundUrl={dashboardData.pageUrl}
+          emptyState={!hasData}
+          emptyMessage="No heatmap data for this range yet. Clicks, scroll depth, and attention will appear here after the SDK starts collecting."
+        />
+      </div>
+
+      <div className="flex justify-center px-1">
+        <div className="flex max-w-full flex-wrap items-center justify-center gap-2 rounded-full border border-neutral-200/90 bg-white px-2.5 py-1.5 shadow-md shadow-neutral-950/5 sm:gap-2.5 sm:px-3">
+          <Select
+            value={mode}
+            onValueChange={(value) => setMode(value as HeatmapMode)}
+          >
+            <SelectTrigger
+              size="sm"
+              aria-label="Heatmap mode"
+              className={cn(
+                overviewSelectTriggerClassName,
+                "h-8 min-w-[6.5rem] rounded-full border-neutral-200/80 bg-neutral-50 px-2.5 text-xs shadow-none"
+              )}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent
+              align="center"
+              className={overviewSelectContentClassName}
+            >
+              {HEATMAP_MODES.map((option) => (
+                <SelectItem
+                  key={option.value}
+                  value={option.value}
+                  className={overviewSelectItemClassName}
+                >
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="h-4 w-px bg-neutral-200" aria-hidden />
+
+          <Select
+            value={device === "all" ? "desktop" : device}
+            onValueChange={(value) => setDevice(parseHeatmapDevice(value))}
+          >
+            <SelectTrigger
+              size="sm"
+              aria-label="Heatmap device"
+              className={cn(
+                overviewSelectTriggerClassName,
+                "h-8 min-w-[7rem] rounded-full border-neutral-200/80 bg-neutral-50 px-2.5 text-xs shadow-none"
+              )}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent
+              align="center"
+              className={overviewSelectContentClassName}
+            >
+              {HEATMAP_DEVICES.map((option) => (
+                <SelectItem
+                  key={option.value}
+                  value={option.value}
+                  className={overviewSelectItemClassName}
+                >
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="h-4 w-px bg-neutral-200" aria-hidden />
+
+          <div
+            className="flex items-center gap-2 pr-1"
+            title="Heat intensity legend"
+          >
+            <div className="flex flex-col gap-0.5">
+              <div
+                className="h-1.5 w-24 rounded-full sm:w-28"
+                style={{
+                  background:
+                    "linear-gradient(to right, #3b82f6, #22d3ee, #facc15, #ef4444)",
+                }}
+              />
+              <div className="flex justify-between text-[9px] text-neutral-400">
+                <span>Low</span>
+                <span>High</span>
+              </div>
+            </div>
           </div>
-        ) : (
-          <HeatmapCanvas
-            mode={dashboardData.mode}
-            device={device}
-            cells={dashboardData.cells}
-            points={dashboardData.points}
-            scrollBuckets={dashboardData.scrollBuckets}
-            maxValue={dashboardData.maxValue}
-            opacity={opacity}
-            backgroundUrl={dashboardData.pageUrl}
-          />
-        )}
+        </div>
       </div>
 
       {mode === "attention" && dashboardData.sections.length > 0 ? (

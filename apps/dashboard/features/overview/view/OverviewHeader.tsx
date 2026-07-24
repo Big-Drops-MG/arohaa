@@ -1,7 +1,7 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { CalendarDays, Check, ChevronDown } from "lucide-react"
+import { useMemo, useState, type ReactNode } from "react"
+import { CalendarDays, Check, ChevronDown, Info } from "lucide-react"
 import { motion, useReducedMotion } from "motion/react"
 import type { DateRange } from "react-day-picker"
 import { format } from "date-fns"
@@ -33,6 +33,8 @@ type OverviewHeaderProps = {
   customRange?: DashboardCustomRange | null
   onDateRangeChange: (id: OverviewDateRangeId) => void
   onCustomRangeChange: (range: DashboardCustomRange) => void
+  /** Shown as an info tooltip next to the title. */
+  helpContent?: ReactNode
 }
 
 type Panel = "presets" | "calendar"
@@ -59,6 +61,7 @@ export function OverviewHeader({
   customRange,
   onDateRangeChange,
   onCustomRangeChange,
+  helpContent,
 }: OverviewHeaderProps) {
   const reduceMotion = useReducedMotion()
   const [open, setOpen] = useState(false)
@@ -122,9 +125,28 @@ export function OverviewHeader({
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          {title}
-        </h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            {title}
+          </h1>
+          {helpContent ? (
+            <span className="group relative inline-flex">
+              <button
+                type="button"
+                className="inline-flex size-6 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-500 transition-colors hover:border-neutral-300 hover:bg-neutral-50 hover:text-neutral-800 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                aria-label={`About ${title}`}
+              >
+                <Info className="size-3.5" aria-hidden />
+              </button>
+              <span
+                role="tooltip"
+                className="pointer-events-none absolute top-full left-0 z-50 mt-2 w-80 max-w-[min(20rem,calc(100vw-2rem))] rounded-lg border border-neutral-200 bg-neutral-950 px-3.5 py-3 text-left text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
+              >
+                {helpContent}
+              </span>
+            </span>
+          ) : null}
+        </div>
         <p className="text-sm text-muted-foreground">
           Landing page performance at a glance
         </p>

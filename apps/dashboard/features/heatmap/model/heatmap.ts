@@ -6,6 +6,8 @@ import type {
 export type HeatmapMode = "click" | "scroll" | "attention"
 export type HeatmapDevice = "all" | "mobile" | "tablet" | "desktop"
 
+export const HEATMAP_DEFAULT_OPACITY = 0.65
+
 export type HeatmapCell = {
   gridX: number
   gridY: number
@@ -55,10 +57,9 @@ export const HEATMAP_MODES: ReadonlyArray<{
 ]
 
 export const HEATMAP_DEVICES: ReadonlyArray<{
-  value: HeatmapDevice
+  value: Exclude<HeatmapDevice, "all">
   label: string
 }> = [
-  { value: "all", label: "All devices" },
   { value: "desktop", label: "Desktop" },
   { value: "tablet", label: "Tablet" },
   { value: "mobile", label: "Mobile" },
@@ -76,13 +77,8 @@ export function parseHeatmapMode(
 export function parseHeatmapDevice(
   value: string | null | undefined
 ): HeatmapDevice {
-  if (
-    value === "mobile" ||
-    value === "tablet" ||
-    value === "desktop" ||
-    value === "all"
-  ) {
+  if (value === "mobile" || value === "tablet" || value === "desktop") {
     return value
   }
-  return "all"
+  return "desktop"
 }

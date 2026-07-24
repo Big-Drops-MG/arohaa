@@ -10,7 +10,7 @@ export function getHeatmapEmptyDashboardData(
   _landingPagePublicId: string,
   rangeId: OverviewDateRangeId = "7d",
   mode: HeatmapMode = "click",
-  device: HeatmapDevice = "all"
+  device: HeatmapDevice = "desktop"
 ): HeatmapDashboardData {
   void _landingPagePublicId
 
