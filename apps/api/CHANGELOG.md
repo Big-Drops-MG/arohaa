@@ -1,0 +1,75 @@
+# Changelog
+
+## [1.1.0](https://github.com/Big-Drops-MG/arohaa/compare/api-v1.0.0...api-v1.1.0) (2026-07-24)
+
+
+### Features
+
+* analytics API, dashboard overview and landing snippet; UI form components; remove Jest/Vitest test suites ([e426d63](https://github.com/Big-Drops-MG/arohaa/commit/e426d63b87b15565720f5ce70628daf91e69fa29))
+* **analytics:** add ET date-range presets and custom range filtering ([ea7bf8f](https://github.com/Big-Drops-MG/arohaa/commit/ea7bf8f90d2fb42a8e222fd35f0b957615427195))
+* **analytics:** live landing metrics, form_success-only submits, SDK tracking ([8743725](https://github.com/Big-Drops-MG/arohaa/commit/87437250699fc62d9515139639e4d84ed2db325f))
+* **analytics:** multi-select UTM Source and S1 traffic filters ([bec6812](https://github.com/Big-Drops-MG/arohaa/commit/bec68123707b90a532e6680367fb6625cbb0ab7f))
+* **api:** add IP geolocation for event enrichment ([f43b84f](https://github.com/Big-Drops-MG/arohaa/commit/f43b84fb7170b4ffc27cfba0c93fd0d9e483caba))
+* **api:** enforce blocked UTM params at ingest ([853adb6](https://github.com/Big-Drops-MG/arohaa/commit/853adb65de125c9c375f7cc0677848d7460ef13b))
+* **api:** ingest and store utm_id and utm_s1 in ClickHouse ([5ced26a](https://github.com/Big-Drops-MG/arohaa/commit/5ced26a229b70bc359e7cc16769f70ff178bc44e))
+* **api:** report real semver in Ops and auto-bump via Release Please ([aa9f00f](https://github.com/Big-Drops-MG/arohaa/commit/aa9f00f3f3455ab7a9a014ed85d0b3f9b15eeab8))
+* **api:** wire up pino-cloudwatch for production CloudWatch logging ([644a8f5](https://github.com/Big-Drops-MG/arohaa/commit/644a8f5e87d177d34940a2ed8e859603424439ae))
+* **dashboard:** add analytics screens with traffic API and placeholder dashboards ([2ecaf49](https://github.com/Big-Drops-MG/arohaa/commit/2ecaf499f234b57bf6899a3df517bdb3936fdc4e))
+* **dashboard:** add UTM tab for landing page param management ([af2636e](https://github.com/Big-Drops-MG/arohaa/commit/af2636e419dcf01000819d16b5c3bed776368970))
+* **dashboard:** landing project pages, favicons, and tabs ([1d1b2c5](https://github.com/Big-Drops-MG/arohaa/commit/1d1b2c54997eb16fe58558a2ebf4a30166b80597))
+* **dashboard:** polish Ops, Segments dates, and metric table sorting ([49d3e7c](https://github.com/Big-Drops-MG/arohaa/commit/49d3e7ccd134390868b99d176153e3a3cbfb0586))
+* **dashboard:** redesign analytics UI, settings, notifications, and profile ([d1ac5bd](https://github.com/Big-Drops-MG/arohaa/commit/d1ac5bde5a2279e1d023bb30656832e0e892a65f))
+* **dashboard:** unify UTM source/medium filter into one searchable popover ([5b6035f](https://github.com/Big-Drops-MG/arohaa/commit/5b6035fe3b93fd72190810db3fc2b726ec37bd84))
+* **dashboard:** use Eastern Time for clock, display, and analytics buckets ([a5d54e5](https://github.com/Big-Drops-MG/arohaa/commit/a5d54e5c231eed92af5aefb016453d3fe7d8c1c2))
+* **dashboard:** UTM filter Apply button and This Month date range ([c34b8a6](https://github.com/Big-Drops-MG/arohaa/commit/c34b8a6c8b58b4c0250092d364e058584dd96d8c))
+* **dashboard:** wire analytics screens to API and ClickHouse ([16c5f4d](https://github.com/Big-Drops-MG/arohaa/commit/16c5f4dff3a361299e2892b76ffafdbf87ed8b31))
+* **dashboard:** wire analytics screens to live API and merge dev settings UX ([6f10758](https://github.com/Big-Drops-MG/arohaa/commit/6f1075835de6dc268101e52e9ce604fd88d121df))
+* **dashboard:** wire funnel analytics API and trend badges ([4d588e0](https://github.com/Big-Drops-MG/arohaa/commit/4d588e072f76adbc09b8c1ea2330c3bda3946721))
+* **dashboard:** wire funnel analytics API and trend badges ([408e951](https://github.com/Big-Drops-MG/arohaa/commit/408e9511ceca001d2f7232f5be1757b719cbc5b9))
+* enforce 2FA (TOTP) for Google OAuth login, fix OTP verification, add Redis services ([0cc6d37](https://github.com/Big-Drops-MG/arohaa/commit/0cc6d37ef88ab9e049b551bf725345499bfb285b))
+* **experiments:** add performance breakdowns by state and zipcode ([6895992](https://github.com/Big-Drops-MG/arohaa/commit/68959926a9c85233527bbc5600fad6a6ebdebe28))
+* **experiments:** compare multi-domain landing page variants ([e25924d](https://github.com/Big-Drops-MG/arohaa/commit/e25924d7267b41879b43dcae6d9233623dff06c3))
+* **health:** add /health/detailed with per-dependency latency and system internals ([a0c3875](https://github.com/Big-Drops-MG/arohaa/commit/a0c38751499921eab998a243ac13137d7d21afa5))
+* **health:** add /health/queues to expose analytics_queue and failed_events items ([2f8b0a3](https://github.com/Big-Drops-MG/arohaa/commit/2f8b0a35bcfbc5833735962ea58f4a833180bd1b))
+* **heatmap:** attention sampling, batch ingest, and sdk-config sample rate ([fd670b4](https://github.com/Big-Drops-MG/arohaa/commit/fd670b419c6900dadf61dfa286d1927210c2f789))
+* implement data processing pipeline and update docs ([ea962b0](https://github.com/Big-Drops-MG/arohaa/commit/ea962b03b9026a4751a0b362c5dc17d769ae94b8))
+* implement data processing pipeline and update docs ([2f229b7](https://github.com/Big-Drops-MG/arohaa/commit/2f229b7d82dc67ff979314d5588985fa9aa8a75e))
+* landing pages persistence, workspace tenancy, ingest and verification ([13188cf](https://github.com/Big-Drops-MG/arohaa/commit/13188cffac94ca655874d48c67b4ed209a6c807b))
+* **sdk:** block visitors with blocked UTM params on landing pages ([de3ba77](https://github.com/Big-Drops-MG/arohaa/commit/de3ba77bbb86eea6f1e4a016eb45810d7f3bf0cb))
+* **sdk:** build browser analytics SDK architecture and Vercel delivery setup ([ac22ea7](https://github.com/Big-Drops-MG/arohaa/commit/ac22ea7641db151b3fae1124c318b23d00751b6e))
+* sprint 2 - reliability, observability, and enrichment for ingestion pipeline ([392b28e](https://github.com/Big-Drops-MG/arohaa/commit/392b28e0743b3a28e57ef0bc3e7d33dadc776a0c))
+* **utm:** add UTM Control tab with server-side traffic blocking ([d64a993](https://github.com/Big-Drops-MG/arohaa/commit/d64a993c5e534f678c0f7b28376d2b21807064bc))
+
+
+### Bug Fixes
+
+* **analytics:** accurate funnel drop-offs and faster landing metrics ([02a34b8](https://github.com/Big-Drops-MG/arohaa/commit/02a34b8e5e1e21614a056fde9d5643fa3ea19fcd))
+* **analytics:** align best day, DOW labels, overview alerts, and growth alerts ([f2a066b](https://github.com/Big-Drops-MG/arohaa/commit/f2a066b630aa9c4efb72a5e31ea4e3c98f734884))
+* **analytics:** resolve UTM-filtered traffic 500 from aggregate alias shadowing ([38e3996](https://github.com/Big-Drops-MG/arohaa/commit/38e3996073b8a74eb59ea86274176a0e59630fc6))
+* **analytics:** store UTC instants with Eastern Time calendar rollups ([5625715](https://github.com/Big-Drops-MG/arohaa/commit/562571566242ff7d65157d485ec80b91b4aa6718))
+* **api,sdk:** ensure zip started is superset of zip submitted ([b4e1b2b](https://github.com/Big-Drops-MG/arohaa/commit/b4e1b2b7426bb51638aa537f11a2faea8fa52f72))
+* **api,sdk:** funnel zip stages use zip_start and zip_submit ([bfea4d0](https://github.com/Big-Drops-MG/arohaa/commit/bfea4d083ba28dbd2d04b341ee24ed49dcac6dc0))
+* **api:** keep ClickHouse health pings off the analytics connection pool ([febb779](https://github.com/Big-Drops-MG/arohaa/commit/febb7792c69fe118701310d0317bfbd2d9957d22))
+* **api:** rank top locations by real visitors and conversions ([42d4f5a](https://github.com/Big-Drops-MG/arohaa/commit/42d4f5a211270f373b8a56cb8846e4a84e319e20))
+* **api:** resilient ClickHouse startup and clearer analytics fetch failures ([ea9895a](https://github.com/Big-Drops-MG/arohaa/commit/ea9895a7619b7d5010a53a228c1b315d60ce3d2e))
+* **api:** return full UTM breakdown with session attribution ([be8e165](https://github.com/Big-Drops-MG/arohaa/commit/be8e1654c9d60fc51940366f30158f14998bf5b2))
+* **api:** show lifetime submits and bounce on landing page cards ([0058be7](https://github.com/Big-Drops-MG/arohaa/commit/0058be781cfae59a87b93fa142ddd16ee80e54f3))
+* **api:** show lifetime submits and bounce on landing page cards ([6880051](https://github.com/Big-Drops-MG/arohaa/commit/6880051d7ab496feaca7262c92ba78cfdbd805fd))
+* **api:** show top 30 UTM rows per utm_source ([c8d9c81](https://github.com/Big-Drops-MG/arohaa/commit/c8d9c819d9016aeb35a5d314448048eec91f3f3b))
+* **dashboard:** load UTM S1 from control store and sort experiment tables ([76369c7](https://github.com/Big-Drops-MG/arohaa/commit/76369c7766fe1f51d8874cf430414d8f6a71e4d3))
+* **funnel:** correct ClickHouse drop-off aggregation syntax ([27fb3c1](https://github.com/Big-Drops-MG/arohaa/commit/27fb3c1b5b6fc3a75958fb1ae6b0cc3acdd51087))
+* **funnel:** count field drop-offs by non-completion not last-touch only ([f93713d](https://github.com/Big-Drops-MG/arohaa/commit/f93713de9fe23bebe82c4f71d8ea7b32ccb00f29))
+* **funnel:** render multi-step tracking from real step events ([dc3a4ed](https://github.com/Big-Drops-MG/arohaa/commit/dc3a4edfad645f70289c140bd1c4dcbdb4cfcf9e))
+* **funnel:** use LEFT ANTI JOIN for field drop-off counts ([1d7a1d6](https://github.com/Big-Drops-MG/arohaa/commit/1d7a1d60d478577b3cf414f2b1a60e8c35742d07))
+* **heatmap:** harden timestamps and add section dwell rollup ([6aee1cd](https://github.com/Big-Drops-MG/arohaa/commit/6aee1cd019ce6bd3935382e61b5d25946033811a))
+* **heatmap:** route SDK events to heatmap_queue and fix rollup buckets ([7521b47](https://github.com/Big-Drops-MG/arohaa/commit/7521b47c0118656fd331658ac551f0f8645864b3))
+* **landing:** preserve user-entered favicon URL ([7cab4b8](https://github.com/Big-Drops-MG/arohaa/commit/7cab4b8d5bdf060e99d6a49019957a84f256e1d9))
+* **landing:** stop SDK from overwriting favicon URLs globally ([117216f](https://github.com/Big-Drops-MG/arohaa/commit/117216f014eef58e9252323b69309e8b0996570f))
+* **sdk,api:** deliver conversion beacons via preflight-free text/plain ([6eee17e](https://github.com/Big-Drops-MG/arohaa/commit/6eee17ef69f38f5be57b08168d66016f0401551b))
+* **sdk:** capture zip on all submit paths for experiments zipcode breakdown ([1283b42](https://github.com/Big-Drops-MG/arohaa/commit/1283b4270a8fcf083c3409effb17464a609a67ba))
+
+
+### Performance Improvements
+
+* **api:** warm ClickHouse/Redis/Postgres connections to cut readiness latency spikes ([5967f02](https://github.com/Big-Drops-MG/arohaa/commit/5967f02c6d0b690d0bc7984d1836bf26e8accf5c))
+* **dashboard:** lazy tabs and reduce refresh load ([d881d73](https://github.com/Big-Drops-MG/arohaa/commit/d881d73cccd18a70b2c3c1bdf063736245cae8b6))
