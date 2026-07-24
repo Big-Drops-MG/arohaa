@@ -27,14 +27,12 @@ const OPTIONS = [
   {
     mode: "landing",
     icon: LayoutTemplate,
-    title: "Add New Landing Page",
-    description: "Track a standalone page with its own SDK snippet.",
+    title: "New Landing Page",
   },
   {
     mode: "variant",
     icon: FlaskConical,
-    title: "Add New Variant",
-    description: "Compare a new page against a project already on Arohaa.",
+    title: "New Variant",
   },
 ] as const
 
@@ -59,7 +57,10 @@ export function AddNewProjectMenu({
           {label}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 gap-1 p-2">
+      <PopoverContent
+        align="end"
+        className="w-56 gap-0.5 border border-neutral-200 bg-white p-1.5 text-neutral-900 shadow-lg ring-1 ring-black/5"
+      >
         {OPTIONS.map((option) => {
           const Icon = option.icon
           const href =
@@ -72,22 +73,10 @@ export function AddNewProjectMenu({
               key={option.title}
               href={href}
               onClick={() => setOpen(false)}
-              className="flex items-start gap-3 rounded-md px-3 py-2.5 text-left transition-colors outline-none hover:bg-muted focus-visible:bg-muted"
+              className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm font-medium text-neutral-900 transition-colors outline-none hover:bg-neutral-100 focus-visible:bg-neutral-100"
             >
-              <span
-                className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground"
-                aria-hidden
-              >
-                <Icon className="size-4" />
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-medium text-foreground">
-                  {option.title}
-                </span>
-                <span className="block text-xs text-muted-foreground">
-                  {option.description}
-                </span>
-              </span>
+              <Icon className="size-4 shrink-0 text-neutral-500" aria-hidden />
+              {option.title}
             </Link>
           )
         })}

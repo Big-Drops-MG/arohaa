@@ -278,7 +278,7 @@ export function LandingPageProjectDropdown({
               onClick={handleRequestClose}
             >
               <Plus className="size-4 shrink-0 text-neutral-500" aria-hidden />
-              Add landing page
+              New Landing Page
             </Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild className="cursor-pointer rounded-md p-0">
@@ -291,7 +291,7 @@ export function LandingPageProjectDropdown({
                 className="size-4 shrink-0 text-neutral-500"
                 aria-hidden
               />
-              Add variant of {label}
+              New Variant
             </Link>
           </DropdownMenuItem>
         </div>

@@ -15,6 +15,20 @@ export function experimentVariantDisplayLabel(label: string): string {
   return `Variant ${trimmed}`
 }
 
+/** Row identity used to match a variant row across the experiment tables. */
+export function experimentVariantRowId(label: string): string {
+  return experimentVariantDisplayLabel(label).toLowerCase().replace(/\s+/g, "-")
+}
+
+/**
+ * Column key that carries a variant's rate in the location breakdowns. The
+ * analytics payload keys those cells by raw label, so the label is not
+ * normalised here.
+ */
+export function experimentVariantRateColumnId(label: string): string {
+  return `variant${label}`
+}
+
 export function experimentVariantPerformanceSubmitLabel(
   formType: OverviewLandingFormType
 ): string {

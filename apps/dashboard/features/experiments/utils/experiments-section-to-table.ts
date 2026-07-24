@@ -1,4 +1,5 @@
 import type { ExperimentsTableSection } from "@/features/experiments/model/experiments"
+import { experimentVariantRowId } from "@/features/experiments/utils/experiment-table-columns"
 import type { TrafficBreakdownTable } from "@/features/traffic/model/traffic"
 
 export function experimentsSectionToBreakdownTable(
@@ -18,7 +19,7 @@ export function experimentsSectionToBreakdownTable(
 
       return {
         ...row,
-        variantId: variant.toLowerCase().replace(/\s+/g, "-"),
+        variantId: experimentVariantRowId(variant),
       }
     }),
   }

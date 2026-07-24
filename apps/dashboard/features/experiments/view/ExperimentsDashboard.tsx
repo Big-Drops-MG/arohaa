@@ -6,7 +6,6 @@ import { getExperimentsEmptyDashboardData } from "@/features/experiments/control
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import type { ExperimentsDashboardData } from "@/features/experiments/model/experiments"
 import { ExperimentsCards } from "@/features/experiments/view/ExperimentsCards"
-import { ExperimentsSetupCard } from "@/features/experiments/view/ExperimentsSetupCard"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import {
@@ -146,13 +145,6 @@ export function ExperimentsDashboard({
         )}
         aria-busy={isLoading}
       >
-        <ExperimentsSetupCard
-          projectId={projectId}
-          config={dashboardData.config}
-          onChanged={() => {
-            void fetchExperimentsForRange(dateRangeId)
-          }}
-        />
         <ExperimentsCards data={dashboardData} />
       </div>
     </div>

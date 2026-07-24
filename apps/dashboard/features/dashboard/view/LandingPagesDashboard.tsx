@@ -19,12 +19,29 @@ export function LandingPagesDashboard({ pages }: LandingPagesDashboardProps) {
 
   const filteredPages = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
-    if (!normalizedQuery) return pages
+    const matched = !normalizedQuery
+      ? pages
+      : pages.filter((page) => {
+          const searchableText =
+            `${page.brandName} ${page.landingPageUrl} ${page.experimentName ?? ""} ${page.experimentGroupName ?? ""} ${page.variantLabel ?? ""}`.toLowerCase()
+          return searchableText.includes(normalizedQuery)
+        })
 
-    return pages.filter((page) => {
-      const searchableText =
-        `${page.brandName} ${page.landingPageUrl}`.toLowerCase()
-      return searchableText.includes(normalizedQuery)
+    // Group experiment members together, then by brand within a group.
+    return [...matched].sort((a, b) => {
+      const aExp = a.experimentName?.toLowerCase() ?? ""
+      const bExp = b.experimentName?.toLowerCase() ?? ""
+      if (aExp && bExp && aExp !== bExp) return aExp.localeCompare(bExp)
+      if (aExp && !bExp) return -1
+      if (!aExp && bExp) return 1
+
+      const aLabel = a.variantLabel?.toUpperCase() ?? ""
+      const bLabel = b.variantLabel?.toUpperCase() ?? ""
+      if (aLabel && bLabel && aLabel !== bLabel) {
+        return aLabel.localeCompare(bLabel)
+      }
+
+      return a.brandName.localeCompare(b.brandName)
     })
   }, [pages, query])
 

@@ -399,32 +399,34 @@ export function ExperimentsSetupCard({
                   variant.
                 </p>
               ) : (
-                <ul className="divide-y divide-border rounded-lg border border-border">
+                <ul className="overflow-hidden rounded-lg border border-border">
                   {config.variants.map((v) => (
                     <li
                       key={v.landingPageId}
-                      className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5"
+                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border px-3 py-2.5 last:border-b-0"
                     >
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-foreground">
-                          {experimentVariantDisplayLabel(v.label)}
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span className="text-sm font-medium text-foreground">
+                            {experimentVariantDisplayLabel(v.label)}
+                          </span>
                           {v.isControl ? (
-                            <span className="ml-2 text-xs font-normal text-muted-foreground">
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                               Control
                             </span>
                           ) : null}
                           {v.isCurrent ? (
-                            <span className="ml-2 text-xs font-normal text-muted-foreground">
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                               This page
                             </span>
                           ) : null}
-                        </p>
+                        </div>
                         <p className="truncate text-xs text-muted-foreground">
                           {v.brandName} · {v.hostname}
                         </p>
                         <p
                           className={cn(
-                            "text-xs",
+                            "truncate text-xs",
                             v.health === "ok"
                               ? "text-emerald-700"
                               : v.health === "stale"
@@ -442,6 +444,7 @@ export function ExperimentsSetupCard({
                         type="button"
                         size="sm"
                         variant="ghost"
+                        className="shrink-0 self-center"
                         onClick={() => void removeVariant(v.landingPageId)}
                         disabled={isPending}
                         aria-label={`Remove ${experimentVariantDisplayLabel(v.label)}`}

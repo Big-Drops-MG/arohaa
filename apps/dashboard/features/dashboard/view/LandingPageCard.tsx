@@ -1,5 +1,8 @@
 import Link from "next/link"
-import type { LandingPageListItem } from "@/features/dashboard/model/landing-page"
+import {
+  landingPageDisplayUrl,
+  type LandingPageListItem,
+} from "@/features/dashboard/model/landing-page"
 import { experimentVariantDisplayLabel } from "@/features/experiments/utils/experiment-table-columns"
 import { LandingPageFavicon } from "@/features/dashboard/view/LandingPageFavicon"
 import { LandingPageLiveBadge } from "@/features/dashboard/view/LandingPageLiveBadge"
@@ -11,43 +14,73 @@ type LandingPageCardProps = {
 
 export function LandingPageCard({ page }: LandingPageCardProps) {
   const href = `/dashboard/${encodeURIComponent(page.publicId)}`
+  const variantLabel = page.variantLabel
+    ? experimentVariantDisplayLabel(page.variantLabel)
+    : null
+  // The owner's own card already carries that name in its title.
+  const groupName =
+    page.experimentGroupName && page.experimentGroupName !== page.brandName
+      ? page.experimentGroupName
+      : null
 
   return (
     <Link
       href={href}
-      className="block rounded-xl transition-shadow outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="group block h-full rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
-      <article className="h-full rounded-xl border border-border bg-card p-4 shadow-sm transition-colors hover:border-foreground/20 hover:shadow-md">
-        <div className="mb-4 flex min-w-0 items-start gap-3">
-          <LandingPageFavicon
-            faviconUrl={page.faviconUrl}
-            brandName={page.brandName}
-            size={32}
-            className="mt-0.5"
-          />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-2">
-              <h2 className="truncate text-sm font-semibold text-foreground">
-                {page.brandName}
-              </h2>
-              <LandingPageLiveBadge isLive={page.isLive} />
-            </div>
-            <p className="truncate text-xs text-muted-foreground">
-              {page.landingPageUrl}
-            </p>
-            {page.variantLabel ? (
+      <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_1px_2px_rgba(16,24,40,0.05)] transition duration-200 group-hover:-translate-y-0.5 group-hover:border-foreground/15 group-hover:shadow-[0_12px_28px_-16px_rgba(16,24,40,0.28)]">
+        <div className="flex flex-1 flex-col gap-3 p-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-background shadow-xs">
+              <LandingPageFavicon
+                faviconUrl={page.faviconUrl}
+                brandName={page.brandName}
+                size={20}
+                className="border-0"
+              />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-2">
+                <h2 className="truncate text-[15px] leading-5 font-semibold tracking-tight text-foreground">
+                  {page.brandName}
+                </h2>
+                <LandingPageLiveBadge isLive={page.isLive} />
+              </div>
               <p
-                className="mt-1.5 inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-muted/60 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
-                title={page.experimentName ?? undefined}
+                className="mt-1 truncate text-xs text-muted-foreground"
+                title={page.landingPageUrl}
               >
-                <span className="truncate">
-                  {experimentVariantDisplayLabel(page.variantLabel)}
-                </span>
+                {landingPageDisplayUrl(page.landingPageUrl)}
               </p>
-            ) : null}
+            </div>
           </div>
+
+          {variantLabel ? (
+            <span
+              className="inline-flex max-w-full items-center gap-1.5 self-start rounded-full bg-indigo-50 py-1 pr-2.5 pl-2 text-[11px] leading-4 ring-1 ring-indigo-200/80"
+              title={
+                groupName ? `${variantLabel} · ${groupName}` : variantLabel
+              }
+            >
+              <span className="size-1.5 shrink-0 rounded-full bg-indigo-500" />
+              <span className="shrink-0 font-semibold text-indigo-700">
+                {variantLabel}
+              </span>
+              {groupName ? (
+                <>
+                  <span className="h-2.5 w-px shrink-0 bg-indigo-300/80" />
+                  <span className="truncate text-indigo-700/75">
+                    {groupName}
+                  </span>
+                </>
+              ) : null}
+            </span>
+          ) : null}
         </div>
-        <LandingPageMetrics metrics={page.metrics} />
+
+        <div className="border-t border-border/60 bg-muted/25 px-4 py-3">
+          <LandingPageMetrics metrics={page.metrics} />
+        </div>
       </article>
     </Link>
   )

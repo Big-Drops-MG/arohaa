@@ -1,4 +1,4 @@
-import { desc, isNull } from "drizzle-orm"
+import { desc, eq, isNull } from "drizzle-orm"
 import {
   db,
   experiments,
@@ -64,27 +64,36 @@ export async function getLandingPageList(): Promise<LandingPageListItem[]> {
       metrics: metricsList[index]!,
       variantLabel: membership?.label ?? null,
       experimentName: membership?.experimentName ?? null,
+      experimentGroupName: membership?.groupName ?? null,
     }
   })
 }
 
-async function getVariantMembership(): Promise<
-  Map<string, { label: string; experimentName: string }>
-> {
-  const rows = await db
-    .select({ name: experiments.name, variants: experiments.variants })
-    .from(experiments)
+type VariantMembership = {
+  label: string
+  experimentName: string
+  /** Brand of the experiment owner, which reads better than the generated name. */
+  groupName: string
+}
 
-  const membership = new Map<
-    string,
-    { label: string; experimentName: string }
-  >()
+async function getVariantMembership(): Promise<Map<string, VariantMembership>> {
+  const rows = await db
+    .select({
+      name: experiments.name,
+      variants: experiments.variants,
+      ownerBrandName: landingPages.brandName,
+    })
+    .from(experiments)
+    .leftJoin(landingPages, eq(landingPages.id, experiments.landingPageId))
+
+  const membership = new Map<string, VariantMembership>()
   for (const row of rows) {
     for (const link of normalizeExperimentVariantLinks(row.variants)) {
       if (membership.has(link.landingPageId)) continue
       membership.set(link.landingPageId, {
         label: link.label,
         experimentName: row.name,
+        groupName: row.ownerBrandName ?? row.name,
       })
     }
   }

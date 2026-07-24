@@ -5,6 +5,7 @@ import {
   experimentVariantDisplayLabel,
   experimentVariantPerformanceRateLabel,
   experimentVariantPerformanceSubmitLabel,
+  experimentVariantRateColumnId,
 } from "@/features/experiments/utils/experiment-table-columns"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
 import {
@@ -99,7 +100,7 @@ function buildDimensionPerformanceSection(
   const columns = [
     { key: dimensionKey, label: dimensionLabel },
     ...variants.map((v) => ({
-      key: `variant${v}`,
+      key: experimentVariantRateColumnId(v),
       label: `${experimentVariantDisplayLabel(v)} ${rateLabel}`,
     })),
   ]
@@ -112,11 +113,50 @@ function buildDimensionPerformanceSection(
         [dimensionKey]: String(row[dimensionKey] ?? "Unknown"),
       }
       for (const variant of variants) {
-        result[`variant${variant}`] = String(row[`variant${variant}`] || "0%")
+        const columnId = experimentVariantRateColumnId(variant)
+        result[columnId] = String(row[columnId] || "0%")
       }
       return result
     }),
   }
+}
+
+/**
+ * The linked landing pages in Postgres are the source of truth for which
+ * variants belong to an experiment. Analytics only contributes metrics, so a
+ * variant with no events yet (or an analytics response that could not resolve
+ * the experiment) must never shrink the roster shown on the tab.
+ */
+function mergeVariantRosterWithAnalytics(
+  config: ExperimentsDashboardData["config"],
+  analyticsRows: AnalyticsVariantPerformanceRow[],
+  controlVariant: string | null
+): { labels: string[]; rows: AnalyticsVariantPerformanceRow[] } {
+  const configLabels = config?.variants.map((variant) => variant.label) ?? []
+  if (configLabels.length === 0) {
+    return {
+      labels: analyticsRows.map((row) => row.variant),
+      rows: analyticsRows,
+    }
+  }
+
+  const byLabel = new Map(analyticsRows.map((row) => [row.variant, row]))
+  const rows = configLabels.map((label) => {
+    const measured = byLabel.get(label)
+    const isControl = controlVariant != null && label === controlVariant
+    if (!measured) {
+      return {
+        variant: label,
+        visitors: 0,
+        formSubmitted: 0,
+        fsr: 0,
+        isControl,
+      }
+    }
+    return { ...measured, isControl: measured.isControl ?? isControl }
+  })
+
+  return { labels: configLabels, rows }
 }
 
 function buildWinnerCallout(
@@ -160,15 +200,22 @@ export function buildExperimentsDashboardData(
 ): ExperimentsDashboardData {
   const {
     experiments,
-    variantPerformance,
     performanceByLocation,
     performanceByState,
     performanceByZipcode,
   } = data
 
-  const variants = variantPerformance.map((v) => v.variant)
   const rateLabel = experimentVariantPerformanceRateLabel(formType)
-  const controlVariant = data.controlVariant ?? null
+  const controlVariant =
+    data.controlVariant ??
+    config?.variants.find((variant) => variant.isControl)?.label ??
+    null
+  const { labels: variants, rows: variantPerformance } =
+    mergeVariantRosterWithAnalytics(
+      config,
+      data.variantPerformance,
+      controlVariant
+    )
   const controlVariantLabel = controlVariant
     ? experimentVariantDisplayLabel(controlVariant)
     : null
@@ -190,11 +237,28 @@ export function buildExperimentsDashboardData(
     )
   }
 
+  const experimentSummaries =
+    experiments.length > 0
+      ? experiments
+      : config
+        ? [
+            {
+              id: config.id,
+              name: config.name,
+              status: config.status,
+              variants: config.variantLabels,
+              startDate: config.startDate,
+              endDate: config.endDate,
+              noEndDate: config.noEndDate,
+            },
+          ]
+        : []
+
   return {
     formType,
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: rangeId,
-    experiments,
+    experiments: experimentSummaries,
     variantPerformance: {
       title: "Variant performance",
       columns,
@@ -239,7 +303,10 @@ export function buildExperimentsDashboardData(
       rateLabel
     ),
     controlVariant: controlVariantLabel,
-    mode: data.mode ?? "data_variant",
+    mode:
+      config && config.variants.length > 0
+        ? "multi_domain"
+        : (data.mode ?? "data_variant"),
     winnerCallout: buildWinnerCallout(variantPerformance, controlVariant),
     config,
     siblings,

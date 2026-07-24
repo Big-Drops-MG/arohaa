@@ -30,29 +30,31 @@ export type ExperimentTableHighlight = {
   boldColumnIds?: string[]
 }
 
-export function experimentHighlightForTables(tables: {
-  winningVariantId: ExperimentVariantId | null
+/**
+ * Emphasises the variant whose landing page is being viewed, so the tables read
+ * as "this is you" rather than singling out an arbitrary row.
+ */
+export function experimentHighlightForTables(current: {
+  variantRowId: ExperimentVariantId | null
+  variantRateColumnId: string | null
 }): {
   variantPerformance: ExperimentTableHighlight
   performanceByLocation: ExperimentTableHighlight
   performanceByState: ExperimentTableHighlight
   performanceByZipcode: ExperimentTableHighlight
 } {
-  const winner = tables.winningVariantId
-  if (!winner) {
-    return {
-      variantPerformance: {},
-      performanceByLocation: {},
-      performanceByState: {},
-      performanceByZipcode: {},
-    }
-  }
+  const rowHighlight: ExperimentTableHighlight = current.variantRowId
+    ? { boldRowVariantIds: [current.variantRowId] }
+    : {}
+  const columnHighlight: ExperimentTableHighlight = current.variantRateColumnId
+    ? { boldColumnIds: [current.variantRateColumnId] }
+    : {}
 
   return {
-    variantPerformance: { boldRowVariantIds: [winner] },
-    performanceByLocation: { boldColumnIds: [`${winner}-fsr`] },
-    performanceByState: { boldColumnIds: [`${winner}-fsr`] },
-    performanceByZipcode: { boldColumnIds: [`${winner}-fsr`] },
+    variantPerformance: rowHighlight,
+    performanceByLocation: columnHighlight,
+    performanceByState: columnHighlight,
+    performanceByZipcode: columnHighlight,
   }
 }
 
