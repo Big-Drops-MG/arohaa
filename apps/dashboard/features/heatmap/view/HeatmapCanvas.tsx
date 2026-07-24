@@ -28,12 +28,11 @@ const DEVICE_WIDTH: Record<HeatmapDevice, number> = {
   mobile: 390,
 }
 
-/** Tall enough for typical landing pages; iframe expands so our shell owns scroll. */
 const PAGE_HEIGHT_RATIO: Record<HeatmapDevice, number> = {
-  all: 3.2,
-  desktop: 3.2,
-  tablet: 4,
-  mobile: 5.5,
+  all: 3.4,
+  desktop: 3.4,
+  tablet: 4.2,
+  mobile: 5.8,
 }
 
 const COLOR_STOPS = [
@@ -85,7 +84,7 @@ function renderIntensityHeatmap(
 
   const cellW = width / 10
   const cellH = height / 10
-  const radius = Math.max(width, height) * 0.11
+  const baseRadius = Math.max(cellW, Math.min(cellH, width * 0.12)) * 1.15
 
   for (const cell of cells) {
     const col = Math.max(0, Math.min(9, Math.floor(cell.gridX / 10)))
@@ -94,6 +93,7 @@ function renderIntensityHeatmap(
     if (weight <= 0) continue
     const cx = (col + 0.5) * cellW
     const cy = (row + 0.5) * cellH
+    const radius = baseRadius * (0.75 + weight * 0.5)
 
     octx.globalAlpha = Math.max(0.08, weight)
     const grad = octx.createRadialGradient(cx, cy, 0, cx, cy, radius)
@@ -167,9 +167,6 @@ export function HeatmapCanvas({
     frameWidth * (device === "mobile" ? 1.9 : 0.72)
   )
   const pageHeight = Math.round(frameWidth * PAGE_HEIGHT_RATIO[device])
-  // Click/attention coords are viewport-relative → paint only the first screen.
-  // Scroll depth spans the full page → paint the full scrollable height.
-  const overlayHeight = mode === "scroll" ? pageHeight : viewportHeight
 
   const [pageLoaded, setPageLoaded] = useState(false)
   const [pageFailed, setPageFailed] = useState(false)
@@ -189,20 +186,20 @@ export function HeatmapCanvas({
 
     const dpr = window.devicePixelRatio || 1
     canvas.width = Math.floor(frameWidth * dpr)
-    canvas.height = Math.floor(overlayHeight * dpr)
+    canvas.height = Math.floor(pageHeight * dpr)
     canvas.style.width = `${frameWidth}px`
-    canvas.style.height = `${overlayHeight}px`
+    canvas.style.height = `${pageHeight}px`
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-    ctx.clearRect(0, 0, frameWidth, overlayHeight)
+    ctx.clearRect(0, 0, frameWidth, pageHeight)
 
     if (!hasLivePage && !backgroundImage) {
       ctx.fillStyle = "#f4f4f5"
-      ctx.fillRect(0, 0, frameWidth, overlayHeight)
+      ctx.fillRect(0, 0, frameWidth, pageHeight)
 
       const step = 24
       ctx.fillStyle = "#e4e4e7"
-      for (let y = 0; y < overlayHeight; y += step) {
+      for (let y = 0; y < pageHeight; y += step) {
         for (let x = 0; x < frameWidth; x += step) {
           if ((x / step + y / step) % 2 === 0) {
             ctx.fillRect(x, y, step, step)
@@ -213,18 +210,12 @@ export function HeatmapCanvas({
 
     const paintOverlay = () => {
       if (mode === "scroll") {
-        drawScrollOverlay(
-          ctx,
-          frameWidth,
-          overlayHeight,
-          scrollBuckets,
-          opacity
-        )
+        drawScrollOverlay(ctx, frameWidth, pageHeight, scrollBuckets, opacity)
       } else {
         renderIntensityHeatmap(
           ctx,
           frameWidth,
-          overlayHeight,
+          pageHeight,
           cells,
           maxValue,
           opacity
@@ -235,7 +226,7 @@ export function HeatmapCanvas({
     if (backgroundImage) {
       const img = new Image()
       img.onload = () => {
-        ctx.drawImage(img, 0, 0, frameWidth, overlayHeight)
+        ctx.drawImage(img, 0, 0, frameWidth, pageHeight)
         paintOverlay()
       }
       img.src = backgroundImage
@@ -252,7 +243,7 @@ export function HeatmapCanvas({
     maxValue,
     mode,
     opacity,
-    overlayHeight,
+    pageHeight,
     scrollBuckets,
   ])
 

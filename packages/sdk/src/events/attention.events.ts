@@ -1,5 +1,6 @@
 import { track } from "../core/tracker"
 import { getHeatmapSampleRate } from "../core/sdk-config"
+import { getPageNorm } from "../utils/helpers"
 import { getStableSelector } from "../utils/selector"
 
 type DeviceType = "mobile" | "tablet" | "desktop"
@@ -80,9 +81,12 @@ function setupMousemoveSampling(): void {
 
       const vw = window.innerWidth || 1
       const vh = window.innerHeight || 1
+      const { px, py } = getPageNorm(e.clientX, e.clientY)
       track("heatmap_move", {
         vx: clamp01(e.clientX / vw),
         vy: clamp01(e.clientY / vh),
+        px,
+        py,
         vw: window.innerWidth,
         vh: window.innerHeight,
         device: resolveDevice(),
