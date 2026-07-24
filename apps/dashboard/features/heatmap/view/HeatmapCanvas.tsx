@@ -28,6 +28,14 @@ const DEVICE_WIDTH: Record<HeatmapDevice, number> = {
   mobile: 390,
 }
 
+/** Tall enough for typical landing pages; iframe expands so our shell owns scroll. */
+const PAGE_HEIGHT_RATIO: Record<HeatmapDevice, number> = {
+  all: 3.2,
+  desktop: 3.2,
+  tablet: 4,
+  mobile: 5.5,
+}
+
 const COLOR_STOPS = [
   { t: 0, r: 59, g: 130, b: 246 },
   { t: 0.35, r: 34, g: 211, b: 238 },
@@ -155,9 +163,14 @@ export function HeatmapCanvas({
 }: HeatmapCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const frameWidth = DEVICE_WIDTH[device]
-  const frameHeight = Math.round(
+  const viewportHeight = Math.round(
     frameWidth * (device === "mobile" ? 1.9 : 0.72)
   )
+  const pageHeight = Math.round(frameWidth * PAGE_HEIGHT_RATIO[device])
+  // Click/attention coords are viewport-relative → paint only the first screen.
+  // Scroll depth spans the full page → paint the full scrollable height.
+  const overlayHeight = mode === "scroll" ? pageHeight : viewportHeight
+
   const [pageLoaded, setPageLoaded] = useState(false)
   const [pageFailed, setPageFailed] = useState(false)
 
@@ -176,20 +189,20 @@ export function HeatmapCanvas({
 
     const dpr = window.devicePixelRatio || 1
     canvas.width = Math.floor(frameWidth * dpr)
-    canvas.height = Math.floor(frameHeight * dpr)
+    canvas.height = Math.floor(overlayHeight * dpr)
     canvas.style.width = `${frameWidth}px`
-    canvas.style.height = `${frameHeight}px`
+    canvas.style.height = `${overlayHeight}px`
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-    ctx.clearRect(0, 0, frameWidth, frameHeight)
+    ctx.clearRect(0, 0, frameWidth, overlayHeight)
 
     if (!hasLivePage && !backgroundImage) {
       ctx.fillStyle = "#f4f4f5"
-      ctx.fillRect(0, 0, frameWidth, frameHeight)
+      ctx.fillRect(0, 0, frameWidth, overlayHeight)
 
       const step = 24
       ctx.fillStyle = "#e4e4e7"
-      for (let y = 0; y < frameHeight; y += step) {
+      for (let y = 0; y < overlayHeight; y += step) {
         for (let x = 0; x < frameWidth; x += step) {
           if ((x / step + y / step) % 2 === 0) {
             ctx.fillRect(x, y, step, step)
@@ -200,12 +213,18 @@ export function HeatmapCanvas({
 
     const paintOverlay = () => {
       if (mode === "scroll") {
-        drawScrollOverlay(ctx, frameWidth, frameHeight, scrollBuckets, opacity)
+        drawScrollOverlay(
+          ctx,
+          frameWidth,
+          overlayHeight,
+          scrollBuckets,
+          opacity
+        )
       } else {
         renderIntensityHeatmap(
           ctx,
           frameWidth,
-          frameHeight,
+          overlayHeight,
           cells,
           maxValue,
           opacity
@@ -216,7 +235,7 @@ export function HeatmapCanvas({
     if (backgroundImage) {
       const img = new Image()
       img.onload = () => {
-        ctx.drawImage(img, 0, 0, frameWidth, frameHeight)
+        ctx.drawImage(img, 0, 0, frameWidth, overlayHeight)
         paintOverlay()
       }
       img.src = backgroundImage
@@ -228,57 +247,68 @@ export function HeatmapCanvas({
     backgroundImage,
     cells,
     device,
-    frameHeight,
     frameWidth,
     hasLivePage,
     maxValue,
     mode,
     opacity,
+    overlayHeight,
     scrollBuckets,
   ])
 
   return (
     <div
       className={cn(
-        "overflow-auto rounded-lg border border-neutral-200 bg-neutral-100 p-4",
+        "rounded-lg border border-neutral-200 bg-neutral-100 p-4",
         className
       )}
     >
       <div
-        className="relative mx-auto rounded-md border border-neutral-300 bg-white shadow-sm"
-        style={{ width: frameWidth, height: frameHeight, maxWidth: "100%" }}
+        className="mx-auto overflow-auto rounded-md border border-neutral-300 bg-white shadow-sm"
+        style={{
+          width: frameWidth,
+          height: viewportHeight,
+          maxWidth: "100%",
+        }}
       >
-        {hasLivePage ? (
-          <iframe
-            key={backgroundUrl}
-            src={backgroundUrl ?? undefined}
-            title="Landing page preview"
-            className="absolute inset-0 z-0 h-full w-full border-0"
-            sandbox="allow-scripts allow-same-origin"
-            loading="lazy"
-            referrerPolicy="no-referrer"
-            onLoad={() => setPageLoaded(true)}
-            onError={() => setPageFailed(true)}
+        <div
+          className="relative"
+          style={{ width: frameWidth, height: pageHeight }}
+        >
+          {hasLivePage ? (
+            <iframe
+              key={backgroundUrl}
+              src={backgroundUrl ?? undefined}
+              title="Landing page preview"
+              className="pointer-events-none absolute top-0 left-0 z-0 w-full border-0"
+              style={{ height: pageHeight }}
+              sandbox="allow-scripts allow-same-origin"
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              scrolling="no"
+              onLoad={() => setPageLoaded(true)}
+              onError={() => setPageFailed(true)}
+            />
+          ) : null}
+
+          {hasLivePage && !pageLoaded && !pageFailed ? (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-neutral-50 text-xs text-neutral-400">
+              Loading page preview…
+            </div>
+          ) : null}
+
+          {hasLivePage && pageFailed ? (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-neutral-50 px-6 text-center text-xs text-neutral-400">
+              Could not embed this page. Showing overlay only.
+            </div>
+          ) : null}
+
+          <canvas
+            ref={canvasRef}
+            aria-label={`${mode} heatmap overlay`}
+            className="pointer-events-none absolute top-0 left-0 z-20"
           />
-        ) : null}
-
-        {hasLivePage && !pageLoaded && !pageFailed ? (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-neutral-50 text-xs text-neutral-400">
-            Loading page preview…
-          </div>
-        ) : null}
-
-        {hasLivePage && pageFailed ? (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-neutral-50 px-6 text-center text-xs text-neutral-400">
-            Could not embed this page. Showing overlay only.
-          </div>
-        ) : null}
-
-        <canvas
-          ref={canvasRef}
-          aria-label={`${mode} heatmap overlay`}
-          className="pointer-events-none absolute inset-0 z-20"
-        />
+        </div>
       </div>
     </div>
   )
