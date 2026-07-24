@@ -188,6 +188,40 @@ async function ensureHeatmapEvents(): Promise<void> {
       GROUP BY workspace_id, page_url, device, day, scroll_depth_bucket
     `,
   })
+
+  await client.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS heatmap_section_rollup (
+          workspace_id UUID,
+          page_url String,
+          device LowCardinality(String),
+          day Date,
+          element_selector String,
+          dwell_ms AggregateFunction(sum, Float64),
+          views AggregateFunction(count)
+      ) ENGINE = AggregatingMergeTree()
+      ORDER BY (workspace_id, page_url, device, day, element_selector)
+    `,
+  })
+
+  await client.command({ query: "DROP VIEW IF EXISTS heatmap_section_mv" })
+  await client.command({
+    query: `
+      CREATE MATERIALIZED VIEW IF NOT EXISTS heatmap_section_mv
+      TO heatmap_section_rollup
+      AS SELECT
+          workspace_id,
+          page_url,
+          ${HEATMAP_DEVICE_EXPR} AS device,
+          toDate(timestamp) AS day,
+          element_selector,
+          sumState(JSONExtractFloat(properties, 'dwell_ms')) AS dwell_ms,
+          countState() AS views
+      FROM ${HEATMAP_EVENTS_TABLE}
+      WHERE event_type = 'section' AND element_selector != ''
+      GROUP BY workspace_id, page_url, device, day, element_selector
+    `,
+  })
 }
 
 async function tableExists(): Promise<boolean> {

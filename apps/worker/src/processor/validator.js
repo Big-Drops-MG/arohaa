@@ -109,27 +109,44 @@ export function validateHeatmapEvent(event) {
     return false;
   }
 
-  if (!event.timestamp || typeof event.timestamp !== 'string') {
+  if (!event.timestamp) {
     console.warn(
       `[Validator] Dropping heatmap event: Missing timestamp for workspace ${workspaceId}`,
     );
     return false;
   }
 
-  const ts = Date.parse(event.timestamp.replace(' ', 'T'));
+  let timestampStr;
+  if (typeof event.timestamp === 'string') {
+    timestampStr = event.timestamp.trim();
+  } else if (typeof event.timestamp === 'number' && Number.isFinite(event.timestamp)) {
+    const ms = event.timestamp < 1e12 ? event.timestamp * 1000 : event.timestamp;
+    timestampStr = new Date(ms).toISOString().replace('T', ' ').replace('Z', '');
+  } else if (event.timestamp instanceof Date && !Number.isNaN(event.timestamp.getTime())) {
+    timestampStr = event.timestamp.toISOString().replace('T', ' ').replace('Z', '');
+  } else {
+    console.warn(
+      `[Validator] Dropping heatmap event: Invalid timestamp type for workspace ${workspaceId}`,
+    );
+    return false;
+  }
+
+  const ts = Date.parse(timestampStr.replace(' ', 'T'));
   if (Number.isNaN(ts)) {
     console.warn(
-      `[Validator] Dropping heatmap event: Corrupted timestamp = ${event.timestamp}`,
+      `[Validator] Dropping heatmap event: Corrupted timestamp = ${timestampStr}`,
     );
     return false;
   }
 
   if (ts < MIN_CREATED_AT || ts > Date.now() + MAX_FUTURE_SKEW_MS) {
     console.warn(
-      `[Validator] Dropping heatmap event: timestamp out of range = ${event.timestamp}`,
+      `[Validator] Dropping heatmap event: timestamp out of range = ${timestampStr}`,
     );
     return false;
   }
+
+  event.timestamp = timestampStr;
 
   if (eventType === 'click' || eventType === 'mousemove') {
     if (typeof event.x !== 'number' || typeof event.y !== 'number') {

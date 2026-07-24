@@ -22,6 +22,9 @@ const HEATMAP_SDK_EVENTS = new Set([
   'heatmap_section',
 ])
 
+const CH_TS_RE =
+  /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:?\d{2})?$/
+
 function parseProps(raw: string): Record<string, unknown> {
   if (!raw || raw === '{}') return {}
   try {
@@ -55,9 +58,44 @@ function clamp01(value: number): number {
   return value
 }
 
+function pad(n: number, w = 2): string {
+  return String(n).padStart(w, '0')
+}
+
+export function toHeatmapTimestamp(value: unknown): string | null {
+  let date: Date | null = null
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    if (CH_TS_RE.test(trimmed)) {
+      return trimmed.includes('T')
+        ? trimmed.replace('T', ' ').replace(/Z$/, '')
+        : trimmed
+    }
+    const parsed = Date.parse(
+      trimmed.includes(' ') ? trimmed.replace(' ', 'T') : trimmed,
+    )
+    if (Number.isNaN(parsed)) return null
+    date = new Date(parsed)
+  } else if (typeof value === 'number' && Number.isFinite(value)) {
+    date = new Date(value < 1e12 ? value * 1000 : value)
+  } else if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    date = value
+  }
+
+  if (!date) return null
+
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}.${pad(date.getUTCMilliseconds(), 3)}`
+}
+
 function resolveDevice(row: EventRow, props: Record<string, unknown>): string {
   const fromProps = str(props.device)
-  if (fromProps === 'mobile' || fromProps === 'tablet' || fromProps === 'desktop') {
+  if (
+    fromProps === 'mobile' ||
+    fromProps === 'tablet' ||
+    fromProps === 'desktop'
+  ) {
     return fromProps
   }
   const fromRow = row.device?.trim()
@@ -72,7 +110,9 @@ function resolveDevice(row: EventRow, props: Record<string, unknown>): string {
 }
 
 export function shouldRouteToHeatmapQueue(row: EventRow): boolean {
-  return HEATMAP_SDK_EVENTS.has(row.event_name) || row.event_name === 'scroll_depth'
+  return (
+    HEATMAP_SDK_EVENTS.has(row.event_name) || row.event_name === 'scroll_depth'
+  )
 }
 
 export function eventRowToHeatmapRow(row: EventRow): HeatmapRow | null {
@@ -82,9 +122,11 @@ export function eventRowToHeatmapRow(row: EventRow): HeatmapRow | null {
   const pageUrl = (row.url || '').trim()
   if (!pageUrl) return null
 
+  const timestamp = toHeatmapTimestamp(row.created_at)
+  if (!timestamp) return null
+
   const props = parseProps(row.properties)
   const device = resolveDevice(row, props)
-  const timestamp = row.created_at
 
   if (row.event_name === 'heatmap_click') {
     return {
