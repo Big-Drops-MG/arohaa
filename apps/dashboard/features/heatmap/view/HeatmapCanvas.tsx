@@ -240,8 +240,15 @@ export function HeatmapCanvas({
 
   const hasLivePage = Boolean(backgroundUrl && !backgroundImage)
 
+  // For a live embedded page, seed the height at a realistic device viewport so
+  // that `100vh`-based layouts resolve correctly. Using the tall PAGE_HEIGHT_RATIO
+  // estimate here would inflate `vh` inside the iframe, forcing the page taller
+  // than its real content (trailing white space) and stretching the overlay.
   const pageHeight =
-    measuredHeight ?? Math.round(frameWidth * PAGE_HEIGHT_RATIO[device])
+    measuredHeight ??
+    (hasLivePage
+      ? viewportHeight
+      : Math.round(frameWidth * PAGE_HEIGHT_RATIO[device]))
 
   useEffect(() => {
     setPageLoaded(false)

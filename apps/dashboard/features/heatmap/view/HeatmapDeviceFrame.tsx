@@ -91,7 +91,6 @@ export function HeatmapDeviceFrame({
         className="relative rounded-[2.25rem] bg-neutral-900 p-[10px] shadow-[0_20px_50px_-20px_rgba(0,0,0,0.45)] ring-1 ring-black/40"
         style={{ width: mobileWidth }}
       >
-        <div className="absolute top-3 left-1/2 z-30 h-[22px] w-[88px] -translate-x-1/2 rounded-full bg-neutral-950" />
         {screen}
         <div className="pointer-events-none absolute inset-y-16 -left-[2px] w-[3px] rounded-l-sm bg-neutral-700" />
         <div className="pointer-events-none absolute top-28 -right-[2px] h-12 w-[3px] rounded-r-sm bg-neutral-700" />
