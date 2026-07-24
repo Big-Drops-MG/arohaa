@@ -4,6 +4,7 @@ import { getStableSelector } from "../utils/selector"
 
 type DeviceType = "mobile" | "tablet" | "desktop"
 
+const MOVE_MAX_KEEP = 0.25
 const MOVE_THROTTLE_MS = 500
 const MIN_DWELL_MS = 250
 const MAX_SECTIONS = 40
@@ -74,8 +75,8 @@ function setupMousemoveSampling(): void {
       lastMoveAt = now
 
 
-      const rate = getHeatmapSampleRate()
-      if (rate < 1 && Math.random() >= rate) return
+      const keep = Math.min(getHeatmapSampleRate(), MOVE_MAX_KEEP)
+      if (Math.random() >= keep) return
 
       const vw = window.innerWidth || 1
       const vh = window.innerHeight || 1

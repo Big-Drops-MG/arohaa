@@ -258,6 +258,39 @@ async function ensureHeatmapSchema(ch: ClickHouseClient): Promise<void> {
 
   await ch.command({
     query: `
+      CREATE TABLE IF NOT EXISTS heatmap_mousemove_rollup (
+          workspace_id UUID,
+          page_url String,
+          device LowCardinality(String),
+          day Date,
+          grid_x Int32,
+          grid_y Int32,
+          moves AggregateFunction(count)
+      ) ENGINE = AggregatingMergeTree()
+      ORDER BY (workspace_id, page_url, device, day, grid_x, grid_y)
+    `,
+  })
+  await ch.command({ query: 'DROP VIEW IF EXISTS heatmap_mousemove_mv' })
+  await ch.command({
+    query: `
+      CREATE MATERIALIZED VIEW IF NOT EXISTS heatmap_mousemove_mv
+      TO heatmap_mousemove_rollup
+      AS SELECT
+          workspace_id,
+          page_url,
+          ${HEATMAP_DEVICE_EXPR} AS device,
+          toDate(timestamp) AS day,
+          ${HEATMAP_GRID_X} AS grid_x,
+          ${HEATMAP_GRID_Y} AS grid_y,
+          countState() AS moves
+      FROM ${HEATMAP_EVENTS_TABLE}
+      WHERE event_type = 'mousemove'
+      GROUP BY workspace_id, page_url, device, day, grid_x, grid_y
+    `,
+  })
+
+  await ch.command({
+    query: `
       CREATE TABLE IF NOT EXISTS heatmap_scroll_rollup (
           workspace_id UUID,
           page_url String,

@@ -9,6 +9,8 @@ import type { ExperimentsDashboardData } from "@/features/experiments/model/expe
 import { getExperimentsEmptyDashboardData } from "@/features/experiments/controller/experiments-empty-data"
 import type { FunnelDashboardData } from "@/features/funnel/model/funnel"
 import { getFunnelEmptyDashboardData } from "@/features/funnel/controller/funnel-empty-data"
+import type { HeatmapDashboardData } from "@/features/heatmap/model/heatmap"
+import { getHeatmapEmptyDashboardData } from "@/features/heatmap/controller/heatmap-empty-data"
 import type {
   OverviewDashboardData,
   OverviewDateRangeId,
@@ -33,6 +35,7 @@ export type ProjectTabData = {
   overview: OverviewDashboardData
   traffic: TrafficDashboardData
   funnel: FunnelDashboardData
+  heatmap: HeatmapDashboardData
   "event-tracking": EventTrackingDashboardData
   segments: SegmentsDashboardData
   experiments: ExperimentsDashboardData
@@ -71,6 +74,8 @@ function emptyTabData(
       return getTrafficEmptyDashboardData(projectId, rangeId, formType)
     case "funnel":
       return getFunnelEmptyDashboardData(projectId, rangeId, formType)
+    case "heatmap":
+      return getHeatmapEmptyDashboardData(projectId, rangeId)
     case "event-tracking":
       return getEventTrackingEmptyDashboardData(projectId, rangeId, formType)
     case "segments":
@@ -202,6 +207,7 @@ export function useLazyProjectTabData({
       getTrafficEmptyDashboardData(projectId, rangeId, formType),
     funnel:
       cache.funnel ?? getFunnelEmptyDashboardData(projectId, rangeId, formType),
+    heatmap: cache.heatmap ?? getHeatmapEmptyDashboardData(projectId, rangeId),
     eventTracking:
       cache["event-tracking"] ??
       getEventTrackingEmptyDashboardData(projectId, rangeId, formType),

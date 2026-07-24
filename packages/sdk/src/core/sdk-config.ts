@@ -4,7 +4,7 @@ export type SdkRemoteConfig = {
   heatmapSampleRate: number
 }
 
-let remoteConfig: SdkRemoteConfig = { heatmapSampleRate: 1 }
+let remoteConfig: SdkRemoteConfig = { heatmapSampleRate: 0.25 }
 let heatmapSampled: boolean | null = null
 let configReady = false
 

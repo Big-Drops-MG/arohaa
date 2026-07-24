@@ -1,0 +1,42 @@
+import type { NextRequest } from "next/server"
+import { NextResponse } from "next/server"
+import {
+  parseDashboardCustomRange,
+  parseTrafficRangeId,
+} from "@/features/traffic/model/traffic-range"
+import { loadHeatmapDashboardDataForApi } from "@/lib/server/heatmap-dashboard-load"
+import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
+import { requireLandingPageActor } from "@/lib/server/landing-auth"
+
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ publicId: string }> }
+) {
+  const actor = await requireLandingPageActor()
+  if (!actor) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  const limited = await enforceLandingApiRateLimit(actor.id)
+  if (limited) return limited
+
+  const { publicId } = await context.params
+  const rangeId = parseTrafficRangeId(
+    request.nextUrl.searchParams.get("range_id")
+  )
+  const customRange = parseDashboardCustomRange(
+    request.nextUrl.searchParams.get("from"),
+    request.nextUrl.searchParams.get("to")
+  )
+
+  const result = await loadHeatmapDashboardDataForApi(publicId, rangeId, {
+    modeRaw: request.nextUrl.searchParams.get("mode"),
+    deviceRaw: request.nextUrl.searchParams.get("device"),
+    pageUrl: request.nextUrl.searchParams.get("page_url"),
+    customRange,
+  })
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status })
+  }
+
+  return NextResponse.json(result.data)
+}

@@ -18,7 +18,7 @@ export const workspaces = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     name: text('name').notNull().default('Personal'),
-    heatmapSampleRate: real('heatmapSampleRate').notNull().default(1),
+    heatmapSampleRate: real('heatmapSampleRate').notNull().default(0.25),
     createdAt: timestamp('createdAt', { mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updatedAt', { mode: 'date' }).notNull().defaultNow(),
     deletedAt: timestamp('deletedAt', { mode: 'date' }),

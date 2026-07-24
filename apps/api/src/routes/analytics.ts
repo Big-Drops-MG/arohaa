@@ -41,6 +41,14 @@ import {
   syncSeoResults,
 } from '../services/analytics-seo.service.js'
 import { getDiscoveredUtmParams, getUtmDimensionValues } from '../services/analytics-utm-discover.service.js'
+import {
+  emptyAnalyticsHeatmap,
+  getAnalyticsHeatmap,
+} from '../services/analytics-heatmap.service.js'
+import type {
+  HeatmapDevice,
+  HeatmapMode,
+} from '../types/analytics-heatmap.js'
 import { parseAnalyticsUtmFilter } from '../lib/analytics-utm-filter.js'
 import {
   ANALYTICS_RANGE_IDS,
@@ -119,6 +127,46 @@ const funnelSchema = {
     },
   },
 } as const
+
+const heatmapSchema = {
+  querystring: {
+    type: 'object',
+    required: ['workspace_id'],
+    properties: {
+      workspace_id: { type: 'string', format: 'uuid' },
+      range_id: rangeIdSchema,
+      ...customRangeSchemaProps,
+      mode: {
+        type: 'string',
+        enum: ['click', 'scroll', 'attention'],
+      },
+      device: {
+        type: 'string',
+        enum: ['all', 'mobile', 'tablet', 'desktop'],
+      },
+      page_url: { type: 'string', maxLength: 4000 },
+    },
+  },
+} as const
+
+function parseHeatmapMode(value: string | undefined): HeatmapMode {
+  if (value === 'scroll' || value === 'attention' || value === 'click') {
+    return value
+  }
+  return 'click'
+}
+
+function parseHeatmapDevice(value: string | undefined): HeatmapDevice {
+  if (
+    value === 'mobile' ||
+    value === 'tablet' ||
+    value === 'desktop' ||
+    value === 'all'
+  ) {
+    return value
+  }
+  return 'all'
+}
 
 type RangeQuery = {
   range_id?: string
@@ -355,6 +403,48 @@ export async function analyticsRoutes(server: FastifyInstance) {
           }),
         logLabel: 'analytics funnel query ok',
         logContext: { range_id: parsed.rangeId, form_type: formType },
+      })
+    },
+  )
+
+  server.get<{
+    Querystring: {
+      workspace_id: string
+      range_id?: string
+      from?: string
+      to?: string
+      mode?: string
+      device?: string
+      page_url?: string
+    }
+  }>(
+    '/v1/analytics/heatmap',
+    { schema: heatmapSchema, config: ANALYTICS_RATE_LIMIT },
+    async (request, reply) => {
+      const { workspace_id, page_url } = request.query
+      const parsed = parseRangeQuery(request.query)
+      if (!parsed.ok) {
+        return reply.code(400).send({ error: parsed.error })
+      }
+      const mode = parseHeatmapMode(request.query.mode)
+      const device = parseHeatmapDevice(request.query.device)
+
+      await sendAnalyticsQuery({
+        request,
+        reply,
+        workspaceId: workspace_id,
+        emptyValue: emptyAnalyticsHeatmap(parsed.rangeId, mode, device),
+        run: () =>
+          getAnalyticsHeatmap({
+            workspaceId: workspace_id,
+            mode,
+            device,
+            pageUrl: page_url,
+            rangeId: parsed.rangeId,
+            custom: parsed.custom,
+          }),
+        logLabel: 'analytics heatmap query ok',
+        logContext: { range_id: parsed.rangeId, mode, device },
       })
     },
   )

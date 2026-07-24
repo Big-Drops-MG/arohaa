@@ -2,6 +2,7 @@ export const PROJECT_TABS = [
   { value: "overview", label: "Overview" },
   { value: "traffic", label: "Traffic" },
   { value: "funnel", label: "Funnel" },
+  { value: "heatmap", label: "Heatmap" },
   { value: "event-tracking", label: "Event Tracking" },
   { value: "segments", label: "Segments" },
   { value: "experiments", label: "Experiments" },

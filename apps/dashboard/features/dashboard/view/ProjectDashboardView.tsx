@@ -12,6 +12,7 @@ import { AlertsDashboard } from "@/features/alerts/view/AlertsDashboard"
 import { EventTrackingDashboard } from "@/features/event-tracking/view/EventTrackingDashboard"
 import { ExperimentsDashboard } from "@/features/experiments/view/ExperimentsDashboard"
 import { FunnelDashboard } from "@/features/funnel/view/FunnelDashboard"
+import { HeatmapDashboard } from "@/features/heatmap/view/HeatmapDashboard"
 import type {
   OverviewDashboardData,
   OverviewDateRangeId,
@@ -76,6 +77,7 @@ export function ProjectDashboardView({
     overview,
     traffic,
     funnel,
+    heatmap,
     eventTracking,
     segments,
     experiments,
@@ -140,6 +142,12 @@ export function ProjectDashboardView({
                 />
               ) : tab.value === "funnel" ? (
                 <FunnelDashboard data={funnel} projectId={projectId} isActive />
+              ) : tab.value === "heatmap" ? (
+                <HeatmapDashboard
+                  data={heatmap}
+                  projectId={projectId}
+                  isActive
+                />
               ) : tab.value === "event-tracking" ? (
                 <EventTrackingDashboard
                   data={eventTracking}

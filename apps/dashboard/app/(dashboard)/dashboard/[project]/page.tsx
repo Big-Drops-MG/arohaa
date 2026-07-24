@@ -14,6 +14,7 @@ import { loadAlertsDashboardData } from "@/lib/server/alerts-dashboard-load"
 import { loadEventTrackingDashboardData } from "@/lib/server/event-tracking-dashboard-load"
 import { loadExperimentsDashboardData } from "@/lib/server/experiments-dashboard-load"
 import { loadFunnelDashboardData } from "@/lib/server/funnel-dashboard-load"
+import { loadHeatmapDashboardData } from "@/lib/server/heatmap-dashboard-load"
 import { loadLandingPageSettingsData } from "@/lib/server/landing-page-settings-load"
 import { loadOverviewDashboardData } from "@/lib/server/overview-dashboard-load"
 import { loadSegmentsDashboardData } from "@/lib/server/segments-dashboard-load"
@@ -91,6 +92,7 @@ export default async function ProjectPage({
   let overview = null
   let traffic = null
   let funnel = null
+  let heatmap = null
   let eventTracking = null
   let segments = null
   let experiments = null
@@ -121,6 +123,13 @@ export default async function ProjectPage({
         landingPagePublicId: project,
         rangeId,
         utmFilter,
+        customRange,
+      })
+      break
+    case "heatmap":
+      heatmap = await loadHeatmapDashboardData({
+        landingPagePublicId: project,
+        rangeId,
         customRange,
       })
       break
@@ -184,6 +193,7 @@ export default async function ProjectPage({
           overview: overview ?? undefined,
           traffic: traffic ?? undefined,
           funnel: funnel ?? undefined,
+          heatmap: heatmap ?? undefined,
           "event-tracking": eventTracking ?? undefined,
           segments: segments ?? undefined,
           experiments: experiments ?? undefined,
