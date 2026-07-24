@@ -29,10 +29,10 @@ const DEVICE_WIDTH: Record<HeatmapDevice, number> = {
 }
 
 const PAGE_HEIGHT_RATIO: Record<HeatmapDevice, number> = {
-  all: 3.4,
-  desktop: 3.4,
-  tablet: 4.2,
-  mobile: 5.8,
+  all: 2.2,
+  desktop: 2.2,
+  tablet: 2.6,
+  mobile: 8.5,
 }
 
 const COLOR_STOPS = [
@@ -162,21 +162,47 @@ export function HeatmapCanvas({
   className,
 }: HeatmapCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
   const frameWidth = DEVICE_WIDTH[device]
   const viewportHeight = Math.round(
     frameWidth * (device === "mobile" ? 1.9 : 0.72)
   )
-  const pageHeight = Math.round(frameWidth * PAGE_HEIGHT_RATIO[device])
 
   const [pageLoaded, setPageLoaded] = useState(false)
   const [pageFailed, setPageFailed] = useState(false)
+  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null)
 
   const hasLivePage = Boolean(backgroundUrl && !backgroundImage)
+
+  const pageHeight =
+    measuredHeight ?? Math.round(frameWidth * PAGE_HEIGHT_RATIO[device])
 
   useEffect(() => {
     setPageLoaded(false)
     setPageFailed(false)
+    setMeasuredHeight(null)
   }, [backgroundUrl])
+
+  useEffect(() => {
+    if (!hasLivePage) return
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow) return
+      const data = event.data as
+        | { source?: string; type?: string; height?: number }
+        | undefined
+      if (!data || data.source !== "arohaa-heatmap" || data.type !== "doc-size")
+        return
+      const height = Number(data.height)
+      if (!Number.isFinite(height) || height <= 0) return
+      const clamped = Math.max(
+        Math.round(frameWidth * 0.5),
+        Math.min(Math.round(frameWidth * 30), Math.round(height))
+      )
+      setMeasuredHeight((prev) => (prev === clamped ? prev : clamped))
+    }
+    window.addEventListener("message", onMessage)
+    return () => window.removeEventListener("message", onMessage)
+  }, [frameWidth, hasLivePage, backgroundUrl])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -269,6 +295,7 @@ export function HeatmapCanvas({
           {hasLivePage ? (
             <iframe
               key={backgroundUrl}
+              ref={iframeRef}
               src={backgroundUrl ?? undefined}
               title="Landing page preview"
               className="pointer-events-none absolute top-0 left-0 z-0 w-full border-0"
