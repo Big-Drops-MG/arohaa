@@ -2,10 +2,12 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { Input } from "@workspace/ui/components/input"
 import { Button } from "@workspace/ui/components/button"
+import { Input } from "@workspace/ui/components/input"
 import { Plus, Search } from "lucide-react"
 import type { LandingPageListItem } from "@/features/dashboard/model/landing-page"
+import { NEW_LANDING_PATH } from "@/features/dashboard/model/new-landing-mode"
+import { AddNewProjectMenu } from "@/features/dashboard/view/AddNewProjectMenu"
 import { LandingPageCard } from "@/features/dashboard/view/LandingPageCard"
 
 type LandingPagesDashboardProps = {
@@ -30,7 +32,7 @@ export function LandingPagesDashboard({ pages }: LandingPagesDashboardProps) {
     return (
       <div className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col items-center justify-center px-4 py-10">
         <Button type="button" size="lg" className="gap-2" asChild>
-          <Link href="/dashboard/new-landing">
+          <Link href={NEW_LANDING_PATH}>
             <Plus className="size-5" aria-hidden />
             Add a Landing Page
           </Link>
@@ -58,12 +60,7 @@ export function LandingPagesDashboard({ pages }: LandingPagesDashboardProps) {
           />
         </div>
 
-        <Button type="button" className="h-11 gap-2 rounded-md px-5" asChild>
-          <Link href="/dashboard/new-landing">
-            <Plus className="size-4" aria-hidden />
-            Add New
-          </Link>
-        </Button>
+        <AddNewProjectMenu className="h-11 rounded-md px-5" />
       </div>
 
       {filteredPages.length > 0 ? (

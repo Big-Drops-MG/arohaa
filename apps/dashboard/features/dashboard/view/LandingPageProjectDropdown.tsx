@@ -3,8 +3,12 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Check, ChevronsUpDown, Plus, Search } from "lucide-react"
+import { Check, ChevronsUpDown, FlaskConical, Plus, Search } from "lucide-react"
 import { LandingPageFavicon } from "@/features/dashboard/view/LandingPageFavicon"
+import {
+  NEW_LANDING_PATH,
+  newVariantPath,
+} from "@/features/dashboard/model/new-landing-mode"
 import { Input } from "@workspace/ui/components/input"
 import { cn } from "@workspace/ui/lib/utils"
 import {
@@ -269,12 +273,25 @@ export function LandingPageProjectDropdown({
         <div className="p-2">
           <DropdownMenuItem asChild className="cursor-pointer rounded-md p-0">
             <Link
-              href="/dashboard/new-landing"
+              href={NEW_LANDING_PATH}
               className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-neutral-700 transition-colors outline-none hover:bg-neutral-50 focus:bg-neutral-50"
               onClick={handleRequestClose}
             >
               <Plus className="size-4 shrink-0 text-neutral-500" aria-hidden />
               Add landing page
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild className="cursor-pointer rounded-md p-0">
+            <Link
+              href={newVariantPath(currentId)}
+              className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-neutral-700 transition-colors outline-none hover:bg-neutral-50 focus:bg-neutral-50"
+              onClick={handleRequestClose}
+            >
+              <FlaskConical
+                className="size-4 shrink-0 text-neutral-500"
+                aria-hidden
+              />
+              Add variant of {label}
             </Link>
           </DropdownMenuItem>
         </div>

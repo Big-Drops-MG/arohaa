@@ -1,5 +1,10 @@
 import { desc, isNull } from "drizzle-orm"
-import { db, landingPages } from "@workspace/database"
+import {
+  db,
+  experiments,
+  landingPages,
+  normalizeExperimentVariantLinks,
+} from "@workspace/database"
 import type {
   LandingPageListItem,
   LandingPageNavItem,
@@ -41,16 +46,47 @@ export async function getLandingPageList(): Promise<LandingPageListItem[]> {
     .where(isNull(landingPages.deletedAt))
     .orderBy(desc(landingPages.createdAt))
 
-  const metricsList = await Promise.all(
-    rows.map((row) => fetchLandingPageCardMetrics(row.id, row.formType))
-  )
+  const [metricsList, variantByLandingPageId] = await Promise.all([
+    Promise.all(
+      rows.map((row) => fetchLandingPageCardMetrics(row.id, row.formType))
+    ),
+    getVariantMembership(),
+  ])
 
-  return rows.map((row, index) => ({
-    publicId: row.publicId,
-    brandName: row.brandName,
-    landingPageUrl: row.landingPageUrl,
-    faviconUrl: row.faviconUrl,
-    isLive: isLandingPageLive(row.status),
-    metrics: metricsList[index]!,
-  }))
+  return rows.map((row, index) => {
+    const membership = variantByLandingPageId.get(row.id) ?? null
+    return {
+      publicId: row.publicId,
+      brandName: row.brandName,
+      landingPageUrl: row.landingPageUrl,
+      faviconUrl: row.faviconUrl,
+      isLive: isLandingPageLive(row.status),
+      metrics: metricsList[index]!,
+      variantLabel: membership?.label ?? null,
+      experimentName: membership?.experimentName ?? null,
+    }
+  })
+}
+
+async function getVariantMembership(): Promise<
+  Map<string, { label: string; experimentName: string }>
+> {
+  const rows = await db
+    .select({ name: experiments.name, variants: experiments.variants })
+    .from(experiments)
+
+  const membership = new Map<
+    string,
+    { label: string; experimentName: string }
+  >()
+  for (const row of rows) {
+    for (const link of normalizeExperimentVariantLinks(row.variants)) {
+      if (membership.has(link.landingPageId)) continue
+      membership.set(link.landingPageId, {
+        label: link.label,
+        experimentName: row.name,
+      })
+    }
+  }
+  return membership
 }

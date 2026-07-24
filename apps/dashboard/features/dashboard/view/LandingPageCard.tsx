@@ -1,5 +1,6 @@
 import Link from "next/link"
 import type { LandingPageListItem } from "@/features/dashboard/model/landing-page"
+import { experimentVariantDisplayLabel } from "@/features/experiments/utils/experiment-table-columns"
 import { LandingPageFavicon } from "@/features/dashboard/view/LandingPageFavicon"
 import { LandingPageLiveBadge } from "@/features/dashboard/view/LandingPageLiveBadge"
 import { LandingPageMetrics } from "@/features/dashboard/view/LandingPageMetrics"
@@ -34,6 +35,16 @@ export function LandingPageCard({ page }: LandingPageCardProps) {
             <p className="truncate text-xs text-muted-foreground">
               {page.landingPageUrl}
             </p>
+            {page.variantLabel ? (
+              <p
+                className="mt-1.5 inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-muted/60 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                title={page.experimentName ?? undefined}
+              >
+                <span className="truncate">
+                  {experimentVariantDisplayLabel(page.variantLabel)}
+                </span>
+              </p>
+            ) : null}
           </div>
         </div>
         <LandingPageMetrics metrics={page.metrics} />

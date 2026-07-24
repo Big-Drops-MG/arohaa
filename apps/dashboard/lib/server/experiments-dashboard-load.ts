@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 import { getExperimentsEmptyDashboardData } from "@/features/experiments/controller/experiments-empty-data"
 import type { ExperimentsDashboardData } from "@/features/experiments/model/experiments"
 import {
+  experimentVariantDisplayLabel,
   experimentVariantPerformanceRateLabel,
   experimentVariantPerformanceSubmitLabel,
 } from "@/features/experiments/utils/experiment-table-columns"
@@ -99,7 +100,7 @@ function buildDimensionPerformanceSection(
     { key: dimensionKey, label: dimensionLabel },
     ...variants.map((v) => ({
       key: `variant${v}`,
-      label: `Variant ${v} ${rateLabel}`,
+      label: `${experimentVariantDisplayLabel(v)} ${rateLabel}`,
     })),
   ]
 
@@ -125,6 +126,7 @@ function buildWinnerCallout(
   if (rows.length === 0) return null
 
   if (controlVariant) {
+    const controlLabel = experimentVariantDisplayLabel(controlVariant)
     let best: AnalyticsVariantPerformanceRow | null = null
     for (const row of rows) {
       if (row.variant === controlVariant) continue
@@ -137,16 +139,16 @@ function buildWinnerCallout(
       }
     }
     if (best && (best.fsrLiftAbs ?? 0) > 0) {
-      return `${best.variant} leads vs ${controlVariant} by ${fmtLiftPct(best.fsrLiftAbs)} FSR points (${fmtLiftPct(best.fsrLiftPct)} relative)`
+      return `${experimentVariantDisplayLabel(best.variant)} leads vs ${controlLabel} by ${fmtLiftPct(best.fsrLiftAbs)} FSR points (${fmtLiftPct(best.fsrLiftPct)} relative)`
     }
-    return `Control ${controlVariant} is ahead or tied on FSR`
+    return `Control ${controlLabel} is ahead or tied on FSR`
   }
 
   let best = rows[0]!
   for (const row of rows) {
     if (row.fsr > best.fsr) best = row
   }
-  return `${best.variant} leads with ${fmtPct(best.fsr)} FSR`
+  return `${experimentVariantDisplayLabel(best.variant)} leads with ${fmtPct(best.fsr)} FSR`
 }
 
 export function buildExperimentsDashboardData(
@@ -167,6 +169,9 @@ export function buildExperimentsDashboardData(
   const variants = variantPerformance.map((v) => v.variant)
   const rateLabel = experimentVariantPerformanceRateLabel(formType)
   const controlVariant = data.controlVariant ?? null
+  const controlVariantLabel = controlVariant
+    ? experimentVariantDisplayLabel(controlVariant)
+    : null
   const showLift = Boolean(controlVariant)
 
   const columns = [
@@ -195,7 +200,7 @@ export function buildExperimentsDashboardData(
       columns,
       rows: variantPerformance.map((row) => {
         const base: Record<string, string> = {
-          variant: row.variant,
+          variant: experimentVariantDisplayLabel(row.variant),
           visitors: fmtCount(row.visitors),
           formSubmitted: fmtCount(row.formSubmitted),
           fsr: fmtPct(row.fsr),
@@ -233,7 +238,7 @@ export function buildExperimentsDashboardData(
       variants,
       rateLabel
     ),
-    controlVariant,
+    controlVariant: controlVariantLabel,
     mode: data.mode ?? "data_variant",
     winnerCallout: buildWinnerCallout(variantPerformance, controlVariant),
     config,

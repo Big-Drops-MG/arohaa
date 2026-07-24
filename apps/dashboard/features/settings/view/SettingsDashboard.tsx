@@ -6,6 +6,7 @@ import type { LandingPageSettingsData } from "@/features/settings/model/landing-
 import { SettingsActivityLogSection } from "@/features/settings/view/SettingsActivityLogSection"
 import { SettingsConnectionSection } from "@/features/settings/view/SettingsConnectionSection"
 import { SettingsDangerZoneSection } from "@/features/settings/view/SettingsDangerZoneSection"
+import { SettingsExperimentSection } from "@/features/settings/view/SettingsExperimentSection"
 import { SettingsGeneralSection } from "@/features/settings/view/SettingsGeneralSection"
 import { SettingsLiveSection } from "@/features/settings/view/SettingsLiveSection"
 import {
@@ -91,6 +92,13 @@ export function SettingsDashboard({ initialData }: SettingsDashboardProps) {
               ingestApiBase={settings.ingestApiBase}
               sdkScriptUrl={settings.sdkScriptUrl}
               onConnectionUpdate={handleSettingsUpdate}
+            />
+          ) : null}
+
+          {activeSection === "experiment" ? (
+            <SettingsExperimentSection
+              key={`experiment-${settings.landingPage.publicId}`}
+              landingPage={settings.landingPage}
             />
           ) : null}
 

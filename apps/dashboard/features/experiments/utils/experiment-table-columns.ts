@@ -2,6 +2,19 @@ import type { ExperimentVariantRef } from "@/features/experiments/model/experime
 import type { OverviewLandingFormType } from "@/features/overview/model/overview"
 import type { TrafficBreakdownTable } from "@/features/traffic/model/traffic"
 
+/**
+ * Turns a stored variant label ("A") into its display form ("Variant A").
+ * Labels that already read as a variant, and the "Unknown" bucket emitted by
+ * analytics for unmatched traffic, are passed through unchanged.
+ */
+export function experimentVariantDisplayLabel(label: string): string {
+  const trimmed = label.trim()
+  if (!trimmed) return "Unknown"
+  if (trimmed.toLowerCase() === "unknown") return trimmed
+  if (/^variants?\b/i.test(trimmed)) return trimmed
+  return `Variant ${trimmed}`
+}
+
 export function experimentVariantPerformanceSubmitLabel(
   formType: OverviewLandingFormType
 ): string {

@@ -61,6 +61,7 @@ export * from './email.js';
 export * from './notifications/create-notification.js';
 export * from './landing/normalizeLandingPageUrl.js';
 export * from './landing/generatePublicLandingId.js';
+export * from './landing/experimentVariants.js';
 export * from './landing/htmlVerificationToken.js';
 export * from './workspace-api-keys/api-key.js';
 export * from './alert-webhooks/dispatch.js';

@@ -1,12 +1,14 @@
 "use client"
 
 import Link from "next/link"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
+import { Label } from "@workspace/ui/components/label"
 import { cn } from "@workspace/ui/lib/utils"
 import { CheckCircle2, XCircle, Loader2, Copy, Check } from "lucide-react"
 import type { OverviewLandingFormType } from "@/features/overview/model/overview"
+import type { NewLandingMode } from "@/features/dashboard/model/new-landing-mode"
 
 type Step = 1 | 2 | 3
 type ConnectionStatus = "idle" | "checking" | "connected" | "failed"
@@ -20,7 +22,33 @@ const FORM_TYPE_OPTIONS = [
   { value: "zip" as const, label: "Zip" },
 ] as const
 
-export function NewLandingPage() {
+type ParentProjectOption = {
+  publicId: string
+  brandName: string
+  hostname: string
+  formType: string
+}
+
+type VariantLabelPlan = {
+  hasExperiment: boolean
+  experimentName: string | null
+  parentLabel: string
+  takenLabels: string[]
+  availableLabels: string[]
+  suggestedLabel: string
+}
+
+type NewLandingPageProps = {
+  mode?: NewLandingMode
+  initialParentPublicId?: string | null
+}
+
+export function NewLandingPage({
+  mode = "landing",
+  initialParentPublicId = null,
+}: NewLandingPageProps) {
+  const isVariantMode = mode === "variant"
+
   const [currentStep, setCurrentStep] = useState<Step>(1)
   const [brandName, setBrandName] = useState("")
   const [landingPageUrl, setLandingPageUrl] = useState("")
@@ -36,8 +64,97 @@ export function NewLandingPage() {
   const [publicLandingId, setPublicLandingId] = useState<string | null>(null)
   const [verifyHtmlHint, setVerifyHtmlHint] = useState<string | null>(null)
 
+  const [parentOptions, setParentOptions] = useState<ParentProjectOption[]>([])
+  const [parentPublicId, setParentPublicId] = useState(
+    initialParentPublicId ?? ""
+  )
+  const [isLoadingParents, setIsLoadingParents] = useState(isVariantMode)
+  const [labelPlan, setLabelPlan] = useState<VariantLabelPlan | null>(null)
+  const [variantLabel, setVariantLabel] = useState("")
+  const [createdVariantLabel, setCreatedVariantLabel] = useState<string | null>(
+    null
+  )
+
+  const selectedParent = useMemo(
+    () => parentOptions.find((p) => p.publicId === parentPublicId) ?? null,
+    [parentOptions, parentPublicId]
+  )
+
+  useEffect(() => {
+    if (!isVariantMode) return
+
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch("/api/landing-pages", { cache: "no-store" })
+        const data = (await res.json().catch(() => ({}))) as {
+          landingPages?: ParentProjectOption[]
+          error?: string
+        }
+        if (cancelled) return
+        if (!res.ok) {
+          setSubmitError(data.error ?? "Could not load your projects")
+          return
+        }
+        setParentOptions(data.landingPages ?? [])
+      } finally {
+        if (!cancelled) setIsLoadingParents(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isVariantMode])
+
+  useEffect(() => {
+    if (!isVariantMode || !parentPublicId) {
+      setLabelPlan(null)
+      return
+    }
+
+    let cancelled = false
+    void (async () => {
+      const res = await fetch(
+        `/api/landing-pages/${encodeURIComponent(parentPublicId)}/experiments/variant-labels`,
+        { cache: "no-store" }
+      )
+      const data = (await res.json().catch(() => ({}))) as VariantLabelPlan & {
+        error?: string
+      }
+      if (cancelled) return
+      if (!res.ok) {
+        setLabelPlan(null)
+        setSubmitError(data.error ?? "Could not load variant labels")
+        return
+      }
+      setSubmitError(null)
+      setLabelPlan(data)
+      setVariantLabel(data.suggestedLabel)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isVariantMode, parentPublicId])
+
+  // Variants are only comparable when both pages measure the same conversion.
+  useEffect(() => {
+    if (!selectedParent) return
+    const parentFormType = selectedParent.formType
+    if (
+      parentFormType === "single" ||
+      parentFormType === "multiple" ||
+      parentFormType === "zip"
+    ) {
+      setFormType(parentFormType)
+    }
+  }, [selectedParent])
+
   const isStep1Valid =
-    brandName.trim().length > 0 && landingPageUrl.trim().length > 0
+    brandName.trim().length > 0 &&
+    landingPageUrl.trim().length > 0 &&
+    (!isVariantMode || (parentPublicId.length > 0 && variantLabel.length > 0))
 
   const handleContinue = useCallback(async () => {
     if (!isStep1Valid) return
@@ -52,6 +169,7 @@ export function NewLandingPage() {
           landingPageUrl,
           formType,
           faviconUrl: faviconUrl.trim() || undefined,
+          ...(isVariantMode ? { variantOf: parentPublicId, variantLabel } : {}),
         }),
       })
       const data = (await res.json().catch(() => ({}))) as {
@@ -59,6 +177,7 @@ export function NewLandingPage() {
         sdkSnippetHtml?: string
         htmlVerificationMetaTag?: string
         landingPage?: { publicId?: string }
+        variant?: { label?: string } | null
       }
       if (!res.ok) {
         setSubmitError(data.error ?? "Could not create landing page")
@@ -72,6 +191,7 @@ export function NewLandingPage() {
       }
       setSdkSnippet(snippet)
       setPublicLandingId(pid)
+      setCreatedVariantLabel(data.variant?.label ?? null)
       setHtmlVerificationMetaTag(
         typeof data.htmlVerificationMetaTag === "string"
           ? data.htmlVerificationMetaTag
@@ -81,7 +201,16 @@ export function NewLandingPage() {
     } finally {
       setIsSubmitting(false)
     }
-  }, [brandName, faviconUrl, formType, isStep1Valid, landingPageUrl])
+  }, [
+    brandName,
+    faviconUrl,
+    formType,
+    isStep1Valid,
+    isVariantMode,
+    landingPageUrl,
+    parentPublicId,
+    variantLabel,
+  ])
 
   const handleCopySDK = useCallback(async () => {
     if (!sdkSnippet) return
@@ -188,13 +317,81 @@ export function NewLandingPage() {
     )
   }, [publicLandingId])
 
+  const experimentHref = publicLandingId
+    ? `/dashboard/${encodeURIComponent(publicLandingId)}?tab=experiments`
+    : "/dashboard"
+
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-10">
       <section className="mb-8">
-        <h2 className="mb-5 text-xl font-semibold text-foreground">
-          Step 1: Add Landing Page
+        <h2 className="mb-1 text-xl font-semibold text-foreground">
+          {isVariantMode ? "Step 1: Add Variant" : "Step 1: Add Landing Page"}
         </h2>
+        {isVariantMode ? (
+          <p className="mb-5 text-sm text-muted-foreground">
+            Pick the project you want to test against, label this page, then add
+            its own details. Both pages will share one experiment.
+          </p>
+        ) : null}
         <div className="space-y-4">
+          {isVariantMode ? (
+            <div className="grid gap-4 sm:grid-cols-[1fr_10rem]">
+              <div className="space-y-1.5">
+                <Label htmlFor="variant-parent">Project on Arohaa</Label>
+                <select
+                  id="variant-parent"
+                  className="flex h-12 w-full rounded-lg border border-input bg-transparent px-4 text-base disabled:opacity-60"
+                  value={parentPublicId}
+                  disabled={isLoadingParents || currentStep > 1}
+                  onChange={(e) => setParentPublicId(e.target.value)}
+                >
+                  <option value="">
+                    {isLoadingParents
+                      ? "Loading projects…"
+                      : "Select a project…"}
+                  </option>
+                  {parentOptions.map((option) => (
+                    <option key={option.publicId} value={option.publicId}>
+                      {option.brandName} ({option.hostname})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="variant-label">Variant</Label>
+                <select
+                  id="variant-label"
+                  className="flex h-12 w-full rounded-lg border border-input bg-transparent px-4 text-base disabled:opacity-60"
+                  value={variantLabel}
+                  disabled={!labelPlan || currentStep > 1}
+                  onChange={(e) => setVariantLabel(e.target.value)}
+                >
+                  {labelPlan ? null : <option value="">—</option>}
+                  {labelPlan?.availableLabels.map((label) => (
+                    <option key={label} value={label}>
+                      Variant {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ) : null}
+
+          {isVariantMode && labelPlan && selectedParent ? (
+            <p className="text-sm text-muted-foreground">
+              {labelPlan.hasExperiment
+                ? `${selectedParent.brandName} is Variant ${labelPlan.parentLabel} in "${labelPlan.experimentName}". Already used: ${labelPlan.takenLabels.join(", ")}.`
+                : `${selectedParent.brandName} becomes Variant ${labelPlan.parentLabel} and a new experiment is created.`}
+            </p>
+          ) : null}
+
+          {isVariantMode && !isLoadingParents && parentOptions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              You need at least one landing page on Arohaa before you can add a
+              variant.
+            </p>
+          ) : null}
+
           <Input
             placeholder="Brand Name"
             value={brandName}
@@ -264,6 +461,12 @@ export function NewLandingPage() {
                 )
               })}
             </div>
+            {isVariantMode && selectedParent ? (
+              <p className="text-xs text-muted-foreground">
+                Matched to {selectedParent.brandName} so both variants report
+                the same conversion.
+              </p>
+            ) : null}
           </fieldset>
           {submitError ? (
             <p className="text-sm text-destructive" role="alert">
@@ -297,7 +500,9 @@ export function NewLandingPage() {
           </h2>
           <p className="mb-4 text-sm text-muted-foreground">
             Copy this script and paste it inside the &lt;head&gt; tag of your
-            landing page.
+            {createdVariantLabel
+              ? ` Variant ${createdVariantLabel} page.`
+              : " landing page."}
           </p>
           <div className="min-h-[80px] rounded-lg border border-border bg-muted/30 px-4 py-4">
             <code className="block text-sm break-all whitespace-pre-wrap text-foreground">
@@ -379,15 +584,33 @@ export function NewLandingPage() {
                   SDK Connected Successfully
                 </span>
               </div>
-              <p className="mt-3 text-sm text-muted-foreground">
-                Your landing page is now connected with Arohaa.
-                <br />
-                We will start collecting page views, sessions, clicks, form
-                activity, and conversion events.
-              </p>
-              <Button className="mt-4" asChild>
-                <Link href="/dashboard">Go to Dashboard</Link>
-              </Button>
+              {createdVariantLabel ? (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  This page is now Variant {createdVariantLabel}. The Experiment
+                  tab of every page in this experiment now compares all
+                  variants.
+                </p>
+              ) : (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  Your landing page is now connected with Arohaa.
+                  <br />
+                  We will start collecting page views, sessions, clicks, form
+                  activity, and conversion events.
+                </p>
+              )}
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                {createdVariantLabel ? (
+                  <Button asChild>
+                    <Link href={experimentHref}>View experiment</Link>
+                  </Button>
+                ) : null}
+                <Button
+                  asChild
+                  variant={createdVariantLabel ? "outline" : "default"}
+                >
+                  <Link href="/dashboard">Go to Dashboard</Link>
+                </Button>
+              </div>
             </div>
           )}
 

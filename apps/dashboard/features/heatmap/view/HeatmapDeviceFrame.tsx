@@ -26,7 +26,7 @@ function frameKind(device: HeatmapDevice): "laptop" | "tablet" | "mobile" {
 
 const LAPTOP_PAD_X = 12
 const LAPTOP_PAD_TOP = 12
-const LAPTOP_PAD_BOTTOM = 8
+const LAPTOP_PAD_BOTTOM = 0
 const MOBILE_BEZEL = 10
 const TABLET_BEZEL = 12
 
@@ -76,18 +76,23 @@ export function HeatmapDeviceFrame({
   // Screen is exactly screenWidth × screenHeight so the page fills the bezel
   // edge-to-edge. Scrollbars are overlaid (not layout) so they never carve a
   // white gutter into the right or bottom of the preview.
+  const screenRadius =
+    kind === "mobile"
+      ? "1.7rem"
+      : kind === "tablet"
+        ? "1.15rem"
+        : "0.375rem 0.375rem 0 0"
+
   const screen = (
     <div
-      className="overflow-hidden bg-white"
+      className={cn(
+        "overflow-hidden",
+        kind === "laptop" ? "bg-neutral-800" : "bg-white"
+      )}
       style={{
         width: screenWidth,
         height: screenHeight,
-        borderRadius:
-          kind === "mobile"
-            ? "1.7rem"
-            : kind === "tablet"
-              ? "1.15rem"
-              : "0.375rem",
+        borderRadius: screenRadius,
       }}
     >
       <div
@@ -145,7 +150,7 @@ export function HeatmapDeviceFrame({
           }}
         >
           <div className="absolute top-1.5 left-1/2 size-1.5 -translate-x-1/2 rounded-full bg-neutral-950/70" />
-          <div className="overflow-hidden ring-1 ring-black/10">{screen}</div>
+          <div className="overflow-hidden rounded-sm">{screen}</div>
         </div>
         <div
           className="relative h-3 rounded-b-md bg-neutral-700"

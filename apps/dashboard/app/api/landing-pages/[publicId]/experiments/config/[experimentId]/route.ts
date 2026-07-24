@@ -21,8 +21,8 @@ export async function PATCH(
   if (limited) return limited
 
   const { publicId, experimentId } = await props.params
-  const hub = await getActiveLandingPageForActor(actor.id, publicId)
-  if (!hub) {
+  const landingPage = await getActiveLandingPageForActor(actor.id, publicId)
+  if (!landingPage) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
 
@@ -41,27 +41,31 @@ export async function PATCH(
     ? (record.variants as ExperimentVariantLink[])
     : undefined
 
-  const result = await updateExperimentForLandingPage(hub, experimentId, {
-    name: typeof record.name === "string" ? record.name : undefined,
-    status: typeof record.status === "string" ? record.status : undefined,
-    startDate:
-      typeof record.startDate === "string" ? record.startDate : undefined,
-    endDate:
-      record.endDate === null
-        ? null
-        : typeof record.endDate === "string"
-          ? record.endDate
-          : undefined,
-    noEndDate:
-      typeof record.noEndDate === "boolean" ? record.noEndDate : undefined,
-    variants,
-    controlLandingPageId:
-      record.controlLandingPageId === null
-        ? null
-        : typeof record.controlLandingPageId === "string"
-          ? record.controlLandingPageId
-          : undefined,
-  })
+  const result = await updateExperimentForLandingPage(
+    landingPage,
+    experimentId,
+    {
+      name: typeof record.name === "string" ? record.name : undefined,
+      status: typeof record.status === "string" ? record.status : undefined,
+      startDate:
+        typeof record.startDate === "string" ? record.startDate : undefined,
+      endDate:
+        record.endDate === null
+          ? null
+          : typeof record.endDate === "string"
+            ? record.endDate
+            : undefined,
+      noEndDate:
+        typeof record.noEndDate === "boolean" ? record.noEndDate : undefined,
+      variants,
+      controlLandingPageId:
+        record.controlLandingPageId === null
+          ? null
+          : typeof record.controlLandingPageId === "string"
+            ? record.controlLandingPageId
+            : undefined,
+    }
+  )
 
   if (!result.ok) {
     return NextResponse.json(
@@ -70,7 +74,7 @@ export async function PATCH(
     )
   }
 
-  const data = await getExperimentConfigForLandingPage(hub)
+  const data = await getExperimentConfigForLandingPage(landingPage)
   return NextResponse.json(data)
 }
 
@@ -86,12 +90,12 @@ export async function DELETE(
   if (limited) return limited
 
   const { publicId, experimentId } = await props.params
-  const hub = await getActiveLandingPageForActor(actor.id, publicId)
-  if (!hub) {
+  const landingPage = await getActiveLandingPageForActor(actor.id, publicId)
+  if (!landingPage) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
 
-  const result = await deleteExperimentForLandingPage(hub, experimentId)
+  const result = await deleteExperimentForLandingPage(landingPage, experimentId)
   if (!result.ok) {
     return NextResponse.json(
       { error: result.error },

@@ -377,7 +377,10 @@ export function HeatmapCanvas({
         screenHeight={viewportHeight}
       >
         <div
-          className="relative block bg-white"
+          className={cn(
+            "relative block",
+            hasLivePage || backgroundImage ? "bg-transparent" : "bg-white"
+          )}
           style={{ width: frameWidth, height: contentHeight }}
         >
           {hasLivePage ? (

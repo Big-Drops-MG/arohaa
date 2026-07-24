@@ -1,7 +1,8 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
-import { Plus, Trash2 } from "lucide-react"
+import Link from "next/link"
+import { useEffect, useMemo, useState, useTransition } from "react"
+import { FlaskConical, Plus, Trash2 } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import {
   Card,
@@ -12,6 +13,8 @@ import {
 import { Input } from "@workspace/ui/components/input"
 import { Label } from "@workspace/ui/components/label"
 import { cn } from "@workspace/ui/lib/utils"
+import { newVariantPath } from "@/features/dashboard/model/new-landing-mode"
+import { experimentVariantDisplayLabel } from "@/features/experiments/utils/experiment-table-columns"
 import type {
   ExperimentConfigView,
   SiblingLandingPageOption,
@@ -22,8 +25,13 @@ type ExperimentsSetupCardProps = {
   projectId: string
   config: ExperimentConfigView | null
   siblings: SiblingLandingPageOption[]
-  hubLandingPageId?: string
   onChanged: () => void
+}
+
+type VariantLabelPlan = {
+  parentLabel: string
+  availableLabels: string[]
+  suggestedLabel: string
 }
 
 function healthLabel(health: "ok" | "waiting" | "stale"): string {
@@ -52,6 +60,54 @@ export function ExperimentsSetupCard({
   const [controlLandingPageId, setControlLandingPageId] = useState(
     config?.controlLandingPageId ?? ""
   )
+  const [labelPlan, setLabelPlan] = useState<VariantLabelPlan | null>(null)
+
+  const configSignature = config
+    ? [
+        config.id,
+        config.name,
+        config.status,
+        config.startDate,
+        config.endDate ?? "",
+        config.controlLandingPageId ?? "",
+        config.variants.map((v) => `${v.label}@${v.landingPageId}`).join(","),
+      ].join("|")
+    : "none"
+
+  // Resyncs only when the persisted experiment actually changes, so the
+  // 60s background refetch never overwrites what is being typed.
+  const [syncedSignature, setSyncedSignature] = useState(configSignature)
+  if (config && configSignature !== syncedSignature) {
+    setSyncedSignature(configSignature)
+    setName(config.name)
+    setStatus(config.status)
+    setStartDate(config.startDate)
+    setNoEndDate(config.noEndDate)
+    setEndDate(config.endDate ?? "")
+    setControlLandingPageId(config.controlLandingPageId ?? "")
+  }
+
+  useEffect(() => {
+    let cancelled = false
+
+    void (async () => {
+      const res = await fetch(
+        `/api/landing-pages/${encodeURIComponent(projectId)}/experiments/variant-labels`,
+        { cache: "no-store" }
+      )
+      if (!res.ok) return
+      const data = (await res
+        .json()
+        .catch(() => null)) as VariantLabelPlan | null
+      if (!data || cancelled) return
+      setLabelPlan(data)
+      setLabel((current) => current || data.suggestedLabel)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, configSignature])
 
   const linkedIds = useMemo(
     () => new Set(config?.variants.map((v) => v.landingPageId) ?? []),
@@ -59,6 +115,12 @@ export function ExperimentsSetupCard({
   )
 
   const availableSiblings = siblings.filter((s) => !linkedIds.has(s.id))
+
+  const labelOptions = useMemo(() => {
+    const options = [...(labelPlan?.availableLabels ?? [])]
+    if (label && !options.includes(label)) options.unshift(label)
+    return options
+  }, [label, labelPlan])
 
   async function createExperiment() {
     setError(null)
@@ -197,24 +259,60 @@ export function ExperimentsSetupCard({
           </p>
         ) : null}
 
+        {config && !config.isHub ? (
+          <p className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
+            This page is{" "}
+            <span className="font-medium text-foreground">
+              {config.currentLabel
+                ? experimentVariantDisplayLabel(config.currentLabel)
+                : "a linked variant"}
+            </span>{" "}
+            of{" "}
+            {config.hubPublicId ? (
+              <Link
+                href={`/dashboard/${encodeURIComponent(config.hubPublicId)}?tab=experiments`}
+                className="font-medium text-foreground underline underline-offset-2"
+              >
+                {config.hubBrandName ?? "the parent project"}
+              </Link>
+            ) : (
+              (config.hubBrandName ?? "the parent project")
+            )}
+            . Changes here apply to the shared experiment.
+          </p>
+        ) : null}
+
         {!config ? (
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <Label htmlFor="exp-name">Experiment name</Label>
-              <Input
-                id="exp-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Homepage domains"
-              />
+          <div className="space-y-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <Label htmlFor="exp-name">Experiment name</Label>
+                <Input
+                  id="exp-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Homepage domains"
+                />
+              </div>
+              <Button
+                type="button"
+                onClick={() => void createExperiment()}
+                disabled={isPending || !name.trim()}
+              >
+                Create experiment
+              </Button>
             </div>
-            <Button
-              type="button"
-              onClick={() => void createExperiment()}
-              disabled={isPending || !name.trim()}
-            >
-              Create experiment
-            </Button>
+            <p className="text-sm text-muted-foreground">
+              Or{" "}
+              <Link
+                href={newVariantPath(projectId)}
+                className="font-medium text-foreground underline underline-offset-2"
+              >
+                add a new variant landing page
+              </Link>{" "}
+              to start an experiment with this project as{" "}
+              {experimentVariantDisplayLabel(labelPlan?.parentLabel ?? "A")}.
+            </p>
           </div>
         ) : (
           <>
@@ -282,7 +380,7 @@ export function ExperimentsSetupCard({
                   <option value="">None</option>
                   {config.variants.map((v) => (
                     <option key={v.landingPageId} value={v.landingPageId}>
-                      {v.label} ({v.hostname})
+                      {experimentVariantDisplayLabel(v.label)} ({v.hostname})
                     </option>
                   ))}
                 </select>
@@ -323,10 +421,15 @@ export function ExperimentsSetupCard({
                     >
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-foreground">
-                          {v.label}
+                          {experimentVariantDisplayLabel(v.label)}
                           {v.isControl ? (
                             <span className="ml-2 text-xs font-normal text-muted-foreground">
                               Control
+                            </span>
+                          ) : null}
+                          {v.isCurrent ? (
+                            <span className="ml-2 text-xs font-normal text-muted-foreground">
+                              This page
                             </span>
                           ) : null}
                         </p>
@@ -355,7 +458,7 @@ export function ExperimentsSetupCard({
                         variant="ghost"
                         onClick={() => void removeVariant(v.landingPageId)}
                         disabled={isPending}
-                        aria-label={`Remove ${v.label}`}
+                        aria-label={`Remove ${experimentVariantDisplayLabel(v.label)}`}
                       >
                         <Trash2 className="size-4" />
                       </Button>
@@ -383,13 +486,22 @@ export function ExperimentsSetupCard({
                 </select>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="add-label">Label</Label>
-                <Input
+                <Label htmlFor="add-label">Variant</Label>
+                <select
                   id="add-label"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
                   value={label}
                   onChange={(e) => setLabel(e.target.value)}
-                  placeholder="B"
-                />
+                >
+                  {labelOptions.length === 0 ? (
+                    <option value="">—</option>
+                  ) : null}
+                  {labelOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {experimentVariantDisplayLabel(option)}
+                    </option>
+                  ))}
+                </select>
               </div>
               <Button
                 type="button"
@@ -400,12 +512,18 @@ export function ExperimentsSetupCard({
                 Add variant
               </Button>
             </div>
-            {availableSiblings.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                All workspace landing pages are already linked, or add another
-                project first.
-              </p>
-            ) : null}
+            <p className="text-sm text-muted-foreground">
+              {availableSiblings.length === 0
+                ? "All landing pages are already linked. "
+                : ""}
+              <Link
+                href={newVariantPath(projectId)}
+                className="inline-flex items-center gap-1.5 font-medium text-foreground underline underline-offset-2"
+              >
+                <FlaskConical className="size-3.5" aria-hidden />
+                Add a new variant landing page
+              </Link>
+            </p>
           </>
         )}
       </CardContent>

@@ -7,12 +7,22 @@ import {
   db,
   generateHtmlVerificationToken,
   generatePublicLandingId,
+  isVariantLabelTaken,
   landingPages,
+  normalizeExperimentVariantLabel,
   normalizeLandingPageUrl,
   normalizedBrandName,
 } from "@workspace/database"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { writeLandingPageAuditLog } from "@/lib/server/landing-audit-log"
+import {
+  attachLandingPageAsVariant,
+  getVariantLabelPlanForLandingPage,
+} from "@/lib/server/experiments-store"
+import {
+  getActiveLandingPageInWorkspace,
+  type LandingPageRow,
+} from "@/lib/server/landing-pages-store"
 import {
   buildHtmlVerificationMetaTag,
   buildLandingSdkScriptTag,
@@ -153,6 +163,44 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: nu.error }, { status: 400 })
   }
 
+  // Variants are validated before the landing page is inserted so an invalid
+  // parent or label never leaves an unlinked page behind.
+  const record = (body ?? {}) as Record<string, unknown>
+  const variantOfRaw =
+    typeof record.variantOf === "string" ? record.variantOf.trim() : ""
+
+  let variantParent: LandingPageRow | null = null
+  let variantLabel = ""
+
+  if (variantOfRaw) {
+    variantParent = await getActiveLandingPageInWorkspace(ws.id, variantOfRaw)
+    if (!variantParent) {
+      return NextResponse.json(
+        { error: "Parent project not found" },
+        { status: 404 }
+      )
+    }
+
+    const plan = await getVariantLabelPlanForLandingPage(variantParent)
+    const labelParsed = normalizeExperimentVariantLabel(
+      typeof record.variantLabel === "string"
+        ? record.variantLabel
+        : plan.suggestedLabel
+    )
+    if (!labelParsed.ok) {
+      return NextResponse.json({ error: labelParsed.error }, { status: 400 })
+    }
+    if (isVariantLabelTaken(labelParsed.label, plan.takenLabels)) {
+      return NextResponse.json(
+        {
+          error: `Variant ${labelParsed.label} is already used in this experiment`,
+        },
+        { status: 409 }
+      )
+    }
+    variantLabel = labelParsed.label
+  }
+
   const traceId = traceIdFrom(request)
   const id = randomUUID()
   const createdAt = new Date()
@@ -204,6 +252,38 @@ export async function POST(request: NextRequest) {
         )
       }
 
+      let variant: {
+        label: string
+        experimentId: string
+        parentPublicId: string
+        hubPublicId: string
+        variantLabels: string[]
+      } | null = null
+
+      if (variantParent) {
+        const attached = await attachLandingPageAsVariant({
+          parent: variantParent,
+          child: inserted,
+          label: variantLabel,
+        })
+
+        if (!attached.ok) {
+          await db
+            .update(landingPages)
+            .set({ deletedAt: new Date(), status: "archived" })
+            .where(eq(landingPages.id, id))
+          return NextResponse.json({ error: attached.error }, { status: 409 })
+        }
+
+        variant = {
+          label: attached.label,
+          experimentId: attached.experimentId,
+          parentPublicId: variantParent.publicId,
+          hubPublicId: attached.hubPublicId,
+          variantLabels: attached.variantLabels,
+        }
+      }
+
       await writeLandingPageAuditLog({
         actorUserId: actor.id,
         landingPageId: id,
@@ -215,6 +295,13 @@ export async function POST(request: NextRequest) {
           brandName: bn.brandName,
           normalizedUrl: nu.normalizedUrl,
           hostname: nu.hostname,
+          ...(variant
+            ? {
+                variantLabel: variant.label,
+                variantOfPublicId: variant.parentPublicId,
+                experimentId: variant.experimentId,
+              }
+            : {}),
         },
         traceId,
       })
@@ -237,6 +324,7 @@ export async function POST(request: NextRequest) {
           htmlVerificationMetaTag,
           ingestApiBase,
           sdkScriptUrl,
+          variant,
         },
         { status: 201 }
       )

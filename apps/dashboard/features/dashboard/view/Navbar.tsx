@@ -1,3 +1,6 @@
+"use client"
+
+import { useState } from "react"
 import Image from "next/image"
 import { CircleUserRound, LogOut, Server, User, Users } from "lucide-react"
 import Link from "next/link"
@@ -32,8 +35,13 @@ export function Navbar({
   role,
   landingPageNavItems,
 }: NavbarProps) {
+  const [menuOpen, setMenuOpen] = useState(false)
   const fullName = `${firstName} ${lastName}`.trim()
   const initials = buildInitials(firstName, lastName)
+
+  function closeMenu() {
+    setMenuOpen(false)
+  }
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-border bg-background px-4 sm:px-6 lg:px-8">
@@ -58,7 +66,7 @@ export function Navbar({
         <div className="flex items-center gap-2 sm:gap-3">
           <NavbarClock />
           <NotificationBell />
-          <Popover>
+          <Popover open={menuOpen} onOpenChange={setMenuOpen}>
             <PopoverTrigger asChild>
               <button
                 type="button"
@@ -88,7 +96,7 @@ export function Navbar({
                   size="sm"
                   className="justify-start px-2.5"
                 >
-                  <Link href="/dashboard/ops">
+                  <Link href="/dashboard/ops" onClick={closeMenu}>
                     <Server className="size-4" aria-hidden />
                     Ops
                   </Link>
@@ -99,7 +107,7 @@ export function Navbar({
                   size="sm"
                   className="justify-start px-2.5"
                 >
-                  <Link href="/dashboard/team">
+                  <Link href="/dashboard/team" onClick={closeMenu}>
                     <Users className="size-4" aria-hidden />
                     Team
                   </Link>
@@ -110,12 +118,12 @@ export function Navbar({
                   size="sm"
                   className="justify-start px-2.5"
                 >
-                  <Link href="/dashboard/profile">
+                  <Link href="/dashboard/profile" onClick={closeMenu}>
                     <User className="size-4" aria-hidden />
                     Profile
                   </Link>
                 </Button>
-                <form action={logout}>
+                <form action={logout} onSubmit={closeMenu}>
                   <Button
                     type="submit"
                     variant="ghost"

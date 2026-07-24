@@ -10,6 +10,8 @@ const ACTION_LABELS: Record<string, string> = {
   verify_html: "HTML verification",
   check_connection: "Connection checked",
   live_toggle: "Live status changed",
+  variant_link: "Linked as experiment variant",
+  variant_unlink: "Removed from experiment",
 }
 
 export function formatAuditLogAction(action: string): string {
@@ -44,6 +46,18 @@ function summarizePayload(
 
   if (typeof payload.isLive === "boolean") {
     return payload.isLive ? "Marked as live" : "Marked as not live"
+  }
+
+  if (typeof payload.variantLabel === "string") {
+    const parent =
+      typeof payload.variantOfBrandName === "string"
+        ? ` of ${payload.variantOfBrandName}`
+        : ""
+    return `Variant ${payload.variantLabel}${parent}`
+  }
+
+  if (typeof payload.experimentName === "string") {
+    return `Experiment: ${payload.experimentName}`
   }
 
   if (typeof payload.brandName === "string") {

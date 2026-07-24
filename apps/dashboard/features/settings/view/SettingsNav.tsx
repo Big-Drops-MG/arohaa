@@ -3,6 +3,7 @@
 import {
   Activity,
   AlertTriangle,
+  FlaskConical,
   Globe,
   Radio,
   Settings2,
@@ -14,6 +15,7 @@ export type SettingsSectionId =
   | "general"
   | "publishing"
   | "tracking"
+  | "experiment"
   | "project"
   | "activity"
   | "danger"
@@ -43,6 +45,12 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     label: "SDK & tracking",
     description: "Snippet, verification, connection",
     icon: Globe,
+  },
+  {
+    id: "experiment",
+    label: "Experiment variant",
+    description: "Join or leave an A/B experiment",
+    icon: FlaskConical,
   },
   {
     id: "project",
