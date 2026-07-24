@@ -3,7 +3,7 @@ import { Redis } from 'ioredis';
 import { createClient } from '@clickhouse/client';
 import * as Sentry from '@sentry/node';
 import { sendAlertWebhook } from './alert-webhook.js';
-import { validateEvent } from './processor/validator.js';
+import { validateEvent, validateHeatmapEvent } from './processor/validator.js';
 import { anonymizeEvent } from './processor/pii.js';
 import { DbWriter } from './processor/dbWriter.js';
 import { logger } from './logger.js';
@@ -11,6 +11,8 @@ import { logger } from './logger.js';
 const LOCAL_REDIS_URL = 'redis://127.0.0.1:6379';
 const MAX_BATCH_SIZE = 1000;
 const FLUSH_INTERVAL_MS = 5000;
+const MAX_HEATMAP_BATCH_SIZE = 5000;
+const HEATMAP_FLUSH_INTERVAL_MS = 2000;
 
 //
 // 1. Redis Connection Initialization
@@ -76,6 +78,9 @@ let isShuttingDown = false;
 let batch = [];
 let lastFlushTime = Date.now();
 
+let heatmapBatch = [];
+let lastHeatmapFlushTime = Date.now();
+
 async function startQueueConsumption() {
   logger.info('starting queue consumption from analytics_queue');
   
@@ -117,6 +122,43 @@ async function startQueueConsumption() {
   }
 }
 
+async function startHeatmapConsumption() {
+  logger.info('starting queue consumption from heatmap_queue');
+  
+  while (!isShuttingDown) {
+    try {
+      const result = await redis.blpop('heatmap_queue', 1);
+      
+      if (result) {
+        const [, payload] = result;
+        try {
+          const rawEvent = JSON.parse(payload);
+          if (validateHeatmapEvent(rawEvent)) {
+            heatmapBatch.push(rawEvent);
+          } else {
+            await redis.lpush('failed_events', JSON.stringify({ reason: 'validation_failed', payload, timestamp: Date.now(), type: 'heatmap' }));
+          }
+        } catch (parseErr) {
+          logger.warn({ payload }, 'invalid JSON payload received in heatmap_queue');
+          await redis.lpush('failed_events', JSON.stringify({ reason: 'json_parse_error', payload, timestamp: Date.now(), type: 'heatmap' }));
+        }
+      }
+
+      const timeSinceFlush = Date.now() - lastHeatmapFlushTime;
+      if (heatmapBatch.length >= MAX_HEATMAP_BATCH_SIZE || (heatmapBatch.length > 0 && timeSinceFlush >= HEATMAP_FLUSH_INTERVAL_MS)) {
+        const currentBatch = [...heatmapBatch];
+        heatmapBatch = [];
+        lastHeatmapFlushTime = Date.now();
+        await dbWriter.flushHeatmapBatch(currentBatch);
+      }
+      
+    } catch (err) {
+      logger.error({ err }, 'error in heatmap queue consumption loop');
+      await new Promise(resolve => setTimeout(resolve, 1000)); 
+    }
+  }
+}
+
 //
 // 4. Graceful Shutdown Handling
 //
@@ -132,6 +174,13 @@ async function shutdown(signal) {
       const currentBatch = [...batch];
       batch = [];
       await dbWriter.flushBatch(currentBatch);
+    }
+    
+    if (heatmapBatch.length > 0) {
+      logger.info({ rows: heatmapBatch.length }, 'flushing pending heatmap events before shutdown');
+      const currentBatch = [...heatmapBatch];
+      heatmapBatch = [];
+      await dbWriter.flushHeatmapBatch(currentBatch);
     }
     
     // 2. Close ClickHouse connection
@@ -195,6 +244,7 @@ async function start() {
     
     // Start processing
     startQueueConsumption();
+    startHeatmapConsumption();
   } catch (err) {
     logger.error({ err }, 'worker startup failed');
     void sendAlertWebhook({

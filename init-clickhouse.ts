@@ -88,6 +88,93 @@ PARTITION BY toYYYYMM(event_date_et)
 ORDER BY (workspace_id, event_date_et, event_name);
 `
 
+const HEATMAP_EVENTS_TABLE = "heatmap_events"
+
+const CREATE_HEATMAP_EVENTS = `
+CREATE TABLE IF NOT EXISTS ${HEATMAP_EVENTS_TABLE} (
+    workspace_id UUID,
+    page_url String,
+    event_type LowCardinality(String),
+    timestamp DateTime64(3, 'UTC') DEFAULT now64(3, 'UTC'),
+    x Float64 DEFAULT 0,
+    y Float64 DEFAULT 0,
+    viewport_width Int32 DEFAULT 0,
+    viewport_height Int32 DEFAULT 0,
+    element_selector String DEFAULT '',
+    properties String DEFAULT ''
+) ENGINE = MergeTree()
+PARTITION BY toYYYYMM(timestamp)
+ORDER BY (workspace_id, page_url, event_type, timestamp);
+`
+
+async function ensureHeatmapEvents(): Promise<void> {
+  await client.command({ query: CREATE_HEATMAP_EVENTS })
+
+  await client.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS heatmap_clicks_rollup (
+          workspace_id UUID,
+          page_url String,
+          device LowCardinality(String),
+          day Date,
+          grid_x Int32,
+          grid_y Int32,
+          clicks AggregateFunction(count)
+      ) ENGINE = AggregatingMergeTree()
+      ORDER BY (workspace_id, page_url, device, day, grid_x, grid_y)
+    `
+  })
+
+  await client.command({
+    query: `
+      CREATE MATERIALIZED VIEW IF NOT EXISTS heatmap_clicks_mv
+      TO heatmap_clicks_rollup
+      AS SELECT
+          workspace_id,
+          page_url,
+          multiIf(viewport_width < 768, 'mobile', viewport_width < 1024, 'tablet', 'desktop') AS device,
+          toDate(timestamp) AS day,
+          toInt32(x / 10) * 10 AS grid_x,
+          toInt32(y / 10) * 10 AS grid_y,
+          countState() AS clicks
+      FROM ${HEATMAP_EVENTS_TABLE}
+      WHERE event_type = 'click'
+      GROUP BY workspace_id, page_url, device, day, grid_x, grid_y
+    `
+  })
+
+  await client.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS heatmap_scroll_rollup (
+          workspace_id UUID,
+          page_url String,
+          device LowCardinality(String),
+          day Date,
+          scroll_depth_bucket Int32,
+          events AggregateFunction(count)
+      ) ENGINE = AggregatingMergeTree()
+      ORDER BY (workspace_id, page_url, device, day, scroll_depth_bucket)
+    `
+  })
+
+  await client.command({
+    query: `
+      CREATE MATERIALIZED VIEW IF NOT EXISTS heatmap_scroll_mv
+      TO heatmap_scroll_rollup
+      AS SELECT
+          workspace_id,
+          page_url,
+          multiIf(viewport_width < 768, 'mobile', viewport_width < 1024, 'tablet', 'desktop') AS device,
+          toDate(timestamp) AS day,
+          toInt32(y / 10) * 10 AS scroll_depth_bucket,
+          countState() AS events
+      FROM ${HEATMAP_EVENTS_TABLE}
+      WHERE event_type = 'scroll'
+      GROUP BY workspace_id, page_url, device, day, scroll_depth_bucket
+    `
+  })
+}
+
 async function tableExists(): Promise<boolean> {
   const r = await client.query({
     query: `SELECT count() AS n FROM system.tables WHERE database = currentDatabase() AND name = '${EVENTS_TABLE}'`,
@@ -298,6 +385,8 @@ async function init() {
           `${EVENTS_TABLE} schema matches. Ensuring daily_metrics views...`
         )
         await ensureDailyMetrics()
+        console.log(`Ensuring ${HEATMAP_EVENTS_TABLE} table...`)
+        await ensureHeatmapEvents()
         return
       }
 
@@ -330,7 +419,9 @@ async function init() {
     console.log(`Creating ${EVENTS_TABLE} table with new schema...`)
     await client.command({ query: CREATE_EVENTS })
     await ensureDailyMetrics()
-    console.log(`${EVENTS_TABLE} table and materialized views are ready.`)
+    console.log(`Ensuring ${HEATMAP_EVENTS_TABLE} table...`)
+    await ensureHeatmapEvents()
+    console.log(`${EVENTS_TABLE} table, ${HEATMAP_EVENTS_TABLE}, and materialized views are ready.`)
   } catch (error) {
     console.error("Migration failed:", error)
     process.exitCode = 1
