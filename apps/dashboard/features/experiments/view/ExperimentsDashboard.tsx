@@ -149,7 +149,6 @@ export function ExperimentsDashboard({
         <ExperimentsSetupCard
           projectId={projectId}
           config={dashboardData.config}
-          siblings={dashboardData.siblings}
           onChanged={() => {
             void fetchExperimentsForRange(dateRangeId)
           }}

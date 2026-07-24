@@ -1,8 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useMemo, useState, useTransition } from "react"
-import { FlaskConical, Plus, Trash2 } from "lucide-react"
+import { useEffect, useState, useTransition } from "react"
+import { FlaskConical, Trash2 } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import {
   Card,
@@ -27,18 +27,13 @@ import {
   overviewSelectItemClassName,
   overviewSelectTriggerClassName,
 } from "@/features/overview/view/overview-select-styles"
-import type {
-  ExperimentConfigView,
-  SiblingLandingPageOption,
-} from "@/lib/server/experiments-store"
-import type { ExperimentVariantLink } from "@workspace/database"
+import type { ExperimentConfigView } from "@/lib/server/experiments-store"
 
 const CONTROL_NONE = "__none__"
 
 type ExperimentsSetupCardProps = {
   projectId: string
   config: ExperimentConfigView | null
-  siblings: SiblingLandingPageOption[]
   onChanged: () => void
 }
 
@@ -57,7 +52,6 @@ function healthLabel(health: "ok" | "waiting" | "stale"): string {
 export function ExperimentsSetupCard({
   projectId,
   config,
-  siblings,
   onChanged,
 }: ExperimentsSetupCardProps) {
   const [isPending, startTransition] = useTransition()
@@ -69,8 +63,6 @@ export function ExperimentsSetupCard({
   )
   const [noEndDate, setNoEndDate] = useState(config?.noEndDate ?? true)
   const [endDate, setEndDate] = useState(config?.endDate ?? "")
-  const [label, setLabel] = useState("")
-  const [landingPageId, setLandingPageId] = useState("")
   const [controlLandingPageId, setControlLandingPageId] = useState(
     config?.controlLandingPageId ?? ""
   )
@@ -115,26 +107,12 @@ export function ExperimentsSetupCard({
         .catch(() => null)) as VariantLabelPlan | null
       if (!data || cancelled) return
       setLabelPlan(data)
-      setLabel((current) => current || data.suggestedLabel)
     })()
 
     return () => {
       cancelled = true
     }
   }, [projectId, configSignature])
-
-  const linkedIds = useMemo(
-    () => new Set(config?.variants.map((v) => v.landingPageId) ?? []),
-    [config]
-  )
-
-  const availableSiblings = siblings.filter((s) => !linkedIds.has(s.id))
-
-  const labelOptions = useMemo(() => {
-    const options = [...(labelPlan?.availableLabels ?? [])]
-    if (label && !options.includes(label)) options.unshift(label)
-    return options
-  }, [label, labelPlan])
 
   async function createExperiment() {
     setError(null)
@@ -198,29 +176,6 @@ export function ExperimentsSetupCard({
     })
   }
 
-  async function addVariant() {
-    if (!config) return
-    const nextLabel = label.trim()
-    if (!nextLabel || !landingPageId) {
-      setError("Choose a landing page and enter a label")
-      return
-    }
-    const variants: ExperimentVariantLink[] = [
-      ...config.variants.map((v) => ({
-        label: v.label,
-        landingPageId: v.landingPageId,
-      })),
-      { label: nextLabel, landingPageId },
-    ]
-    setLabel("")
-    setLandingPageId("")
-    await patchExperiment({
-      variants,
-      controlLandingPageId:
-        config.controlLandingPageId ?? variants[0]?.landingPageId ?? null,
-    })
-  }
-
   async function removeVariant(landingPageIdToRemove: string) {
     if (!config) return
     const variants = config.variants
@@ -256,9 +211,10 @@ export function ExperimentsSetupCard({
   }
 
   return (
-    <Card className="gap-0 py-0">
-      <CardHeader className="border-b border-border px-5 py-4 sm:px-6">
-        <CardTitle className="text-base font-semibold">
+    <Card className="border-border shadow-sm">
+      <CardHeader className="gap-1">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <FlaskConical className="size-4 text-muted-foreground" aria-hidden />
           Experiment setup
         </CardTitle>
         <p className="text-sm text-muted-foreground">
@@ -266,48 +222,25 @@ export function ExperimentsSetupCard({
           analytics. Each domain needs its own Arohaa snippet installed.
         </p>
       </CardHeader>
-      <CardContent className="space-y-4 px-5 py-4 sm:px-6">
+      <CardContent className="space-y-4">
         {error ? (
-          <p className="text-sm text-red-700" role="alert">
+          <p className="text-sm text-destructive" role="alert">
             {error}
-          </p>
-        ) : null}
-
-        {config && !config.isHub ? (
-          <p className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
-            This page is{" "}
-            <span className="font-medium text-foreground">
-              {config.currentLabel
-                ? experimentVariantDisplayLabel(config.currentLabel)
-                : "a linked variant"}
-            </span>{" "}
-            of{" "}
-            {config.hubPublicId ? (
-              <Link
-                href={`/dashboard/${encodeURIComponent(config.hubPublicId)}?tab=experiments`}
-                className="font-medium text-foreground underline underline-offset-2"
-              >
-                {config.hubBrandName ?? "the parent project"}
-              </Link>
-            ) : (
-              (config.hubBrandName ?? "the parent project")
-            )}
-            . Changes here apply to the shared experiment.
           </p>
         ) : null}
 
         {!config ? (
           <div className="space-y-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-              <div className="min-w-0 flex-1 space-y-1.5">
-                <Label htmlFor="exp-name">Experiment name</Label>
-                <Input
-                  id="exp-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Homepage domains"
-                />
-              </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="exp-name">Name</Label>
+              <Input
+                id="exp-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Homepage domains A/B"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 onClick={() => void createExperiment()}
@@ -461,7 +394,9 @@ export function ExperimentsSetupCard({
               <p className="text-sm font-medium text-foreground">Variants</p>
               {config.variants.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No variants linked yet. Add another landing page below.
+                  No variants linked yet. Add a new variant landing page below,
+                  or link an existing project from Settings → Experiment
+                  variant.
                 </p>
               ) : (
                 <ul className="divide-y divide-border rounded-lg border border-border">
@@ -519,81 +454,7 @@ export function ExperimentsSetupCard({
               )}
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-[1fr_10rem_auto] sm:items-end">
-              <div className="space-y-1.5">
-                <Label htmlFor="add-lp">Landing page</Label>
-                <Select
-                  value={landingPageId || undefined}
-                  onValueChange={setLandingPageId}
-                >
-                  <SelectTrigger
-                    id="add-lp"
-                    aria-label="Landing page to add as variant"
-                    className={cn(overviewSelectTriggerClassName, "w-full")}
-                  >
-                    <SelectValue placeholder="Select project…" />
-                  </SelectTrigger>
-                  <SelectContent
-                    position="popper"
-                    align="start"
-                    className={overviewSelectContentClassName}
-                  >
-                    {availableSiblings.map((s) => (
-                      <SelectItem
-                        key={s.id}
-                        value={s.id}
-                        className={overviewSelectItemClassName}
-                      >
-                        {s.brandName} ({s.hostname})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="add-label">Variant</Label>
-                <Select
-                  value={label || undefined}
-                  onValueChange={setLabel}
-                  disabled={labelOptions.length === 0}
-                >
-                  <SelectTrigger
-                    id="add-label"
-                    aria-label="Variant label"
-                    className={cn(overviewSelectTriggerClassName, "w-full")}
-                  >
-                    <SelectValue placeholder="—" />
-                  </SelectTrigger>
-                  <SelectContent
-                    position="popper"
-                    align="start"
-                    className={overviewSelectContentClassName}
-                  >
-                    {labelOptions.map((option) => (
-                      <SelectItem
-                        key={option}
-                        value={option}
-                        className={overviewSelectItemClassName}
-                      >
-                        {experimentVariantDisplayLabel(option)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button
-                type="button"
-                onClick={() => void addVariant()}
-                disabled={isPending || availableSiblings.length === 0}
-              >
-                <Plus className="size-4" />
-                Add variant
-              </Button>
-            </div>
             <p className="text-sm text-muted-foreground">
-              {availableSiblings.length === 0
-                ? "All landing pages are already linked. "
-                : ""}
               <Link
                 href={newVariantPath(projectId)}
                 className="inline-flex items-center gap-1.5 font-medium text-foreground underline underline-offset-2"
@@ -601,6 +462,9 @@ export function ExperimentsSetupCard({
                 <FlaskConical className="size-3.5" aria-hidden />
                 Add a new variant landing page
               </Link>
+              {" · "}
+              Link an existing project from that project&rsquo;s Settings →
+              Experiment variant.
             </p>
           </>
         )}
