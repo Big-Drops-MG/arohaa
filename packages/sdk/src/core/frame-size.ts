@@ -132,7 +132,7 @@ export function setupFrameSizeReporter(): void {
     if (document.body) ro.observe(document.body)
   }
 
-  for (const delay of [300, 800, 1500, 3000]) {
+  for (const delay of [400, 1200, 2400]) {
     window.setTimeout(schedule, delay)
   }
 }

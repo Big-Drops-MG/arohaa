@@ -1,6 +1,6 @@
 /**
  * Fallback density painter used when the live page SDK cannot paint in-page.
- * Mirrors packages/sdk/src/heatmap/density.ts.
+ * Mirrors packages/sdk/src/heatmap/density.ts (capped internal resolution).
  */
 
 export type DensityPoint = {
@@ -17,6 +17,9 @@ const COLOR_STOPS = [
   { t: 1, r: 239, g: 68, b: 68 },
 ] as const
 
+const MAX_INTERNAL_EDGE = 1600
+const brushCache = new Map<number, HTMLCanvasElement>()
+
 function paletteColor(t: number): [number, number, number] {
   const clamped = Math.max(0, Math.min(1, t))
   let i = 0
@@ -32,7 +35,11 @@ function paletteColor(t: number): [number, number, number] {
 }
 
 function createBrush(radius: number): HTMLCanvasElement {
-  const size = Math.max(2, Math.ceil(radius * 2))
+  const key = Math.max(2, Math.round(radius))
+  const cached = brushCache.get(key)
+  if (cached) return cached
+
+  const size = Math.max(2, key * 2)
   const brush = document.createElement("canvas")
   brush.width = size
   brush.height = size
@@ -46,6 +53,8 @@ function createBrush(radius: number): HTMLCanvasElement {
   grad.addColorStop(1, "rgba(0,0,0,0)")
   ctx.fillStyle = grad
   ctx.fillRect(0, 0, size, size)
+  if (brushCache.size > 24) brushCache.clear()
+  brushCache.set(key, brush)
   return brush
 }
 
@@ -70,26 +79,35 @@ export function paintDensityHeatmap(
     devicePixelRatio,
   } = options
 
-  const dpr = Math.max(1, devicePixelRatio ?? window.devicePixelRatio ?? 1)
-  target.width = Math.max(1, Math.floor(width * dpr))
-  target.height = Math.max(1, Math.floor(height * dpr))
+  if (width <= 0 || height <= 0) return
+
+  const displayDpr = Math.min(
+    1.25,
+    Math.max(1, devicePixelRatio ?? window.devicePixelRatio ?? 1)
+  )
+  target.width = Math.max(1, Math.floor(width * displayDpr))
+  target.height = Math.max(1, Math.floor(height * displayDpr))
   target.style.width = `${width}px`
   target.style.height = `${height}px`
 
   const ctx = target.getContext("2d")
   if (!ctx) return
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.setTransform(displayDpr, 0, 0, displayDpr, 0, 0)
   ctx.clearRect(0, 0, width, height)
-  if (points.length === 0 || maxValue <= 0 || width <= 0 || height <= 0) return
+  if (points.length === 0 || maxValue <= 0) return
+
+  const scale = Math.min(1, MAX_INTERNAL_EDGE / Math.max(width, height))
+  const pw = Math.max(1, Math.floor(width * scale))
+  const ph = Math.max(1, Math.floor(height * scale))
+  const paintRadius = Math.max(6, Math.round(radius * scale))
 
   const off = document.createElement("canvas")
-  off.width = Math.max(1, Math.floor(width * dpr))
-  off.height = Math.max(1, Math.floor(height * dpr))
-  const octx = off.getContext("2d")
+  off.width = pw
+  off.height = ph
+  const octx = off.getContext("2d", { willReadFrequently: true })
   if (!octx) return
-  octx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-  const brush = createBrush(radius)
+  const brush = createBrush(paintRadius)
   const brushSize = brush.width
   const max = Math.max(1, maxValue)
 
@@ -97,11 +115,15 @@ export function paintDensityHeatmap(
     const weight = Math.max(0, Math.min(1, point.value / max))
     if (weight <= 0) continue
     octx.globalAlpha = Math.max(0.05, weight)
-    octx.drawImage(brush, point.x - brushSize / 2, point.y - brushSize / 2)
+    octx.drawImage(
+      brush,
+      point.x * scale - brushSize / 2,
+      point.y * scale - brushSize / 2
+    )
   }
   octx.globalAlpha = 1
 
-  const img = octx.getImageData(0, 0, off.width, off.height)
+  const img = octx.getImageData(0, 0, pw, ph)
   const data = img.data
   for (let i = 0; i < data.length; i += 4) {
     const density = data[i + 3]! / 255
@@ -117,6 +139,7 @@ export function paintDensityHeatmap(
     data[i + 3] = Math.round(255 * opacity * Math.min(1, 0.2 + density * 0.95))
   }
   octx.putImageData(img, 0, 0)
+  ctx.imageSmoothingEnabled = true
   ctx.drawImage(off, 0, 0, width, height)
 }
 

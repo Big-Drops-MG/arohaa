@@ -16,7 +16,6 @@ import {
   overviewSelectItemClassName,
   overviewSelectTriggerClassName,
 } from "@/features/overview/view/overview-select-styles"
-import { getHeatmapEmptyDashboardData } from "@/features/heatmap/controller/heatmap-empty-data"
 import {
   HEATMAP_DEFAULT_OPACITY,
   HEATMAP_DEVICES,
@@ -90,14 +89,10 @@ export function HeatmapDashboard({
       try {
         const res = await fetch(url, { cache: "no-store", signal })
         if (!res.ok) {
-          setDashboardData(
-            getHeatmapEmptyDashboardData(
-              projectId,
-              rangeId,
-              next.mode,
-              next.device
-            )
-          )
+          if (process.env.NODE_ENV === "development") {
+            console.error(`[heatmap] client fetch ${res.status}`, url)
+          }
+          // Keep the previous range's data visible instead of flashing empty.
           return
         }
         const payload = (await res.json()) as HeatmapDashboardData
@@ -107,14 +102,6 @@ export function HeatmapDashboard({
         if (process.env.NODE_ENV === "development") {
           console.error("[heatmap] client fetch failed", err)
         }
-        setDashboardData(
-          getHeatmapEmptyDashboardData(
-            projectId,
-            rangeId,
-            next.mode,
-            next.device
-          )
-        )
       } finally {
         if (!signal?.aborted) setIsLoading(false)
       }

@@ -134,6 +134,8 @@ export function HeatmapCanvas({
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const requestIdRef = useRef(0)
   const paintTargetRef = useRef<PaintTarget>("unknown")
+  const maxContentHeightRef = useRef(0)
+  const measuringRef = useRef(true)
 
   const frameWidth = DEVICE_WIDTH[device]
   const viewportHeight = Math.round(
@@ -143,32 +145,42 @@ export function HeatmapCanvas({
   const [pageLoaded, setPageLoaded] = useState(false)
   const [pageFailed, setPageFailed] = useState(false)
   const [paintTarget, setPaintTarget] = useState<PaintTarget>("unknown")
-  const [lockedHeight, setLockedHeight] = useState<number | null>(null)
+  // Measure while the iframe is device-viewport sized so min-height:100vh equals
+  // a real phone/tablet viewport — not a stretched full-page iframe shell.
+  const [measuring, setMeasuring] = useState(true)
+  const [contentHeight, setContentHeight] = useState<number | null>(null)
   const [viewKey, setViewKey] = useState(`${backgroundUrl ?? ""}:${device}`)
   const nextViewKey = `${backgroundUrl ?? ""}:${device}`
   if (viewKey !== nextViewKey) {
     setViewKey(nextViewKey)
     setPageLoaded(false)
     setPageFailed(false)
-    setLockedHeight(null)
+    setMeasuring(true)
+    setContentHeight(null)
     setPaintTarget("unknown")
   }
 
   const hasLivePage = Boolean(backgroundUrl && !backgroundImage)
   const fallbackPageHeight = Math.round(frameWidth * PAGE_HEIGHT_RATIO[device])
-  const pageHeight =
-    lockedHeight ??
-    (hasLivePage
+  const pageHeight = hasLivePage
+    ? Math.max(viewportHeight, contentHeight ?? viewportHeight)
+    : backgroundImage
+      ? fallbackPageHeight
+      : fallbackPageHeight
+  // During measure keep the iframe at the device viewport; after settle expand
+  // to the true content height so the parent scroller can reach the footer.
+  const iframeHeight = hasLivePage
+    ? measuring
       ? viewportHeight
-      : backgroundImage
-        ? fallbackPageHeight
-        : fallbackPageHeight)
+      : pageHeight
+    : pageHeight
 
   const useInPageOverlay =
     hasLivePage &&
     pageLoaded &&
     !pageFailed &&
     !emptyState &&
+    !measuring &&
     mode !== "scroll" &&
     paintTarget !== "parent"
 
@@ -177,8 +189,21 @@ export function HeatmapCanvas({
   }, [paintTarget])
 
   useEffect(() => {
+    measuringRef.current = measuring
+  }, [measuring])
+
+  useEffect(() => {
     paintTargetRef.current = "unknown"
+    maxContentHeightRef.current = 0
+    measuringRef.current = true
   }, [viewKey])
+
+  // Settle content height after the page has had time to load fonts/images.
+  useEffect(() => {
+    if (!hasLivePage || !pageLoaded) return
+    const timer = window.setTimeout(() => setMeasuring(false), 2200)
+    return () => window.clearTimeout(timer)
+  }, [hasLivePage, pageLoaded, viewKey])
 
   useEffect(() => {
     if (!hasLivePage) return
@@ -202,11 +227,25 @@ export function HeatmapCanvas({
             Math.round(frameWidth * 0.5),
             Math.min(Math.round(frameWidth * 30), Math.round(height))
           )
-          setLockedHeight((prev) => {
-            if (prev == null) return clamped
-            if (clamped < prev * 0.92) return clamped
-            return prev
-          })
+          if (measuringRef.current) {
+            // Take the max content height seen while 100vh is still a real
+            // device viewport — avoids tablet empty trailing space and mobile
+            // clipped footers from a single early sample.
+            maxContentHeightRef.current = Math.max(
+              maxContentHeightRef.current,
+              clamped
+            )
+            setContentHeight(maxContentHeightRef.current)
+          } else {
+            setContentHeight((prev) => {
+              if (prev == null) return clamped
+              // Late-loading images/fonts: allow modest growth after settle.
+              if (clamped > prev && clamped <= prev * 1.25) return clamped
+              // Drop obvious 100vh inflation after the iframe was expanded.
+              if (clamped < prev * 0.9) return clamped
+              return prev
+            })
+          }
         }
         const features = Array.isArray(data.features) ? data.features : []
         if (features.includes("heatmap-paint")) {
@@ -229,7 +268,13 @@ export function HeatmapCanvas({
     const win = iframeRef.current?.contentWindow
     if (!win) return
     win.postMessage({ source: MESSAGE_SOURCE, type: "ping" }, "*")
-  }, [hasLivePage, pageLoaded, device, backgroundUrl])
+    const timers = [500, 1400, 2100].map((ms) =>
+      window.setTimeout(() => {
+        win.postMessage({ source: MESSAGE_SOURCE, type: "ping" }, "*")
+      }, ms)
+    )
+    return () => timers.forEach((id) => window.clearTimeout(id))
+  }, [hasLivePage, pageLoaded, device, backgroundUrl, measuring])
 
   useEffect(() => {
     if (!hasLivePage) return
@@ -268,16 +313,7 @@ export function HeatmapCanvas({
     }, 1200)
 
     return () => window.clearTimeout(timer)
-  }, [
-    useInPageOverlay,
-    paintTarget,
-    points,
-    maxValue,
-    opacity,
-    mode,
-    backgroundUrl,
-    device,
-  ])
+  }, [useInPageOverlay, points, maxValue, opacity, mode, backgroundUrl, device])
 
   // Parent canvas: scroll, screenshots, placeholders, or SDK fallback.
   useEffect(() => {
@@ -432,7 +468,7 @@ export function HeatmapCanvas({
               className="pointer-events-none absolute inset-x-0 top-0 z-0 block border-0"
               style={{
                 width: frameWidth,
-                height: pageHeight,
+                height: iframeHeight,
               }}
               sandbox="allow-scripts allow-same-origin"
               loading="lazy"

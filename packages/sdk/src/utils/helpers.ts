@@ -1,11 +1,41 @@
 export function getDocumentSize(): { width: number; height: number } {
   const body = document.body
   const html = document.documentElement
+  const scrollX = window.scrollX || window.pageXOffset || 0
+  const scrollY = window.scrollY || window.pageYOffset || 0
 
-  // Never floor to clientHeight / innerHeight. Those are the viewport, and once an
-  // iframe preview is resized to a reported height they create a feedback loop:
-  // measured height ≥ iframe height forever, which leaves trailing white space
-  // and shifts page-relative heatmap coordinates upward.
+  // True content extent — never floor to clientHeight/innerHeight (those create a
+  // 100vh feedback loop once a heatmap iframe is resized to the reported height).
+  let contentRight = 0
+  let contentBottom = 0
+
+  try {
+    if (body) {
+      const range = document.createRange()
+      range.selectNodeContents(body)
+      const rect = range.getBoundingClientRect()
+      contentRight = Math.max(contentRight, rect.right + scrollX)
+      contentBottom = Math.max(contentBottom, rect.bottom + scrollY)
+    }
+  } catch {
+    // Range can throw on detached trees; fall through to child scan.
+  }
+
+  const root = body ?? html
+  if (root) {
+    for (let i = 0; i < root.children.length; i += 1) {
+      const el = root.children[i]
+      if (!(el instanceof HTMLElement)) continue
+      if (el.id === "arohaa-heatmap-overlay") continue
+      const style = window.getComputedStyle(el)
+      if (style.display === "none" || style.visibility === "hidden") continue
+      if (style.position === "fixed") continue
+      const rect = el.getBoundingClientRect()
+      contentRight = Math.max(contentRight, rect.right + scrollX)
+      contentBottom = Math.max(contentBottom, rect.bottom + scrollY)
+    }
+  }
+
   const scrollWidth = Math.max(
     body?.scrollWidth ?? 0,
     body?.offsetWidth ?? 0,
@@ -21,35 +51,16 @@ export function getDocumentSize(): { width: number; height: number } {
     1
   )
 
-  // Prefer the bottom/right edge of in-flow root children when scroll metrics are
-  // inflated by min-height: 100vh (common on landing pages).
-  let contentRight = 0
-  let contentBottom = 0
-  const root = body ?? html
-  if (root) {
-    const scrollX = window.scrollX || window.pageXOffset || 0
-    const scrollY = window.scrollY || window.pageYOffset || 0
-    for (let i = 0; i < root.children.length; i += 1) {
-      const el = root.children[i]
-      if (!(el instanceof HTMLElement)) continue
-      if (el.id === "arohaa-heatmap-overlay") continue
-      const style = window.getComputedStyle(el)
-      if (style.display === "none" || style.visibility === "hidden") continue
-      if (style.position === "fixed") continue
-      const rect = el.getBoundingClientRect()
-      contentRight = Math.max(contentRight, rect.right + scrollX)
-      contentBottom = Math.max(contentBottom, rect.bottom + scrollY)
-    }
-  }
-
+  // Prefer measured content. Only use scroll metrics when content could not be
+  // measured — scrollHeight often equals a stretched 100vh iframe shell.
   const width =
-    contentRight > 0 && scrollWidth > contentRight + 1
+    contentRight > 1
       ? Math.ceil(contentRight)
-      : Math.max(Math.ceil(contentRight), scrollWidth)
+      : Math.max(1, Math.ceil(scrollWidth))
   const height =
-    contentBottom > 0 && scrollHeight > contentBottom + 1
+    contentBottom > 1
       ? Math.ceil(contentBottom)
-      : Math.max(Math.ceil(contentBottom), scrollHeight)
+      : Math.max(1, Math.ceil(scrollHeight))
 
   return { width: Math.max(1, width), height: Math.max(1, height) }
 }

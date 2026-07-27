@@ -5,7 +5,6 @@ import {
   type AnalyticsCustomRange,
   type AnalyticsRangeId,
 } from '../lib/analytics-range.js'
-import { chToDate } from '../lib/analytics-timezone.js'
 import type {
   AnalyticsHeatmapResponse,
   HeatmapCell,
@@ -21,11 +20,9 @@ type CHJson<T> = { data: T[] }
 const n = (v: string | number | null | undefined): number =>
   typeof v === 'number' ? v : Number(v ?? 0) || 0
 
-const DAY_FILTER = `
-  workspace_id = {wid:UUID}
-  AND day >= ${chToDate("toDateTime64({range_from:String}, 3, 'UTC')")}
-  AND day <= ${chToDate("toDateTime64({range_to:String}, 3, 'UTC') - INTERVAL 1 MILLISECOND")}
-`
+/** Cap painted clusters — enough for dense heat, small enough for postMessage + canvas. */
+const POINTS_LIMIT = 2500
+const MOVE_POINTS_LIMIT = 1800
 
 export function emptyAnalyticsHeatmap(
   rangeId: AnalyticsRangeId,
@@ -47,15 +44,41 @@ export function emptyAnalyticsHeatmap(
   }
 }
 
+/**
+ * Inclusive start / exclusive end on raw timestamps — matches every preset and
+ * custom ET window from resolveAnalyticsWindow (today, 7d, custom, …).
+ */
 const RAW_TIME_FILTER = `
   workspace_id = {wid:UUID}
   AND timestamp >= toDateTime64({range_from:String}, 3, 'UTC')
-  AND timestamp <= toDateTime64({range_to:String}, 3, 'UTC') - INTERVAL 1 MILLISECOND
+  AND timestamp < toDateTime64({range_to:String}, 3, 'UTC')
 `
 
-function deviceSql(device: HeatmapDevice): string {
+/**
+ * Include every event that belongs on this device preview.
+ * Match by stored device label OR capture viewport width so legacy rows still appear.
+ */
+function deviceMatchSql(device: HeatmapDevice): string {
   if (device === 'all') return ''
-  return ' AND device = {device:String}'
+  if (device === 'mobile') {
+    return ` AND (
+      device = {device:String}
+      OR (viewport_width > 0 AND viewport_width < 768)
+    )`
+  }
+  if (device === 'tablet') {
+    return ` AND (
+      device = {device:String}
+      OR (viewport_width >= 768 AND viewport_width < 1024)
+    )`
+  }
+  if (device === 'desktop') {
+    return ` AND (
+      device = {device:String}
+      OR viewport_width >= 1024
+    )`
+  }
+  return ''
 }
 
 function pageUrlSql(pageUrl: string | null): string {
@@ -63,28 +86,7 @@ function pageUrlSql(pageUrl: string | null): string {
   return ' AND page_url = {page_url:String}'
 }
 
-/**
- * Keep events whose capture viewport sits in the same device bucket the
- * preview renders at. Matching the SDK device breakpoints avoids mixing
- * mobile/tablet/desktop layouts into one overlay.
- */
-function viewportWidthSql(device: HeatmapDevice): string {
-  if (device === 'mobile') {
-    return ' AND viewport_width > 0 AND viewport_width < 768'
-  }
-  if (device === 'tablet') {
-    return ' AND viewport_width >= 768 AND viewport_width < 1024'
-  }
-  if (device === 'desktop') {
-    return ' AND viewport_width >= 1024'
-  }
-  return ' AND viewport_width > 0'
-}
-
-/** Only keep rows that stored page-relative px/py (not legacy viewport vx/vy). */
-const PAGE_COORD_SQL =
-  " AND positionCaseInsensitive(properties, '\"px\"') > 0"
-
+/** Discover pages from raw events so every time range sees real traffic. */
 async function listPageUrls(
   workspaceId: string,
   rangeParams: { range_from: string; range_to: string },
@@ -94,31 +96,69 @@ async function listPageUrls(
     format: 'JSON',
     query_params: { wid: workspaceId, ...rangeParams },
     query: `
-      SELECT DISTINCT page_url
-      FROM (
-        SELECT page_url FROM heatmap_clicks_rollup WHERE ${DAY_FILTER}
-        UNION ALL
-        SELECT page_url FROM heatmap_mousemove_rollup WHERE ${DAY_FILTER}
-        UNION ALL
-        SELECT page_url FROM heatmap_scroll_rollup WHERE ${DAY_FILTER}
-        UNION ALL
-        SELECT page_url FROM heatmap_section_rollup WHERE ${DAY_FILTER}
-      )
-      WHERE page_url != ''
-      ORDER BY page_url
-      LIMIT 200
+      SELECT page_url, count() AS c
+      FROM heatmap_events
+      WHERE ${RAW_TIME_FILTER}
+        AND page_url != ''
+      GROUP BY page_url
+      ORDER BY c DESC
+      LIMIT 100
     `,
   })
   const json = (await res.json()) as CHJson<{ page_url: string }>
   return json.data.map((row) => row.page_url)
 }
 
-async function queryClickCellsFromEvents(
+async function queryEventCount(
+  workspaceId: string,
+  pageUrl: string,
+  device: HeatmapDevice,
+  eventType: string,
+  rangeParams: { range_from: string; range_to: string },
+): Promise<number> {
+  const ch = getClickHouseClient()
+  const res = await ch.query({
+    format: 'JSON',
+    query_params: {
+      wid: workspaceId,
+      page_url: pageUrl,
+      device,
+      etype: eventType,
+      ...rangeParams,
+    },
+    query: `
+      SELECT count() AS value
+      FROM heatmap_events
+      WHERE ${RAW_TIME_FILTER}
+        AND event_type = {etype:String}${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
+    `,
+  })
+  const json = (await res.json()) as CHJson<{ value: string | number }>
+  return n(json.data[0]?.value)
+}
+
+function cellsFromPoints(points: HeatmapPoint[]): HeatmapCell[] {
+  const map = new Map<string, HeatmapCell>()
+  for (const p of points) {
+    const gridX = Math.floor(Math.min(0.9999, Math.max(0, p.x)) * 10) * 10
+    const gridY = Math.floor(Math.min(0.9999, Math.max(0, p.y)) * 10) * 10
+    const key = `${gridX}:${gridY}`
+    const existing = map.get(key)
+    if (existing) {
+      existing.value += p.value
+    } else {
+      map.set(key, { gridX, gridY, value: p.value })
+    }
+  }
+  return Array.from(map.values())
+}
+
+async function queryClickPoints(
   workspaceId: string,
   pageUrl: string,
   device: HeatmapDevice,
   rangeParams: { range_from: string; range_to: string },
-): Promise<HeatmapCell[]> {
+): Promise<HeatmapPoint[]> {
   const ch = getClickHouseClient()
   const res = await ch.query({
     format: 'JSON',
@@ -130,36 +170,46 @@ async function queryClickCellsFromEvents(
     },
     query: `
       SELECT
-        toInt32(floor(least(greatest(x, 0.), 0.9999) * 10.) * 10) AS gridX,
-        toInt32(floor(least(greatest(y, 0.), 0.9999) * 10.) * 10) AS gridY,
+        round(x, 3) AS px,
+        round(y, 3) AS py,
+        element_selector AS selector,
+        round(JSONExtractFloat(properties, 'x'), 2) AS ex,
+        round(JSONExtractFloat(properties, 'y'), 2) AS ey,
         count() AS value
       FROM heatmap_events
       WHERE ${RAW_TIME_FILTER}
-        AND event_type = 'click'${pageUrlSql(pageUrl)}${deviceSql(device)}${viewportWidthSql(device)}${PAGE_COORD_SQL}
-      GROUP BY gridX, gridY
-      HAVING value > 0
+        AND event_type = 'click'${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
+      GROUP BY px, py, selector, ex, ey
       ORDER BY value DESC
+      LIMIT ${POINTS_LIMIT}
     `,
   })
   const json = (await res.json()) as CHJson<{
-    gridX: string | number
-    gridY: string | number
+    px: string | number
+    py: string | number
+    selector: string
+    ex: string | number
+    ey: string | number
     value: string | number
   }>
   return json.data.map((row) => ({
-    gridX: n(row.gridX),
-    gridY: n(row.gridY),
+    x: n(row.px),
+    y: n(row.py),
     value: n(row.value),
+    selector: row.selector || null,
+    ex: n(row.ex),
+    ey: n(row.ey),
   }))
 }
 
-async function queryMoveCellsFromEvents(
+async function queryMovePoints(
   workspaceId: string,
   pageUrl: string,
   device: HeatmapDevice,
   rangeParams: { range_from: string; range_to: string },
-): Promise<HeatmapCell[]> {
+): Promise<HeatmapPoint[]> {
   const ch = getClickHouseClient()
+  // Attention heat is page-relative only — skip JSON extracts for speed.
   const res = await ch.query({
     format: 'JSON',
     query_params: {
@@ -170,25 +220,25 @@ async function queryMoveCellsFromEvents(
     },
     query: `
       SELECT
-        toInt32(floor(least(greatest(x, 0.), 0.9999) * 10.) * 10) AS gridX,
-        toInt32(floor(least(greatest(y, 0.), 0.9999) * 10.) * 10) AS gridY,
+        round(x, 3) AS px,
+        round(y, 3) AS py,
         count() AS value
       FROM heatmap_events
       WHERE ${RAW_TIME_FILTER}
-        AND event_type = 'mousemove'${pageUrlSql(pageUrl)}${deviceSql(device)}${viewportWidthSql(device)}${PAGE_COORD_SQL}
-      GROUP BY gridX, gridY
-      HAVING value > 0
+        AND event_type = 'mousemove'${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
+      GROUP BY px, py
       ORDER BY value DESC
+      LIMIT ${MOVE_POINTS_LIMIT}
     `,
   })
   const json = (await res.json()) as CHJson<{
-    gridX: string | number
-    gridY: string | number
+    px: string | number
+    py: string | number
     value: string | number
   }>
   return json.data.map((row) => ({
-    gridX: n(row.gridX),
-    gridY: n(row.gridY),
+    x: n(row.px),
+    y: n(row.py),
     value: n(row.value),
   }))
 }
@@ -210,11 +260,12 @@ async function queryScrollBuckets(
     },
     query: `
       SELECT
-        scroll_depth_bucket AS bucket,
-        countMerge(events) AS value
-      FROM heatmap_scroll_rollup
-      WHERE ${DAY_FILTER}${pageUrlSql(pageUrl)}${deviceSql(device)}
-      GROUP BY scroll_depth_bucket
+        toInt32(floor(least(greatest(y, 0.), 0.9999) * 10.) * 10) AS bucket,
+        count() AS value
+      FROM heatmap_events
+      WHERE ${RAW_TIME_FILTER}
+        AND event_type = 'scroll'${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
+      GROUP BY bucket
       HAVING value > 0
       ORDER BY bucket ASC
     `,
@@ -247,15 +298,16 @@ async function querySections(
     query: `
       SELECT
         element_selector AS selector,
-        sumMerge(dwell_ms) AS dwellMs,
-        countMerge(views) AS views
-      FROM heatmap_section_rollup
-      WHERE ${DAY_FILTER}${pageUrlSql(pageUrl)}${deviceSql(device)}
-        AND element_selector != ''
+        sum(JSONExtractFloat(properties, 'dwell_ms')) AS dwellMs,
+        count() AS views
+      FROM heatmap_events
+      WHERE ${RAW_TIME_FILTER}
+        AND event_type = 'section'
+        AND element_selector != ''${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
       GROUP BY element_selector
       HAVING views > 0
       ORDER BY dwellMs DESC
-      LIMIT 50
+      LIMIT 40
     `,
   })
   const json = (await res.json()) as CHJson<{
@@ -267,73 +319,6 @@ async function querySections(
     selector: row.selector,
     dwellMs: n(row.dwellMs),
     views: n(row.views),
-  }))
-}
-
-async function queryPoints(
-  workspaceId: string,
-  pageUrl: string,
-  device: HeatmapDevice,
-  eventType: 'click' | 'mousemove',
-  rangeParams: { range_from: string; range_to: string },
-): Promise<HeatmapPoint[]> {
-  const ch = getClickHouseClient()
-  // Group by page coords + element anchor so the live preview can re-attach
-  // clicks to the same controls after responsive reflow (Crazy Egg style).
-  const res = await ch.query({
-    format: 'JSON',
-    query_params: {
-      wid: workspaceId,
-      page_url: pageUrl,
-      device,
-      etype: eventType,
-      ...rangeParams,
-    },
-    query: `
-      SELECT
-        round(x, 4) AS px,
-        round(y, 4) AS py,
-        element_selector AS selector,
-        round(JSONExtractFloat(properties, 'x'), 3) AS ex,
-        round(JSONExtractFloat(properties, 'y'), 3) AS ey,
-        toInt32(round(avg(viewport_width))) AS vw,
-        toInt32(round(avg(viewport_height))) AS vh,
-        toInt32(round(avg(JSONExtractFloat(properties, 'dw')))) AS dw,
-        toInt32(round(avg(JSONExtractFloat(properties, 'dh')))) AS dh,
-        count() AS value
-      FROM heatmap_events
-      WHERE ${RAW_TIME_FILTER}
-        AND event_type = {etype:String}${pageUrlSql(pageUrl)}${deviceSql(device)}${viewportWidthSql(device)}${PAGE_COORD_SQL}
-      GROUP BY px, py, selector, ex, ey
-      ORDER BY value DESC
-      LIMIT 8000
-    `,
-  })
-  const json = (await res.json()) as CHJson<{
-    px: string | number
-    py: string | number
-    selector: string
-    ex: string | number
-    ey: string | number
-    vw: string | number
-    vh: string | number
-    dw: string | number
-    dh: string | number
-    value: string | number
-  }>
-  const isClick = eventType === 'click'
-  return json.data.map((row) => ({
-    x: n(row.px),
-    y: n(row.py),
-    value: n(row.value),
-    selector: isClick && row.selector ? row.selector : null,
-    // Element offsets only exist on clicks; moves use page px/py only.
-    ex: isClick ? n(row.ex) : null,
-    ey: isClick ? n(row.ey) : null,
-    viewportWidth: n(row.vw) || null,
-    viewportHeight: n(row.vh) || null,
-    documentWidth: n(row.dw) || null,
-    documentHeight: n(row.dh) || null,
   }))
 }
 
@@ -371,24 +356,16 @@ export async function getAnalyticsHeatmap({
   let points: HeatmapPoint[] = []
   let scrollBuckets: HeatmapScrollBucket[] = []
   let sections: HeatmapSection[] = []
+  let totalEvents = 0
 
   if (mode === 'click') {
-    points = await queryPoints(
-      workspaceId,
-      pageUrl,
-      device,
-      'click',
-      rangeParams,
-    )
-    // Always build the grid from the same filtered raw events. Never fall back
-    // to unfiltered rollups — those mix viewport widths and look like floating
-    // blobs on the fixed preview frame.
-    cells = await queryClickCellsFromEvents(
-      workspaceId,
-      pageUrl,
-      device,
-      rangeParams,
-    )
+    const [clickPoints, count] = await Promise.all([
+      queryClickPoints(workspaceId, pageUrl, device, rangeParams),
+      queryEventCount(workspaceId, pageUrl, device, 'click', rangeParams),
+    ])
+    points = clickPoints
+    cells = cellsFromPoints(clickPoints)
+    totalEvents = count
   } else if (mode === 'scroll') {
     scrollBuckets = await queryScrollBuckets(
       workspaceId,
@@ -396,21 +373,17 @@ export async function getAnalyticsHeatmap({
       device,
       rangeParams,
     )
+    totalEvents = scrollBuckets.reduce((s, b) => s + b.value, 0)
   } else {
-    points = await queryPoints(
-      workspaceId,
-      pageUrl,
-      device,
-      'mousemove',
-      rangeParams,
-    )
-    cells = await queryMoveCellsFromEvents(
-      workspaceId,
-      pageUrl,
-      device,
-      rangeParams,
-    )
-    sections = await querySections(workspaceId, pageUrl, device, rangeParams)
+    const [movePoints, count, sectionRows] = await Promise.all([
+      queryMovePoints(workspaceId, pageUrl, device, rangeParams),
+      queryEventCount(workspaceId, pageUrl, device, 'mousemove', rangeParams),
+      querySections(workspaceId, pageUrl, device, rangeParams),
+    ])
+    points = movePoints
+    cells = cellsFromPoints(movePoints)
+    sections = sectionRows
+    totalEvents = count
   }
 
   const values =
@@ -420,7 +393,6 @@ export async function getAnalyticsHeatmap({
         ? points.map((p) => p.value)
         : cells.map((c) => c.value)
   const maxValue = values.reduce((m, v) => (v > m ? v : m), 0)
-  const totalEvents = values.reduce((s, v) => s + v, 0)
 
   return {
     rangeId,

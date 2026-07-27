@@ -93,7 +93,7 @@ function paintNow(payload: HeatmapPaintPayload): {
       payload.mode === "attention"
         ? Math.max(22, Math.round(resolved.width * 0.022))
         : Math.max(16, Math.round(resolved.width * 0.015)),
-    devicePixelRatio: window.devicePixelRatio || 1,
+    devicePixelRatio: Math.min(1.25, window.devicePixelRatio || 1),
   })
 
   return {
@@ -138,14 +138,23 @@ export function repaintHeatmapOverlay(): void {
 /** Keep the overlay sized with the live document after late layout shifts. */
 export function setupHeatmapOverlayAutoRepaint(): void {
   if (typeof window === "undefined") return
-  window.addEventListener("resize", () => repaintHeatmapOverlay())
+
+  let resizeTimer = 0
+  const throttledRepaint = () => {
+    if (resizeTimer) return
+    resizeTimer = window.setTimeout(() => {
+      resizeTimer = 0
+      repaintHeatmapOverlay()
+    }, 180)
+  }
+
+  window.addEventListener("resize", throttledRepaint, { passive: true })
   if (typeof ResizeObserver !== "undefined" && document.documentElement) {
-    const ro = new ResizeObserver(() => repaintHeatmapOverlay())
+    const ro = new ResizeObserver(throttledRepaint)
     ro.observe(document.documentElement)
     if (document.body) ro.observe(document.body)
   }
-  // Re-measure after fonts/images settle.
-  for (const delay of [400, 1200, 2500]) {
+  for (const delay of [500, 1600]) {
     window.setTimeout(() => repaintHeatmapOverlay(), delay)
   }
 }

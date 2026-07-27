@@ -1,11 +1,8 @@
 /**
  * Production density heatmap painter (heatmap.js / Crazy Egg style).
  *
- * 1. Splat each point as a radial alpha kernel (Gaussian-like falloff)
- * 2. Colorize the alpha channel with a heat palette
- * 3. Apply global opacity
- *
- * Coordinates are absolute CSS pixels in the target canvas space.
+ * Paints at a capped internal resolution then scales up — keeps getImageData
+ * cheap on tall landing pages while preserving visual quality.
  */
 
 export type DensityPoint = {
@@ -19,7 +16,7 @@ export type DensityPaintOptions = {
   height: number
   maxValue: number
   opacity: number
-  /** Kernel radius in CSS pixels. */
+  /** Kernel radius in CSS pixels (of the display size). */
   radius?: number
   devicePixelRatio?: number
 }
@@ -31,6 +28,11 @@ const COLOR_STOPS = [
   { t: 0.75, r: 249, g: 115, b: 22 },
   { t: 1, r: 239, g: 68, b: 68 },
 ] as const
+
+/** Cap internal paint buffer so tall pages stay interactive. */
+const MAX_INTERNAL_EDGE = 1600
+
+const brushCache = new Map<number, HTMLCanvasElement>()
 
 function paletteColor(t: number): [number, number, number] {
   const clamped = Math.max(0, Math.min(1, t))
@@ -46,9 +48,12 @@ function paletteColor(t: number): [number, number, number] {
   ]
 }
 
-/** Soft radial brush used as the density kernel. */
 function createBrush(radius: number): HTMLCanvasElement {
-  const size = Math.max(2, Math.ceil(radius * 2))
+  const key = Math.max(2, Math.round(radius))
+  const cached = brushCache.get(key)
+  if (cached) return cached
+
+  const size = Math.max(2, key * 2)
   const brush = document.createElement("canvas")
   brush.width = size
   brush.height = size
@@ -56,13 +61,14 @@ function createBrush(radius: number): HTMLCanvasElement {
   if (!ctx) return brush
   const r = size / 2
   const grad = ctx.createRadialGradient(r, r, 0, r, r, r)
-  // Approximate Gaussian: opaque center, soft shoulders, transparent edge.
   grad.addColorStop(0, "rgba(0,0,0,1)")
   grad.addColorStop(0.35, "rgba(0,0,0,0.55)")
   grad.addColorStop(0.7, "rgba(0,0,0,0.18)")
   grad.addColorStop(1, "rgba(0,0,0,0)")
   ctx.fillStyle = grad
   ctx.fillRect(0, 0, size, size)
+  if (brushCache.size > 24) brushCache.clear()
+  brushCache.set(key, brush)
   return brush
 }
 
@@ -80,40 +86,49 @@ export function paintDensityHeatmap(
     devicePixelRatio = 1,
   } = options
 
-  const dpr = Math.max(1, devicePixelRatio)
-  target.width = Math.max(1, Math.floor(width * dpr))
-  target.height = Math.max(1, Math.floor(height * dpr))
+  if (width <= 0 || height <= 0) return
+
+  const displayDpr = Math.min(1.25, Math.max(1, devicePixelRatio))
+  target.width = Math.max(1, Math.floor(width * displayDpr))
+  target.height = Math.max(1, Math.floor(height * displayDpr))
   target.style.width = `${width}px`
   target.style.height = `${height}px`
 
   const ctx = target.getContext("2d")
   if (!ctx) return
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.setTransform(displayDpr, 0, 0, displayDpr, 0, 0)
   ctx.clearRect(0, 0, width, height)
 
-  if (points.length === 0 || maxValue <= 0 || width <= 0 || height <= 0) return
+  if (points.length === 0 || maxValue <= 0) return
+
+  const scale = Math.min(1, MAX_INTERNAL_EDGE / Math.max(width, height))
+  const pw = Math.max(1, Math.floor(width * scale))
+  const ph = Math.max(1, Math.floor(height * scale))
+  const paintRadius = Math.max(6, Math.round(radius * scale))
 
   const off = document.createElement("canvas")
-  off.width = Math.max(1, Math.floor(width * dpr))
-  off.height = Math.max(1, Math.floor(height * dpr))
-  const octx = off.getContext("2d")
+  off.width = pw
+  off.height = ph
+  const octx = off.getContext("2d", { willReadFrequently: true })
   if (!octx) return
-  octx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-  const brush = createBrush(radius)
+  const brush = createBrush(paintRadius)
   const brushSize = brush.width
   const max = Math.max(1, maxValue)
 
-  // Accumulate density in the alpha channel (classic heatmap.js approach).
   for (const point of points) {
     const weight = Math.max(0, Math.min(1, point.value / max))
     if (weight <= 0) continue
     octx.globalAlpha = Math.max(0.05, weight)
-    octx.drawImage(brush, point.x - brushSize / 2, point.y - brushSize / 2)
+    octx.drawImage(
+      brush,
+      point.x * scale - brushSize / 2,
+      point.y * scale - brushSize / 2
+    )
   }
   octx.globalAlpha = 1
 
-  const img = octx.getImageData(0, 0, off.width, off.height)
+  const img = octx.getImageData(0, 0, pw, ph)
   const data = img.data
   for (let i = 0; i < data.length; i += 4) {
     const density = data[i + 3]! / 255
@@ -121,7 +136,6 @@ export function paintDensityHeatmap(
       data[i + 3] = 0
       continue
     }
-    // Slight gamma so sparse clicks stay visible without blowing out hotspots.
     const t = Math.min(1, Math.pow(density, 0.65))
     const [r, g, b] = paletteColor(t)
     data[i] = r
@@ -130,5 +144,6 @@ export function paintDensityHeatmap(
     data[i + 3] = Math.round(255 * opacity * Math.min(1, 0.2 + density * 0.95))
   }
   octx.putImageData(img, 0, 0)
+  ctx.imageSmoothingEnabled = true
   ctx.drawImage(off, 0, 0, width, height)
 }

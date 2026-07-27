@@ -72,7 +72,7 @@ export async function fetchHeatmapAnalytics(
   if (!apiBase || !secret) return null
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 12_000)
+  const timer = setTimeout(() => controller.abort(), 20_000)
 
   try {
     const url = new URL(`${apiBase}/v1/analytics/heatmap`)

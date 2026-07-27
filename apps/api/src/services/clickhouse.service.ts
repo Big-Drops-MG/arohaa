@@ -246,7 +246,7 @@ async function ensureHeatmapSchema(ch: ClickHouseClient): Promise<void> {
           workspace_id,
           page_url,
           ${HEATMAP_DEVICE_EXPR} AS device,
-          toDate(timestamp) AS day,
+          toDate(timestamp, 'America/New_York') AS day,
           ${HEATMAP_GRID_X} AS grid_x,
           ${HEATMAP_GRID_Y} AS grid_y,
           countState() AS clicks
@@ -279,7 +279,7 @@ async function ensureHeatmapSchema(ch: ClickHouseClient): Promise<void> {
           workspace_id,
           page_url,
           ${HEATMAP_DEVICE_EXPR} AS device,
-          toDate(timestamp) AS day,
+          toDate(timestamp, 'America/New_York') AS day,
           ${HEATMAP_GRID_X} AS grid_x,
           ${HEATMAP_GRID_Y} AS grid_y,
           countState() AS moves
@@ -311,7 +311,7 @@ async function ensureHeatmapSchema(ch: ClickHouseClient): Promise<void> {
           workspace_id,
           page_url,
           ${HEATMAP_DEVICE_EXPR} AS device,
-          toDate(timestamp) AS day,
+          toDate(timestamp, 'America/New_York') AS day,
           ${HEATMAP_GRID_Y} AS scroll_depth_bucket,
           countState() AS events
       FROM ${HEATMAP_EVENTS_TABLE}
@@ -343,7 +343,7 @@ async function ensureHeatmapSchema(ch: ClickHouseClient): Promise<void> {
           workspace_id,
           page_url,
           ${HEATMAP_DEVICE_EXPR} AS device,
-          toDate(timestamp) AS day,
+          toDate(timestamp, 'America/New_York') AS day,
           element_selector,
           sumState(JSONExtractFloat(properties, 'dwell_ms')) AS dwell_ms,
           countState() AS views
