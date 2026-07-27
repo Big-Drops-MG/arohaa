@@ -74,8 +74,8 @@ export function HeatmapDeviceFrame({
   }, [device, screenHeight, screenWidth, scale])
 
   // Screen is exactly screenWidth × screenHeight so the page fills the bezel
-  // edge-to-edge. Scrolling is owned by HeatmapCanvas so iframe viewport mode
-  // and the overlay stay in lockstep; the bezel itself must not scroll.
+  // edge-to-edge. The inner scroller moves the tall page+overlay together so
+  // heat cannot drift relative to the iframe content.
   const screenRadius =
     kind === "mobile"
       ? "1.7rem"
@@ -95,7 +95,14 @@ export function HeatmapDeviceFrame({
         borderRadius: screenRadius,
       }}
     >
-      <div className="h-full w-full overflow-hidden">{children}</div>
+      <div
+        className={cn(
+          "h-full w-full overflow-x-hidden overflow-y-auto overscroll-contain",
+          "[-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        )}
+      >
+        {children}
+      </div>
     </div>
   )
 

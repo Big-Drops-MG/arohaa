@@ -177,12 +177,13 @@ export function HeatmapDashboard({
             <ul className="list-disc space-y-1.5 pl-4 text-neutral-200">
               <li>Scroll the preview to move down the landing page.</li>
               <li>
-                Heat uses page-relative coordinates from the same device width
-                as the preview, so clicks land on the matching layout.
+                Heat is mapped with page-relative coordinates onto the same
+                device-width layout visitors used, so clicks sit on the real
+                controls.
               </li>
               <li>
-                Older viewport-only events are excluded so they do not pile up
-                near the top of the page.
+                Switch Desktop / Tablet / Mobile to inspect each layout
+                separately.
               </li>
             </ul>
           </div>

@@ -64,26 +64,26 @@ function pageUrlSql(pageUrl: string | null): string {
 }
 
 /**
- * Preview frames are painted at a fixed CSS width per device. Only keep events
- * whose capture viewport was close to that width so page-relative fractions
- * land on the same reflowed layout.
+ * Keep events whose capture viewport sits in the same device bucket the
+ * preview renders at. Matching the SDK device breakpoints avoids mixing
+ * mobile/tablet/desktop layouts into one overlay.
  */
 function viewportWidthSql(device: HeatmapDevice): string {
   if (device === 'mobile') {
-    return ' AND viewport_width >= 320 AND viewport_width < 480'
+    return ' AND viewport_width > 0 AND viewport_width < 768'
   }
   if (device === 'tablet') {
-    return ' AND viewport_width >= 700 AND viewport_width < 920'
+    return ' AND viewport_width >= 768 AND viewport_width < 1024'
   }
   if (device === 'desktop') {
-    return ' AND viewport_width >= 1100 AND viewport_width <= 1600'
+    return ' AND viewport_width >= 1024'
   }
-  return ''
+  return ' AND viewport_width > 0'
 }
 
-/** Drop legacy viewport-only rows that were stored before page coords existed. */
+/** Only keep rows that stored page-relative px/py (not legacy viewport vx/vy). */
 const PAGE_COORD_SQL =
-  " AND (positionCaseInsensitive(properties, '\"px\"') > 0 OR positionCaseInsensitive(properties, '\"py\"') > 0)"
+  " AND positionCaseInsensitive(properties, '\"px\"') > 0"
 
 async function listPageUrls(
   workspaceId: string,
@@ -111,84 +111,6 @@ async function listPageUrls(
   })
   const json = (await res.json()) as CHJson<{ page_url: string }>
   return json.data.map((row) => row.page_url)
-}
-
-async function queryClickCells(
-  workspaceId: string,
-  pageUrl: string,
-  device: HeatmapDevice,
-  rangeParams: { range_from: string; range_to: string },
-): Promise<HeatmapCell[]> {
-  const ch = getClickHouseClient()
-  const res = await ch.query({
-    format: 'JSON',
-    query_params: {
-      wid: workspaceId,
-      page_url: pageUrl,
-      device,
-      ...rangeParams,
-    },
-    query: `
-      SELECT
-        grid_x AS gridX,
-        grid_y AS gridY,
-        countMerge(clicks) AS value
-      FROM heatmap_clicks_rollup
-      WHERE ${DAY_FILTER}${pageUrlSql(pageUrl)}${deviceSql(device)}
-      GROUP BY grid_x, grid_y
-      HAVING value > 0
-      ORDER BY value DESC
-    `,
-  })
-  const json = (await res.json()) as CHJson<{
-    gridX: string | number
-    gridY: string | number
-    value: string | number
-  }>
-  return json.data.map((row) => ({
-    gridX: n(row.gridX),
-    gridY: n(row.gridY),
-    value: n(row.value),
-  }))
-}
-
-async function queryMoveCells(
-  workspaceId: string,
-  pageUrl: string,
-  device: HeatmapDevice,
-  rangeParams: { range_from: string; range_to: string },
-): Promise<HeatmapCell[]> {
-  const ch = getClickHouseClient()
-  const res = await ch.query({
-    format: 'JSON',
-    query_params: {
-      wid: workspaceId,
-      page_url: pageUrl,
-      device,
-      ...rangeParams,
-    },
-    query: `
-      SELECT
-        grid_x AS gridX,
-        grid_y AS gridY,
-        countMerge(moves) AS value
-      FROM heatmap_mousemove_rollup
-      WHERE ${DAY_FILTER}${pageUrlSql(pageUrl)}${deviceSql(device)}
-      GROUP BY grid_x, grid_y
-      HAVING value > 0
-      ORDER BY value DESC
-    `,
-  })
-  const json = (await res.json()) as CHJson<{
-    gridX: string | number
-    gridY: string | number
-    value: string | number
-  }>
-  return json.data.map((row) => ({
-    gridX: n(row.gridX),
-    gridY: n(row.gridY),
-    value: n(row.value),
-  }))
 }
 
 async function queryClickCellsFromEvents(
@@ -433,17 +355,15 @@ export async function getAnalyticsHeatmap({
       'click',
       rangeParams,
     )
-    // Prefer viewport-filtered raw events for the grid fallback so placement
-    // matches the preview width. Fall back to rollups only when empty.
-    cells =
-      points.length > 0
-        ? await queryClickCellsFromEvents(
-            workspaceId,
-            pageUrl,
-            device,
-            rangeParams,
-          )
-        : await queryClickCells(workspaceId, pageUrl, device, rangeParams)
+    // Always build the grid from the same filtered raw events. Never fall back
+    // to unfiltered rollups — those mix viewport widths and look like floating
+    // blobs on the fixed preview frame.
+    cells = await queryClickCellsFromEvents(
+      workspaceId,
+      pageUrl,
+      device,
+      rangeParams,
+    )
   } else if (mode === 'scroll') {
     scrollBuckets = await queryScrollBuckets(
       workspaceId,
@@ -459,15 +379,12 @@ export async function getAnalyticsHeatmap({
       'mousemove',
       rangeParams,
     )
-    cells =
-      points.length > 0
-        ? await queryMoveCellsFromEvents(
-            workspaceId,
-            pageUrl,
-            device,
-            rangeParams,
-          )
-        : await queryMoveCells(workspaceId, pageUrl, device, rangeParams)
+    cells = await queryMoveCellsFromEvents(
+      workspaceId,
+      pageUrl,
+      device,
+      rangeParams,
+    )
     sections = await querySections(workspaceId, pageUrl, device, rangeParams)
   }
 
