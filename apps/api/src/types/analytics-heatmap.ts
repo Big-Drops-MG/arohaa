@@ -8,9 +8,20 @@ export type HeatmapCell = {
 }
 
 export type HeatmapPoint = {
+  /** Page-relative X (0–1) — fallback when element cannot be resolved. */
   x: number
+  /** Page-relative Y (0–1). */
   y: number
   value: number
+  /** Stable CSS selector captured at click time. */
+  selector?: string | null
+  /** Element-relative X/Y inside the selector target (0–1). */
+  ex?: number | null
+  ey?: number | null
+  viewportWidth?: number | null
+  viewportHeight?: number | null
+  documentWidth?: number | null
+  documentHeight?: number | null
 }
 
 export type HeatmapScrollBucket = {

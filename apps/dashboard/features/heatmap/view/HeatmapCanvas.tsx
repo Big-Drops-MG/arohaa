@@ -9,6 +9,10 @@ import type {
   HeatmapPoint,
   HeatmapScrollBucket,
 } from "@/features/heatmap/model/heatmap"
+import {
+  paintDensityHeatmap,
+  rgbaScroll,
+} from "@/features/heatmap/utils/heatmap-density"
 import { HeatmapDeviceFrame } from "@/features/heatmap/view/HeatmapDeviceFrame"
 
 type HeatmapCanvasProps = {
@@ -26,8 +30,7 @@ type HeatmapCanvasProps = {
   emptyMessage?: string
 }
 
-// Preview widths match the device buckets used at capture so the page reflows
-// the same way and page-relative fractions land on the same elements.
+/** Preview widths match capture device buckets so the page reflows the same way. */
 const DEVICE_WIDTH: Record<HeatmapDevice, number> = {
   all: 1280,
   desktop: 1280,
@@ -42,160 +45,45 @@ const PAGE_HEIGHT_RATIO: Record<HeatmapDevice, number> = {
   mobile: 8.5,
 }
 
-const COLOR_STOPS = [
-  { t: 0, r: 59, g: 130, b: 246 },
-  { t: 0.35, r: 34, g: 211, b: 238 },
-  { t: 0.65, r: 250, g: 204, b: 21 },
-  { t: 1, r: 239, g: 68, b: 68 },
-] as const
+const MESSAGE_SOURCE = "arohaa-heatmap"
 
-const PALETTE: ReadonlyArray<readonly [number, number, number]> = (() => {
-  const out: [number, number, number][] = []
-  for (let i = 0; i < 256; i += 1) {
-    const t = i / 255
-    let s = 0
-    while (s < COLOR_STOPS.length - 2 && t > COLOR_STOPS[s + 1]!.t) s += 1
-    const a = COLOR_STOPS[s]!
-    const b = COLOR_STOPS[s + 1]!
-    const local = (t - a.t) / Math.max(0.0001, b.t - a.t)
-    out.push([
-      Math.round(a.r + (b.r - a.r) * local),
-      Math.round(a.g + (b.g - a.g) * local),
-      Math.round(a.b + (b.b - a.b) * local),
-    ])
-  }
-  return out
-})()
+type PaintTarget = "unknown" | "inpage" | "parent"
 
-function rgba(t: number, alpha: number): string {
-  const idx = Math.max(0, Math.min(255, Math.round(t * 255)))
-  const [r, g, b] = PALETTE[idx]!
-  return `rgba(${r},${g},${b},${alpha})`
-}
-
-function renderIntensityHeatmap(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
+function cellsToPoints(
   cells: HeatmapCell[],
-  maxValue: number,
-  opacity: number
-) {
-  if (maxValue <= 0 || cells.length === 0) return
-
-  const off = document.createElement("canvas")
-  off.width = width
-  off.height = height
-  const octx = off.getContext("2d")
-  if (!octx) return
-
+  width: number,
+  height: number
+): Array<{ x: number; y: number; value: number }> {
   const cellW = width / 10
   const cellH = height / 10
-  const baseRadius = Math.max(cellW, Math.min(cellH, width * 0.1)) * 0.9
-
-  for (const cell of cells) {
+  return cells.map((cell) => {
     const col = Math.max(0, Math.min(9, Math.floor(cell.gridX / 10)))
     const row = Math.max(0, Math.min(9, Math.floor(cell.gridY / 10)))
-    const weight = cell.value / maxValue
-    if (weight <= 0) continue
-    const cx = (col + 0.5) * cellW
-    const cy = (row + 0.5) * cellH
-    const radius = baseRadius * (0.7 + weight * 0.45)
-
-    octx.globalAlpha = Math.max(0.08, weight)
-    const grad = octx.createRadialGradient(cx, cy, 0, cx, cy, radius)
-    grad.addColorStop(0, "rgba(0,0,0,1)")
-    grad.addColorStop(1, "rgba(0,0,0,0)")
-    octx.fillStyle = grad
-    octx.beginPath()
-    octx.arc(cx, cy, radius, 0, Math.PI * 2)
-    octx.fill()
-  }
-  octx.globalAlpha = 1
-
-  const img = octx.getImageData(0, 0, width, height)
-  const data = img.data
-  for (let i = 0; i < data.length; i += 4) {
-    const density = data[i + 3]! / 255
-    if (density < 0.12) {
-      data[i + 3] = 0
-      continue
+    return {
+      x: (col + 0.5) * cellW,
+      y: (row + 0.5) * cellH,
+      value: cell.value,
     }
-    const t = Math.min(1, Math.pow(density, 0.75))
-    const [r, g, b] = PALETTE[Math.round(t * 255)]!
-    data[i] = r
-    data[i + 1] = g
-    data[i + 2] = b
-    data[i + 3] = Math.round(255 * opacity * Math.min(1, 0.2 + density))
-  }
-  octx.putImageData(img, 0, 0)
-  ctx.drawImage(off, 0, 0, width, height)
-}
-
-function renderPointsHeatmap(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  points: HeatmapPoint[],
-  maxValue: number,
-  opacity: number
-) {
-  if (points.length === 0) return
-
-  const off = document.createElement("canvas")
-  off.width = width
-  off.height = height
-  const octx = off.getContext("2d")
-  if (!octx) return
-
-  // Tight radius so heat sits on the clicked control instead of floating.
-  const radius = Math.max(10, width * 0.016)
-  const max = Math.max(1, maxValue)
-
-  for (const p of points) {
-    const cx = p.x * width
-    const cy = p.y * height
-    const weight = Math.max(0, Math.min(1, p.value / max))
-    const cx0 = Math.max(0, Math.min(width, cx))
-    const cy0 = Math.max(0, Math.min(height, cy))
-
-    octx.globalAlpha = Math.max(0.18, Math.min(0.85, 0.22 + weight * 0.55))
-    const grad = octx.createRadialGradient(cx0, cy0, 0, cx0, cy0, radius)
-    grad.addColorStop(0, "rgba(0,0,0,1)")
-    grad.addColorStop(1, "rgba(0,0,0,0)")
-    octx.fillStyle = grad
-    octx.beginPath()
-    octx.arc(cx0, cy0, radius, 0, Math.PI * 2)
-    octx.fill()
-  }
-  octx.globalAlpha = 1
-
-  const img = octx.getImageData(0, 0, width, height)
-  const data = img.data
-  for (let i = 0; i < data.length; i += 4) {
-    const density = data[i + 3]! / 255
-    if (density < 0.1) {
-      data[i + 3] = 0
-      continue
-    }
-    const t = Math.min(1, Math.pow(density, 0.7))
-    const [r, g, b] = PALETTE[Math.round(t * 255)]!
-    data[i] = r
-    data[i + 1] = g
-    data[i + 2] = b
-    data[i + 3] = Math.round(255 * opacity * Math.min(1, 0.25 + density))
-  }
-  octx.putImageData(img, 0, 0)
-  ctx.drawImage(off, 0, 0, width, height)
+  })
 }
 
 function drawScrollOverlay(
-  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
   width: number,
   height: number,
   buckets: HeatmapScrollBucket[],
   opacity: number
 ) {
+  const dpr = window.devicePixelRatio || 1
+  canvas.width = Math.floor(width * dpr)
+  canvas.height = Math.floor(height * dpr)
+  canvas.style.width = `${width}px`
+  canvas.style.height = `${height}px`
+  const ctx = canvas.getContext("2d")
+  if (!ctx) return
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, width, height)
+
   const total = buckets.reduce((s, b) => s + b.value, 0)
   if (total <= 0) return
 
@@ -207,10 +95,25 @@ function drawScrollOverlay(
       0
     )
     const reach = reached / total
-    grad.addColorStop(r / 10, rgba(reach, opacity * (0.15 + 0.55 * reach)))
+    grad.addColorStop(
+      r / 10,
+      rgbaScroll(reach, opacity * (0.15 + 0.55 * reach))
+    )
   }
   ctx.fillStyle = grad
   ctx.fillRect(0, 0, width, height)
+}
+
+function toPaintPoints(points: HeatmapPoint[]) {
+  return points.map((p, i) => ({
+    id: `p${i}`,
+    px: p.x,
+    py: p.y,
+    ex: p.ex ?? null,
+    ey: p.ey ?? null,
+    selector: p.selector ?? null,
+    value: p.value,
+  }))
 }
 
 export function HeatmapCanvas({
@@ -229,6 +132,9 @@ export function HeatmapCanvas({
 }: HeatmapCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const requestIdRef = useRef(0)
+  const paintTargetRef = useRef<PaintTarget>("unknown")
+
   const frameWidth = DEVICE_WIDTH[device]
   const viewportHeight = Math.round(
     frameWidth * (device === "mobile" ? 1.9 : device === "tablet" ? 1.25 : 0.62)
@@ -236,9 +142,7 @@ export function HeatmapCanvas({
 
   const [pageLoaded, setPageLoaded] = useState(false)
   const [pageFailed, setPageFailed] = useState(false)
-  // Lock the first content height measured while the iframe is still at a real
-  // device viewport. Ignoring later growth stops 100vh feedback from stretching
-  // the overlay away from the page content.
+  const [paintTarget, setPaintTarget] = useState<PaintTarget>("unknown")
   const [lockedHeight, setLockedHeight] = useState<number | null>(null)
   const [viewKey, setViewKey] = useState(`${backgroundUrl ?? ""}:${device}`)
   const nextViewKey = `${backgroundUrl ?? ""}:${device}`
@@ -247,6 +151,7 @@ export function HeatmapCanvas({
     setPageLoaded(false)
     setPageFailed(false)
     setLockedHeight(null)
+    setPaintTarget("unknown")
   }
 
   const hasLivePage = Boolean(backgroundUrl && !backgroundImage)
@@ -259,33 +164,61 @@ export function HeatmapCanvas({
         ? fallbackPageHeight
         : fallbackPageHeight)
 
+  const useInPageOverlay =
+    hasLivePage &&
+    pageLoaded &&
+    !pageFailed &&
+    !emptyState &&
+    mode !== "scroll" &&
+    paintTarget !== "parent"
+
+  useEffect(() => {
+    paintTargetRef.current = paintTarget
+  }, [paintTarget])
+
+  useEffect(() => {
+    paintTargetRef.current = "unknown"
+  }, [viewKey])
+
   useEffect(() => {
     if (!hasLivePage) return
     const onMessage = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow) return
       const data = event.data as
-        | { source?: string; type?: string; height?: number }
+        | {
+            source?: string
+            type?: string
+            height?: number
+            features?: string[]
+            requestId?: number
+          }
         | undefined
-      if (
-        !data ||
-        data.source !== "arohaa-heatmap" ||
-        data.type !== "doc-size"
-      ) {
+      if (!data || data.source !== MESSAGE_SOURCE) return
+
+      if (data.type === "doc-size") {
+        const height = Number(data.height)
+        if (Number.isFinite(height) && height > 0) {
+          const clamped = Math.max(
+            Math.round(frameWidth * 0.5),
+            Math.min(Math.round(frameWidth * 30), Math.round(height))
+          )
+          setLockedHeight((prev) => {
+            if (prev == null) return clamped
+            if (clamped < prev * 0.92) return clamped
+            return prev
+          })
+        }
+        const features = Array.isArray(data.features) ? data.features : []
+        if (features.includes("heatmap-paint")) {
+          setPaintTarget((prev) => (prev === "parent" ? prev : "inpage"))
+        }
         return
       }
-      const height = Number(data.height)
-      if (!Number.isFinite(height) || height <= 0) return
-      const clamped = Math.max(
-        Math.round(frameWidth * 0.5),
-        Math.min(Math.round(frameWidth * 30), Math.round(height))
-      )
-      setLockedHeight((prev) => {
-        if (prev == null) return clamped
-        // Allow a small shrink if the first report was inflated; never grow,
-        // which is the 100vh feedback direction.
-        if (clamped < prev * 0.92) return clamped
-        return prev
-      })
+
+      if (data.type === "heatmap-painted") {
+        if (data.requestId !== requestIdRef.current) return
+        setPaintTarget((prev) => (prev === "parent" ? prev : "inpage"))
+      }
     }
     window.addEventListener("message", onMessage)
     return () => window.removeEventListener("message", onMessage)
@@ -295,77 +228,163 @@ export function HeatmapCanvas({
     if (!hasLivePage || !pageLoaded) return
     const win = iframeRef.current?.contentWindow
     if (!win) return
-    win.postMessage({ source: "arohaa-heatmap", type: "ping" }, "*")
+    win.postMessage({ source: MESSAGE_SOURCE, type: "ping" }, "*")
   }, [hasLivePage, pageLoaded, device, backgroundUrl])
 
+  useEffect(() => {
+    if (!hasLivePage) return
+    const win = iframeRef.current?.contentWindow
+    if (!win) return
+    if (emptyState || mode === "scroll" || paintTarget === "parent") {
+      win.postMessage({ source: MESSAGE_SOURCE, type: "heatmap-clear" }, "*")
+    }
+  }, [emptyState, hasLivePage, mode, paintTarget, backgroundUrl])
+
+  // Paint inside the live document (element-anchored resolve).
+  useEffect(() => {
+    if (!useInPageOverlay) return
+    const win = iframeRef.current?.contentWindow
+    if (!win) return
+
+    const requestId = ++requestIdRef.current
+    const payloadPoints = toPaintPoints(points)
+
+    win.postMessage(
+      {
+        source: MESSAGE_SOURCE,
+        type: "heatmap-paint",
+        requestId,
+        points: payloadPoints,
+        maxValue: Math.max(1, maxValue),
+        opacity,
+        mode: mode === "attention" ? "attention" : "click",
+      },
+      "*"
+    )
+
+    // Older SDK without heatmap-paint → parent canvas fallback.
+    const timer = window.setTimeout(() => {
+      setPaintTarget((prev) => (prev === "unknown" ? "parent" : prev))
+    }, 1200)
+
+    return () => window.clearTimeout(timer)
+  }, [
+    useInPageOverlay,
+    paintTarget,
+    points,
+    maxValue,
+    opacity,
+    mode,
+    backgroundUrl,
+    device,
+  ])
+
+  // Parent canvas: scroll, screenshots, placeholders, or SDK fallback.
   useEffect(() => {
     if (emptyState) return
     const canvas = canvasRef.current
     if (!canvas) return
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
 
-    const dpr = window.devicePixelRatio || 1
-    canvas.width = Math.floor(frameWidth * dpr)
-    canvas.height = Math.floor(pageHeight * dpr)
-    canvas.style.width = `${frameWidth}px`
-    canvas.style.height = `${pageHeight}px`
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.clearRect(0, 0, frameWidth, pageHeight)
+    const shouldPaintParent =
+      !hasLivePage ||
+      mode === "scroll" ||
+      paintTarget === "parent" ||
+      Boolean(backgroundImage)
 
-    if (!hasLivePage && !backgroundImage) {
-      ctx.fillStyle = "#f4f4f5"
-      ctx.fillRect(0, 0, frameWidth, pageHeight)
-      const step = 24
-      ctx.fillStyle = "#e4e4e7"
-      for (let y = 0; y < pageHeight; y += step) {
-        for (let x = 0; x < frameWidth; x += step) {
-          if ((x / step + y / step) % 2 === 0) {
-            ctx.fillRect(x, y, step, step)
-          }
-        }
+    if (!shouldPaintParent) {
+      const ctx = canvas.getContext("2d")
+      if (ctx) {
+        canvas.width = 1
+        canvas.height = 1
+        ctx.clearRect(0, 0, 1, 1)
       }
+      canvas.style.width = "0px"
+      canvas.style.height = "0px"
+      return
     }
 
-    const paintOverlay = () => {
-      if (mode === "scroll") {
-        drawScrollOverlay(ctx, frameWidth, pageHeight, scrollBuckets, opacity)
-      } else if (points.length > 0) {
-        renderPointsHeatmap(
-          ctx,
-          frameWidth,
-          pageHeight,
-          points,
-          maxValue,
-          opacity
-        )
-      } else {
-        renderIntensityHeatmap(
-          ctx,
-          frameWidth,
-          pageHeight,
-          cells,
-          maxValue,
-          opacity
-        )
-      }
+    if (mode === "scroll") {
+      drawScrollOverlay(canvas, frameWidth, pageHeight, scrollBuckets, opacity)
+      return
+    }
+
+    const densityPoints =
+      points.length > 0
+        ? points.map((p) => ({
+            x: p.x * frameWidth,
+            y: p.y * pageHeight,
+            value: p.value,
+          }))
+        : cellsToPoints(cells, frameWidth, pageHeight)
+
+    const radius =
+      mode === "attention"
+        ? Math.max(22, Math.round(frameWidth * 0.022))
+        : Math.max(16, Math.round(frameWidth * 0.015))
+
+    const paintHeat = (target: HTMLCanvasElement) => {
+      paintDensityHeatmap(target, densityPoints, {
+        width: frameWidth,
+        height: pageHeight,
+        maxValue: Math.max(1, maxValue),
+        opacity,
+        radius,
+      })
     }
 
     if (backgroundImage) {
       const img = new Image()
       img.onload = () => {
+        const dpr = window.devicePixelRatio || 1
+        canvas.width = Math.floor(frameWidth * dpr)
+        canvas.height = Math.floor(pageHeight * dpr)
+        canvas.style.width = `${frameWidth}px`
+        canvas.style.height = `${pageHeight}px`
+        const ctx = canvas.getContext("2d")
+        if (!ctx) return
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ctx.clearRect(0, 0, frameWidth, pageHeight)
         ctx.drawImage(img, 0, 0, frameWidth, pageHeight)
-        paintOverlay()
+        const heat = document.createElement("canvas")
+        paintHeat(heat)
+        ctx.drawImage(heat, 0, 0, frameWidth, pageHeight)
       }
       img.src = backgroundImage
       return
     }
 
-    paintOverlay()
+    if (!hasLivePage) {
+      const dpr = window.devicePixelRatio || 1
+      canvas.width = Math.floor(frameWidth * dpr)
+      canvas.height = Math.floor(pageHeight * dpr)
+      canvas.style.width = `${frameWidth}px`
+      canvas.style.height = `${pageHeight}px`
+      const ctx = canvas.getContext("2d")
+      if (ctx) {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ctx.clearRect(0, 0, frameWidth, pageHeight)
+        ctx.fillStyle = "#f4f4f5"
+        ctx.fillRect(0, 0, frameWidth, pageHeight)
+        const step = 24
+        ctx.fillStyle = "#e4e4e7"
+        for (let y = 0; y < pageHeight; y += step) {
+          for (let x = 0; x < frameWidth; x += step) {
+            if ((x / step + y / step) % 2 === 0) {
+              ctx.fillRect(x, y, step, step)
+            }
+          }
+        }
+        const heat = document.createElement("canvas")
+        paintHeat(heat)
+        ctx.drawImage(heat, 0, 0, frameWidth, pageHeight)
+      }
+      return
+    }
+
+    paintHeat(canvas)
   }, [
     backgroundImage,
     cells,
-    device,
     emptyState,
     frameWidth,
     hasLivePage,
@@ -373,9 +392,17 @@ export function HeatmapCanvas({
     mode,
     opacity,
     pageHeight,
+    paintTarget,
     points,
     scrollBuckets,
   ])
+
+  const showParentCanvas =
+    !emptyState &&
+    (mode === "scroll" ||
+      paintTarget === "parent" ||
+      Boolean(backgroundImage) ||
+      !hasLivePage)
 
   return (
     <div
@@ -456,7 +483,10 @@ export function HeatmapCanvas({
             <canvas
               ref={canvasRef}
               aria-label={`${mode} heatmap overlay`}
-              className="pointer-events-none absolute top-0 left-0 z-20"
+              className={cn(
+                "pointer-events-none absolute top-0 left-0 z-20",
+                !showParentCanvas && "invisible"
+              )}
             />
           )}
         </div>

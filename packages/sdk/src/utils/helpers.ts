@@ -32,6 +32,7 @@ export function getDocumentSize(): { width: number; height: number } {
     for (let i = 0; i < root.children.length; i += 1) {
       const el = root.children[i]
       if (!(el instanceof HTMLElement)) continue
+      if (el.id === "arohaa-heatmap-overlay") continue
       const style = window.getComputedStyle(el)
       if (style.display === "none" || style.visibility === "hidden") continue
       if (style.position === "fixed") continue

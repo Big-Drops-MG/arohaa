@@ -1,4 +1,10 @@
 import { getDocumentSize } from "../utils/helpers"
+import {
+  clearHeatmapOverlay,
+  paintHeatmapOverlay,
+  setupHeatmapOverlayAutoRepaint,
+  type HeatmapPaintPayload,
+} from "../heatmap/overlay"
 
 const MESSAGE_SOURCE = "arohaa-heatmap"
 
@@ -20,23 +26,29 @@ function postDocSize(): void {
       type: "doc-size",
       width,
       height,
-      // Advertise scroll control so the dashboard can keep the iframe at a
-      // real device viewport (correct 100vh layout) and sync scroll itself.
-      features: ["scroll-to"],
+      features: ["scroll-to", "heatmap-paint"],
     },
     "*"
   )
 }
 
-function postScroll(): void {
+function ackPaint(
+  requestId: string | number | undefined,
+  result: {
+    width: number
+    height: number
+    placed: number
+    elementAnchored: number
+  }
+): void {
   const target = window.parent
   if (!target) return
   target.postMessage(
     {
       source: MESSAGE_SOURCE,
-      type: "scroll",
-      x: window.scrollX || window.pageXOffset || 0,
-      y: window.scrollY || window.pageYOffset || 0,
+      type: "heatmap-painted",
+      requestId,
+      ...result,
     },
     "*"
   )
@@ -44,13 +56,22 @@ function postScroll(): void {
 
 function onParentMessage(event: MessageEvent): void {
   const data = event.data as
-    | { source?: string; type?: string; x?: number; y?: number }
+    | {
+        source?: string
+        type?: string
+        x?: number
+        y?: number
+        requestId?: string | number
+        points?: HeatmapPaintPayload["points"]
+        maxValue?: number
+        opacity?: number
+        mode?: HeatmapPaintPayload["mode"]
+      }
     | undefined
   if (!data || data.source !== MESSAGE_SOURCE) return
 
   if (data.type === "ping") {
     postDocSize()
-    postScroll()
     return
   }
 
@@ -62,6 +83,26 @@ function onParentMessage(event: MessageEvent): void {
       top: Number.isFinite(y) ? y : 0,
       behavior: "auto",
     })
+    return
+  }
+
+  if (data.type === "heatmap-clear") {
+    clearHeatmapOverlay()
+    return
+  }
+
+  if (data.type === "heatmap-paint") {
+    const points = Array.isArray(data.points) ? data.points : []
+    const result = paintHeatmapOverlay({
+      points,
+      maxValue: Number(data.maxValue) || 1,
+      opacity:
+        typeof data.opacity === "number" && Number.isFinite(data.opacity)
+          ? data.opacity
+          : 0.65,
+      mode: data.mode,
+    })
+    ackPaint(data.requestId, result)
   }
 }
 
@@ -79,6 +120,7 @@ export function setupFrameSizeReporter(): void {
     })
   }
 
+  setupHeatmapOverlayAutoRepaint()
   schedule()
   window.addEventListener("load", schedule)
   window.addEventListener("resize", schedule)

@@ -18,6 +18,13 @@ export type HeatmapPoint = {
   x: number
   y: number
   value: number
+  selector?: string | null
+  ex?: number | null
+  ey?: number | null
+  viewportWidth?: number | null
+  viewportHeight?: number | null
+  documentWidth?: number | null
+  documentHeight?: number | null
 }
 
 export type HeatmapScrollBucket = {

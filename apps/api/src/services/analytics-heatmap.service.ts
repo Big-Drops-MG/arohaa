@@ -278,6 +278,8 @@ async function queryPoints(
   rangeParams: { range_from: string; range_to: string },
 ): Promise<HeatmapPoint[]> {
   const ch = getClickHouseClient()
+  // Group by page coords + element anchor so the live preview can re-attach
+  // clicks to the same controls after responsive reflow (Crazy Egg style).
   const res = await ch.query({
     format: 'JSON',
     query_params: {
@@ -289,26 +291,49 @@ async function queryPoints(
     },
     query: `
       SELECT
-        round(x, 4) AS x,
-        round(y, 4) AS y,
+        round(x, 4) AS px,
+        round(y, 4) AS py,
+        element_selector AS selector,
+        round(JSONExtractFloat(properties, 'x'), 3) AS ex,
+        round(JSONExtractFloat(properties, 'y'), 3) AS ey,
+        toInt32(round(avg(viewport_width))) AS vw,
+        toInt32(round(avg(viewport_height))) AS vh,
+        toInt32(round(avg(JSONExtractFloat(properties, 'dw')))) AS dw,
+        toInt32(round(avg(JSONExtractFloat(properties, 'dh')))) AS dh,
         count() AS value
       FROM heatmap_events
       WHERE ${RAW_TIME_FILTER}
         AND event_type = {etype:String}${pageUrlSql(pageUrl)}${deviceSql(device)}${viewportWidthSql(device)}${PAGE_COORD_SQL}
-      GROUP BY x, y
+      GROUP BY px, py, selector, ex, ey
       ORDER BY value DESC
       LIMIT 8000
     `,
   })
   const json = (await res.json()) as CHJson<{
-    x: string | number
-    y: string | number
+    px: string | number
+    py: string | number
+    selector: string
+    ex: string | number
+    ey: string | number
+    vw: string | number
+    vh: string | number
+    dw: string | number
+    dh: string | number
     value: string | number
   }>
+  const isClick = eventType === 'click'
   return json.data.map((row) => ({
-    x: n(row.x),
-    y: n(row.y),
+    x: n(row.px),
+    y: n(row.py),
     value: n(row.value),
+    selector: isClick && row.selector ? row.selector : null,
+    // Element offsets only exist on clicks; moves use page px/py only.
+    ex: isClick ? n(row.ex) : null,
+    ey: isClick ? n(row.ey) : null,
+    viewportWidth: n(row.vw) || null,
+    viewportHeight: n(row.vh) || null,
+    documentWidth: n(row.dw) || null,
+    documentHeight: n(row.dh) || null,
   }))
 }
 
