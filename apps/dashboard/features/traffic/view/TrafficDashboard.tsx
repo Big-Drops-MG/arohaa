@@ -1,18 +1,20 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { cn } from "@workspace/ui/lib/utils"
 import { getTrafficEmptyDashboardData } from "@/features/traffic/controller/traffic-empty-data"
+import { TrafficDashboardSkeleton } from "@/features/dashboard/view/dashboard-skeletons"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import type {
   TrafficDashboardData,
   TrafficKpiMetricId,
 } from "@/features/traffic/model/traffic"
+import { TRAFFIC_KPI_METRIC_ORDER } from "@/features/traffic/model/traffic-kpis"
 import { TrafficDataTableCard } from "@/features/traffic/view/TrafficDataTableCard"
 import { TrafficKpiRow } from "@/features/traffic/view/TrafficKpiRow"
 import { TrafficSourcesCard } from "@/features/traffic/view/TrafficSourcesCard"
 import { TRAFFIC_PREVIEW_ROW_LIMIT } from "@/features/traffic/view/traffic-card-layout"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import { useDashboardPreference } from "@/hooks/use-dashboard-preference"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import {
   buildAnalyticsApiPath,
@@ -25,18 +27,25 @@ type TrafficDashboardProps = {
   data: TrafficDashboardData
   projectId: string
   isActive?: boolean
+  isLoading?: boolean
 }
 
 export function TrafficDashboard({
   data: initialData,
   projectId,
   isActive = true,
+  isLoading: isTabLoading = false,
 }: TrafficDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
-  const [activeKpiId, setActiveKpiId] = useState<TrafficKpiMetricId>(
-    initialData.defaultKpiMetricId
+  const [activeKpiId, setActiveKpiId] = useDashboardPreference(
+    projectId,
+    "kpi:traffic",
+    (raw) =>
+      raw && (TRAFFIC_KPI_METRIC_ORDER as readonly string[]).includes(raw)
+        ? (raw as TrafficKpiMetricId)
+        : initialData.defaultKpiMetricId
   )
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isLoading, setIsLoading] = useState(false)
@@ -137,58 +146,57 @@ export function TrafficDashboard({
         onCustomRangeChange={setCustomRange}
       />
 
-      <div
-        className={cn(
-          "flex flex-col gap-4",
-          isLoading && "pointer-events-none opacity-60"
-        )}
-        aria-busy={isLoading}
-      >
-        <TrafficKpiRow
-          kpis={dashboardData.kpis}
-          activeKpiId={activeKpiId}
-          onKpiSelect={setActiveKpiId}
-        />
-
+      {isTabLoading || isLoading ? (
+        <TrafficDashboardSkeleton />
+      ) : (
         <div className="flex flex-col gap-4">
-          <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
-            <TrafficDataTableCard
-              section={dashboardData.trafficByTime}
-              expandable
-              previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
-            />
-            <TrafficDataTableCard
-              section={dashboardData.trafficByLocation}
-              expandable
-              previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
-            />
-          </div>
+          <TrafficKpiRow
+            kpis={dashboardData.kpis}
+            activeKpiId={activeKpiId}
+            onKpiSelect={setActiveKpiId}
+          />
 
-          <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
-            <TrafficDataTableCard
-              section={dashboardData.trafficByDevice}
-              expandable
-              previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
-            />
-            <TrafficSourcesCard
-              referrers={dashboardData.referrers}
-              utmByParam={dashboardData.utmByParam}
-              expandable
-              previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
-            />
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
-            <div className="lg:col-span-2">
+          <div className="flex flex-col gap-4">
+            <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
               <TrafficDataTableCard
-                section={dashboardData.topPages}
+                section={dashboardData.trafficByTime}
+                expandable
+                previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
+              />
+              <TrafficDataTableCard
+                section={dashboardData.trafficByLocation}
                 expandable
                 previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
               />
             </div>
+
+            <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
+              <TrafficDataTableCard
+                section={dashboardData.trafficByDevice}
+                expandable
+                previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
+              />
+              <TrafficSourcesCard
+                referrers={dashboardData.referrers}
+                utmByParam={dashboardData.utmByParam}
+                expandable
+                previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
+                projectId={projectId}
+              />
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
+              <div className="lg:col-span-2">
+                <TrafficDataTableCard
+                  section={dashboardData.topPages}
+                  expandable
+                  previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
+                />
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

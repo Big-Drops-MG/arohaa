@@ -498,8 +498,17 @@ export function HeatmapCanvas({
           ) : null}
 
           {hasLivePage && !pageLoaded && !pageFailed ? (
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-neutral-50 text-xs text-neutral-400">
-              Loading page preview…
+            <div
+              className="pointer-events-none absolute inset-0 z-10 bg-neutral-50/90 p-6"
+              aria-busy
+              aria-label="Loading page preview"
+            >
+              <div className="flex h-full flex-col gap-4">
+                <div className="h-8 w-2/3 max-w-md animate-pulse rounded-md bg-neutral-200" />
+                <div className="h-4 w-1/2 max-w-sm animate-pulse rounded-md bg-neutral-200" />
+                <div className="mt-4 h-40 w-full max-w-lg animate-pulse rounded-md bg-neutral-200" />
+                <div className="h-10 w-36 animate-pulse rounded-md bg-neutral-200" />
+              </div>
             </div>
           ) : null}
 

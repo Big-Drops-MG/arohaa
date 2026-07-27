@@ -4,6 +4,10 @@ import { notFound } from "next/navigation"
 import { ProjectDashboardView } from "@/features/dashboard/view/ProjectDashboardView"
 import { parseProjectTab } from "@/features/dashboard/model/project-tab"
 import { parseDashboardUtmFilterFromParams } from "@/features/dashboard/model/utm-attribution-filter"
+import {
+  parseHeatmapDevice,
+  parseHeatmapMode,
+} from "@/features/heatmap/model/heatmap"
 import { getOverviewPlaceholderData } from "@/features/overview/controller/overview-placeholder-data"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
 import {
@@ -32,6 +36,11 @@ type ProjectPageProps = {
     from?: string
     to?: string
     tab?: string
+    mode?: string
+    device?: string
+    section?: string
+    sort_by?: string
+    sort_order?: string
     utm_source?: string
     utm_s1?: string
     utm_medium?: string
@@ -65,6 +74,8 @@ export default async function ProjectPage({
     from,
     to,
     tab: tabParam,
+    mode: modeParam,
+    device: deviceParam,
     utm_source,
     utm_s1,
     utm_dim,
@@ -131,6 +142,8 @@ export default async function ProjectPage({
         landingPagePublicId: project,
         rangeId,
         customRange,
+        mode: parseHeatmapMode(modeParam),
+        device: parseHeatmapDevice(deviceParam),
       })
       break
     case "event-tracking":

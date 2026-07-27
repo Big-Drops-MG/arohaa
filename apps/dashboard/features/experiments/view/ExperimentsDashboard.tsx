@@ -1,8 +1,8 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { cn } from "@workspace/ui/lib/utils"
 import { getExperimentsEmptyDashboardData } from "@/features/experiments/controller/experiments-empty-data"
+import { ExperimentsDashboardSkeleton } from "@/features/dashboard/view/dashboard-skeletons"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import type { ExperimentsDashboardData } from "@/features/experiments/model/experiments"
 import { ExperimentsCards } from "@/features/experiments/view/ExperimentsCards"
@@ -19,12 +19,14 @@ type ExperimentsDashboardProps = {
   data: ExperimentsDashboardData
   projectId: string
   isActive?: boolean
+  isLoading?: boolean
 }
 
 export function ExperimentsDashboard({
   data: initialData,
   projectId,
   isActive = true,
+  isLoading: isTabLoading = false,
 }: ExperimentsDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
@@ -138,15 +140,11 @@ export function ExperimentsDashboard({
         onCustomRangeChange={setCustomRange}
       />
 
-      <div
-        className={cn(
-          "flex flex-col gap-4",
-          isLoading && "pointer-events-none opacity-60"
-        )}
-        aria-busy={isLoading}
-      >
+      {isTabLoading || isLoading ? (
+        <ExperimentsDashboardSkeleton />
+      ) : (
         <ExperimentsCards data={dashboardData} />
-      </div>
+      )}
     </div>
   )
 }

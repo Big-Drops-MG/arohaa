@@ -283,9 +283,27 @@ export function SettingsExperimentSection({
       description="Compare this project against another Arohaa project by running them as variants of one experiment."
     >
       {isLoading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" aria-hidden />
-          Loading experiment details
+        <div
+          className="space-y-3"
+          aria-busy
+          aria-label="Loading experiment details"
+        >
+          <div className="h-4 w-48 animate-pulse rounded-md bg-muted" />
+          <div className="h-3 w-72 animate-pulse rounded-md bg-muted" />
+          <div className="space-y-2 rounded-lg border border-border p-4">
+            {Array.from({ length: 3 }, (_, i) => (
+              <div
+                key={i}
+                className="flex items-center justify-between gap-3 py-2"
+              >
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="h-3.5 w-40 animate-pulse rounded-md bg-muted" />
+                  <div className="h-3 w-56 animate-pulse rounded-md bg-muted" />
+                </div>
+                <div className="h-3 w-10 shrink-0 animate-pulse rounded-md bg-muted" />
+              </div>
+            ))}
+          </div>
         </div>
       ) : (
         <div className="space-y-4">

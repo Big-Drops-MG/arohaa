@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { cn } from "@workspace/ui/lib/utils"
+import { EventTrackingDashboardSkeleton } from "@/features/dashboard/view/dashboard-skeletons"
 import { getEventTrackingEmptyDashboardData } from "@/features/event-tracking/controller/event-tracking-empty-data"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import type {
@@ -14,6 +14,7 @@ import { EventTrackingKpiPerformanceCard } from "@/features/event-tracking/view/
 import { EventTrackingKpiRow } from "@/features/event-tracking/view/EventTrackingKpiRow"
 import { EventTrackingSubmissionOverTimeCard } from "@/features/event-tracking/view/EventTrackingSubmissionOverTimeCard"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import { useDashboardPreference } from "@/hooks/use-dashboard-preference"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import {
   buildAnalyticsApiPath,
@@ -26,6 +27,7 @@ type EventTrackingDashboardProps = {
   data: EventTrackingDashboardData
   projectId: string
   isActive?: boolean
+  isLoading?: boolean
 }
 
 function defaultActiveKpiId(
@@ -42,14 +44,23 @@ export function EventTrackingDashboard({
   data: initialData,
   projectId,
   isActive = true,
+  isLoading: isTabLoading = false,
 }: EventTrackingDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isLoading, setIsLoading] = useState(false)
-  const [activeKpiId, setActiveKpiId] = useState<EventTrackingMetricId>(
-    defaultActiveKpiId(initialData)
+  const [activeKpiId, setActiveKpiId] = useDashboardPreference(
+    projectId,
+    "kpi:event-tracking",
+    (raw) => {
+      const order = eventTrackingMetricOrder(initialData.formType)
+      if (raw && (order as readonly string[]).includes(raw)) {
+        return raw as EventTrackingMetricId
+      }
+      return defaultActiveKpiId(initialData)
+    }
   )
 
   const fetchEventsForRange = useCallback(
@@ -100,7 +111,7 @@ export function EventTrackingDashboard({
         }
       }
     },
-    [projectId, customRange, utmFilter]
+    [projectId, customRange, utmFilter, setActiveKpiId]
   )
 
   useEffect(() => {
@@ -113,7 +124,6 @@ export function EventTrackingDashboard({
       )
     ) {
       setDashboardData(initialData)
-      setActiveKpiId(defaultActiveKpiId(initialData))
       setIsLoading(false)
       return
     }
@@ -150,33 +160,31 @@ export function EventTrackingDashboard({
         onCustomRangeChange={setCustomRange}
       />
 
-      <div
-        className={cn(
-          "flex flex-col gap-4",
-          isLoading && "pointer-events-none opacity-60"
-        )}
-        aria-busy={isLoading}
-      >
-        <EventTrackingKpiRow
-          kpis={dashboardData.kpis}
-          activeKpiId={activeKpiId}
-          onKpiSelect={setActiveKpiId}
-        />
+      {isTabLoading || isLoading ? (
+        <EventTrackingDashboardSkeleton />
+      ) : (
+        <div className="flex flex-col gap-4">
+          <EventTrackingKpiRow
+            kpis={dashboardData.kpis}
+            activeKpiId={activeKpiId}
+            onKpiSelect={setActiveKpiId}
+          />
 
-        <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:*:min-h-0">
-          <EventTrackingSubmissionOverTimeCard
-            formType={dashboardData.formType}
-            rows={dashboardData.submissionRows}
-            expandable
-            previewRowLimit={EVENT_TRACKING_PREVIEW_ROW_LIMIT}
-          />
-          <EventTrackingKpiPerformanceCard
-            formType={dashboardData.formType}
-            segments={dashboardData.kpiSegments}
-            expandable
-          />
+          <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:*:min-h-0">
+            <EventTrackingSubmissionOverTimeCard
+              formType={dashboardData.formType}
+              rows={dashboardData.submissionRows}
+              expandable
+              previewRowLimit={EVENT_TRACKING_PREVIEW_ROW_LIMIT}
+            />
+            <EventTrackingKpiPerformanceCard
+              formType={dashboardData.formType}
+              segments={dashboardData.kpiSegments}
+              expandable
+            />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

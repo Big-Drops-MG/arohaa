@@ -1,8 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { cn } from "@workspace/ui/lib/utils"
-import type { OverviewDateRangeId } from "@/features/overview/model/overview"
+import { AlertsDashboardSkeleton } from "@/features/dashboard/view/dashboard-skeletons"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import type { AlertsDashboardData } from "@/features/alerts/model/alerts"
 import { AlertsListCard } from "@/features/alerts/view/AlertsListCard"
@@ -20,12 +19,14 @@ type AlertsDashboardProps = {
   data: AlertsDashboardData
   projectId: string
   isActive?: boolean
+  isLoading?: boolean
 }
 
 export function AlertsDashboard({
   data: initialData,
   projectId,
   isActive = true,
+  isLoading: isTabLoading = false,
 }: AlertsDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
@@ -117,15 +118,11 @@ export function AlertsDashboard({
         onCustomRangeChange={setCustomRange}
       />
 
-      <div
-        className={cn(
-          "flex flex-col gap-4",
-          isLoading && "pointer-events-none opacity-60"
-        )}
-        aria-busy={isLoading}
-      >
-        <AlertsListCard items={dashboardData.items} />
-      </div>
+      {isTabLoading || isLoading ? (
+        <AlertsDashboardSkeleton />
+      ) : (
+        <AlertsListCard items={dashboardData.items} projectId={projectId} />
+      )}
     </div>
   )
 }

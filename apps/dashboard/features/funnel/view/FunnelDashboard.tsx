@@ -1,14 +1,21 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { cn } from "@workspace/ui/lib/utils"
 import { getFunnelEmptyDashboardData } from "@/features/funnel/controller/funnel-empty-data"
-import type { FunnelDashboardData } from "@/features/funnel/model/funnel"
-import { FUNNEL_DEFAULT_KPI_METRIC_ID } from "@/features/funnel/model/funnel"
+import { FunnelDashboardSkeleton } from "@/features/dashboard/view/dashboard-skeletons"
+import {
+  FUNNEL_DEFAULT_KPI_METRIC_ID,
+  FUNNEL_KPI_METRIC_IDS,
+} from "@/features/funnel/model/funnel"
+import type {
+  FunnelDashboardData,
+  FunnelKpiMetricId,
+} from "@/features/funnel/model/funnel"
 import { FunnelDetailCards } from "@/features/funnel/view/FunnelDetailCards"
 import { FunnelKpiRow } from "@/features/funnel/view/FunnelKpiRow"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import { useDashboardPreference } from "@/hooks/use-dashboard-preference"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import {
   buildAnalyticsApiPath,
@@ -21,17 +28,26 @@ type FunnelDashboardProps = {
   data: FunnelDashboardData
   projectId: string
   isActive?: boolean
+  isLoading?: boolean
 }
 
 export function FunnelDashboard({
   data: initialData,
   projectId,
   isActive = true,
+  isLoading: isTabLoading = false,
 }: FunnelDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
-  const [activeKpiId, setActiveKpiId] = useState(FUNNEL_DEFAULT_KPI_METRIC_ID)
+  const [activeKpiId, setActiveKpiId] = useDashboardPreference(
+    projectId,
+    "kpi:funnel",
+    (raw) =>
+      raw && (FUNNEL_KPI_METRIC_IDS as readonly string[]).includes(raw)
+        ? (raw as FunnelKpiMetricId)
+        : FUNNEL_DEFAULT_KPI_METRIC_ID
+  )
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isLoading, setIsLoading] = useState(false)
 
@@ -78,8 +94,6 @@ export function FunnelDashboard({
   )
 
   useEffect(() => {
-    setActiveKpiId(FUNNEL_DEFAULT_KPI_METRIC_ID)
-
     if (
       shouldUseInitialTabData(
         dateRangeId,
@@ -97,12 +111,6 @@ export function FunnelDashboard({
     void fetchFunnelForRange(dateRangeId, controller.signal)
     return () => controller.abort()
   }, [customRange, dateRangeId, utmFilter, initialData, fetchFunnelForRange])
-
-  useEffect(() => {
-    if (isActive) {
-      setActiveKpiId(FUNNEL_DEFAULT_KPI_METRIC_ID)
-    }
-  }, [isActive])
 
   useEffect(() => {
     if (!isActive) return
@@ -131,25 +139,23 @@ export function FunnelDashboard({
         onCustomRangeChange={setCustomRange}
       />
 
-      <div
-        className={cn(
-          "flex flex-col gap-4",
-          isLoading && "pointer-events-none opacity-60"
-        )}
-        aria-busy={isLoading}
-      >
-        <FunnelKpiRow
-          metrics={dashboardData.metrics}
-          activeKpiId={activeKpiId}
-          onKpiSelect={setActiveKpiId}
-        />
+      {isTabLoading || isLoading ? (
+        <FunnelDashboardSkeleton />
+      ) : (
+        <div className="flex flex-col gap-4">
+          <FunnelKpiRow
+            metrics={dashboardData.metrics}
+            activeKpiId={activeKpiId}
+            onKpiSelect={setActiveKpiId}
+          />
 
-        <FunnelDetailCards
-          formType={dashboardData.formType}
-          multiStepSteps={dashboardData.multiStepSteps}
-          dropOffRows={dashboardData.dropOffRows}
-        />
-      </div>
+          <FunnelDetailCards
+            formType={dashboardData.formType}
+            multiStepSteps={dashboardData.multiStepSteps}
+            dropOffRows={dashboardData.dropOffRows}
+          />
+        </div>
+      )}
     </div>
   )
 }

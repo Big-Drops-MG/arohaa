@@ -6,7 +6,12 @@ import { cn } from "@workspace/ui/lib/utils"
 import type { AlertsDashboardData } from "@/features/alerts/model/alerts"
 import type { FunnelDashboardData } from "@/features/funnel/model/funnel"
 import {
+  OverviewDashboardSkeleton,
+  DashboardAnalyticCardSkeleton,
+} from "@/features/dashboard/view/dashboard-skeletons"
+import {
   overviewKpiLabelsForFormType,
+  OVERVIEW_KPI_METRIC_ORDER,
   type OverviewAlert,
   type OverviewDashboardData,
   type OverviewFunnelStep,
@@ -27,6 +32,7 @@ import {
   overviewStaggerItem,
 } from "@/features/overview/view/overview-motion"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import { useDashboardPreference } from "@/hooks/use-dashboard-preference"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import {
   buildAnalyticsApiPath,
@@ -36,6 +42,7 @@ import {
 type OverviewDashboardProps = {
   data: OverviewDashboardData
   projectId: string
+  isLoading?: boolean
 }
 
 function valueSuffixForMetric(id: OverviewKpiMetricId): string | undefined {
@@ -73,20 +80,30 @@ function funnelStepsFromApiPayload(
   }))
 }
 
-export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
+export function OverviewDashboard({
+  data,
+  projectId,
+  isLoading: isTabLoading = false,
+}: OverviewDashboardProps) {
   const reduceMotion = useReducedMotion()
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
   const [overviewData, setOverviewData] = useState(data)
-  const [activeKpiId, setActiveKpiId] = useState<OverviewKpiMetricId>(
-    data.defaultKpiMetricId
+  const [activeKpiId, setActiveKpiId] = useDashboardPreference(
+    projectId,
+    "kpi:overview",
+    (raw) =>
+      raw && (OVERVIEW_KPI_METRIC_ORDER as readonly string[]).includes(raw)
+        ? (raw as OverviewKpiMetricId)
+        : data.defaultKpiMetricId
   )
   const [funnelSteps, setFunnelSteps] = useState<OverviewFunnelStep[]>(
     data.funnel
   )
   const [alerts, setAlerts] = useState<OverviewAlert[]>(data.alerts)
   const [isFunnelLoading, setIsFunnelLoading] = useState(false)
+  const [isOverviewLoading, setIsOverviewLoading] = useState(false)
   const [chartNowNonce, setChartNowNonce] = useState(0)
 
   useEffect(() => {
@@ -106,10 +123,12 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
       hasCompleteKpiSeries(data, dateRangeId)
     ) {
       setOverviewData(data)
+      setIsOverviewLoading(false)
       return
     }
 
     const controller = new AbortController()
+    setIsOverviewLoading(true)
     const url = buildAnalyticsApiPath(
       `/api/landing-pages/${encodeURIComponent(projectId)}/overview`,
       { rangeId: dateRangeId, customRange, utmFilter }
@@ -125,6 +144,11 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
         if (controller.signal.aborted) return
         if (process.env.NODE_ENV === "development") {
           console.error("[overview] overview fetch failed", err)
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsOverviewLoading(false)
         }
       })
 
@@ -238,6 +262,7 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
   }, [overviewData.formType, activeKpiId])
 
   const chartKey = `${dateRangeId}-${customRange?.from ?? ""}-${customRange?.to ?? ""}-${activeKpiId}`
+  const showSkeleton = isTabLoading || isOverviewLoading
 
   return (
     <motion.div
@@ -261,44 +286,47 @@ export function OverviewDashboard({ data, projectId }: OverviewDashboardProps) {
         />
       </motion.div>
 
-      <motion.div variants={overviewStaggerItem}>
-        <OverviewKpiRow
-          kpis={kpis}
-          activeKpiId={activeKpiId}
-          onKpiSelect={setActiveKpiId}
-        />
-      </motion.div>
+      {showSkeleton ? (
+        <OverviewDashboardSkeleton />
+      ) : (
+        <>
+          <motion.div variants={overviewStaggerItem}>
+            <OverviewKpiRow
+              kpis={kpis}
+              activeKpiId={activeKpiId}
+              onKpiSelect={setActiveKpiId}
+            />
+          </motion.div>
 
-      <motion.div
-        variants={overviewStaggerItem}
-        className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-[3fr_7fr] lg:items-stretch lg:[&>*]:min-h-0"
-      >
-        <motion.div
-          animate={{ opacity: isFunnelLoading ? 0.55 : 1 }}
-          transition={{ duration: 0.2 }}
-          className={cn("min-h-0", isFunnelLoading && "pointer-events-none")}
-          aria-busy={isFunnelLoading}
-        >
-          <OverviewFunnelCard steps={funnelSteps} />
-        </motion.div>
-        <OverviewPerformanceChart
-          points={chartPoints}
-          metricLabel={activeKpiLabel}
-          valueSuffix={valueSuffixForMetric(activeKpiId)}
-          chartKey={chartKey}
-        />
-      </motion.div>
+          <motion.div
+            variants={overviewStaggerItem}
+            className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-[3fr_7fr] lg:items-stretch lg:[&>*]:min-h-0"
+          >
+            {isFunnelLoading ? (
+              <DashboardAnalyticCardSkeleton rows={5} />
+            ) : (
+              <OverviewFunnelCard steps={funnelSteps} />
+            )}
+            <OverviewPerformanceChart
+              points={chartPoints}
+              metricLabel={activeKpiLabel}
+              valueSuffix={valueSuffixForMetric(activeKpiId)}
+              chartKey={chartKey}
+            />
+          </motion.div>
 
-      <motion.div
-        variants={overviewStaggerItem}
-        className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0"
-      >
-        <div className="flex min-h-0 flex-col gap-4">
-          <OverviewTrafficCard stats={overviewData.traffic} />
-          <OverviewSegmentsCard segments={overviewData.segments} />
-        </div>
-        <OverviewAlertsCard alerts={alerts} />
-      </motion.div>
+          <motion.div
+            variants={overviewStaggerItem}
+            className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0"
+          >
+            <div className="flex min-h-0 flex-col gap-4">
+              <OverviewTrafficCard stats={overviewData.traffic} />
+              <OverviewSegmentsCard segments={overviewData.segments} />
+            </div>
+            <OverviewAlertsCard alerts={alerts} />
+          </motion.div>
+        </>
+      )}
     </motion.div>
   )
 }

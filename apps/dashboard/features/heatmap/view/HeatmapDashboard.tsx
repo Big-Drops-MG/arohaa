@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@workspace/ui/components/select"
 import type { OverviewDateRangeId } from "@/features/overview/model/overview"
+import { HeatmapDashboardSkeleton } from "@/features/dashboard/view/dashboard-skeletons"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import {
   overviewSelectContentClassName,
@@ -21,12 +22,14 @@ import {
   HEATMAP_DEVICES,
   HEATMAP_MODES,
   parseHeatmapDevice,
+  parseHeatmapMode,
   type HeatmapDashboardData,
   type HeatmapDevice,
   type HeatmapMode,
 } from "@/features/heatmap/model/heatmap"
 import { HeatmapCanvas } from "@/features/heatmap/view/HeatmapCanvas"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
 import {
   buildAnalyticsApiPath,
   shouldUseInitialTabData,
@@ -36,6 +39,7 @@ type HeatmapDashboardProps = {
   data: HeatmapDashboardData
   projectId: string
   isActive?: boolean
+  isLoading?: boolean
 }
 
 function shortUrl(url: string): string {
@@ -55,14 +59,21 @@ export function HeatmapDashboard({
   data: initialData,
   projectId,
   isActive = true,
+  isLoading: isTabLoading = false,
 }: HeatmapDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
   const [dashboardData, setDashboardData] = useState(initialData)
-  const [mode, setMode] = useState<HeatmapMode>(initialData.mode)
-  const [device, setDevice] = useState<HeatmapDevice>(
-    normalizeDevice(initialData.device)
-  )
+  const [mode, setMode] = useDashboardQueryParam("mode", {
+    parse: parseHeatmapMode,
+    projectId,
+    omitDefault: true,
+  })
+  const [device, setDevice] = useDashboardQueryParam("device", {
+    parse: (raw) => normalizeDevice(parseHeatmapDevice(raw)),
+    projectId,
+    omitDefault: true,
+  })
   const [isLoading, setIsLoading] = useState(false)
 
   const fetchHeatmap = useCallback(
@@ -258,56 +269,60 @@ export function HeatmapDashboard({
         }
       />
 
-      <div
-        className={cn(
-          "relative",
-          isLoading && "pointer-events-none opacity-60"
-        )}
-        aria-busy={isLoading}
-      >
-        <HeatmapCanvas
-          mode={dashboardData.mode}
-          device={device}
-          cells={dashboardData.cells}
-          points={dashboardData.points}
-          scrollBuckets={dashboardData.scrollBuckets}
-          maxValue={dashboardData.maxValue}
-          opacity={HEATMAP_DEFAULT_OPACITY}
-          backgroundUrl={dashboardData.pageUrl}
-          emptyState={!hasData}
-          emptyMessage="No heatmap data for this range yet. Clicks, scroll depth, and attention will appear here after the SDK starts collecting."
-        />
-      </div>
+      {isTabLoading || isLoading ? (
+        <HeatmapDashboardSkeleton />
+      ) : (
+        <>
+          <div className="relative">
+            <HeatmapCanvas
+              mode={dashboardData.mode}
+              device={device}
+              cells={dashboardData.cells}
+              points={dashboardData.points}
+              scrollBuckets={dashboardData.scrollBuckets}
+              maxValue={dashboardData.maxValue}
+              opacity={HEATMAP_DEFAULT_OPACITY}
+              backgroundUrl={dashboardData.pageUrl}
+              emptyState={!hasData}
+              emptyMessage="No heatmap data for this range yet. Clicks, scroll depth, and attention will appear here after the SDK starts collecting."
+            />
+          </div>
 
-      {mode === "attention" && dashboardData.sections.length > 0 ? (
-        <div className="rounded-lg border border-neutral-200 bg-white p-4">
-          <h3 className="mb-2 text-sm font-semibold text-neutral-900">
-            Section dwell
-          </h3>
-          <ul className="divide-y divide-neutral-100 text-sm">
-            {dashboardData.sections.slice(0, 12).map((section) => (
-              <li
-                key={section.selector}
-                className="flex items-center justify-between gap-4 py-2"
-              >
-                <code className="truncate text-xs text-neutral-700">
-                  {section.selector}
-                </code>
-                <span className="shrink-0 text-neutral-500">
-                  {Math.round(section.dwellMs / 1000)}s · {section.views} views
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+          {mode === "attention" && dashboardData.sections.length > 0 ? (
+            <div className="rounded-lg border border-neutral-200 bg-white p-4">
+              <h3 className="mb-2 text-sm font-semibold text-neutral-900">
+                Section dwell
+              </h3>
+              <ul className="divide-y divide-neutral-100 text-sm">
+                {dashboardData.sections.slice(0, 12).map((section) => (
+                  <li
+                    key={section.selector}
+                    className="flex items-center justify-between gap-4 py-2"
+                  >
+                    <code className="truncate text-xs text-neutral-700">
+                      {section.selector}
+                    </code>
+                    <span className="shrink-0 text-neutral-500">
+                      {Math.round(section.dwellMs / 1000)}s · {section.views}{" "}
+                      views
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
-      {hasData ? (
-        <p className="text-xs text-neutral-500">
-          {dashboardData.totalEvents.toLocaleString()} events in selected range
-          {dashboardData.pageUrl ? ` · ${shortUrl(dashboardData.pageUrl)}` : ""}
-        </p>
-      ) : null}
+          {hasData ? (
+            <p className="text-xs text-neutral-500">
+              {dashboardData.totalEvents.toLocaleString()} events in selected
+              range
+              {dashboardData.pageUrl
+                ? ` · ${shortUrl(dashboardData.pageUrl)}`
+                : ""}
+            </p>
+          ) : null}
+        </>
+      )}
     </div>
   )
 }

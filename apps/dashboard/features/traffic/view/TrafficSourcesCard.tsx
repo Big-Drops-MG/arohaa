@@ -24,12 +24,14 @@ import {
   trafficBreakdownCardContentClassName,
   trafficBreakdownCardShellClassName,
 } from "@/features/traffic/view/traffic-card-layout"
+import { useDashboardPreference } from "@/hooks/use-dashboard-preference"
 
 type TrafficSourcesCardProps = {
   referrers: TrafficReferrerRow[]
   utmByParam: TrafficUtmParamTab[]
   expandable?: boolean
   previewRowLimit?: number
+  projectId: string
 }
 
 type SourcesTab = "referrers" | "utm"
@@ -153,9 +155,14 @@ function TrafficSourcesCardContent({
   referrers,
   utmByParam,
   previewRowLimit,
+  projectId,
   emptyMessage = "No data for this period.",
 }: TrafficSourcesCardProps & { emptyMessage?: string }) {
-  const [activeTab, setActiveTab] = useState<SourcesTab>("referrers")
+  const [activeTab, setActiveTab] = useDashboardPreference<SourcesTab>(
+    projectId,
+    "traffic:sources-tab",
+    (raw): SourcesTab => (raw === "utm" ? "utm" : "referrers")
+  )
   const [activeUtmKey, setActiveUtmKey] = useState<TrafficUtmParamKey | null>(
     null
   )
@@ -238,6 +245,7 @@ function TrafficSourcesCardBody({
   referrers,
   utmByParam,
   previewRowLimit,
+  projectId,
   emptyMessage = "No data for this period.",
 }: TrafficSourcesCardProps & { emptyMessage?: string }) {
   return (
@@ -258,6 +266,7 @@ function TrafficSourcesCardBody({
           referrers={referrers}
           utmByParam={utmByParam}
           previewRowLimit={previewRowLimit}
+          projectId={projectId}
           emptyMessage={emptyMessage}
         />
       </CardContent>
@@ -270,12 +279,14 @@ export function TrafficSourcesCard({
   utmByParam,
   expandable = false,
   previewRowLimit,
+  projectId,
 }: TrafficSourcesCardProps) {
   const body = (
     <TrafficSourcesCardBody
       referrers={referrers}
       utmByParam={utmByParam}
       previewRowLimit={previewRowLimit}
+      projectId={projectId}
     />
   )
 
@@ -291,6 +302,7 @@ export function TrafficSourcesCard({
         <TrafficSourcesCardContent
           referrers={referrers}
           utmByParam={utmByParam}
+          projectId={projectId}
         />
       }
     >

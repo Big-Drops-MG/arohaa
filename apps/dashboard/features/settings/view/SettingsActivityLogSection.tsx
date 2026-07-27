@@ -97,9 +97,20 @@ export function SettingsActivityLogSection({
         ) : null}
 
         {isLoading && items.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" aria-hidden />
-            Loading activity log
+          <div
+            className="space-y-3 py-2"
+            aria-busy
+            aria-label="Loading activity log"
+          >
+            {Array.from({ length: 5 }, (_, i) => (
+              <div key={i} className="flex items-start gap-3">
+                <div className="mt-1 h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-muted" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="h-3.5 w-3/4 animate-pulse rounded-md bg-muted" />
+                  <div className="h-3 w-1/2 animate-pulse rounded-md bg-muted" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : null}
 

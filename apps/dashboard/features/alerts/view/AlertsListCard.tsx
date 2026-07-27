@@ -11,6 +11,7 @@ import {
   filterAlertsBySeverity,
   type AlertsSeverityFilterValue,
 } from "@/features/alerts/utils/alert-severity-filter"
+import { useDashboardPreference } from "@/hooks/use-dashboard-preference"
 import {
   Card,
   CardContent,
@@ -42,6 +43,7 @@ import type {
 
 type AlertsListCardProps = {
   items: OverviewAlert[]
+  projectId: string
 }
 
 const filterTabs: AlertsSeverityFilterValue[] = [
@@ -128,9 +130,17 @@ function AlertTabPanel({
   )
 }
 
-export function AlertsListCard({ items }: AlertsListCardProps) {
+export function AlertsListCard({ items, projectId }: AlertsListCardProps) {
   const reduceMotion = useReducedMotion()
   const counts = useMemo(() => countAlertsBySeverity(items), [items])
+  const [severityFilter, setSeverityFilter] = useDashboardPreference(
+    projectId,
+    "alerts:severity",
+    (raw) =>
+      raw === "warning" || raw === "alert" || raw === "error" || raw === "all"
+        ? raw
+        : "all"
+  )
 
   const byFilter = useMemo(
     () =>
@@ -141,18 +151,6 @@ export function AlertsListCard({ items }: AlertsListCardProps) {
         ])
       ) as Record<AlertsSeverityFilterValue, OverviewAlert[]>,
     [items]
-  )
-
-  const tabsResetKey = useMemo(
-    () =>
-      [
-        items.length,
-        counts.warning,
-        counts.alert,
-        counts.error,
-        ...items.map((a) => `${a.id}:${a.severity}:${a.dateLabel ?? ""}`),
-      ].join("|"),
-    [items, counts]
   )
 
   return (
@@ -170,8 +168,10 @@ export function AlertsListCard({ items }: AlertsListCardProps) {
         )}
       >
         <Tabs
-          key={tabsResetKey}
-          defaultValue="all"
+          value={severityFilter}
+          onValueChange={(value) =>
+            setSeverityFilter(value as AlertsSeverityFilterValue)
+          }
           className="flex min-h-0 flex-1 flex-col gap-0"
         >
           <CardHeader

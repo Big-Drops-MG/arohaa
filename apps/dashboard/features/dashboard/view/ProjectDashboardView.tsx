@@ -1,7 +1,5 @@
 "use client"
 
-import { useCallback } from "react"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   Tabs,
   TabsContent,
@@ -29,12 +27,18 @@ import {
   parseProjectTab,
   type ProjectTabValue,
 } from "@/features/dashboard/model/project-tab"
+import { SettingsDashboardSkeleton } from "@/features/dashboard/view/dashboard-skeletons"
 import {
   useLazyProjectTabData,
   type ProjectTabData,
 } from "@/hooks/use-lazy-project-tab-data"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import {
+  DashboardNavigationProvider,
+  useDashboardNavigation,
+} from "@/hooks/use-dashboard-navigation"
+import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
 
 export type { ProjectTabValue }
 
@@ -47,31 +51,23 @@ type ProjectDashboardViewProps = {
   initial: Partial<ProjectTabData>
 }
 
-function TabLoadingState({ label }: { label: string }) {
-  return (
-    <div
-      className="flex min-h-[240px] items-center justify-center px-6 py-12 text-sm text-muted-foreground"
-      aria-busy
-    >
-      Loading {label}…
-    </div>
-  )
-}
-
-export function ProjectDashboardView({
+function ProjectDashboardViewInner({
   projectId,
   formType,
-  initialTab,
-  rangeId,
   overviewPlaceholder,
   initial,
-}: ProjectDashboardViewProps) {
-  const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
-  const activeTab = parseProjectTab(searchParams.get("tab") ?? initialTab)
+}: Omit<ProjectDashboardViewProps, "initialTab" | "rangeId">) {
+  const { searchParams, isPending } = useDashboardNavigation()
+  const [activeTab, setActiveTab] = useDashboardQueryParam("tab", {
+    parse: parseProjectTab,
+    projectId,
+  })
   const { dateRangeId, customRange } = useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
+
+  // Remount tab bodies when shareable filters change so client state resets
+  // with the soft-refreshed server payload (no hard window.reload).
+  const panelKey = searchParams.toString()
 
   const {
     overview,
@@ -97,22 +93,22 @@ export function ProjectDashboardView({
     initial,
   })
 
-  const handleTabChange = useCallback(
-    (value: string) => {
-      const params = new URLSearchParams(searchParams.toString())
-      params.set("tab", value)
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false })
-    },
-    [pathname, router, searchParams]
-  )
-
   const isTabLoading = (tab: ProjectTabValue) => loadingTab === tab
 
   return (
-    <div className="flex w-full flex-1 flex-col">
+    <div className="relative flex w-full flex-1 flex-col">
+      {isPending ? (
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 z-20 h-0.5 overflow-hidden bg-neutral-200"
+          aria-hidden
+        >
+          <div className="h-full w-1/3 animate-pulse bg-neutral-800" />
+        </div>
+      ) : null}
+
       <Tabs
         value={activeTab}
-        onValueChange={handleTabChange}
+        onValueChange={(value) => setActiveTab(parseProjectTab(value))}
         className="w-full"
       >
         <div className="w-full border-b border-neutral-200 bg-neutral-50/90">
@@ -127,60 +123,112 @@ export function ProjectDashboardView({
           </div>
         </div>
 
-        <div className="mx-auto w-full max-w-[1440px] pb-10">
+        <div
+          className="mx-auto w-full max-w-[1440px] pb-10"
+          aria-busy={isPending}
+        >
           {PROJECT_TABS.map((tab) => (
             <TabsContent key={tab.value} value={tab.value}>
-              {activeTab !== tab.value ? null : isTabLoading(tab.value) ? (
-                <TabLoadingState label={tab.label} />
-              ) : tab.value === "overview" ? (
-                <OverviewDashboard data={overview} projectId={projectId} />
+              {activeTab !== tab.value ? null : tab.value === "overview" ? (
+                <OverviewDashboard
+                  key={panelKey}
+                  data={overview}
+                  projectId={projectId}
+                  isLoading={isTabLoading("overview")}
+                />
               ) : tab.value === "traffic" ? (
                 <TrafficDashboard
+                  key={panelKey}
                   data={traffic}
                   projectId={projectId}
                   isActive
+                  isLoading={isTabLoading("traffic")}
                 />
               ) : tab.value === "funnel" ? (
-                <FunnelDashboard data={funnel} projectId={projectId} isActive />
+                <FunnelDashboard
+                  key={panelKey}
+                  data={funnel}
+                  projectId={projectId}
+                  isActive
+                  isLoading={isTabLoading("funnel")}
+                />
               ) : tab.value === "heatmap" ? (
                 <HeatmapDashboard
+                  key={panelKey}
                   data={heatmap}
                   projectId={projectId}
                   isActive
+                  isLoading={isTabLoading("heatmap")}
                 />
               ) : tab.value === "event-tracking" ? (
                 <EventTrackingDashboard
+                  key={panelKey}
                   data={eventTracking}
                   projectId={projectId}
                   isActive
+                  isLoading={isTabLoading("event-tracking")}
                 />
               ) : tab.value === "segments" ? (
                 <SegmentsDashboard
+                  key={panelKey}
                   data={segments}
                   projectId={projectId}
                   isActive
+                  isLoading={isTabLoading("segments")}
                 />
               ) : tab.value === "experiments" ? (
                 <ExperimentsDashboard
+                  key={panelKey}
                   data={experiments}
                   projectId={projectId}
                   isActive
+                  isLoading={isTabLoading("experiments")}
                 />
               ) : tab.value === "seo" ? (
-                <SeoDashboard data={seo} projectId={projectId} isActive />
+                <SeoDashboard
+                  key={panelKey}
+                  data={seo}
+                  projectId={projectId}
+                  isActive
+                  isLoading={isTabLoading("seo")}
+                />
               ) : tab.value === "utm" ? (
-                <UtmDashboard data={utm} projectId={projectId} isActive />
+                <UtmDashboard
+                  key={panelKey}
+                  data={utm}
+                  projectId={projectId}
+                  isActive
+                  isLoading={isTabLoading("utm")}
+                />
               ) : tab.value === "alerts" ? (
-                <AlertsDashboard data={alerts} projectId={projectId} isActive />
+                <AlertsDashboard
+                  key={panelKey}
+                  data={alerts}
+                  projectId={projectId}
+                  isActive
+                  isLoading={isTabLoading("alerts")}
+                />
               ) : tab.value === "settings" && settings ? (
-                <SettingsDashboard initialData={settings} />
+                <SettingsDashboard
+                  key={panelKey}
+                  initialData={settings}
+                  projectId={projectId}
+                />
               ) : tab.value === "settings" ? (
-                <TabLoadingState label="Settings" />
+                <SettingsDashboardSkeleton />
               ) : null}
             </TabsContent>
           ))}
         </div>
       </Tabs>
     </div>
+  )
+}
+
+export function ProjectDashboardView(props: ProjectDashboardViewProps) {
+  return (
+    <DashboardNavigationProvider>
+      <ProjectDashboardViewInner {...props} />
+    </DashboardNavigationProvider>
   )
 }

@@ -1,7 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
-import { useSearchParams } from "next/navigation"
+import { useCallback, useState } from "react"
 import type { LandingPageSettingsData } from "@/features/settings/model/landing-page-settings"
 import { SettingsActivityLogSection } from "@/features/settings/view/SettingsActivityLogSection"
 import { SettingsConnectionSection } from "@/features/settings/view/SettingsConnectionSection"
@@ -15,30 +14,30 @@ import {
   type SettingsSectionId,
 } from "@/features/settings/view/SettingsNav"
 import { SettingsProjectDetailsSection } from "@/features/settings/view/SettingsProjectDetailsSection"
+import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
 
 type SettingsDashboardProps = {
   initialData: LandingPageSettingsData
+  projectId: string
 }
 
-function parseSettingsSection(value: string | null): SettingsSectionId | null {
-  if (!value) return null
-  return SETTINGS_NAV_ITEMS.some((item) => item.id === value)
-    ? (value as SettingsSectionId)
-    : null
+function parseSettingsSection(value: string | null): SettingsSectionId {
+  if (value && SETTINGS_NAV_ITEMS.some((item) => item.id === value)) {
+    return value as SettingsSectionId
+  }
+  return "general"
 }
 
-export function SettingsDashboard({ initialData }: SettingsDashboardProps) {
-  const searchParams = useSearchParams()
+export function SettingsDashboard({
+  initialData,
+  projectId,
+}: SettingsDashboardProps) {
   const [settings, setSettings] = useState(initialData)
-  const [activeSection, setActiveSection] =
-    useState<SettingsSectionId>("general")
-
-  useEffect(() => {
-    const section = parseSettingsSection(searchParams.get("section"))
-    if (section) {
-      setActiveSection(section)
-    }
-  }, [searchParams])
+  const [activeSection, setActiveSection] = useDashboardQueryParam("section", {
+    parse: parseSettingsSection,
+    projectId,
+    omitDefault: true,
+  })
 
   const handleSettingsUpdate = useCallback((next: LandingPageSettingsData) => {
     setSettings(next)

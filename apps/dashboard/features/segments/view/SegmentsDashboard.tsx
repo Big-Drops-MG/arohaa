@@ -1,13 +1,14 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { cn } from "@workspace/ui/lib/utils"
+import { SegmentsDashboardSkeleton } from "@/features/dashboard/view/dashboard-skeletons"
 import { getSegmentsEmptyDashboardData } from "@/features/segments/controller/segments-empty-data"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import type { SegmentsDashboardData } from "@/features/segments/model/segments"
 import { SegmentsPerformanceCards } from "@/features/segments/view/SegmentsPerformanceCards"
 import { SegmentsSummaryKpiRow } from "@/features/segments/view/SegmentsSummaryKpiRow"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import { useDashboardPreference } from "@/hooks/use-dashboard-preference"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import {
   buildAnalyticsApiPath,
@@ -20,20 +21,24 @@ type SegmentsDashboardProps = {
   data: SegmentsDashboardData
   projectId: string
   isActive?: boolean
+  isLoading?: boolean
 }
 
 export function SegmentsDashboard({
   data: initialData,
   projectId,
   isActive = true,
+  isLoading: isTabLoading = false,
 }: SegmentsDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isLoading, setIsLoading] = useState(false)
-  const [activeKpiId, setActiveKpiId] = useState<string>(
-    initialData.summaryKpis[0]?.label ?? ""
+  const [activeKpiId, setActiveKpiId] = useDashboardPreference(
+    projectId,
+    "kpi:segments",
+    (raw) => raw ?? initialData.summaryKpis[0]?.label ?? ""
   )
 
   const fetchSegmentsForRange = useCallback(
@@ -76,7 +81,7 @@ export function SegmentsDashboard({
         }
       }
     },
-    [projectId, customRange, utmFilter]
+    [projectId, customRange, utmFilter, setActiveKpiId]
   )
 
   useEffect(() => {
@@ -89,7 +94,6 @@ export function SegmentsDashboard({
       )
     ) {
       setDashboardData(initialData)
-      setActiveKpiId(initialData.summaryKpis[0]?.label ?? "")
       setIsLoading(false)
       return
     }
@@ -126,21 +130,19 @@ export function SegmentsDashboard({
         onCustomRangeChange={setCustomRange}
       />
 
-      <div
-        className={cn(
-          "flex flex-col gap-4",
-          isLoading && "pointer-events-none opacity-60"
-        )}
-        aria-busy={isLoading}
-      >
-        <SegmentsSummaryKpiRow
-          kpis={dashboardData.summaryKpis}
-          activeKpiId={activeKpiId}
-          onKpiSelect={setActiveKpiId}
-        />
+      {isTabLoading || isLoading ? (
+        <SegmentsDashboardSkeleton />
+      ) : (
+        <div className="flex flex-col gap-4">
+          <SegmentsSummaryKpiRow
+            kpis={dashboardData.summaryKpis}
+            activeKpiId={activeKpiId}
+            onKpiSelect={setActiveKpiId}
+          />
 
-        <SegmentsPerformanceCards data={dashboardData} />
-      </div>
+          <SegmentsPerformanceCards data={dashboardData} />
+        </div>
+      )}
     </div>
   )
 }
