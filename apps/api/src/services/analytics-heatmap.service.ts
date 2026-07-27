@@ -63,6 +63,28 @@ function pageUrlSql(pageUrl: string | null): string {
   return ' AND page_url = {page_url:String}'
 }
 
+/**
+ * Preview frames are painted at a fixed CSS width per device. Only keep events
+ * whose capture viewport was close to that width so page-relative fractions
+ * land on the same reflowed layout.
+ */
+function viewportWidthSql(device: HeatmapDevice): string {
+  if (device === 'mobile') {
+    return ' AND viewport_width >= 320 AND viewport_width < 480'
+  }
+  if (device === 'tablet') {
+    return ' AND viewport_width >= 700 AND viewport_width < 920'
+  }
+  if (device === 'desktop') {
+    return ' AND viewport_width >= 1100 AND viewport_width <= 1600'
+  }
+  return ''
+}
+
+/** Drop legacy viewport-only rows that were stored before page coords existed. */
+const PAGE_COORD_SQL =
+  " AND (positionCaseInsensitive(properties, '\"px\"') > 0 OR positionCaseInsensitive(properties, '\"py\"') > 0)"
+
 async function listPageUrls(
   workspaceId: string,
   rangeParams: { range_from: string; range_to: string },
@@ -153,6 +175,86 @@ async function queryMoveCells(
       FROM heatmap_mousemove_rollup
       WHERE ${DAY_FILTER}${pageUrlSql(pageUrl)}${deviceSql(device)}
       GROUP BY grid_x, grid_y
+      HAVING value > 0
+      ORDER BY value DESC
+    `,
+  })
+  const json = (await res.json()) as CHJson<{
+    gridX: string | number
+    gridY: string | number
+    value: string | number
+  }>
+  return json.data.map((row) => ({
+    gridX: n(row.gridX),
+    gridY: n(row.gridY),
+    value: n(row.value),
+  }))
+}
+
+async function queryClickCellsFromEvents(
+  workspaceId: string,
+  pageUrl: string,
+  device: HeatmapDevice,
+  rangeParams: { range_from: string; range_to: string },
+): Promise<HeatmapCell[]> {
+  const ch = getClickHouseClient()
+  const res = await ch.query({
+    format: 'JSON',
+    query_params: {
+      wid: workspaceId,
+      page_url: pageUrl,
+      device,
+      ...rangeParams,
+    },
+    query: `
+      SELECT
+        toInt32(floor(least(greatest(x, 0.), 0.9999) * 10.) * 10) AS gridX,
+        toInt32(floor(least(greatest(y, 0.), 0.9999) * 10.) * 10) AS gridY,
+        count() AS value
+      FROM heatmap_events
+      WHERE ${RAW_TIME_FILTER}
+        AND event_type = 'click'${pageUrlSql(pageUrl)}${deviceSql(device)}${viewportWidthSql(device)}${PAGE_COORD_SQL}
+      GROUP BY gridX, gridY
+      HAVING value > 0
+      ORDER BY value DESC
+    `,
+  })
+  const json = (await res.json()) as CHJson<{
+    gridX: string | number
+    gridY: string | number
+    value: string | number
+  }>
+  return json.data.map((row) => ({
+    gridX: n(row.gridX),
+    gridY: n(row.gridY),
+    value: n(row.value),
+  }))
+}
+
+async function queryMoveCellsFromEvents(
+  workspaceId: string,
+  pageUrl: string,
+  device: HeatmapDevice,
+  rangeParams: { range_from: string; range_to: string },
+): Promise<HeatmapCell[]> {
+  const ch = getClickHouseClient()
+  const res = await ch.query({
+    format: 'JSON',
+    query_params: {
+      wid: workspaceId,
+      page_url: pageUrl,
+      device,
+      ...rangeParams,
+    },
+    query: `
+      SELECT
+        toInt32(floor(least(greatest(x, 0.), 0.9999) * 10.) * 10) AS gridX,
+        toInt32(floor(least(greatest(y, 0.), 0.9999) * 10.) * 10) AS gridY,
+        count() AS value
+      FROM heatmap_events
+      WHERE ${RAW_TIME_FILTER}
+        AND event_type = 'mousemove'${pageUrlSql(pageUrl)}${deviceSql(device)}${viewportWidthSql(device)}${PAGE_COORD_SQL}
+      GROUP BY gridX, gridY
       HAVING value > 0
       ORDER BY value DESC
     `,
@@ -270,7 +372,7 @@ async function queryPoints(
         count() AS value
       FROM heatmap_events
       WHERE ${RAW_TIME_FILTER}
-        AND event_type = {etype:String}${pageUrlSql(pageUrl)}${deviceSql(device)}
+        AND event_type = {etype:String}${pageUrlSql(pageUrl)}${deviceSql(device)}${viewportWidthSql(device)}${PAGE_COORD_SQL}
       GROUP BY x, y
       ORDER BY value DESC
       LIMIT 8000
@@ -324,7 +426,6 @@ export async function getAnalyticsHeatmap({
   let sections: HeatmapSection[] = []
 
   if (mode === 'click') {
-    cells = await queryClickCells(workspaceId, pageUrl, device, rangeParams)
     points = await queryPoints(
       workspaceId,
       pageUrl,
@@ -332,6 +433,17 @@ export async function getAnalyticsHeatmap({
       'click',
       rangeParams,
     )
+    // Prefer viewport-filtered raw events for the grid fallback so placement
+    // matches the preview width. Fall back to rollups only when empty.
+    cells =
+      points.length > 0
+        ? await queryClickCellsFromEvents(
+            workspaceId,
+            pageUrl,
+            device,
+            rangeParams,
+          )
+        : await queryClickCells(workspaceId, pageUrl, device, rangeParams)
   } else if (mode === 'scroll') {
     scrollBuckets = await queryScrollBuckets(
       workspaceId,
@@ -340,7 +452,6 @@ export async function getAnalyticsHeatmap({
       rangeParams,
     )
   } else {
-    cells = await queryMoveCells(workspaceId, pageUrl, device, rangeParams)
     points = await queryPoints(
       workspaceId,
       pageUrl,
@@ -348,6 +459,15 @@ export async function getAnalyticsHeatmap({
       'mousemove',
       rangeParams,
     )
+    cells =
+      points.length > 0
+        ? await queryMoveCellsFromEvents(
+            workspaceId,
+            pageUrl,
+            device,
+            rangeParams,
+          )
+        : await queryMoveCells(workspaceId, pageUrl, device, rangeParams)
     sections = await querySections(workspaceId, pageUrl, device, rangeParams)
   }
 

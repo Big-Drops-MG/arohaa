@@ -177,11 +177,12 @@ export function HeatmapDashboard({
             <ul className="list-disc space-y-1.5 pl-4 text-neutral-200">
               <li>Scroll the preview to move down the landing page.</li>
               <li>
-                Heat is tied to page position, so lower sections light up after
-                document-relative events are collected.
+                Heat uses page-relative coordinates from the same device width
+                as the preview, so clicks land on the matching layout.
               </li>
               <li>
-                Older viewport-only events stay near the top of the preview.
+                Older viewport-only events are excluded so they do not pile up
+                near the top of the page.
               </li>
             </ul>
           </div>

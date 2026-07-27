@@ -74,8 +74,8 @@ export function HeatmapDeviceFrame({
   }, [device, screenHeight, screenWidth, scale])
 
   // Screen is exactly screenWidth × screenHeight so the page fills the bezel
-  // edge-to-edge. Scrollbars are overlaid (not layout) so they never carve a
-  // white gutter into the right or bottom of the preview.
+  // edge-to-edge. Scrolling is owned by HeatmapCanvas so iframe viewport mode
+  // and the overlay stay in lockstep; the bezel itself must not scroll.
   const screenRadius =
     kind === "mobile"
       ? "1.7rem"
@@ -95,14 +95,7 @@ export function HeatmapDeviceFrame({
         borderRadius: screenRadius,
       }}
     >
-      <div
-        className={cn(
-          "h-full w-full overflow-x-hidden overflow-y-auto overscroll-contain",
-          "[-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        )}
-      >
-        {children}
-      </div>
+      <div className="h-full w-full overflow-hidden">{children}</div>
     </div>
   )
 

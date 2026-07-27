@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { cn } from "@workspace/ui/lib/utils"
 import type {
   HeatmapCell,
@@ -27,9 +27,8 @@ type HeatmapCanvasProps = {
   emptyMessage?: string
 }
 
-// Widths are chosen to match the viewport widths visitors actually browse at, so
-// the embedded page reflows the same way it did on capture. Page-relative click
-// fractions (px/py) then land on the correct element instead of drifting.
+// Widths match common visitor viewports so the embedded page reflows the same
+// way it did when events were captured. Analytics also filters to nearby vw.
 const DEVICE_WIDTH: Record<HeatmapDevice, number> = {
   all: 1280,
   desktop: 1280,
@@ -81,7 +80,9 @@ function renderIntensityHeatmap(
   height: number,
   cells: HeatmapCell[],
   maxValue: number,
-  opacity: number
+  opacity: number,
+  documentHeight: number,
+  scrollY: number
 ) {
   if (maxValue <= 0 || cells.length === 0) return
 
@@ -92,8 +93,8 @@ function renderIntensityHeatmap(
   if (!octx) return
 
   const cellW = width / 10
-  const cellH = height / 10
-  const baseRadius = Math.max(cellW, Math.min(cellH, width * 0.12)) * 1.15
+  const pageCellH = documentHeight / 10
+  const baseRadius = Math.max(cellW, Math.min(pageCellH, width * 0.12)) * 1.15
 
   for (const cell of cells) {
     const col = Math.max(0, Math.min(9, Math.floor(cell.gridX / 10)))
@@ -101,7 +102,8 @@ function renderIntensityHeatmap(
     const weight = cell.value / maxValue
     if (weight <= 0) continue
     const cx = (col + 0.5) * cellW
-    const cy = (row + 0.5) * cellH
+    const cy = (row + 0.5) * pageCellH - scrollY
+    if (cy < -baseRadius || cy > height + baseRadius) continue
     const radius = baseRadius * (0.75 + weight * 0.5)
 
     octx.globalAlpha = Math.max(0.08, weight)
@@ -141,7 +143,9 @@ function renderPointsHeatmap(
   height: number,
   points: HeatmapPoint[],
   maxValue: number,
-  opacity: number
+  opacity: number,
+  documentHeight: number,
+  scrollY: number
 ) {
   if (points.length === 0) return
 
@@ -151,23 +155,23 @@ function renderPointsHeatmap(
   const octx = off.getContext("2d")
   if (!octx) return
 
-  const radius = Math.max(16, width * 0.026)
+  const radius = Math.max(14, width * 0.022)
   const max = Math.max(1, maxValue)
 
   for (const p of points) {
     const cx = p.x * width
-    const cy = p.y * height
+    const cy = p.y * documentHeight - scrollY
+    if (cy < -radius || cy > height + radius) continue
     const weight = Math.max(0, Math.min(1, p.value / max))
     const cx0 = Math.max(0, Math.min(width, cx))
-    const cy0 = Math.max(0, Math.min(height, cy))
 
     octx.globalAlpha = Math.max(0.16, Math.min(0.8, 0.2 + weight * 0.55))
-    const grad = octx.createRadialGradient(cx0, cy0, 0, cx0, cy0, radius)
+    const grad = octx.createRadialGradient(cx0, cy, 0, cx0, cy, radius)
     grad.addColorStop(0, "rgba(0,0,0,1)")
     grad.addColorStop(1, "rgba(0,0,0,0)")
     octx.fillStyle = grad
     octx.beginPath()
-    octx.arc(cx0, cy0, radius, 0, Math.PI * 2)
+    octx.arc(cx0, cy, radius, 0, Math.PI * 2)
     octx.fill()
   }
   octx.globalAlpha = 1
@@ -197,12 +201,20 @@ function drawScrollOverlay(
   width: number,
   height: number,
   buckets: HeatmapScrollBucket[],
-  opacity: number
+  opacity: number,
+  documentHeight: number,
+  scrollY: number
 ) {
   const total = buckets.reduce((s, b) => s + b.value, 0)
   if (total <= 0) return
 
-  const grad = ctx.createLinearGradient(0, 0, 0, height)
+  const page = document.createElement("canvas")
+  page.width = width
+  page.height = Math.max(1, Math.round(documentHeight))
+  const pctx = page.getContext("2d")
+  if (!pctx) return
+
+  const grad = pctx.createLinearGradient(0, 0, 0, page.height)
   for (let r = 0; r <= 10; r += 1) {
     const depth = r * 10
     const reached = buckets.reduce(
@@ -212,8 +224,9 @@ function drawScrollOverlay(
     const reach = reached / total
     grad.addColorStop(r / 10, rgba(reach, opacity * (0.15 + 0.55 * reach)))
   }
-  ctx.fillStyle = grad
-  ctx.fillRect(0, 0, width, height)
+  pctx.fillStyle = grad
+  pctx.fillRect(0, 0, width, page.height)
+  ctx.drawImage(page, 0, scrollY, width, height, 0, 0, width, height)
 }
 
 export function HeatmapCanvas({
@@ -232,6 +245,7 @@ export function HeatmapCanvas({
 }: HeatmapCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const scrollerRef = useRef<HTMLDivElement>(null)
   const frameWidth = DEVICE_WIDTH[device]
   const viewportHeight = Math.round(
     frameWidth * (device === "mobile" ? 1.9 : device === "tablet" ? 1.25 : 0.62)
@@ -239,46 +253,96 @@ export function HeatmapCanvas({
 
   const [pageLoaded, setPageLoaded] = useState(false)
   const [pageFailed, setPageFailed] = useState(false)
-  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null)
+  const [documentHeight, setDocumentHeight] = useState(viewportHeight)
+  const [scrollY, setScrollY] = useState(0)
+  // When the embedded SDK supports scroll-to we can scroll the live page while
+  // keeping a real device viewport (correct 100vh layout). Without it we still
+  // keep the iframe at viewport height so above-the-fold heat stays accurate.
+  const [canScrollPage, setCanScrollPage] = useState(false)
+  const [viewKey, setViewKey] = useState(`${backgroundUrl ?? ""}:${device}`)
+  const nextViewKey = `${backgroundUrl ?? ""}:${device}`
+  if (viewKey !== nextViewKey) {
+    setViewKey(nextViewKey)
+    setPageLoaded(false)
+    setPageFailed(false)
+    setDocumentHeight(viewportHeight)
+    setScrollY(0)
+    setCanScrollPage(false)
+  }
 
   const hasLivePage = Boolean(backgroundUrl && !backgroundImage)
 
-  // For a live embedded page, seed the height at a realistic device viewport so
-  // that `100vh`-based layouts resolve correctly. Using the tall PAGE_HEIGHT_RATIO
-  // estimate here would inflate `vh` inside the iframe, forcing the page taller
-  // than its real content (trailing white space) and stretching the overlay.
-  const pageHeight =
-    measuredHeight ??
-    (hasLivePage
-      ? viewportHeight
-      : Math.round(frameWidth * PAGE_HEIGHT_RATIO[device]))
+  const fallbackPageHeight = Math.round(frameWidth * PAGE_HEIGHT_RATIO[device])
+  const pageHeight = hasLivePage
+    ? Math.max(viewportHeight, documentHeight)
+    : backgroundImage
+      ? Math.max(viewportHeight, documentHeight)
+      : fallbackPageHeight
+
+  const syncIframeScroll = useCallback((y: number) => {
+    const win = iframeRef.current?.contentWindow
+    if (!win) return
+    win.postMessage(
+      { source: "arohaa-heatmap", type: "scroll-to", x: 0, y },
+      "*"
+    )
+  }, [])
 
   useEffect(() => {
-    setPageLoaded(false)
-    setPageFailed(false)
-    setMeasuredHeight(null)
-  }, [backgroundUrl, device])
+    if (scrollerRef.current) scrollerRef.current.scrollTop = 0
+  }, [viewKey])
 
   useEffect(() => {
     if (!hasLivePage) return
     const onMessage = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow) return
       const data = event.data as
-        | { source?: string; type?: string; height?: number }
+        | {
+            source?: string
+            type?: string
+            height?: number
+            features?: string[]
+            y?: number
+          }
         | undefined
-      if (!data || data.source !== "arohaa-heatmap" || data.type !== "doc-size")
+      if (!data || data.source !== "arohaa-heatmap") return
+
+      if (data.type === "doc-size") {
+        const height = Number(data.height)
+        if (!Number.isFinite(height) || height <= 0) return
+        const supportsScrollTo = Array.isArray(data.features)
+          ? data.features.includes("scroll-to")
+          : false
+        if (supportsScrollTo) setCanScrollPage(true)
+        const clamped = Math.max(
+          Math.round(frameWidth * 0.5),
+          Math.min(Math.round(frameWidth * 30), Math.round(height))
+        )
+        setDocumentHeight((prev) => (prev === clamped ? prev : clamped))
         return
-      const height = Number(data.height)
-      if (!Number.isFinite(height) || height <= 0) return
-      const clamped = Math.max(
-        Math.round(frameWidth * 0.5),
-        Math.min(Math.round(frameWidth * 30), Math.round(height))
-      )
-      setMeasuredHeight((prev) => (prev === clamped ? prev : clamped))
+      }
+
+      if (data.type === "scroll") {
+        const y = Number(data.y)
+        if (!Number.isFinite(y) || y < 0) return
+        setScrollY(y)
+      }
     }
     window.addEventListener("message", onMessage)
     return () => window.removeEventListener("message", onMessage)
   }, [frameWidth, hasLivePage, backgroundUrl])
+
+  useEffect(() => {
+    if (!hasLivePage || !pageLoaded) return
+    const win = iframeRef.current?.contentWindow
+    if (!win) return
+    win.postMessage({ source: "arohaa-heatmap", type: "ping" }, "*")
+  }, [hasLivePage, pageLoaded, device, backgroundUrl])
+
+  useEffect(() => {
+    if (!canScrollPage) return
+    syncIframeScroll(scrollY)
+  }, [canScrollPage, scrollY, syncIframeScroll, documentHeight])
 
   useEffect(() => {
     if (emptyState) return
@@ -287,22 +351,26 @@ export function HeatmapCanvas({
     const ctx = canvas.getContext("2d")
     if (!ctx) return
 
+    const paintHeight = viewportHeight
+    const paintScrollY = scrollY
+    const docH = Math.max(paintHeight, pageHeight)
+
     const dpr = window.devicePixelRatio || 1
     canvas.width = Math.floor(frameWidth * dpr)
-    canvas.height = Math.floor(pageHeight * dpr)
+    canvas.height = Math.floor(paintHeight * dpr)
     canvas.style.width = `${frameWidth}px`
-    canvas.style.height = `${pageHeight}px`
+    canvas.style.height = `${paintHeight}px`
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-    ctx.clearRect(0, 0, frameWidth, pageHeight)
+    ctx.clearRect(0, 0, frameWidth, paintHeight)
 
     if (!hasLivePage && !backgroundImage) {
       ctx.fillStyle = "#f4f4f5"
-      ctx.fillRect(0, 0, frameWidth, pageHeight)
+      ctx.fillRect(0, 0, frameWidth, paintHeight)
 
       const step = 24
       ctx.fillStyle = "#e4e4e7"
-      for (let y = 0; y < pageHeight; y += step) {
+      for (let y = 0; y < paintHeight; y += step) {
         for (let x = 0; x < frameWidth; x += step) {
           if ((x / step + y / step) % 2 === 0) {
             ctx.fillRect(x, y, step, step)
@@ -313,24 +381,36 @@ export function HeatmapCanvas({
 
     const paintOverlay = () => {
       if (mode === "scroll") {
-        drawScrollOverlay(ctx, frameWidth, pageHeight, scrollBuckets, opacity)
+        drawScrollOverlay(
+          ctx,
+          frameWidth,
+          paintHeight,
+          scrollBuckets,
+          opacity,
+          docH,
+          paintScrollY
+        )
       } else if (points.length > 0) {
         renderPointsHeatmap(
           ctx,
           frameWidth,
-          pageHeight,
+          paintHeight,
           points,
           maxValue,
-          opacity
+          opacity,
+          docH,
+          paintScrollY
         )
       } else {
         renderIntensityHeatmap(
           ctx,
           frameWidth,
-          pageHeight,
+          paintHeight,
           cells,
           maxValue,
-          opacity
+          opacity,
+          docH,
+          paintScrollY
         )
       }
     }
@@ -338,7 +418,22 @@ export function HeatmapCanvas({
     if (backgroundImage) {
       const img = new Image()
       img.onload = () => {
-        ctx.drawImage(img, 0, 0, frameWidth, pageHeight)
+        const srcY = Math.min(
+          Math.max(0, paintScrollY),
+          Math.max(0, img.height - 1)
+        )
+        const srcH = Math.min(img.height - srcY, paintHeight)
+        ctx.drawImage(
+          img,
+          0,
+          srcY,
+          img.width,
+          srcH,
+          0,
+          0,
+          frameWidth,
+          paintHeight
+        )
         paintOverlay()
       }
       img.src = backgroundImage
@@ -359,10 +454,11 @@ export function HeatmapCanvas({
     pageHeight,
     points,
     scrollBuckets,
+    scrollY,
+    viewportHeight,
   ])
 
-  const contentHeight =
-    hasLivePage || backgroundImage ? pageHeight : viewportHeight
+  const spacerHeight = canScrollPage ? pageHeight : viewportHeight
 
   return (
     <div
@@ -377,77 +473,103 @@ export function HeatmapCanvas({
         screenHeight={viewportHeight}
       >
         <div
+          ref={scrollerRef}
           className={cn(
-            "relative block",
+            "relative block overflow-x-hidden overscroll-contain",
+            canScrollPage ? "overflow-y-auto" : "overflow-y-hidden",
+            "[-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
             hasLivePage || backgroundImage ? "bg-transparent" : "bg-white"
           )}
-          style={{ width: frameWidth, height: contentHeight }}
+          style={{ width: frameWidth, height: viewportHeight }}
+          onScroll={(event) => {
+            if (!canScrollPage) return
+            const next = event.currentTarget.scrollTop
+            setScrollY(next)
+            syncIframeScroll(next)
+          }}
         >
-          {hasLivePage ? (
-            <iframe
-              key={`${backgroundUrl}-${device}`}
-              ref={iframeRef}
-              src={backgroundUrl ?? undefined}
-              title="Landing page preview"
-              className="pointer-events-none absolute inset-x-0 top-0 z-0 block border-0"
-              style={{
-                width: frameWidth,
-                height: pageHeight,
-              }}
-              sandbox="allow-scripts allow-same-origin"
-              loading="lazy"
-              referrerPolicy="no-referrer"
-              scrolling="no"
-              onLoad={() => setPageLoaded(true)}
-              onError={() => setPageFailed(true)}
-            />
-          ) : null}
+          <div
+            className="relative"
+            style={{
+              width: frameWidth,
+              height: spacerHeight,
+            }}
+          >
+            {hasLivePage ? (
+              <iframe
+                key={`${backgroundUrl}-${device}`}
+                ref={iframeRef}
+                src={backgroundUrl ?? undefined}
+                title="Landing page preview"
+                className="pointer-events-none sticky top-0 z-0 block border-0"
+                style={{
+                  width: frameWidth,
+                  height: viewportHeight,
+                }}
+                sandbox="allow-scripts allow-same-origin"
+                loading="lazy"
+                referrerPolicy="no-referrer"
+                scrolling="no"
+                onLoad={() => setPageLoaded(true)}
+                onError={() => setPageFailed(true)}
+              />
+            ) : null}
 
-          {!hasLivePage && !backgroundImage ? (
-            <div className="absolute inset-0 z-0 bg-gradient-to-b from-neutral-50 to-neutral-100">
-              <div className="border-b border-neutral-200 bg-white px-4 py-3">
-                <div className="h-2.5 w-24 rounded bg-neutral-200" />
-                <div className="mt-2 h-2 w-40 rounded bg-neutral-100" />
-              </div>
-              <div className="space-y-3 p-4">
-                <div className="h-28 rounded-lg bg-neutral-200/80" />
-                <div className="h-2.5 w-3/4 rounded bg-neutral-200" />
-                <div className="h-2.5 w-1/2 rounded bg-neutral-100" />
-                <div className="grid grid-cols-2 gap-2 pt-2">
-                  <div className="h-16 rounded-md bg-neutral-200/70" />
-                  <div className="h-16 rounded-md bg-neutral-200/70" />
+            {!hasLivePage && !backgroundImage ? (
+              <div className="absolute inset-0 z-0 bg-gradient-to-b from-neutral-50 to-neutral-100">
+                <div className="border-b border-neutral-200 bg-white px-4 py-3">
+                  <div className="h-2.5 w-24 rounded bg-neutral-200" />
+                  <div className="mt-2 h-2 w-40 rounded bg-neutral-100" />
+                </div>
+                <div className="space-y-3 p-4">
+                  <div className="h-28 rounded-lg bg-neutral-200/80" />
+                  <div className="h-2.5 w-3/4 rounded bg-neutral-200" />
+                  <div className="h-2.5 w-1/2 rounded bg-neutral-100" />
+                  <div className="grid grid-cols-2 gap-2 pt-2">
+                    <div className="h-16 rounded-md bg-neutral-200/70" />
+                    <div className="h-16 rounded-md bg-neutral-200/70" />
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : null}
+            ) : null}
 
-          {hasLivePage && !pageLoaded && !pageFailed ? (
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-neutral-50 text-xs text-neutral-400">
-              Loading page preview…
-            </div>
-          ) : null}
+            {hasLivePage && !pageLoaded && !pageFailed ? (
+              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-neutral-50 text-xs text-neutral-400">
+                Loading page preview…
+              </div>
+            ) : null}
 
-          {hasLivePage && pageFailed ? (
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-neutral-50 px-6 text-center text-xs text-neutral-400">
-              Could not embed this page. Showing overlay only.
-            </div>
-          ) : null}
+            {hasLivePage && pageFailed ? (
+              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-neutral-50 px-6 text-center text-xs text-neutral-400">
+                Could not embed this page. Showing overlay only.
+              </div>
+            ) : null}
 
-          {emptyState ? (
-            <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-white/70 px-6 backdrop-blur-[1px]">
-              <p className="max-w-sm text-center text-sm leading-relaxed text-neutral-600">
-                {emptyMessage}
-              </p>
-            </div>
-          ) : (
-            <canvas
-              ref={canvasRef}
-              aria-label={`${mode} heatmap overlay`}
-              className="pointer-events-none absolute top-0 left-0 z-20"
-            />
-          )}
+            {emptyState ? (
+              <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-white/70 px-6 backdrop-blur-[1px]">
+                <p className="max-w-sm text-center text-sm leading-relaxed text-neutral-600">
+                  {emptyMessage}
+                </p>
+              </div>
+            ) : (
+              <canvas
+                ref={canvasRef}
+                aria-label={`${mode} heatmap overlay`}
+                className="pointer-events-none sticky top-0 z-20"
+              />
+            )}
+          </div>
         </div>
       </HeatmapDeviceFrame>
+      {hasLivePage &&
+      pageLoaded &&
+      !canScrollPage &&
+      pageHeight > viewportHeight + 8 ? (
+        <p className="px-3 pb-3 text-center text-[11px] text-neutral-500">
+          Showing above-the-fold heat. Redeploy the Arohaa SDK to scroll the
+          full page in this preview.
+        </p>
+      ) : null}
     </div>
   )
 }
