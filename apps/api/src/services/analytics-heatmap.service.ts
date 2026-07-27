@@ -20,9 +20,22 @@ type CHJson<T> = { data: T[] }
 const n = (v: string | number | null | undefined): number =>
   typeof v === 'number' ? v : Number(v ?? 0) || 0
 
-/** Cap painted clusters — enough for dense heat, small enough for postMessage + canvas. */
-const POINTS_LIMIT = 2500
-const MOVE_POINTS_LIMIT = 1800
+/** Cap cluster rows returned for paint — each row's value already sums all matching events. */
+const POINTS_LIMIT = 5000
+const MOVE_POINTS_LIMIT = 4000
+
+/**
+ * Resolve the visitor device the same way ingest/MVs do so every event lands in
+ * exactly one Desktop / Tablet / Mobile bucket (no viewport OR that drops/duplicates).
+ */
+const RESOLVED_DEVICE_SQL = `
+  multiIf(
+    device IN ('mobile', 'tablet', 'desktop'), device,
+    viewport_width > 0 AND viewport_width < 768, 'mobile',
+    viewport_width >= 768 AND viewport_width < 1024, 'tablet',
+    'desktop'
+  )
+`
 
 export function emptyAnalyticsHeatmap(
   rangeId: AnalyticsRangeId,
@@ -55,30 +68,12 @@ const RAW_TIME_FILTER = `
 `
 
 /**
- * Include every event that belongs on this device preview.
- * Match by stored device label OR capture viewport width so legacy rows still appear.
+ * Filter to one device bucket. Desktop preview = all desktop-captured events,
+ * regardless of the dashboard viewer's screen size.
  */
 function deviceMatchSql(device: HeatmapDevice): string {
   if (device === 'all') return ''
-  if (device === 'mobile') {
-    return ` AND (
-      device = {device:String}
-      OR (viewport_width > 0 AND viewport_width < 768)
-    )`
-  }
-  if (device === 'tablet') {
-    return ` AND (
-      device = {device:String}
-      OR (viewport_width >= 768 AND viewport_width < 1024)
-    )`
-  }
-  if (device === 'desktop') {
-    return ` AND (
-      device = {device:String}
-      OR viewport_width >= 1024
-    )`
-  }
-  return ''
+  return ` AND (${RESOLVED_DEVICE_SQL}) = {device:String}`
 }
 
 function pageUrlSql(pageUrl: string | null): string {
@@ -160,6 +155,8 @@ async function queryClickPoints(
   rangeParams: { range_from: string; range_to: string },
 ): Promise<HeatmapPoint[]> {
   const ch = getClickHouseClient()
+  // Coarse clusters so every click contributes via count(), not only the top
+  // few thousand unique px/py fingerprints.
   const res = await ch.query({
     format: 'JSON',
     query_params: {
@@ -170,24 +167,34 @@ async function queryClickPoints(
     },
     query: `
       SELECT
-        round(x, 3) AS px,
-        round(y, 3) AS py,
         element_selector AS selector,
-        round(JSONExtractFloat(properties, 'x'), 2) AS ex,
-        round(JSONExtractFloat(properties, 'y'), 2) AS ey,
+        if(
+          element_selector = '',
+          round(x, 2),
+          round(JSONExtractFloat(properties, 'x'), 1)
+        ) AS gx,
+        if(
+          element_selector = '',
+          round(y, 2),
+          round(JSONExtractFloat(properties, 'y'), 1)
+        ) AS gy,
+        avg(x) AS px,
+        avg(y) AS py,
+        avg(JSONExtractFloat(properties, 'x')) AS ex,
+        avg(JSONExtractFloat(properties, 'y')) AS ey,
         count() AS value
       FROM heatmap_events
       WHERE ${RAW_TIME_FILTER}
         AND event_type = 'click'${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
-      GROUP BY px, py, selector, ex, ey
+      GROUP BY selector, gx, gy
       ORDER BY value DESC
       LIMIT ${POINTS_LIMIT}
     `,
   })
   const json = (await res.json()) as CHJson<{
+    selector: string
     px: string | number
     py: string | number
-    selector: string
     ex: string | number
     ey: string | number
     value: string | number
@@ -197,8 +204,8 @@ async function queryClickPoints(
     y: n(row.py),
     value: n(row.value),
     selector: row.selector || null,
-    ex: n(row.ex),
-    ey: n(row.ey),
+    ex: row.selector ? n(row.ex) : null,
+    ey: row.selector ? n(row.ey) : null,
   }))
 }
 
@@ -209,7 +216,7 @@ async function queryMovePoints(
   rangeParams: { range_from: string; range_to: string },
 ): Promise<HeatmapPoint[]> {
   const ch = getClickHouseClient()
-  // Attention heat is page-relative only — skip JSON extracts for speed.
+  // ~100×100 page grid — all moves in a cell roll into value.
   const res = await ch.query({
     format: 'JSON',
     query_params: {
@@ -220,8 +227,8 @@ async function queryMovePoints(
     },
     query: `
       SELECT
-        round(x, 3) AS px,
-        round(y, 3) AS py,
+        round(x, 2) AS px,
+        round(y, 2) AS py,
         count() AS value
       FROM heatmap_events
       WHERE ${RAW_TIME_FILTER}

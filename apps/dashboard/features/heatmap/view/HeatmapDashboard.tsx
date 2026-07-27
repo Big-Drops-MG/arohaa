@@ -169,8 +169,9 @@ export function HeatmapDashboard({
                 controls.
               </li>
               <li>
-                Switch Desktop / Tablet / Mobile to inspect each layout
-                separately.
+                Desktop / Tablet / Mobile each show every click, scroll, and
+                attention event captured on that device type — independent of
+                the screen you are viewing the dashboard on.
               </li>
             </ul>
           </div>

@@ -126,6 +126,7 @@ export function eventRowToHeatmapRow(row: EventRow): HeatmapRow | null {
   if (!timestamp) return null
 
   const props = parseProps(row.properties)
+  // Always stamp the resolved device so Desktop/Tablet/Mobile heatmaps are complete.
   const device = resolveDevice(row, props)
 
   if (row.event_name === 'heatmap_click') {
@@ -168,8 +169,8 @@ export function eventRowToHeatmapRow(row: EventRow): HeatmapRow | null {
       timestamp,
       x: 0,
       y: 0,
-      viewport_width: 0,
-      viewport_height: 0,
+      viewport_width: Math.round(num(props.vw)),
+      viewport_height: Math.round(num(props.vh)),
       device,
       element_selector: str(props.selector).slice(0, 500),
       properties: row.properties || '{}',
@@ -188,8 +189,8 @@ export function eventRowToHeatmapRow(row: EventRow): HeatmapRow | null {
       timestamp,
       x: 0,
       y: clamp01(percent / 100),
-      viewport_width: 0,
-      viewport_height: 0,
+      viewport_width: Math.round(num(props.vw)),
+      viewport_height: Math.round(num(props.vh)),
       device,
       element_selector: '',
       properties: row.properties || '{}',
