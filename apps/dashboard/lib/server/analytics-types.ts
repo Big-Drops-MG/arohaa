@@ -35,11 +35,22 @@ export interface FunnelStep {
   count: number
 }
 
+export interface OverviewStateMetric {
+  state: string
+  visitors: number
+  sessions: number
+  pageViews: number
+  formSubmitted: number
+  fsr: number
+  bounceRate: number
+}
+
 export interface AnalyticsOverview {
   rangeId: RangeId
   kpis: RangeKpis
   series: SeriesPoint[]
   kpiSeries: Record<OverviewKpiMetricId, SeriesPoint[]>
+  kpiByState?: OverviewStateMetric[]
   funnel: FunnelStep[]
   uniqueVisitors7d: number
   avgEngagedSecPerSession: number

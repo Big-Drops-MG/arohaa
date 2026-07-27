@@ -263,6 +263,7 @@ export function OverviewDashboard({
 
   const chartKey = `${dateRangeId}-${customRange?.from ?? ""}-${customRange?.to ?? ""}-${activeKpiId}`
   const showSkeleton = isTabLoading || isOverviewLoading
+  const stateMetrics = overviewData.kpiByStateByDateRange?.[dateRangeId] ?? []
 
   return (
     <motion.div
@@ -309,9 +310,11 @@ export function OverviewDashboard({
             )}
             <OverviewPerformanceChart
               points={chartPoints}
+              metricId={activeKpiId}
               metricLabel={activeKpiLabel}
               valueSuffix={valueSuffixForMetric(activeKpiId)}
               chartKey={chartKey}
+              stateMetrics={stateMetrics}
             />
           </motion.div>
 

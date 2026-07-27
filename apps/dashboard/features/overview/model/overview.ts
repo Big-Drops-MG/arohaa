@@ -96,6 +96,21 @@ export type OverviewTimeSeriesPoint = {
   value: number
 }
 
+/** US state KPI values for the overview performance map. */
+export type OverviewStateMetric = {
+  state: string
+  visitors: number
+  sessions: number
+  pageViews: number
+  formSubmitted: number
+  fsr: number
+  bounceRate: number
+}
+
+export type OverviewKpiByStateByDateRange = Partial<
+  Record<OverviewDateRangeId, OverviewStateMetric[]>
+>
+
 export type OverviewTrafficStat = {
   label: string
   value: string
@@ -151,4 +166,6 @@ export type OverviewDashboardData = {
    * uses client-generated x-axis buckets with zero values.
    */
   kpiSeriesByDateRange?: OverviewKpiSeriesByDateRange
+  /** Optional US state breakdown for the performance map view. */
+  kpiByStateByDateRange?: OverviewKpiByStateByDateRange
 }
