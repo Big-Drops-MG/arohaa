@@ -61,10 +61,16 @@ export function DashboardNavigationProvider({
 
       startTransition(() => {
         router.replace(href, { scroll: false })
-        if (refresh) {
-          router.refresh()
-        }
       })
+
+      if (refresh) {
+        // Defer so replace commits before RSC revalidation reads the URL.
+        queueMicrotask(() => {
+          startTransition(() => {
+            router.refresh()
+          })
+        })
+      }
     },
     [pathname, router, searchParams]
   )

@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   readDashboardPreference,
   writeDashboardPreference,
@@ -13,28 +13,50 @@ type UseDashboardQueryParamOptions<T extends string> = {
   projectId?: string
   /** Delete the query key when the value equals parse(null). */
   omitDefault?: boolean
+  /**
+   * Soft-refresh RSC after URL change. Disable for client-fetched chrome
+   * (e.g. project tabs) to avoid a replace/refresh race that keeps the old tab.
+   */
+  refreshOnChange?: boolean
 }
 
 /**
  * Sync a dashboard selection to the URL (shareable + reload-safe) and optionally
  * mirror it in localStorage so a bare project URL restores the last choice.
- * User changes soft-refresh the page via App Router (no hard reload).
+ * Updates apply optimistically so controlled UI (tabs, selects) switches on the
+ * first click while the App Router URL catches up.
  */
 export function useDashboardQueryParam<T extends string>(
   key: string,
-  { parse, projectId, omitDefault = false }: UseDashboardQueryParamOptions<T>
+  {
+    parse,
+    projectId,
+    omitDefault = false,
+    refreshOnChange = true,
+  }: UseDashboardQueryParamOptions<T>
 ): [T, (next: T) => void, { isPending: boolean }] {
   const { searchParams, replaceSearch, isPending } = useDashboardNavigation()
   const hydratedRef = useRef(false)
   const parseRef = useRef(parse)
   parseRef.current = parse
 
-  const value = useMemo(
+  const urlValue = useMemo(
     () => parseRef.current(searchParams.get(key)),
     [key, searchParams]
   )
 
+  const [optimisticValue, setOptimisticValue] = useState<T | null>(null)
+
+  const value = optimisticValue ?? urlValue
+
   const defaultValue = useMemo(() => parseRef.current(null), [])
+
+  useEffect(() => {
+    if (optimisticValue === null) return
+    if (urlValue === optimisticValue) {
+      setOptimisticValue(null)
+    }
+  }, [optimisticValue, urlValue])
 
   const writeUrl = useCallback(
     (next: T, refresh: boolean) => {
@@ -55,18 +77,19 @@ export function useDashboardQueryParam<T extends string>(
   const setValue = useCallback(
     (next: T) => {
       if (next === value) return
+      setOptimisticValue(next)
       if (projectId) writeDashboardPreference(projectId, key, next)
-      writeUrl(next, true)
+      writeUrl(next, refreshOnChange)
     },
-    [key, projectId, value, writeUrl]
+    [key, projectId, refreshOnChange, value, writeUrl]
   )
 
   useEffect(() => {
     if (!projectId) return
     if (searchParams.has(key)) {
-      writeDashboardPreference(projectId, key, value)
+      writeDashboardPreference(projectId, key, urlValue)
     }
-  }, [key, projectId, searchParams, value])
+  }, [key, projectId, searchParams, urlValue])
 
   useEffect(() => {
     if (!projectId || hydratedRef.current) return
@@ -77,6 +100,7 @@ export function useDashboardQueryParam<T extends string>(
     const saved = readDashboardPreference(projectId, key)
     if (!saved) return
     const parsed = parseRef.current(saved)
+    setOptimisticValue(parsed)
     writeUrl(parsed, false)
     // Restore once per mount when the URL is missing this key.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional one-shot hydrate

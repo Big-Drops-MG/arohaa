@@ -61,6 +61,9 @@ function ProjectDashboardViewInner({
   const [activeTab, setActiveTab] = useDashboardQueryParam("tab", {
     parse: parseProjectTab,
     projectId,
+    // Tab bodies load via client fetch; refreshing RSC here races replace and
+    // leaves the controlled Tabs on the previous value until a second click.
+    refreshOnChange: false,
   })
   const { dateRangeId, customRange } = useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()

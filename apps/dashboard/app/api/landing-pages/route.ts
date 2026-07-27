@@ -20,7 +20,7 @@ import {
   getVariantLabelPlanForLandingPage,
 } from "@/lib/server/experiments-store"
 import {
-  getActiveLandingPageInWorkspace,
+  getActiveLandingPageByPublicId,
   type LandingPageRow,
 } from "@/lib/server/landing-pages-store"
 import {
@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
   let variantLabel = ""
 
   if (variantOfRaw) {
-    variantParent = await getActiveLandingPageInWorkspace(ws.id, variantOfRaw)
+    variantParent = await getActiveLandingPageByPublicId(variantOfRaw)
     if (!variantParent) {
       return NextResponse.json(
         { error: "Parent project not found" },

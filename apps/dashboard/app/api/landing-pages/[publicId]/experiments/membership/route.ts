@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import {
+  getActiveLandingPageByPublicId,
   getActiveLandingPageForActor,
-  getActiveLandingPageInWorkspace,
   type LandingPageRow,
 } from "@/lib/server/landing-pages-store"
 import {
@@ -92,10 +92,7 @@ export async function POST(
     )
   }
 
-  const parent = await getActiveLandingPageInWorkspace(
-    landingPage.workspaceId,
-    parentPublicId
-  )
+  const parent = await getActiveLandingPageByPublicId(parentPublicId)
   if (!parent) {
     return NextResponse.json(
       { error: "Parent project not found" },
