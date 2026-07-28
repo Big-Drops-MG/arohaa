@@ -2,7 +2,7 @@
 
 import { completeOnboarding } from "@/actions/onboarding.actions"
 import { AuthBrandHeader, AuthScreen } from "./AuthScreen"
-import { ROLE_OPTIONS } from "../model/role-options"
+import { CUSTOM_ROLE_VALUE } from "../model/role-options"
 import { useRouter } from "next/navigation"
 import type { FormEvent } from "react"
 import { useState } from "react"
@@ -18,17 +18,26 @@ import {
   SelectValue,
 } from "@workspace/ui/components/select"
 
-export function OnboardingPage() {
+type OnboardingPageProps = {
+  roleOptions: string[]
+}
+
+export function OnboardingPage({ roleOptions }: OnboardingPageProps) {
   const router = useRouter()
   const [firstName, setFirstName] = useState("")
   const [lastName, setLastName] = useState("")
-  const [role, setRole] = useState("")
+  const [roleSelection, setRoleSelection] = useState("")
+  const [customRole, setCustomRole] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const isCustom = roleSelection === CUSTOM_ROLE_VALUE
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (isSubmitting) return
+
+    const role = isCustom ? customRole.trim() : roleSelection.trim()
 
     setIsSubmitting(true)
     setError(null)
@@ -44,7 +53,7 @@ export function OnboardingPage() {
         return
       }
 
-      router.replace("/dashboard")
+      router.replace(result.redirectTo ?? "/pending-access")
     } finally {
       setIsSubmitting(false)
     }
@@ -100,22 +109,41 @@ export function OnboardingPage() {
             <div className="space-y-2">
               <Label htmlFor="role">Role</Label>
               <Select
-                value={role}
-                onValueChange={setRole}
+                value={roleSelection}
+                onValueChange={setRoleSelection}
                 disabled={isSubmitting}
               >
                 <SelectTrigger id="role" aria-label="Role">
                   <SelectValue placeholder="Select your role" />
                 </SelectTrigger>
                 <SelectContent>
-                  {ROLE_OPTIONS.map((option) => (
+                  {roleOptions.map((option) => (
                     <SelectItem key={option} value={option}>
                       {option}
                     </SelectItem>
                   ))}
+                  <SelectItem value={CUSTOM_ROLE_VALUE}>
+                    Other (add a new role)
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {isCustom ? (
+              <div className="space-y-2">
+                <Label htmlFor="customRole">New role</Label>
+                <Input
+                  id="customRole"
+                  name="customRole"
+                  value={customRole}
+                  onChange={(event) => setCustomRole(event.target.value)}
+                  disabled={isSubmitting}
+                  placeholder="Enter your role"
+                  required
+                  maxLength={80}
+                />
+              </div>
+            ) : null}
 
             <Button type="submit" size="lg" disabled={isSubmitting}>
               {isSubmitting ? "Saving..." : "Continue"}

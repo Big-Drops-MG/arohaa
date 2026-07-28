@@ -107,6 +107,10 @@ function buildOverviewFromAnalytics(
     [rangeId]: data.kpiSeries ?? { visitors: data.series },
   }
 
+  const kpiByStateByDateRange = {
+    [rangeId]: data.kpiByState ?? [],
+  }
+
   const funnel: OverviewFunnelStep[] = funnelStepsFromOverviewApi(
     data,
     formType
@@ -161,6 +165,7 @@ function buildOverviewFromAnalytics(
     experimentsByDateRange: defaultExperimentsByDateRange(formType),
     alertsByDateRange: defaultAlertsByDateRange(),
     kpiSeriesByDateRange,
+    kpiByStateByDateRange,
   }
 }
 
@@ -198,6 +203,9 @@ export function buildEmptyOverviewForRange(
     },
     kpiSeriesByDateRange: {
       [rangeId]: kpiSeries,
+    },
+    kpiByStateByDateRange: {
+      [rangeId]: [],
     },
   }
 }

@@ -20,12 +20,12 @@ export async function GET(
   if (limited) return limited
 
   const { publicId } = await props.params
-  const hub = await getActiveLandingPageForActor(actor.id, publicId)
-  if (!hub) {
+  const landingPage = await getActiveLandingPageForActor(actor.id, publicId)
+  if (!landingPage) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
 
-  const data = await getExperimentConfigForLandingPage(hub)
+  const data = await getExperimentConfigForLandingPage(landingPage)
   return NextResponse.json(data)
 }
 
@@ -41,8 +41,8 @@ export async function POST(
   if (limited) return limited
 
   const { publicId } = await props.params
-  const hub = await getActiveLandingPageForActor(actor.id, publicId)
-  if (!hub) {
+  const landingPage = await getActiveLandingPageForActor(actor.id, publicId)
+  if (!landingPage) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
 
@@ -61,7 +61,7 @@ export async function POST(
     ? (record.variants as ExperimentVariantLink[])
     : undefined
 
-  const result = await createExperimentForLandingPage(hub, {
+  const result = await createExperimentForLandingPage(landingPage, {
     name: typeof record.name === "string" ? record.name : "",
     status: typeof record.status === "string" ? record.status : undefined,
     startDate:
@@ -87,6 +87,6 @@ export async function POST(
     return NextResponse.json({ error: result.error }, { status: 400 })
   }
 
-  const data = await getExperimentConfigForLandingPage(hub)
+  const data = await getExperimentConfigForLandingPage(landingPage)
   return NextResponse.json(data, { status: 201 })
 }

@@ -1,9 +1,11 @@
 import { track } from "../core/tracker"
 import { getHeatmapSampleRate } from "../core/sdk-config"
+import { getDocumentSize, getPageNorm } from "../utils/helpers"
 import { getStableSelector } from "../utils/selector"
 
 type DeviceType = "mobile" | "tablet" | "desktop"
 
+const MOVE_MAX_KEEP = 0.25
 const MOVE_THROTTLE_MS = 500
 const MIN_DWELL_MS = 250
 const MAX_SECTIONS = 40
@@ -74,14 +76,20 @@ function setupMousemoveSampling(): void {
       lastMoveAt = now
 
 
-      const rate = getHeatmapSampleRate()
-      if (rate < 1 && Math.random() >= rate) return
+      const keep = Math.min(getHeatmapSampleRate(), MOVE_MAX_KEEP)
+      if (Math.random() >= keep) return
 
       const vw = window.innerWidth || 1
       const vh = window.innerHeight || 1
+      const { px, py } = getPageNorm(e.clientX, e.clientY)
+      const { width: dw, height: dh } = getDocumentSize()
       track("heatmap_move", {
         vx: clamp01(e.clientX / vw),
         vy: clamp01(e.clientY / vh),
+        px,
+        py,
+        dw,
+        dh,
         vw: window.innerWidth,
         vh: window.innerHeight,
         device: resolveDevice(),

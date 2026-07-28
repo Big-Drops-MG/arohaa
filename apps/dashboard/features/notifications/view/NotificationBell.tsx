@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import { Bell, Loader2 } from "lucide-react"
+import { Bell, Loader2, UserPlus } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import { AlertSeverityIcon } from "@/features/alerts/view/AlertSeverityIcon"
 import type {
@@ -11,6 +11,7 @@ import type {
 } from "@/features/notifications/model/notifications"
 import {
   formatNotificationTimestamp,
+  isAccessRequestNotification,
   notificationRowClassName,
 } from "@/features/notifications/utils/notification-format"
 import { Button } from "@workspace/ui/components/button"
@@ -173,13 +174,21 @@ export function NotificationBell() {
             <ul className="space-y-2">
               {items.map((item) => {
                 const isUnread = item.readAt == null
+                const isAccessRequest = isAccessRequestNotification(item.type)
                 const content = (
                   <>
                     <div className="mt-0.5 shrink-0">
-                      <AlertSeverityIcon
-                        severity={item.severity}
-                        className="size-4"
-                      />
+                      {isAccessRequest ? (
+                        <UserPlus
+                          className="size-4 text-violet-600"
+                          aria-hidden
+                        />
+                      ) : (
+                        <AlertSeverityIcon
+                          severity={item.severity}
+                          className="size-4"
+                        />
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
@@ -200,6 +209,11 @@ export function NotificationBell() {
                       <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
                         {item.body}
                       </p>
+                      {isAccessRequest ? (
+                        <p className="mt-1 text-[11px] font-medium text-violet-700">
+                          Review on Team
+                        </p>
+                      ) : null}
                       <p className="mt-1 text-[11px] text-muted-foreground tabular-nums">
                         {formatNotificationTimestamp(item.createdAt)}
                       </p>
@@ -218,7 +232,7 @@ export function NotificationBell() {
                         }}
                         className={cn(
                           "flex gap-2 rounded-lg border px-3 py-2.5 transition-colors hover:bg-muted/40",
-                          notificationRowClassName(item.severity),
+                          notificationRowClassName(item.severity, item.type),
                           isUnread && "ring-1 ring-primary/10"
                         )}
                       >
@@ -232,7 +246,7 @@ export function NotificationBell() {
                         }}
                         className={cn(
                           "flex w-full gap-2 rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-muted/40",
-                          notificationRowClassName(item.severity),
+                          notificationRowClassName(item.severity, item.type),
                           isUnread && "ring-1 ring-primary/10"
                         )}
                       >

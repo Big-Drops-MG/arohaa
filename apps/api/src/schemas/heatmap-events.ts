@@ -78,6 +78,12 @@ export function validateHeatmapProps(
       const err = requireUnit(p, key)
       if (err) return err
     }
+    for (const key of ['px', 'py'] as const) {
+      if (key in p) {
+        const err = requireUnit(p, key)
+        if (err) return err
+      }
+    }
     const sel = requireSelector(p)
     if (sel) return sel
     for (const key of ['vw', 'vh'] as const) {
@@ -96,6 +102,12 @@ export function validateHeatmapProps(
     for (const key of ['vx', 'vy'] as const) {
       const err = requireUnit(p, key)
       if (err) return err
+    }
+    for (const key of ['px', 'py'] as const) {
+      if (key in p) {
+        const err = requireUnit(p, key)
+        if (err) return err
+      }
     }
     for (const key of ['vw', 'vh'] as const) {
       const err = requirePositive(p, key)

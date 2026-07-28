@@ -1,4 +1,5 @@
 import { track } from "../core/tracker"
+import { getDocumentSize, getPageNorm } from "../utils/helpers"
 import { getStableSelector } from "../utils/selector"
 
 type DeviceType = "mobile" | "tablet" | "desktop"
@@ -71,6 +72,8 @@ function trackHeatmapClick(e: MouseEvent, target: HTMLElement): void {
   const { x, y } = elementNorm(e, target)
   const vw = window.innerWidth || 1
   const vh = window.innerHeight || 1
+  const { px, py } = getPageNorm(e.clientX, e.clientY)
+  const { width: dw, height: dh } = getDocumentSize()
   const selector = getStableSelector(target)
   const sample: ClickSample = {
     selector,
@@ -85,6 +88,10 @@ function trackHeatmapClick(e: MouseEvent, target: HTMLElement): void {
     y,
     vx: clamp01(e.clientX / vw),
     vy: clamp01(e.clientY / vh),
+    px,
+    py,
+    dw,
+    dh,
     selector,
     vw: window.innerWidth,
     vh: window.innerHeight,

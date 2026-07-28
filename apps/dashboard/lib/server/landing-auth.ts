@@ -8,6 +8,7 @@ import {
   users,
   whereUserEmail,
 } from "@workspace/database"
+import { isApprovedAccess } from "@/lib/server/access-status"
 
 async function fetchUser(email: string) {
   return db.query.users.findFirst({
@@ -34,6 +35,10 @@ export async function requireLandingPageActor(): Promise<UserRow | null> {
   if (!hasVerified2FA) return null
 
   if (!user.firstName?.trim() || !user.lastName?.trim() || !user.role?.trim()) {
+    return null
+  }
+
+  if (!isApprovedAccess(user.accessStatus)) {
     return null
   }
 

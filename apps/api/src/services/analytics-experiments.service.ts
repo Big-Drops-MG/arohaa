@@ -1,10 +1,11 @@
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm'
 import { getClickHouseClient } from './clickhouse.service.js'
 import {
   db,
+  experimentIncludesLandingPage,
   experiments,
   landingPages,
-  type ExperimentVariantLink,
+  normalizeExperimentVariantLinks,
 } from '@workspace/database'
 import type {
   AnalyticsExperiments,
@@ -39,24 +40,6 @@ const round1 = (v: number) => Math.round(v * 10) / 10
 
 function fsrPct(formSuccessSessions: number, sessions: number): number {
   return sessions > 0 ? round1((formSuccessSessions / sessions) * 100) : 0
-}
-
-function normalizeVariantLinks(raw: unknown): ExperimentVariantLink[] {
-  if (!Array.isArray(raw)) return []
-  const out: ExperimentVariantLink[] = []
-  for (const item of raw) {
-    if (!item || typeof item !== 'object' || typeof item === 'string') continue
-    const record = item as Record<string, unknown>
-    const label =
-      typeof record.label === 'string' ? record.label.trim() : ''
-    const landingPageId =
-      typeof record.landingPageId === 'string'
-        ? record.landingPageId.trim()
-        : ''
-    if (!label || !landingPageId) continue
-    out.push({ label, landingPageId })
-  }
-  return out
 }
 
 type LocationDimension = 'city' | 'state' | 'zipcode'
@@ -300,17 +283,25 @@ export async function getAnalyticsExperiments({
     where: eq(landingPages.publicId, lpPublicId),
   })
 
+  // A variant landing page owns no experiment row, so it is resolved through
+  // membership in another experiment's variants array.
   let activeExperiments: (typeof experiments.$inferSelect)[] = []
   if (lp) {
-    activeExperiments = await db.query.experiments.findMany({
-      where: eq(experiments.landingPageId, lp.id),
-      orderBy: (exp, { desc }) => [desc(exp.createdAt)],
-    })
+    activeExperiments = await db
+      .select()
+      .from(experiments)
+      .where(
+        or(
+          eq(experiments.landingPageId, lp.id),
+          experimentIncludesLandingPage(lp.id),
+        ),
+      )
+      .orderBy(asc(experiments.createdAt))
   }
 
   const primaryExp = activeExperiments[0] ?? null
   const links = primaryExp
-    ? normalizeVariantLinks(primaryExp.variants)
+    ? normalizeExperimentVariantLinks(primaryExp.variants)
     : []
 
   let linkedPages: Array<{
@@ -371,7 +362,7 @@ export async function getAnalyticsExperiments({
   const linkKey = useMultiDomain
     ? linkedPages.map((p) => `${p.publicId}:${p.label}`).join(',')
     : 'single'
-  const cacheKey = `analytics:experiments:v4-md:${workspaceId}:${lpPublicId}:${rangeCacheKey(window, utmKey)}:${linkKey}:${primaryExp?.id ?? 'none'}`
+  const cacheKey = `analytics:experiments:v5-md:${workspaceId}:${lpPublicId}:${rangeCacheKey(window, utmKey)}:${linkKey}:${primaryExp?.id ?? 'none'}`
   const cached = await readAnalyticsCache<AnalyticsExperiments>(cacheKey)
   if (cached) return cached
 
@@ -569,7 +560,7 @@ function formatExperiments(
   activeExperiments: (typeof experiments.$inferSelect)[],
 ) {
   return activeExperiments.map((exp) => {
-    const links = normalizeVariantLinks(exp.variants)
+    const links = normalizeExperimentVariantLinks(exp.variants)
     const labels =
       links.length > 0
         ? links.map((l) => l.label).join(' / ')

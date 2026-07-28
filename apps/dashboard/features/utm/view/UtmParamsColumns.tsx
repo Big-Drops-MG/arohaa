@@ -26,6 +26,7 @@ import type {
 import { getUtmParamLabel } from "@/features/utm/model/utm"
 import { UtmParamMasonryChips } from "@/features/utm/view/UtmParamMasonryChips"
 import { overviewSectionHeadingClassName } from "@/features/overview/view/overview-card-density"
+import { useDashboardPreference } from "@/hooks/use-dashboard-preference"
 
 type CardFilter = "all" | "source" | "s1"
 type ModalFilter = "all" | "active" | "blocked"
@@ -182,7 +183,11 @@ export function UtmParamsColumns({
   data,
   onDataChange,
 }: UtmParamsColumnsProps) {
-  const [cardFilter, setCardFilter] = useState<CardFilter>("all")
+  const [cardFilter, setCardFilter] = useDashboardPreference(
+    projectId,
+    "utm:card-filter",
+    (raw) => (raw === "source" || raw === "s1" || raw === "all" ? raw : "all")
+  )
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<ModalFilter>("all")

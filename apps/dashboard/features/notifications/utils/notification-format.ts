@@ -24,8 +24,13 @@ export function formatNotificationTimestamp(iso: string): string {
 }
 
 export function notificationRowClassName(
-  severity: NotificationRecord["severity"]
+  severity: NotificationRecord["severity"],
+  type?: string
 ): string {
+  if (type === "access_request") {
+    return "border-violet-200/80 bg-violet-50/50"
+  }
+
   switch (severity) {
     case "warning":
       return "border-orange-200/80 bg-orange-50/50"
@@ -36,4 +41,8 @@ export function notificationRowClassName(
     default:
       return "border-border bg-background"
   }
+}
+
+export function isAccessRequestNotification(type: string): boolean {
+  return type === "access_request"
 }

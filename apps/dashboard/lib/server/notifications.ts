@@ -19,6 +19,8 @@ const AUDIT_ACTION_TITLES: Record<string, string> = {
   archive: "Project archived",
   verify_html: "HTML verification succeeded",
   live_toggle: "Live status changed",
+  variant_link: "Linked as experiment variant",
+  variant_unlink: "Removed from experiment",
 }
 
 function summarizePayload(
@@ -32,6 +34,18 @@ function summarizePayload(
 
   if (typeof payload.isLive === "boolean") {
     return payload.isLive ? "Marked as live" : "Marked as not live"
+  }
+
+  if (typeof payload.variantLabel === "string") {
+    const parent =
+      typeof payload.variantOfBrandName === "string"
+        ? ` of ${payload.variantOfBrandName}`
+        : ""
+    return `now Variant ${payload.variantLabel}${parent}`
+  }
+
+  if (typeof payload.experimentName === "string") {
+    return `left "${payload.experimentName}"`
   }
 
   if (typeof payload.brandName === "string") {
@@ -48,7 +62,14 @@ function summarizePayload(
 function auditSeverity(action: string): string {
   if (action === "delete" || action === "archive") return "error"
   if (action === "live_toggle") return "warning"
-  if (action === "verify_html" || action === "create") return "info"
+  if (
+    action === "verify_html" ||
+    action === "create" ||
+    action === "variant_link" ||
+    action === "variant_unlink"
+  ) {
+    return "info"
+  }
   return "alert"
 }
 
@@ -65,6 +86,9 @@ function auditHref(publicId: string, action: string): string {
   }
   if (action === "live_toggle") {
     return `/dashboard/${encodeURIComponent(publicId)}?tab=settings&section=publishing`
+  }
+  if (action === "variant_link" || action === "variant_unlink") {
+    return `/dashboard/${encodeURIComponent(publicId)}?tab=settings&section=experiment`
   }
   return `/dashboard/${encodeURIComponent(publicId)}?tab=settings&section=activity`
 }

@@ -207,9 +207,18 @@ export function ProjectAttributionFilters({
           ) : null}
 
           {isLoadingValues ? (
-            <p className="px-3 py-6 text-center text-sm text-neutral-500">
-              Loading values…
-            </p>
+            <div
+              className="space-y-2 px-3 py-3"
+              aria-busy
+              aria-label="Loading values"
+            >
+              {Array.from({ length: 6 }, (_, i) => (
+                <div
+                  key={i}
+                  className="h-8 w-full animate-pulse rounded-md bg-neutral-100"
+                />
+              ))}
+            </div>
           ) : searchActive && !hasAnyFiltered ? (
             <p className="px-3 py-6 text-center text-sm text-neutral-500">
               No matching values

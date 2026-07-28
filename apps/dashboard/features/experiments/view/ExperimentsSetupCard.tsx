@@ -1,7 +1,8 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
-import { Plus, Trash2 } from "lucide-react"
+import Link from "next/link"
+import { useEffect, useState, useTransition } from "react"
+import { FlaskConical, Trash2 } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import {
   Card,
@@ -11,19 +12,35 @@ import {
 } from "@workspace/ui/components/card"
 import { Input } from "@workspace/ui/components/input"
 import { Label } from "@workspace/ui/components/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/ui/components/select"
 import { cn } from "@workspace/ui/lib/utils"
-import type {
-  ExperimentConfigView,
-  SiblingLandingPageOption,
-} from "@/lib/server/experiments-store"
-import type { ExperimentVariantLink } from "@workspace/database"
+import { newVariantPath } from "@/features/dashboard/model/new-landing-mode"
+import { experimentVariantDisplayLabel } from "@/features/experiments/utils/experiment-table-columns"
+import {
+  overviewSelectContentClassName,
+  overviewSelectItemClassName,
+  overviewSelectTriggerClassName,
+} from "@/features/overview/view/overview-select-styles"
+import type { ExperimentConfigView } from "@/lib/server/experiments-store"
+
+const CONTROL_NONE = "__none__"
 
 type ExperimentsSetupCardProps = {
   projectId: string
   config: ExperimentConfigView | null
-  siblings: SiblingLandingPageOption[]
-  hubLandingPageId?: string
   onChanged: () => void
+}
+
+type VariantLabelPlan = {
+  parentLabel: string
+  availableLabels: string[]
+  suggestedLabel: string
 }
 
 function healthLabel(health: "ok" | "waiting" | "stale"): string {
@@ -35,7 +52,6 @@ function healthLabel(health: "ok" | "waiting" | "stale"): string {
 export function ExperimentsSetupCard({
   projectId,
   config,
-  siblings,
   onChanged,
 }: ExperimentsSetupCardProps) {
   const [isPending, startTransition] = useTransition()
@@ -47,18 +63,56 @@ export function ExperimentsSetupCard({
   )
   const [noEndDate, setNoEndDate] = useState(config?.noEndDate ?? true)
   const [endDate, setEndDate] = useState(config?.endDate ?? "")
-  const [label, setLabel] = useState("")
-  const [landingPageId, setLandingPageId] = useState("")
   const [controlLandingPageId, setControlLandingPageId] = useState(
     config?.controlLandingPageId ?? ""
   )
+  const [labelPlan, setLabelPlan] = useState<VariantLabelPlan | null>(null)
 
-  const linkedIds = useMemo(
-    () => new Set(config?.variants.map((v) => v.landingPageId) ?? []),
-    [config]
-  )
+  const configSignature = config
+    ? [
+        config.id,
+        config.name,
+        config.status,
+        config.startDate,
+        config.endDate ?? "",
+        config.controlLandingPageId ?? "",
+        config.variants.map((v) => `${v.label}@${v.landingPageId}`).join(","),
+      ].join("|")
+    : "none"
 
-  const availableSiblings = siblings.filter((s) => !linkedIds.has(s.id))
+  // Resyncs only when the persisted experiment actually changes, so the
+  // 60s background refetch never overwrites what is being typed.
+  const [syncedSignature, setSyncedSignature] = useState(configSignature)
+  if (config && configSignature !== syncedSignature) {
+    setSyncedSignature(configSignature)
+    setName(config.name)
+    setStatus(config.status)
+    setStartDate(config.startDate)
+    setNoEndDate(config.noEndDate)
+    setEndDate(config.endDate ?? "")
+    setControlLandingPageId(config.controlLandingPageId ?? "")
+  }
+
+  useEffect(() => {
+    let cancelled = false
+
+    void (async () => {
+      const res = await fetch(
+        `/api/landing-pages/${encodeURIComponent(projectId)}/experiments/variant-labels`,
+        { cache: "no-store" }
+      )
+      if (!res.ok) return
+      const data = (await res
+        .json()
+        .catch(() => null)) as VariantLabelPlan | null
+      if (!data || cancelled) return
+      setLabelPlan(data)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, configSignature])
 
   async function createExperiment() {
     setError(null)
@@ -122,29 +176,6 @@ export function ExperimentsSetupCard({
     })
   }
 
-  async function addVariant() {
-    if (!config) return
-    const nextLabel = label.trim()
-    if (!nextLabel || !landingPageId) {
-      setError("Choose a landing page and enter a label")
-      return
-    }
-    const variants: ExperimentVariantLink[] = [
-      ...config.variants.map((v) => ({
-        label: v.label,
-        landingPageId: v.landingPageId,
-      })),
-      { label: nextLabel, landingPageId },
-    ]
-    setLabel("")
-    setLandingPageId("")
-    await patchExperiment({
-      variants,
-      controlLandingPageId:
-        config.controlLandingPageId ?? variants[0]?.landingPageId ?? null,
-    })
-  }
-
   async function removeVariant(landingPageIdToRemove: string) {
     if (!config) return
     const variants = config.variants
@@ -180,9 +211,10 @@ export function ExperimentsSetupCard({
   }
 
   return (
-    <Card className="gap-0 py-0">
-      <CardHeader className="border-b border-border px-5 py-4 sm:px-6">
-        <CardTitle className="text-base font-semibold">
+    <Card className="border-border shadow-sm">
+      <CardHeader className="gap-1">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <FlaskConical className="size-4 text-muted-foreground" aria-hidden />
           Experiment setup
         </CardTitle>
         <p className="text-sm text-muted-foreground">
@@ -190,31 +222,44 @@ export function ExperimentsSetupCard({
           analytics. Each domain needs its own Arohaa snippet installed.
         </p>
       </CardHeader>
-      <CardContent className="space-y-4 px-5 py-4 sm:px-6">
+      <CardContent className="space-y-4">
         {error ? (
-          <p className="text-sm text-red-700" role="alert">
+          <p className="text-sm text-destructive" role="alert">
             {error}
           </p>
         ) : null}
 
         {!config ? (
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <Label htmlFor="exp-name">Experiment name</Label>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="exp-name">Name</Label>
               <Input
                 id="exp-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Homepage domains"
+                placeholder="Homepage domains A/B"
               />
             </div>
-            <Button
-              type="button"
-              onClick={() => void createExperiment()}
-              disabled={isPending || !name.trim()}
-            >
-              Create experiment
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                onClick={() => void createExperiment()}
+                disabled={isPending || !name.trim()}
+              >
+                Create experiment
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Or{" "}
+              <Link
+                href={newVariantPath(projectId)}
+                className="font-medium text-foreground underline underline-offset-2"
+              >
+                add a new variant landing page
+              </Link>{" "}
+              to start an experiment with this project as{" "}
+              {experimentVariantDisplayLabel(labelPlan?.parentLabel ?? "A")}.
+            </p>
           </div>
         ) : (
           <>
@@ -229,17 +274,32 @@ export function ExperimentsSetupCard({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="exp-status">Status</Label>
-                <select
-                  id="exp-status"
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                >
-                  <option value="Draft">Draft</option>
-                  <option value="Running">Running</option>
-                  <option value="Paused">Paused</option>
-                  <option value="Completed">Completed</option>
-                </select>
+                <Select value={status} onValueChange={setStatus}>
+                  <SelectTrigger
+                    id="exp-status"
+                    aria-label="Experiment status"
+                    className={cn(overviewSelectTriggerClassName, "w-full")}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent
+                    position="popper"
+                    align="start"
+                    className={overviewSelectContentClassName}
+                  >
+                    {(["Draft", "Running", "Paused", "Completed"] as const).map(
+                      (option) => (
+                        <SelectItem
+                          key={option}
+                          value={option}
+                          className={overviewSelectItemClassName}
+                        >
+                          {option}
+                        </SelectItem>
+                      )
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="exp-start">Start date</Label>
@@ -273,19 +333,41 @@ export function ExperimentsSetupCard({
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="exp-control">Control variant</Label>
-                <select
-                  id="exp-control"
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                  value={controlLandingPageId}
-                  onChange={(e) => setControlLandingPageId(e.target.value)}
+                <Select
+                  value={controlLandingPageId || CONTROL_NONE}
+                  onValueChange={(value) =>
+                    setControlLandingPageId(value === CONTROL_NONE ? "" : value)
+                  }
                 >
-                  <option value="">None</option>
-                  {config.variants.map((v) => (
-                    <option key={v.landingPageId} value={v.landingPageId}>
-                      {v.label} ({v.hostname})
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger
+                    id="exp-control"
+                    aria-label="Control variant"
+                    className={cn(overviewSelectTriggerClassName, "w-full")}
+                  >
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent
+                    position="popper"
+                    align="start"
+                    className={overviewSelectContentClassName}
+                  >
+                    <SelectItem
+                      value={CONTROL_NONE}
+                      className={overviewSelectItemClassName}
+                    >
+                      None
+                    </SelectItem>
+                    {config.variants.map((v) => (
+                      <SelectItem
+                        key={v.landingPageId}
+                        value={v.landingPageId}
+                        className={overviewSelectItemClassName}
+                      >
+                        {experimentVariantDisplayLabel(v.label)} ({v.hostname})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -312,30 +394,39 @@ export function ExperimentsSetupCard({
               <p className="text-sm font-medium text-foreground">Variants</p>
               {config.variants.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No variants linked yet. Add another landing page below.
+                  No variants linked yet. Add a new variant landing page below,
+                  or link an existing project from Settings → Experiment
+                  variant.
                 </p>
               ) : (
-                <ul className="divide-y divide-border rounded-lg border border-border">
+                <ul className="overflow-hidden rounded-lg border border-border">
                   {config.variants.map((v) => (
                     <li
                       key={v.landingPageId}
-                      className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5"
+                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border px-3 py-2.5 last:border-b-0"
                     >
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-foreground">
-                          {v.label}
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span className="text-sm font-medium text-foreground">
+                            {experimentVariantDisplayLabel(v.label)}
+                          </span>
                           {v.isControl ? (
-                            <span className="ml-2 text-xs font-normal text-muted-foreground">
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                               Control
                             </span>
                           ) : null}
-                        </p>
+                          {v.isCurrent ? (
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                              This page
+                            </span>
+                          ) : null}
+                        </div>
                         <p className="truncate text-xs text-muted-foreground">
                           {v.brandName} · {v.hostname}
                         </p>
                         <p
                           className={cn(
-                            "text-xs",
+                            "truncate text-xs",
                             v.health === "ok"
                               ? "text-emerald-700"
                               : v.health === "stale"
@@ -353,9 +444,10 @@ export function ExperimentsSetupCard({
                         type="button"
                         size="sm"
                         variant="ghost"
+                        className="shrink-0 self-center"
                         onClick={() => void removeVariant(v.landingPageId)}
                         disabled={isPending}
-                        aria-label={`Remove ${v.label}`}
+                        aria-label={`Remove ${experimentVariantDisplayLabel(v.label)}`}
                       >
                         <Trash2 className="size-4" />
                       </Button>
@@ -365,47 +457,18 @@ export function ExperimentsSetupCard({
               )}
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-[1fr_10rem_auto] sm:items-end">
-              <div className="space-y-1.5">
-                <Label htmlFor="add-lp">Landing page</Label>
-                <select
-                  id="add-lp"
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                  value={landingPageId}
-                  onChange={(e) => setLandingPageId(e.target.value)}
-                >
-                  <option value="">Select project…</option>
-                  {availableSiblings.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.brandName} ({s.hostname})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="add-label">Label</Label>
-                <Input
-                  id="add-label"
-                  value={label}
-                  onChange={(e) => setLabel(e.target.value)}
-                  placeholder="B"
-                />
-              </div>
-              <Button
-                type="button"
-                onClick={() => void addVariant()}
-                disabled={isPending || availableSiblings.length === 0}
+            <p className="text-sm text-muted-foreground">
+              <Link
+                href={newVariantPath(projectId)}
+                className="inline-flex items-center gap-1.5 font-medium text-foreground underline underline-offset-2"
               >
-                <Plus className="size-4" />
-                Add variant
-              </Button>
-            </div>
-            {availableSiblings.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                All workspace landing pages are already linked, or add another
-                project first.
-              </p>
-            ) : null}
+                <FlaskConical className="size-3.5" aria-hidden />
+                Add a new variant landing page
+              </Link>
+              {" · "}
+              Link an existing project from that project&rsquo;s Settings →
+              Experiment variant.
+            </p>
           </>
         )}
       </CardContent>

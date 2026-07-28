@@ -1,5 +1,11 @@
-import type { ExperimentsDashboardData } from "@/features/experiments/model/experiments"
+import type {
+  ExperimentsDashboardData,
+  ExperimentsTableColumn,
+  ExperimentsTableRow,
+  ExperimentsTableSection,
+} from "@/features/experiments/model/experiments"
 import {
+  experimentVariantDisplayLabel,
   experimentVariantPerformanceRateLabel,
   experimentVariantPerformanceSubmitLabel,
 } from "@/features/experiments/utils/experiment-table-columns"
@@ -13,6 +19,52 @@ import type {
   SiblingLandingPageOption,
 } from "@/lib/server/experiments-store"
 
+/**
+ * Variant rows sourced from the experiment configuration rather than analytics,
+ * so every linked variant stays visible while its metrics are still empty.
+ */
+function variantPerformanceFromConfig(
+  formType: OverviewLandingFormType,
+  config: ExperimentConfigView | null
+): ExperimentsTableSection {
+  const rateLabel = experimentVariantPerformanceRateLabel(formType)
+  const hasControl = config?.variants.some((v) => v.isControl) ?? false
+
+  const columns: ExperimentsTableColumn[] = [
+    { key: "variant", label: "Variant" },
+    { key: "visitors", label: "Visitors" },
+    {
+      key: "formSubmitted",
+      label: experimentVariantPerformanceSubmitLabel(formType),
+    },
+    { key: "fsr", label: rateLabel },
+  ]
+  if (hasControl) {
+    columns.push(
+      { key: "fsrLift", label: `${rateLabel} lift` },
+      { key: "visitorsLift", label: "Visitors lift" }
+    )
+  }
+
+  const rows: ExperimentsTableRow[] = (config?.variants ?? []).map(
+    (variant) => {
+      const row: ExperimentsTableRow = {
+        variant: experimentVariantDisplayLabel(variant.label),
+        visitors: "0",
+        formSubmitted: "0",
+        fsr: "0.0%",
+      }
+      if (hasControl) {
+        row.fsrLift = variant.isControl ? "Control" : "—"
+        row.visitorsLift = variant.isControl ? "Control" : "—"
+      }
+      return row
+    }
+  )
+
+  return { title: "Variant performance", columns, rows }
+}
+
 export function getExperimentsEmptyDashboardData(
   _landingPagePublicId: string,
   rangeId: OverviewDateRangeId = "7d",
@@ -21,6 +73,8 @@ export function getExperimentsEmptyDashboardData(
   siblings: SiblingLandingPageOption[] = []
 ): ExperimentsDashboardData {
   void _landingPagePublicId
+
+  const controlLabel = config?.variants.find((v) => v.isControl)?.label ?? null
 
   return {
     formType,
@@ -39,19 +93,7 @@ export function getExperimentsEmptyDashboardData(
           },
         ]
       : [],
-    variantPerformance: {
-      title: "Variant performance",
-      columns: [
-        { key: "variant", label: "Variant" },
-        { key: "visitors", label: "Visitors" },
-        {
-          key: "formSubmitted",
-          label: experimentVariantPerformanceSubmitLabel(formType),
-        },
-        { key: "fsr", label: experimentVariantPerformanceRateLabel(formType) },
-      ],
-      rows: [],
-    },
+    variantPerformance: variantPerformanceFromConfig(formType, config),
     performanceByLocation: {
       title: "Performance by location",
       columns: [{ key: "city", label: "City" }],
@@ -67,8 +109,8 @@ export function getExperimentsEmptyDashboardData(
       columns: [{ key: "zipcode", label: "Zipcode" }],
       rows: [],
     },
-    controlVariant: config?.controlLandingPageId
-      ? (config.variants.find((v) => v.isControl)?.label ?? null)
+    controlVariant: controlLabel
+      ? experimentVariantDisplayLabel(controlLabel)
       : null,
     mode:
       config && config.variants.length > 0 ? "multi_domain" : "data_variant",

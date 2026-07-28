@@ -11,3 +11,7 @@ export {
   PasswordResetEmail,
   passwordResetEmailPreviewProps,
 } from "./PasswordResetEmail"
+export {
+  AccessRequestDecisionEmail,
+  accessRequestDecisionPreviewProps,
+} from "./AccessRequestDecisionEmail"

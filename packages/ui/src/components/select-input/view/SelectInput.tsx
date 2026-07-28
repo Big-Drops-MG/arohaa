@@ -124,7 +124,7 @@ function SelectInput({
         {open && (
           <div
             role="listbox"
-            className="absolute top-full right-0 left-0 z-50 mt-1 max-h-60 overflow-hidden rounded-lg border border-input bg-popover text-popover-foreground shadow-lg"
+            className="absolute top-full right-0 left-0 z-50 mt-1 max-h-60 overflow-hidden rounded-lg border border-neutral-200 bg-white text-neutral-900 shadow-lg ring-1 ring-black/5"
             aria-activedescendant={value ?? undefined}
           >
             {searchable && (

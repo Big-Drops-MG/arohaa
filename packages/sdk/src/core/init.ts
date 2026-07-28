@@ -2,6 +2,7 @@ import { initializeConfig } from "../model/config"
 import { initIdentity } from "../model/identity"
 import { installFormFetchTracking } from "../events/form-tracking"
 import { setupLifecycle } from "./lifecycle"
+import { setupFrameSizeReporter } from "./frame-size"
 import { loadSdkRemoteConfig } from "./sdk-config"
 import { enforceUtmBlockGate } from "./utm-gate"
 
@@ -24,6 +25,10 @@ export async function initSDK(): Promise<void> {
     console.error("[arohaa] API base URL (data-api) is missing")
     return
   }
+
+  // Report document height to a parent frame (heatmap preview) even when the
+  // page is UTM-gated, since the overlay needs the real rendered height.
+  setupFrameSizeReporter()
 
   const blocked = await enforceUtmBlockGate(config)
   if (blocked) return

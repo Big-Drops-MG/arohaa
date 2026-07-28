@@ -144,7 +144,7 @@ export function LoginPage() {
           return
         }
         if (result.success) {
-          router.push("/onboarding")
+          router.push(result.redirectTo ?? "/onboarding")
           router.refresh()
         }
       }

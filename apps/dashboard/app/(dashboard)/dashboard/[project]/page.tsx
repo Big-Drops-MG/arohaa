@@ -4,6 +4,10 @@ import { notFound } from "next/navigation"
 import { ProjectDashboardView } from "@/features/dashboard/view/ProjectDashboardView"
 import { parseProjectTab } from "@/features/dashboard/model/project-tab"
 import { parseDashboardUtmFilterFromParams } from "@/features/dashboard/model/utm-attribution-filter"
+import {
+  parseHeatmapDevice,
+  parseHeatmapMode,
+} from "@/features/heatmap/model/heatmap"
 import { getOverviewPlaceholderData } from "@/features/overview/controller/overview-placeholder-data"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
 import {
@@ -14,6 +18,7 @@ import { loadAlertsDashboardData } from "@/lib/server/alerts-dashboard-load"
 import { loadEventTrackingDashboardData } from "@/lib/server/event-tracking-dashboard-load"
 import { loadExperimentsDashboardData } from "@/lib/server/experiments-dashboard-load"
 import { loadFunnelDashboardData } from "@/lib/server/funnel-dashboard-load"
+import { loadHeatmapDashboardData } from "@/lib/server/heatmap-dashboard-load"
 import { loadLandingPageSettingsData } from "@/lib/server/landing-page-settings-load"
 import { loadOverviewDashboardData } from "@/lib/server/overview-dashboard-load"
 import { loadSegmentsDashboardData } from "@/lib/server/segments-dashboard-load"
@@ -31,6 +36,11 @@ type ProjectPageProps = {
     from?: string
     to?: string
     tab?: string
+    mode?: string
+    device?: string
+    section?: string
+    sort_by?: string
+    sort_order?: string
     utm_source?: string
     utm_s1?: string
     utm_medium?: string
@@ -64,6 +74,8 @@ export default async function ProjectPage({
     from,
     to,
     tab: tabParam,
+    mode: modeParam,
+    device: deviceParam,
     utm_source,
     utm_s1,
     utm_dim,
@@ -91,6 +103,7 @@ export default async function ProjectPage({
   let overview = null
   let traffic = null
   let funnel = null
+  let heatmap = null
   let eventTracking = null
   let segments = null
   let experiments = null
@@ -122,6 +135,15 @@ export default async function ProjectPage({
         rangeId,
         utmFilter,
         customRange,
+      })
+      break
+    case "heatmap":
+      heatmap = await loadHeatmapDashboardData({
+        landingPagePublicId: project,
+        rangeId,
+        customRange,
+        mode: parseHeatmapMode(modeParam),
+        device: parseHeatmapDevice(deviceParam),
       })
       break
     case "event-tracking":
@@ -184,6 +206,7 @@ export default async function ProjectPage({
           overview: overview ?? undefined,
           traffic: traffic ?? undefined,
           funnel: funnel ?? undefined,
+          heatmap: heatmap ?? undefined,
           "event-tracking": eventTracking ?? undefined,
           segments: segments ?? undefined,
           experiments: experiments ?? undefined,

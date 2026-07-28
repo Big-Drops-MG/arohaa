@@ -1,5 +1,7 @@
 import { auth } from "@/auth"
 import { OnboardingPage } from "@/features/auth/view/OnboardingPage"
+import { isApprovedAccess } from "@/lib/server/access-status"
+import { listRoleNames } from "@/lib/server/roles"
 import { pageMetadata } from "@/lib/site-metadata"
 import { db, normalizeUserEmail, whereUserEmail } from "@workspace/database"
 import { redirect } from "next/navigation"
@@ -32,8 +34,13 @@ export default async function OnboardingRoutePage() {
   }
 
   if (user.firstName?.trim() && user.lastName?.trim() && user.role?.trim()) {
-    redirect("/dashboard")
+    if (isApprovedAccess(user.accessStatus)) {
+      redirect("/dashboard")
+    }
+    redirect("/pending-access")
   }
 
-  return <OnboardingPage />
+  const roleOptions = await listRoleNames()
+
+  return <OnboardingPage roleOptions={roleOptions} />
 }

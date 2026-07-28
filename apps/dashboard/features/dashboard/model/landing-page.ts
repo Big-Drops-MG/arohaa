@@ -7,6 +7,11 @@ export function submissionMetricLabel(formType: string): string {
   return formType === "zip" ? "Zip Submits" : "Form Submits"
 }
 
+/** Drops the scheme and trailing slash so cards read as a hostname, not a URL. */
+export function landingPageDisplayUrl(landingPageUrl: string): string {
+  return landingPageUrl.replace(/^https?:\/\//i, "").replace(/\/+$/, "")
+}
+
 export function emptyLandingPageMetrics(
   formType = "single"
 ): LandingPageMetric[] {
@@ -30,4 +35,9 @@ export type LandingPageListItem = {
   faviconUrl: string | null
   isLive: boolean
   metrics: LandingPageMetric[]
+  /** Label held in the experiment this page participates in, if any. */
+  variantLabel: string | null
+  experimentName: string | null
+  /** Brand name of the project that owns the experiment, used on the card badge. */
+  experimentGroupName: string | null
 }

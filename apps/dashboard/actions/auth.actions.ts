@@ -14,7 +14,7 @@ export type LoginWithCredentialsResult =
 
 export async function verifyTwoFactorCode(
   code: string
-): Promise<{ error?: string; success?: boolean }> {
+): Promise<{ error?: string; success?: boolean; redirectTo?: string }> {
   const session = await auth()
   if (!session?.user?.email) {
     return { error: "Not authenticated." }
@@ -45,7 +45,11 @@ export async function verifyTwoFactorCode(
     path: "/",
   })
 
-  return { success: true }
+  const { touchUserLastSeen } = await import("@/lib/server/user-last-seen")
+  void touchUserLastSeen(userRow.id)
+
+  const { resolvePostAuthPath } = await import("@/lib/server/access-status")
+  return { success: true, redirectTo: resolvePostAuthPath(userRow) }
 }
 
 export async function loginWithCredentials(
@@ -128,7 +132,8 @@ export async function loginWithCredentials(
       sameSite: "lax",
       path: "/",
     })
-    return { redirectTo: "/onboarding" }
+    const { resolvePostAuthPath } = await import("@/lib/server/access-status")
+    return { redirectTo: resolvePostAuthPath(userRow) }
   } else {
     return { redirectTo: "/authenticate" }
   }

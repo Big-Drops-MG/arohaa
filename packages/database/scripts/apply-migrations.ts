@@ -6,10 +6,13 @@ import { config } from "dotenv"
 
 const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../..",
+  "../../..",
 )
+config({ path: path.resolve(root, ".env") })
 config({ path: path.resolve(root, "apps/dashboard/.env.local") })
 config({ path: path.resolve(root, "apps/dashboard/.env.development") })
+config({ path: path.resolve(root, "apps/api/.env") })
+config({ path: path.resolve(root, "apps/api/.env.local") })
 
 const databaseUrl = process.env.DATABASE_URL?.trim()
 if (!databaseUrl) {

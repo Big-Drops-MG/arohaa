@@ -68,12 +68,24 @@ export type OverviewKpiMetricId =
   | 'fsr'
   | 'bounce-rate'
 
+export interface OverviewStateMetric {
+  state: string
+  visitors: number
+  sessions: number
+  pageViews: number
+  formSubmitted: number
+  fsr: number
+  bounceRate: number
+}
+
 export interface AnalyticsOverview {
   rangeId: AnalyticsRangeId
   kpis: RangeKpis
   /** Visitors series for the selected range. */
   series: SeriesPoint[]
   kpiSeries: Record<OverviewKpiMetricId, SeriesPoint[]>
+  /** US state breakdown for map bubbles (selected KPI reads one metric). */
+  kpiByState: OverviewStateMetric[]
   funnel: FunnelStep[]
   uniqueVisitors7d: number
   avgEngagedSecPerSession: number
@@ -371,7 +383,7 @@ export async function getAnalyticsOverview(
     ...rangeQueryParams(window),
     ...utmFilterParams(utmFilter),
   }
-  const cacheKey = `analytics:overview:v4-abs:${workspaceId}:${formType}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
+  const cacheKey = `analytics:overview:v5-state:${workspaceId}:${formType}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
   try {
     const cachedStr = await redis.get(cacheKey)
     if (cachedStr) {
@@ -382,6 +394,9 @@ export async function getAnalyticsOverview(
   }
 
   const ch = getClickHouseClient()
+  const usStateWhere = `${where}
+          AND state != ''
+          AND country IN ('United States', 'USA', 'US')`
 
   const [
     rangeKpiRes,
@@ -393,6 +408,8 @@ export async function getAnalyticsOverview(
     cityRes,
     dowRes,
     engagedRes,
+    stateMetricsRes,
+    stateBounceRes,
   ] = await Promise.all([
     ch.query({
       format: 'JSON',
@@ -511,6 +528,46 @@ export async function getAnalyticsOverview(
         )
       `,
     }),
+
+    ch.query({
+      format: 'JSON',
+      query_params: p,
+      query: `
+        SELECT
+          state AS state,
+          uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+          uniqExact(session_id) AS sessions,
+          countIf(event_name = 'page_view') AS page_views,
+          uniqExactIf(session_id, event_name = '${submitEvent}') AS form_submitted
+        FROM events_raw
+        WHERE ${usStateWhere}
+        GROUP BY state
+        ORDER BY visitors DESC
+        LIMIT 100
+      `,
+    }),
+
+    ch.query({
+      format: 'JSON',
+      query_params: p,
+      query: `
+        SELECT
+          state AS state,
+          sumIf(1, is_bounce = 1) AS bounces,
+          count() AS sessions
+        FROM (
+          SELECT
+            session_id,
+            anyHeavyIf(state, state != '') AS state,
+            toUInt8(count() = 1) AS is_bounce
+          FROM events_raw
+          WHERE ${usStateWhere}
+          GROUP BY session_id
+        )
+        WHERE state != ''
+        GROUP BY state
+      `,
+    }),
   ])
 
   type KR = Record<string, string>
@@ -528,6 +585,24 @@ export async function getAnalyticsOverview(
   const engRow = (
     (await engagedRes.json()) as CHJson<{ avg_sec: string | null }>
   ).data?.[0]
+  const stateMetricRows =
+    (
+      (await stateMetricsRes.json()) as CHJson<{
+        state: string
+        visitors: string
+        sessions: string
+        page_views: string
+        form_submitted: string
+      }>
+    ).data ?? []
+  const stateBounceRows =
+    (
+      (await stateBounceRes.json()) as CHJson<{
+        state: string
+        bounces: string
+        sessions: string
+      }>
+    ).data ?? []
 
   const visitors = n(kd.visitors)
   const sessions = n(kd.sessions)
@@ -538,6 +613,29 @@ export async function getAnalyticsOverview(
     window,
     buildMetricsMap(window.granularity, seriesMetricRows, seriesBounceRows),
   )
+
+  const bounceByState = new Map<string, { bounces: number; sessions: number }>()
+  for (const row of stateBounceRows) {
+    bounceByState.set(row.state, {
+      bounces: n(row.bounces),
+      sessions: n(row.sessions),
+    })
+  }
+
+  const kpiByState: OverviewStateMetric[] = stateMetricRows.map((row) => {
+    const stateSessions = n(row.sessions)
+    const stateSubmitted = n(row.form_submitted)
+    const bounce = bounceByState.get(row.state)
+    return {
+      state: row.state,
+      visitors: n(row.visitors),
+      sessions: stateSessions,
+      pageViews: n(row.page_views),
+      formSubmitted: stateSubmitted,
+      fsr: fsrPct(stateSubmitted, stateSessions),
+      bounceRate: bouncePct(bounce?.bounces ?? 0, bounce?.sessions ?? 0),
+    }
+  })
 
   const result: AnalyticsOverview = {
     rangeId: window.rangeId,
@@ -551,6 +649,7 @@ export async function getAnalyticsOverview(
     },
     series: kpiSeries.visitors,
     kpiSeries,
+    kpiByState,
     funnel: [
       { label: 'Landing Page Visits', count: n(fd.page_views) },
       { label: 'Interactions', count: n(fd.interactions) },
@@ -595,6 +694,7 @@ export function emptyAnalyticsOverview(
     kpis: { ...ZERO_KPIS },
     series: kpiSeries.visitors,
     kpiSeries,
+    kpiByState: [],
     funnel: [
       { label: 'Landing Page Visits', count: 0 },
       { label: 'Interactions', count: 0 },

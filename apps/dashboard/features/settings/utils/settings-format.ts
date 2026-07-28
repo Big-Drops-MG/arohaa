@@ -33,6 +33,19 @@ export function formatSdkInstallStatus(status: string): string {
   }
 }
 
+export function formatLandingFormType(formType: string): string {
+  switch (formType) {
+    case "single":
+      return "Single Step"
+    case "multiple":
+      return "Multi Step"
+    case "zip":
+      return "Zip"
+    default:
+      return formType
+  }
+}
+
 export function formatVerificationMethod(method: string | null): string {
   if (!method) return "—"
   if (method === "sdk_event") return "SDK event"

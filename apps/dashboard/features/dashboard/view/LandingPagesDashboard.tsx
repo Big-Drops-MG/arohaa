@@ -2,10 +2,12 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { Input } from "@workspace/ui/components/input"
 import { Button } from "@workspace/ui/components/button"
+import { Input } from "@workspace/ui/components/input"
 import { Plus, Search } from "lucide-react"
 import type { LandingPageListItem } from "@/features/dashboard/model/landing-page"
+import { NEW_LANDING_PATH } from "@/features/dashboard/model/new-landing-mode"
+import { AddNewProjectMenu } from "@/features/dashboard/view/AddNewProjectMenu"
 import { LandingPageCard } from "@/features/dashboard/view/LandingPageCard"
 
 type LandingPagesDashboardProps = {
@@ -17,12 +19,29 @@ export function LandingPagesDashboard({ pages }: LandingPagesDashboardProps) {
 
   const filteredPages = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
-    if (!normalizedQuery) return pages
+    const matched = !normalizedQuery
+      ? pages
+      : pages.filter((page) => {
+          const searchableText =
+            `${page.brandName} ${page.landingPageUrl} ${page.experimentName ?? ""} ${page.experimentGroupName ?? ""} ${page.variantLabel ?? ""}`.toLowerCase()
+          return searchableText.includes(normalizedQuery)
+        })
 
-    return pages.filter((page) => {
-      const searchableText =
-        `${page.brandName} ${page.landingPageUrl}`.toLowerCase()
-      return searchableText.includes(normalizedQuery)
+    // Group experiment members together, then by brand within a group.
+    return [...matched].sort((a, b) => {
+      const aExp = a.experimentName?.toLowerCase() ?? ""
+      const bExp = b.experimentName?.toLowerCase() ?? ""
+      if (aExp && bExp && aExp !== bExp) return aExp.localeCompare(bExp)
+      if (aExp && !bExp) return -1
+      if (!aExp && bExp) return 1
+
+      const aLabel = a.variantLabel?.toUpperCase() ?? ""
+      const bLabel = b.variantLabel?.toUpperCase() ?? ""
+      if (aLabel && bLabel && aLabel !== bLabel) {
+        return aLabel.localeCompare(bLabel)
+      }
+
+      return a.brandName.localeCompare(b.brandName)
     })
   }, [pages, query])
 
@@ -30,7 +49,7 @@ export function LandingPagesDashboard({ pages }: LandingPagesDashboardProps) {
     return (
       <div className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col items-center justify-center px-4 py-10">
         <Button type="button" size="lg" className="gap-2" asChild>
-          <Link href="/dashboard/new-landing">
+          <Link href={NEW_LANDING_PATH}>
             <Plus className="size-5" aria-hidden />
             Add a Landing Page
           </Link>
@@ -58,12 +77,7 @@ export function LandingPagesDashboard({ pages }: LandingPagesDashboardProps) {
           />
         </div>
 
-        <Button type="button" className="h-11 gap-2 rounded-md px-5" asChild>
-          <Link href="/dashboard/new-landing">
-            <Plus className="size-4" aria-hidden />
-            Add New
-          </Link>
-        </Button>
+        <AddNewProjectMenu className="h-11 rounded-md px-5" />
       </div>
 
       {filteredPages.length > 0 ? (
