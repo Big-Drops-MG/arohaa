@@ -84,6 +84,7 @@ const MAP_HEIGHT = 420
 const MIN_ZOOM = 1
 const MAX_ZOOM = 6
 const ZOOM_STEP = 1.35
+const PAN_THRESHOLD_PX = 6
 const IDENTITY_TRANSFORM: MapTransform = { k: 1, x: 0, y: 0 }
 
 function metricValue(
@@ -443,8 +444,12 @@ export function OverviewUsaMap({
     valueByState,
   ])
 
+  function wasPanned(): boolean {
+    return Boolean(panRef.current?.moved)
+  }
+
   function drillIntoState(stateName: string) {
-    if (panRef.current?.moved) return
+    if (wasPanned() || selectedState) return
     const normalized = normalizeUsStateName(stateName)
     if (!normalized) return
     setHovered(null)
@@ -481,8 +486,6 @@ export function OverviewUsaMap({
       originY: transformRef.current.y,
       moved: false,
     }
-    setIsPanning(true)
-    svg.setPointerCapture(event.pointerId)
   }
 
   function onPointerMove(event: ReactPointerEvent<SVGSVGElement>) {
@@ -493,16 +496,18 @@ export function OverviewUsaMap({
     const point = clientPointInSvg(svg, event.clientX, event.clientY)
     const dx = point.x - pan.startX
     const dy = point.y - pan.startY
-    if (!pan.moved && Math.hypot(dx, dy) > 3) {
+    if (!pan.moved) {
+      if (Math.hypot(dx, dy) <= PAN_THRESHOLD_PX) return
       pan.moved = true
       setHovered(null)
+      setIsPanning(true)
+      svg.setPointerCapture(event.pointerId)
     }
-    if (!pan.moved) return
-    setTransform((current) => ({
-      ...current,
+    setTransform({
+      k: transformRef.current.k,
       x: pan.originX + dx,
       y: pan.originY + dy,
-    }))
+    })
   }
 
   function endPan(event: ReactPointerEvent<SVGSVGElement>) {
@@ -512,7 +517,7 @@ export function OverviewUsaMap({
     if (svg?.hasPointerCapture(event.pointerId)) {
       svg.releasePointerCapture(event.pointerId)
     }
-    // Keep moved flag briefly so click handlers can ignore drag releases.
+    // Keep moved flag until after the click event so handlers can ignore drags.
     window.setTimeout(() => {
       if (panRef.current === pan) panRef.current = null
     }, 0)
@@ -633,9 +638,7 @@ export function OverviewUsaMap({
                 if (!d) return null
                 const fips = String(feat.id ?? "")
                 const name = US_STATE_FIPS_TO_NAME[fips]
-                const clickable =
-                  !selectedState &&
-                  Boolean(name && (valueByState.get(name) ?? 0) > 0)
+                const clickable = !selectedState && Boolean(name)
                 return (
                   <path
                     key={String(feat.id)}
@@ -645,8 +648,10 @@ export function OverviewUsaMap({
                     strokeWidth={selectedState ? 1.35 : 0.9}
                     vectorEffect="non-scaling-stroke"
                     className={clickable ? "cursor-pointer" : undefined}
-                    onClick={() => {
-                      if (clickable && name) drillIntoState(name)
+                    onClick={(event) => {
+                      if (!clickable || !name) return
+                      event.stopPropagation()
+                      drillIntoState(name)
                     }}
                   />
                 )
@@ -680,13 +685,15 @@ export function OverviewUsaMap({
                   <g
                     key={bubble.key}
                     transform={`translate(${bubble.x} ${bubble.y})`}
-                    className="cursor-pointer"
+                    className={!selectedState ? "cursor-pointer" : undefined}
                     onMouseEnter={() => {
-                      if (!panRef.current?.moved) setHovered(bubble.key)
+                      if (!wasPanned()) setHovered(bubble.key)
                     }}
                     onMouseLeave={() => setHovered(null)}
-                    onClick={() => {
-                      if (!selectedState) drillIntoState(bubble.label)
+                    onClick={(event) => {
+                      if (selectedState) return
+                      event.stopPropagation()
+                      drillIntoState(bubble.label)
                     }}
                   >
                     <circle
@@ -701,6 +708,7 @@ export function OverviewUsaMap({
                       }
                       strokeWidth={isHovered ? 1.6 : selectedState ? 1.25 : 1}
                       vectorEffect="non-scaling-stroke"
+                      style={{ pointerEvents: "all" }}
                     >
                       <title>
                         {bubble.label}:{" "}
