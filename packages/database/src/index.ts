@@ -13,6 +13,7 @@ import * as workspaceApiKeysSchema from './schema/workspace-api-keys.js';
 import * as workspaceAlertWebhooksSchema from './schema/workspace-alert-webhooks.js';
 import * as landingPageUtmParamsSchema from './schema/landing-page-utm-params.js';
 import * as rolesSchema from './schema/roles.js';
+import * as segmentsSchema from './schema/segments.js';
 
 const schema = {
   ...authSchema,
@@ -26,6 +27,7 @@ const schema = {
   ...workspaceAlertWebhooksSchema,
   ...landingPageUtmParamsSchema,
   ...rolesSchema,
+  ...segmentsSchema,
 };
 
 bootstrapDatabaseEnv(import.meta.url);
@@ -57,6 +59,7 @@ export * from './schema/workspace-api-keys.js';
 export * from './schema/workspace-alert-webhooks.js';
 export * from './schema/landing-page-utm-params.js';
 export * from './schema/roles.js';
+export * from './schema/segments.js';
 export * from './email.js';
 export * from './notifications/create-notification.js';
 export * from './landing/normalizeLandingPageUrl.js';
@@ -78,3 +81,4 @@ if (process.env.CLICKHOUSE_URL) {
 }
 
 export * from './queries/events.js';
+export * from './queries/segments.js';
