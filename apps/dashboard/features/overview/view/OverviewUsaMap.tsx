@@ -21,8 +21,9 @@ import type {
 } from "@/features/overview/model/overview"
 import {
   OVERVIEW_MAP_TIER_COLORS,
-  OVERVIEW_MAP_TIER_SOFT,
+  OVERVIEW_MAP_TIER_FILLS,
   OVERVIEW_MAP_TIER_STROKES,
+  US_COUNTIES_TOPOJSON_URL,
   US_STATE_FIPS_TO_NAME,
   US_STATE_NAME_TO_FIPS,
   US_STATES_TOPOJSON_URL,
@@ -38,6 +39,10 @@ import type { DashboardCustomRange } from "@/features/traffic/model/traffic-rang
 
 type UsStatesTopology = Topology<{
   states: GeometryCollection
+}>
+
+type UsCountiesTopology = Topology<{
+  counties: GeometryCollection
 }>
 
 type OverviewUsaMapProps = {
@@ -103,6 +108,7 @@ export function OverviewUsaMap({
 }: OverviewUsaMapProps) {
   const { utmFilter } = useDashboardUtmFilter()
   const [collection, setCollection] = useState<FeatureCollection | null>(null)
+  const [counties, setCounties] = useState<FeatureCollection | null>(null)
   const [loadError, setLoadError] = useState(false)
   const [hovered, setHovered] = useState<string | null>(null)
   const [selectedState, setSelectedState] = useState<string | null>(null)
@@ -119,8 +125,7 @@ export function OverviewUsaMap({
       })
       .then((topo) => {
         if (cancelled) return
-        const statesObject = topo.objects.states
-        const fc = feature(topo, statesObject) as FeatureCollection
+        const fc = feature(topo, topo.objects.states) as FeatureCollection
         setCollection(fc)
       })
       .catch(() => {
@@ -130,6 +135,43 @@ export function OverviewUsaMap({
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!selectedState) {
+      setCounties(null)
+      return
+    }
+    const stateFips = US_STATE_NAME_TO_FIPS[selectedState]
+    if (!stateFips) {
+      setCounties(null)
+      return
+    }
+
+    let cancelled = false
+    void fetch(US_COUNTIES_TOPOJSON_URL)
+      .then((res) => {
+        if (!res.ok) throw new Error(`counties topology ${res.status}`)
+        return res.json() as Promise<UsCountiesTopology>
+      })
+      .then((topo) => {
+        if (cancelled) return
+        const fc = feature(topo, topo.objects.counties) as FeatureCollection
+        const filtered: FeatureCollection = {
+          type: "FeatureCollection",
+          features: fc.features.filter((feat) =>
+            String(feat.id ?? "").startsWith(stateFips)
+          ),
+        }
+        setCounties(filtered)
+      })
+      .catch(() => {
+        if (!cancelled) setCounties(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedState])
 
   useEffect(() => {
     if (!selectedState) {
@@ -271,7 +313,7 @@ export function OverviewUsaMap({
             value,
             x: point[0],
             y: point[1],
-            r: overviewMapBubbleRadius(value, maxValue, 6, 36),
+            r: overviewMapBubbleRadius(value, maxValue, 10, 42),
             tier,
           },
         ]
@@ -296,7 +338,7 @@ export function OverviewUsaMap({
           value,
           x: point[0],
           y: point[1],
-          r: overviewMapBubbleRadius(value, maxValue),
+          r: overviewMapBubbleRadius(value, maxValue, 6, 36),
           tier,
         },
       ]
@@ -389,42 +431,6 @@ export function OverviewUsaMap({
             : `${metricLabel} by US state`
         }
       >
-        <defs>
-          <filter
-            id="overview-bubble-glow"
-            x="-50%"
-            y="-50%"
-            width="200%"
-            height="200%"
-          >
-            <feGaussianBlur in="SourceAlpha" stdDeviation="2.4" result="blur" />
-            <feOffset dy="0.6" result="offset" />
-            <feComponentTransfer in="offset" result="soft">
-              <feFuncA type="linear" slope="0.28" />
-            </feComponentTransfer>
-            <feMerge>
-              <feMergeNode in="soft" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          {([0, 1, 2, 3] as const).map((tier) => {
-            const soft = OVERVIEW_MAP_TIER_SOFT[tier]
-            return (
-              <radialGradient
-                key={tier}
-                id={`overview-bubble-fill-${tier}`}
-                cx="38%"
-                cy="32%"
-                r="68%"
-              >
-                <stop offset="0%" stopColor={soft.core} />
-                <stop offset="42%" stopColor={soft.mid} />
-                <stop offset="100%" stopColor={soft.edge} />
-              </radialGradient>
-            )
-          })}
-        </defs>
-
         <g>
           {outlineFeatures.map((feat) => {
             const d = path(feat as Feature<Geometry>)
@@ -438,9 +444,9 @@ export function OverviewUsaMap({
               <path
                 key={String(feat.id)}
                 d={d}
-                fill={selectedState ? "#f8fafc" : "#fafafa"}
-                stroke={selectedState ? "#94a3b8" : "#d4d4d4"}
-                strokeWidth={selectedState ? 1.1 : 0.75}
+                fill="#f8fafc"
+                stroke="#94a3b8"
+                strokeWidth={selectedState ? 1.35 : 0.9}
                 className={clickable ? "cursor-pointer" : undefined}
                 onClick={() => {
                   if (clickable && name) drillIntoState(name)
@@ -450,13 +456,32 @@ export function OverviewUsaMap({
           })}
         </g>
 
-        <g filter="url(#overview-bubble-glow)">
+        {selectedState && counties ? (
+          <g>
+            {counties.features.map((feat) => {
+              const d = path(feat as Feature<Geometry>)
+              if (!d) return null
+              return (
+                <path
+                  key={String(feat.id)}
+                  d={d}
+                  fill="#ffffff"
+                  stroke="#cbd5e1"
+                  strokeWidth={0.7}
+                />
+              )
+            })}
+          </g>
+        ) : null}
+
+        <g>
           {bubbles.map((bubble) => {
             const isHovered = hovered === bubble.key
+            const showLabel = selectedState && bubble.r >= 16
             return (
               <g
                 key={bubble.key}
-                transform={`translate(${bubble.x} ${bubble.y}) scale(${isHovered ? 1.1 : 1})`}
+                transform={`translate(${bubble.x} ${bubble.y})`}
                 className="cursor-pointer"
                 onMouseEnter={() => setHovered(bubble.key)}
                 onMouseLeave={() => setHovered(null)}
@@ -464,11 +489,16 @@ export function OverviewUsaMap({
                   if (!selectedState) drillIntoState(bubble.label)
                 }}
               >
+                {/* City/state region outline — same language as map borders */}
                 <circle
                   r={bubble.r}
-                  fill={`url(#overview-bubble-fill-${bubble.tier})`}
-                  stroke={OVERVIEW_MAP_TIER_STROKES[bubble.tier]}
-                  strokeWidth={isHovered ? 1.1 : 0.5}
+                  fill={OVERVIEW_MAP_TIER_FILLS[bubble.tier]}
+                  stroke={
+                    isHovered
+                      ? OVERVIEW_MAP_TIER_STROKES[bubble.tier]
+                      : "#64748b"
+                  }
+                  strokeWidth={isHovered ? 1.6 : selectedState ? 1.25 : 1}
                 >
                   <title>
                     {bubble.label}: {formatMetricValue(bubble.value, metricId)}
@@ -479,6 +509,22 @@ export function OverviewUsaMap({
                       : ""}
                   </title>
                 </circle>
+                {showLabel ? (
+                  <text
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    className="pointer-events-none select-none"
+                    style={{
+                      fontSize: Math.max(8, Math.min(11, bubble.r * 0.42)),
+                      fontWeight: 600,
+                      fill: bubble.tier >= 2 ? "#f8fafc" : "#0f172a",
+                    }}
+                  >
+                    {bubble.label.length > 12
+                      ? `${bubble.label.slice(0, 11)}…`
+                      : bubble.label}
+                  </text>
+                ) : null}
               </g>
             )
           })}
@@ -538,10 +584,8 @@ export function OverviewUsaMap({
           {([0, 1, 2, 3] as const).map((tier) => (
             <li key={tier} className="flex items-center gap-2 text-neutral-600">
               <span
-                className="inline-block size-2.5 rounded-full shadow-[0_0_0_2px_rgba(255,255,255,0.7)]"
-                style={{
-                  background: `radial-gradient(circle at 35% 30%, ${OVERVIEW_MAP_TIER_SOFT[tier].core}, ${OVERVIEW_MAP_TIER_COLORS[tier]})`,
-                }}
+                className="inline-block size-2.5 rounded-full border border-slate-500/70"
+                style={{ backgroundColor: OVERVIEW_MAP_TIER_COLORS[tier] }}
               />
               <span>{labels[tier]}</span>
             </li>

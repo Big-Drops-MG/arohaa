@@ -132,48 +132,32 @@ export function normalizeUsStateName(raw: string): string | null {
 export const US_STATES_TOPOJSON_URL =
   "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"
 
+export const US_COUNTIES_TOPOJSON_URL =
+  "https://cdn.jsdelivr.net/npm/us-atlas@3/counties-10m.json"
+
 export type OverviewMapBubbleTier = 0 | 1 | 2 | 3
 
+/** Solid choropleth fills — map-friendly, no gradients. */
 export const OVERVIEW_MAP_TIER_COLORS: Record<OverviewMapBubbleTier, string> = {
-  0: "#22c55e",
-  1: "#f97316",
-  2: "#8b5cf6",
-  3: "#ec4899",
+  0: "#93c5fd",
+  1: "#38bdf8",
+  2: "#0284c7",
+  3: "#0f172a",
 }
 
 export const OVERVIEW_MAP_TIER_STROKES: Record<OverviewMapBubbleTier, string> =
   {
-    0: "rgba(22, 163, 74, 0.35)",
-    1: "rgba(234, 88, 12, 0.35)",
-    2: "rgba(124, 58, 237, 0.35)",
-    3: "rgba(219, 39, 119, 0.35)",
+    0: "#64748b",
+    1: "#0369a1",
+    2: "#0c4a6e",
+    3: "#020617",
   }
 
-/** Soft fill alphas used by the map bubble radial gradients. */
-export const OVERVIEW_MAP_TIER_SOFT: Record<
-  OverviewMapBubbleTier,
-  { core: string; mid: string; edge: string }
-> = {
-  0: {
-    core: "rgba(74, 222, 128, 0.92)",
-    mid: "rgba(34, 197, 94, 0.45)",
-    edge: "rgba(34, 197, 94, 0)",
-  },
-  1: {
-    core: "rgba(251, 146, 60, 0.92)",
-    mid: "rgba(249, 115, 22, 0.45)",
-    edge: "rgba(249, 115, 22, 0)",
-  },
-  2: {
-    core: "rgba(167, 139, 250, 0.9)",
-    mid: "rgba(139, 92, 246, 0.42)",
-    edge: "rgba(139, 92, 246, 0)",
-  },
-  3: {
-    core: "rgba(244, 114, 182, 0.92)",
-    mid: "rgba(236, 72, 153, 0.45)",
-    edge: "rgba(236, 72, 153, 0)",
-  },
+export const OVERVIEW_MAP_TIER_FILLS: Record<OverviewMapBubbleTier, string> = {
+  0: "rgba(147, 197, 253, 0.55)",
+  1: "rgba(56, 189, 248, 0.55)",
+  2: "rgba(2, 132, 199, 0.58)",
+  3: "rgba(15, 23, 42, 0.62)",
 }
 
 export function overviewMapBubbleTier(maxValue: number): {
