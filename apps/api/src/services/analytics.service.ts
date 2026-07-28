@@ -383,7 +383,7 @@ export async function getAnalyticsOverview(
     ...rangeQueryParams(window),
     ...utmFilterParams(utmFilter),
   }
-  const cacheKey = `analytics:overview:v5-state:${workspaceId}:${formType}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
+  const cacheKey = `analytics:overview:v6-state:${workspaceId}:${formType}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
   try {
     const cachedStr = await redis.get(cacheKey)
     if (cachedStr) {
@@ -408,8 +408,6 @@ export async function getAnalyticsOverview(
     cityRes,
     dowRes,
     engagedRes,
-    stateMetricsRes,
-    stateBounceRes,
   ] = await Promise.all([
     ch.query({
       format: 'JSON',
@@ -528,47 +526,84 @@ export async function getAnalyticsOverview(
         )
       `,
     }),
+  ])
 
-    ch.query({
-      format: 'JSON',
-      query_params: p,
-      query: `
-        SELECT
-          state AS state,
-          uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-          uniqExact(session_id) AS sessions,
-          countIf(event_name = 'page_view') AS page_views,
-          uniqExactIf(session_id, event_name = '${submitEvent}') AS form_submitted
-        FROM events_raw
-        WHERE ${usStateWhere}
-        GROUP BY state
-        ORDER BY visitors DESC
-        LIMIT 100
-      `,
-    }),
-
-    ch.query({
-      format: 'JSON',
-      query_params: p,
-      query: `
-        SELECT
-          state AS state,
-          sumIf(1, is_bounce = 1) AS bounces,
-          count() AS sessions
-        FROM (
+  // Isolated from core KPIs so a map SQL failure cannot blank the overview.
+  let stateMetricRows: Array<{
+    state: string
+    visitors: string
+    sessions: string
+    page_views: string
+    form_submitted: string
+  }> = []
+  let stateBounceRows: Array<{
+    state: string
+    bounces: string
+    sessions: string
+  }> = []
+  try {
+    const [stateMetricsRes, stateBounceRes] = await Promise.all([
+      ch.query({
+        format: 'JSON',
+        query_params: p,
+        query: `
           SELECT
-            session_id,
-            anyHeavyIf(state, state != '') AS state,
-            toUInt8(count() = 1) AS is_bounce
+            state AS state,
+            uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+            uniqExact(session_id) AS sessions,
+            countIf(event_name = 'page_view') AS page_views,
+            uniqExactIf(session_id, event_name = '${submitEvent}') AS form_submitted
           FROM events_raw
           WHERE ${usStateWhere}
-          GROUP BY session_id
-        )
-        WHERE state != ''
-        GROUP BY state
-      `,
-    }),
-  ])
+          GROUP BY state
+          ORDER BY visitors DESC
+          LIMIT 100
+        `,
+      }),
+      ch.query({
+        format: 'JSON',
+        query_params: p,
+        query: `
+          SELECT
+            session_state AS state,
+            sumIf(1, is_bounce = 1) AS bounces,
+            count() AS sessions
+          FROM (
+            SELECT
+              session_id,
+              anyHeavyIf(state, state != '') AS session_state,
+              toUInt8(count() = 1) AS is_bounce
+            FROM events_raw
+            WHERE ${usStateWhere}
+            GROUP BY session_id
+          )
+          WHERE session_state != ''
+          GROUP BY session_state
+        `,
+      }),
+    ])
+    stateMetricRows =
+      (
+        (await stateMetricsRes.json()) as CHJson<{
+          state: string
+          visitors: string
+          sessions: string
+          page_views: string
+          form_submitted: string
+        }>
+      ).data ?? []
+    stateBounceRows =
+      (
+        (await stateBounceRes.json()) as CHJson<{
+          state: string
+          bounces: string
+          sessions: string
+        }>
+      ).data ?? []
+  } catch {
+    stateMetricRows = []
+    stateBounceRows = []
+  }
 
   type KR = Record<string, string>
 
@@ -585,24 +620,6 @@ export async function getAnalyticsOverview(
   const engRow = (
     (await engagedRes.json()) as CHJson<{ avg_sec: string | null }>
   ).data?.[0]
-  const stateMetricRows =
-    (
-      (await stateMetricsRes.json()) as CHJson<{
-        state: string
-        visitors: string
-        sessions: string
-        page_views: string
-        form_submitted: string
-      }>
-    ).data ?? []
-  const stateBounceRows =
-    (
-      (await stateBounceRes.json()) as CHJson<{
-        state: string
-        bounces: string
-        sessions: string
-      }>
-    ).data ?? []
 
   const visitors = n(kd.visitors)
   const sessions = n(kd.sessions)
