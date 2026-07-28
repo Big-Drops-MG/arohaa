@@ -78,6 +78,17 @@ export interface OverviewStateMetric {
   bounceRate: number
 }
 
+export interface OverviewCityMetric {
+  city: string
+  state: string
+  visitors: number
+  sessions: number
+  pageViews: number
+  formSubmitted: number
+  fsr: number
+  bounceRate: number
+}
+
 export interface AnalyticsOverview {
   rangeId: AnalyticsRangeId
   kpis: RangeKpis
@@ -725,6 +736,223 @@ export function emptyAnalyticsOverview(
     hasEvents24h: false,
     activeUsersNow: 0,
   }
+}
+
+const US_STATE_NAME_TO_CODE: Record<string, string> = {
+  Alabama: 'AL',
+  Alaska: 'AK',
+  Arizona: 'AZ',
+  Arkansas: 'AR',
+  California: 'CA',
+  Colorado: 'CO',
+  Connecticut: 'CT',
+  Delaware: 'DE',
+  'District of Columbia': 'DC',
+  Florida: 'FL',
+  Georgia: 'GA',
+  Hawaii: 'HI',
+  Idaho: 'ID',
+  Illinois: 'IL',
+  Indiana: 'IN',
+  Iowa: 'IA',
+  Kansas: 'KS',
+  Kentucky: 'KY',
+  Louisiana: 'LA',
+  Maine: 'ME',
+  Maryland: 'MD',
+  Massachusetts: 'MA',
+  Michigan: 'MI',
+  Minnesota: 'MN',
+  Mississippi: 'MS',
+  Missouri: 'MO',
+  Montana: 'MT',
+  Nebraska: 'NE',
+  Nevada: 'NV',
+  'New Hampshire': 'NH',
+  'New Jersey': 'NJ',
+  'New Mexico': 'NM',
+  'New York': 'NY',
+  'North Carolina': 'NC',
+  'North Dakota': 'ND',
+  Ohio: 'OH',
+  Oklahoma: 'OK',
+  Oregon: 'OR',
+  Pennsylvania: 'PA',
+  'Rhode Island': 'RI',
+  'South Carolina': 'SC',
+  'South Dakota': 'SD',
+  Tennessee: 'TN',
+  Texas: 'TX',
+  Utah: 'UT',
+  Vermont: 'VT',
+  Virginia: 'VA',
+  Washington: 'WA',
+  'West Virginia': 'WV',
+  Wisconsin: 'WI',
+  Wyoming: 'WY',
+}
+
+function normalizeOverviewStateInput(raw: string): {
+  name: string
+  code: string
+} | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  const upper = trimmed.toUpperCase()
+  for (const [name, code] of Object.entries(US_STATE_NAME_TO_CODE)) {
+    if (code === upper || name.toLowerCase() === trimmed.toLowerCase()) {
+      return { name, code }
+    }
+  }
+  return null
+}
+
+export async function getAnalyticsOverviewCities({
+  workspaceId,
+  state: stateRaw,
+  formTypeRaw,
+  utmFilter,
+  rangeId = DEFAULT_ANALYTICS_RANGE_ID,
+  custom,
+}: {
+  workspaceId: string
+  state: string
+  formTypeRaw?: string
+  utmFilter?: AnalyticsUtmFilter
+  rangeId?: AnalyticsRangeId
+  custom?: AnalyticsCustomRange
+}): Promise<{ state: string; cities: OverviewCityMetric[] }> {
+  const normalized = normalizeOverviewStateInput(stateRaw)
+  if (!normalized) {
+    return { state: stateRaw.trim(), cities: [] }
+  }
+
+  const formType = parseLandingFormType(formTypeRaw)
+  const submitEvent = submissionEventName(formType)
+  const window = resolveAnalyticsWindow(rangeId, new Date(), custom)
+  const where = rangeFilter(utmFilter)
+  const p = {
+    wid: workspaceId,
+    state_name: normalized.name,
+    state_code: normalized.code,
+    ...rangeQueryParams(window),
+    ...utmFilterParams(utmFilter),
+  }
+  const cacheKey = `analytics:overview:cities:v1:${workspaceId}:${formType}:${normalized.code}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
+
+  try {
+    const cachedStr = await redis.get(cacheKey)
+    if (cachedStr) {
+      return JSON.parse(cachedStr) as {
+        state: string
+        cities: OverviewCityMetric[]
+      }
+    }
+  } catch {
+    // ignore cache read errors
+  }
+
+  const ch = getClickHouseClient()
+  const stateMatch = `(
+    lowerUTF8(trim(state)) = lowerUTF8({state_name:String})
+    OR upperUTF8(trim(state)) = {state_code:String}
+  )`
+  const cityWhere = `${where}
+          AND city != ''
+          AND ${stateMatch}
+          AND country IN ('United States', 'USA', 'US')`
+
+  const [cityMetricsRes, cityBounceRes] = await Promise.all([
+    ch.query({
+      format: 'JSON',
+      query_params: p,
+      query: `
+        SELECT
+          city AS city,
+          uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+          uniqExact(session_id) AS sessions,
+          countIf(event_name = 'page_view') AS page_views,
+          uniqExactIf(session_id, event_name = '${submitEvent}') AS form_submitted
+        FROM events_raw
+        WHERE ${cityWhere}
+        GROUP BY city
+        ORDER BY visitors DESC
+        LIMIT 80
+      `,
+    }),
+    ch.query({
+      format: 'JSON',
+      query_params: p,
+      query: `
+        SELECT
+          city AS city,
+          sumIf(1, is_bounce = 1) AS bounces,
+          count() AS sessions
+        FROM (
+          SELECT
+            session_id,
+            anyHeavyIf(city, city != '') AS city,
+            toUInt8(count() = 1) AS is_bounce
+          FROM events_raw
+          WHERE ${cityWhere}
+          GROUP BY session_id
+        )
+        WHERE city != ''
+        GROUP BY city
+      `,
+    }),
+  ])
+
+  const cityMetricRows =
+    (
+      (await cityMetricsRes.json()) as CHJson<{
+        city: string
+        visitors: string
+        sessions: string
+        page_views: string
+        form_submitted: string
+      }>
+    ).data ?? []
+  const cityBounceRows =
+    (
+      (await cityBounceRes.json()) as CHJson<{
+        city: string
+        bounces: string
+        sessions: string
+      }>
+    ).data ?? []
+
+  const bounceByCity = new Map<string, { bounces: number; sessions: number }>()
+  for (const row of cityBounceRows) {
+    bounceByCity.set(row.city, {
+      bounces: n(row.bounces),
+      sessions: n(row.sessions),
+    })
+  }
+
+  const cities: OverviewCityMetric[] = cityMetricRows.map((row) => {
+    const citySessions = n(row.sessions)
+    const citySubmitted = n(row.form_submitted)
+    const bounce = bounceByCity.get(row.city)
+    return {
+      city: row.city,
+      state: normalized.name,
+      visitors: n(row.visitors),
+      sessions: citySessions,
+      pageViews: n(row.page_views),
+      formSubmitted: citySubmitted,
+      fsr: fsrPct(citySubmitted, citySessions),
+      bounceRate: bouncePct(bounce?.bounces ?? 0, bounce?.sessions ?? 0),
+    }
+  })
+
+  const result = { state: normalized.name, cities }
+  try {
+    await redis.set(cacheKey, JSON.stringify(result), 'EX', 45)
+  } catch {
+    // ignore cache write errors
+  }
+  return result
 }
 
 export interface LandingPageCardMetrics {

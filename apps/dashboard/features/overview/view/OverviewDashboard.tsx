@@ -315,6 +315,9 @@ export function OverviewDashboard({
               valueSuffix={valueSuffixForMetric(activeKpiId)}
               chartKey={chartKey}
               stateMetrics={stateMetrics}
+              projectId={projectId}
+              dateRangeId={dateRangeId}
+              customRange={customRange}
             />
           </motion.div>
 

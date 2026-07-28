@@ -45,6 +45,17 @@ export interface OverviewStateMetric {
   bounceRate: number
 }
 
+export interface OverviewCityMetric {
+  city: string
+  state: string
+  visitors: number
+  sessions: number
+  pageViews: number
+  formSubmitted: number
+  fsr: number
+  bounceRate: number
+}
+
 export interface AnalyticsOverview {
   rangeId: RangeId
   kpis: RangeKpis
