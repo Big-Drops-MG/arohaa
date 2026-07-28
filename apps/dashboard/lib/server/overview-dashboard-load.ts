@@ -22,6 +22,7 @@ import {
 } from "@/features/traffic/model/traffic-range"
 import type {
   OverviewAlert,
+  OverviewCityMetric,
   OverviewDashboardData,
   OverviewFunnelStep,
   OverviewKpiMetricId,
@@ -311,4 +312,77 @@ export async function loadOverviewDashboardDataForApi(
     customRange
   )
   return { ok: true, data }
+}
+
+export async function loadOverviewCityMetricsForApi(
+  landingPagePublicId: string,
+  stateRaw: string | null | undefined,
+  rangeIdRaw: string | null | undefined,
+  utmFilter?: DashboardUtmFilter,
+  customRange?: DashboardCustomRange
+): Promise<
+  | { ok: true; data: { state: string; cities: OverviewCityMetric[] } }
+  | { ok: false; status: number; error: string }
+> {
+  const state = stateRaw?.trim() ?? ""
+  if (!state) {
+    return { ok: false, status: 400, error: "state is required" }
+  }
+
+  const rangeId = parseTrafficRangeId(rangeIdRaw)
+  const actor = await requireLandingPageActor()
+  if (!actor) {
+    return { ok: false, status: 401, error: "Unauthorized" }
+  }
+
+  const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
+  if (!row) {
+    return { ok: false, status: 404, error: "Not found" }
+  }
+
+  const formType = parseOverviewLandingFormType(row.formType)
+  const apiBase = resolveIngestApiBase()
+  const secret = resolveInternalApiSecret()
+  if (!apiBase || !secret) {
+    return { ok: true, data: { state, cities: [] } }
+  }
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 8_000)
+
+  try {
+    const url = new URL(`${apiBase}/v1/analytics/overview/cities`)
+    url.searchParams.set("workspace_id", row.id)
+    url.searchParams.set("state", state)
+    url.searchParams.set("form_type", formType)
+    url.searchParams.set("range_id", rangeId)
+    appendDashboardCustomRangeParams(url, rangeId, customRange)
+    appendDashboardUtmParams(url, utmFilter)
+
+    const resp = await fetch(url.toString(), {
+      headers: { "x-arohaa-internal": secret },
+      signal: controller.signal,
+      cache: "no-store",
+    })
+
+    if (!resp.ok) {
+      return { ok: true, data: { state, cities: [] } }
+    }
+
+    const data = (await resp.json()) as {
+      state: string
+      cities: OverviewCityMetric[]
+    }
+    return {
+      ok: true,
+      data: {
+        state: data.state || state,
+        cities: Array.isArray(data.cities) ? data.cities : [],
+      },
+    }
+  } catch {
+    return { ok: true, data: { state, cities: [] } }
+  } finally {
+    clearTimeout(timer)
+  }
 }

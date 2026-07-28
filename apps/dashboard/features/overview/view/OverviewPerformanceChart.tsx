@@ -20,10 +20,12 @@ import {
   CardTitle,
 } from "@workspace/ui/components/card"
 import type {
+  OverviewDateRangeId,
   OverviewKpiMetricId,
   OverviewStateMetric,
   OverviewTimeSeriesPoint,
 } from "@/features/overview/model/overview"
+import type { DashboardCustomRange } from "@/features/traffic/model/traffic-range"
 import {
   overviewAnalyticCardContentPaddingClassName,
   overviewAnalyticCardHeaderClassName,
@@ -45,8 +47,8 @@ const PERFORMANCE_VIEW_OPTIONS: ReadonlyArray<{
   label: string
   Icon: typeof ChartLine
 }> = [
-  { id: "line", label: "Line Graph", Icon: ChartLine },
   { id: "map", label: "Map", Icon: Map },
+  { id: "line", label: "Line Graph", Icon: ChartLine },
 ]
 
 function computeYAxisMax(points: OverviewTimeSeriesPoint[]): number {
@@ -68,6 +70,9 @@ type OverviewPerformanceChartProps = {
   valueSuffix?: string
   chartKey?: string
   stateMetrics?: OverviewStateMetric[]
+  projectId: string
+  dateRangeId: OverviewDateRangeId
+  customRange?: DashboardCustomRange | null
 }
 
 export function OverviewPerformanceChart({
@@ -77,9 +82,12 @@ export function OverviewPerformanceChart({
   valueSuffix,
   chartKey,
   stateMetrics = [],
+  projectId,
+  dateRangeId,
+  customRange,
 }: OverviewPerformanceChartProps) {
   const reduceMotion = useReducedMotion()
-  const [viewMode, setViewMode] = useState<PerformanceViewMode>("line")
+  const [viewMode, setViewMode] = useState<PerformanceViewMode>("map")
 
   const chartMargins = useMemo(() => {
     const dense = points.length > 8
@@ -186,6 +194,9 @@ export function OverviewPerformanceChart({
                   metricLabel={metricLabel}
                   valueSuffix={valueSuffix}
                   states={stateMetrics}
+                  projectId={projectId}
+                  dateRangeId={dateRangeId}
+                  customRange={customRange}
                   className="h-full"
                 />
               </div>

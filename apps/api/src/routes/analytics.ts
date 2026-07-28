@@ -17,6 +17,7 @@ import {
   emptyAnalyticsOverview,
   emptyLandingPageCardMetrics,
   getAnalyticsOverview,
+  getAnalyticsOverviewCities,
   getLandingPageCardMetrics,
 } from '../services/analytics.service.js'
 import {
@@ -316,6 +317,65 @@ export async function analyticsRoutes(server: FastifyInstance) {
           ),
         logLabel: 'analytics overview query ok',
         logContext: { range_id: parsed.rangeId },
+      })
+    },
+  )
+
+  server.get<{
+    Querystring: {
+      workspace_id: string
+      state: string
+      form_type?: string
+      range_id?: string
+      from?: string
+      to?: string
+      utm_source?: string
+      utm_s1?: string
+      utm_dim?: string
+      utm_value?: string
+    }
+  }>(
+    '/v1/analytics/overview/cities',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['workspace_id', 'state'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            state: { type: 'string', minLength: 1, maxLength: 80 },
+            form_type: { type: 'string', enum: ['zip', 'single', 'multiple'] },
+            range_id: rangeIdSchema,
+            ...customRangeSchemaProps,
+            ...utmFilterSchemaProps,
+          },
+        },
+      },
+      config: ANALYTICS_RATE_LIMIT,
+    },
+    async (request, reply) => {
+      const { workspace_id, form_type, state } = request.query
+      const parsed = parseRangeQuery(request.query)
+      if (!parsed.ok) {
+        return reply.code(400).send({ error: parsed.error })
+      }
+      const utmFilter = parseAnalyticsUtmFilter(request.query)
+      await sendAnalyticsQuery({
+        request,
+        reply,
+        workspaceId: workspace_id,
+        emptyValue: { state: state.trim(), cities: [] },
+        run: () =>
+          getAnalyticsOverviewCities({
+            workspaceId: workspace_id,
+            state,
+            formTypeRaw: form_type,
+            utmFilter,
+            rangeId: parsed.rangeId,
+            custom: parsed.custom,
+          }),
+        logLabel: 'analytics overview cities query ok',
+        logContext: { range_id: parsed.rangeId, state },
       })
     },
   )
