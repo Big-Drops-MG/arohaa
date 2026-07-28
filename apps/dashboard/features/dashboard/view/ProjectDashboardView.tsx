@@ -60,7 +60,8 @@ function ProjectDashboardViewInner({
   const { searchParams, isPending } = useDashboardNavigation()
   const [activeTab, setActiveTab] = useDashboardQueryParam("tab", {
     parse: parseProjectTab,
-    projectId,
+    // Do not restore tab from localStorage — bare /dashboard/{id} must open Overview.
+    omitDefault: true,
     // Tab bodies load via client fetch; refreshing RSC here races replace and
     // leaves the controlled Tabs on the previous value until a second click.
     refreshOnChange: false,
