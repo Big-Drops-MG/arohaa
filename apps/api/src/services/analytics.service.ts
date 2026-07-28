@@ -885,20 +885,20 @@ export async function getAnalyticsOverviewCities({
       query_params: p,
       query: `
         SELECT
-          city AS city,
+          session_city AS city,
           sumIf(1, is_bounce = 1) AS bounces,
           count() AS sessions
         FROM (
           SELECT
             session_id,
-            anyHeavyIf(city, city != '') AS city,
+            anyHeavyIf(city, city != '') AS session_city,
             toUInt8(count() = 1) AS is_bounce
           FROM events_raw
           WHERE ${cityWhere}
           GROUP BY session_id
         )
-        WHERE city != ''
-        GROUP BY city
+        WHERE session_city != ''
+        GROUP BY session_city
       `,
     }),
   ])
