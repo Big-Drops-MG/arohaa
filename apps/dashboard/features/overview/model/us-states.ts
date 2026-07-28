@@ -1,3 +1,5 @@
+import type { OverviewKpiMetricId } from "@/features/overview/model/overview"
+
 /** US state FIPS id → canonical name (matches us-atlas topojson feature ids). */
 export const US_STATE_FIPS_TO_NAME: Record<string, string> = {
   "01": "Alabama",
@@ -187,34 +189,61 @@ export const OVERVIEW_MAP_TIER_IDS = [
   0, 1, 2, 3, 4, 5, 6, 7, 8,
 ] as const satisfies readonly OverviewMapBubbleTier[]
 
-export function overviewMapBubbleTier(maxValue: number): {
+function formatOverviewMapSlabLabel(value: number, isPercent: boolean): string {
+  if (isPercent) {
+    if (Number.isInteger(value)) return `${value}%`
+    return `${value.toFixed(1)}%`
+  }
+  if (value >= 1_000_000)
+    return `${(value / 1_000_000).toFixed(value % 1_000_000 === 0 ? 0 : 1)}M`
+  if (value >= 1_000)
+    return `${(value / 1_000).toFixed(value % 1_000 === 0 ? 0 : 1)}K`
+  if (Number.isInteger(value) || value >= 10) return String(Math.round(value))
+  return value.toFixed(1)
+}
+
+/**
+ * Absolute choropleth cut points (8 → 9 color slabs).
+ * Colors encode fixed performance bands, not relative rank within the current dataset.
+ */
+export function overviewMapAbsoluteThresholds(
+  metricId: OverviewKpiMetricId
+): number[] {
+  switch (metricId) {
+    case "fsr":
+    case "bounce-rate":
+      // Percentage points 0–100
+      return [10, 20, 30, 40, 50, 60, 70, 85]
+    case "visitors":
+    case "sessions":
+    case "page-views":
+    case "form-submitted":
+      return [5, 10, 20, 35, 50, 75, 100, 150]
+  }
+}
+
+export function overviewMapBubbleTier(metricId: OverviewKpiMetricId): {
   thresholds: number[]
+  legendLabels: string[]
   minLabel: string
   maxLabel: string
 } {
-  const max = Math.max(0, maxValue)
-  const fmt = (v: number) => {
-    if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`
-    if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`
-    if (Number.isInteger(v) || v >= 10) return String(Math.round(v))
-    return v.toFixed(1)
-  }
-
-  if (max <= 0) {
-    return {
-      thresholds: Array.from({ length: 8 }, () => 0),
-      minLabel: "0",
-      maxLabel: "0",
-    }
-  }
-
-  // Eight cut points → nine equal-width sequential classes.
-  const thresholds = Array.from({ length: 8 }, (_, i) => (max * (i + 1)) / 9)
+  const thresholds = overviewMapAbsoluteThresholds(metricId)
+  const isPercent = metricId === "fsr" || metricId === "bounce-rate"
+  const last = thresholds[thresholds.length - 1] ?? 0
+  const legendLabels = [
+    formatOverviewMapSlabLabel(0, isPercent),
+    ...thresholds.map((t) => formatOverviewMapSlabLabel(t, isPercent)),
+  ]
+  // Final label is open-ended (“150+”) so the scale reads as absolute slabs.
+  legendLabels[legendLabels.length - 1] =
+    `${formatOverviewMapSlabLabel(last, isPercent)}+`
 
   return {
     thresholds,
-    minLabel: fmt(0),
-    maxLabel: fmt(max),
+    legendLabels,
+    minLabel: legendLabels[0] ?? "0",
+    maxLabel: legendLabels[legendLabels.length - 1] ?? "0",
   }
 }
 
