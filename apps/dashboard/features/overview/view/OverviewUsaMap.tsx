@@ -12,6 +12,8 @@ import {
   geoAlbersUsa,
   geoBounds,
   geoCentroid,
+  geoContains,
+  geoDistance,
   geoPath,
 } from "d3-geo"
 import { feature } from "topojson-client"
@@ -27,7 +29,6 @@ import type {
 } from "@/features/overview/model/overview"
 import {
   OVERVIEW_MAP_TIER_COLORS,
-  OVERVIEW_MAP_TIER_FILLS,
   OVERVIEW_MAP_TIER_IDS,
   OVERVIEW_MAP_TIER_STROKES,
   US_COUNTIES_TOPOJSON_URL,
@@ -36,9 +37,9 @@ import {
   US_STATES_TOPOJSON_URL,
   normalizeUsStateName,
   overviewCityPointInBbox,
-  overviewMapBubbleRadius,
   overviewMapBubbleTier,
   overviewMapBubbleTierForValue,
+  type OverviewMapBubbleTier,
 } from "@/features/overview/model/us-states"
 import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
@@ -63,14 +64,12 @@ type OverviewUsaMapProps = {
   className?: string
 }
 
-type MapBubble = {
+type MapRegion = {
   key: string
   label: string
   value: number
-  x: number
-  y: number
-  r: number
-  tier: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+  tier: OverviewMapBubbleTier | null
+  pathD: string
 }
 
 type MapTransform = {
@@ -82,9 +81,12 @@ type MapTransform = {
 const MAP_WIDTH = 720
 const MAP_HEIGHT = 420
 const MIN_ZOOM = 1
-const MAX_ZOOM = 6
-const ZOOM_STEP = 1.35
+const MAX_ZOOM = 12
+const ZOOM_STEP = 1.4
 const PAN_THRESHOLD_PX = 6
+const EMPTY_FILL = "#f8fafc"
+const BOUNDARY_STROKE = "#334155"
+const COUNTY_BOUNDARY_STROKE = "#64748b"
 const IDENTITY_TRANSFORM: MapTransform = { k: 1, x: 0, y: 0 }
 
 function metricValue(
@@ -115,6 +117,34 @@ function formatMetricValue(
     return `${value.toFixed(1)}%`
   }
   return value.toLocaleString("en-US")
+}
+
+function aggregateRegionValues(
+  values: number[],
+  metricId: OverviewKpiMetricId
+): number {
+  if (values.length === 0) return 0
+  if (metricId === "fsr" || metricId === "bounce-rate") {
+    return values.reduce((sum, value) => sum + value, 0) / values.length
+  }
+  return values.reduce((sum, value) => sum + value, 0)
+}
+
+function nearestCountyFeature(
+  point: [number, number],
+  features: Feature[]
+): Feature | null {
+  let best: Feature | null = null
+  let bestDistance = Number.POSITIVE_INFINITY
+  for (const feat of features) {
+    const centroid = geoCentroid(feat as Feature<Geometry>)
+    const distance = geoDistance(point, centroid)
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = feat
+    }
+  }
+  return best
 }
 
 function clampZoom(k: number): number {
@@ -182,7 +212,9 @@ export function OverviewUsaMap({
     moved: boolean
   } | null>(null)
 
-  transformRef.current = transform
+  useEffect(() => {
+    transformRef.current = transform
+  }, [transform])
 
   useEffect(() => {
     let cancelled = false
@@ -341,18 +373,9 @@ export function OverviewUsaMap({
     )
   }, [collection, selectedState])
 
-  const maxValue = useMemo(() => {
-    const source = selectedState ? valueByCity.values() : valueByState.values()
-    let max = 0
-    for (const value of source) {
-      if (value > max) max = value
-    }
-    return max
-  }, [selectedState, valueByCity, valueByState])
-
-  const { thresholds, minLabel, maxLabel } = useMemo(
-    () => overviewMapBubbleTier(maxValue),
-    [maxValue]
+  const { thresholds, legendLabels, minLabel, maxLabel } = useMemo(
+    () => overviewMapBubbleTier(metricId),
+    [metricId]
   )
 
   const projection = useMemo(() => {
@@ -374,75 +397,113 @@ export function OverviewUsaMap({
 
   const path = useMemo(() => geoPath(projection), [projection])
 
-  const outlineFeatures = useMemo(() => {
-    if (!collection) return []
-    if (selectedFeature) return [selectedFeature]
-    return collection.features
-  }, [collection, selectedFeature])
-
-  const bubbles = useMemo((): MapBubble[] => {
-    if (!collection) return []
-
-    if (selectedState && selectedFeature) {
-      const bbox = geoBounds(selectedFeature as Feature<Geometry>)
-      const items = cities.flatMap((row) => {
-        const label = row.city.trim()
-        if (!label) return []
-        const value = valueByCity.get(label) ?? 0
-        if (value <= 0) return []
-        const [lng, lat] = overviewCityPointInBbox(label, bbox)
-        const point = projection([lng, lat])
-        if (!point) return []
-        const tier = overviewMapBubbleTierForValue(value, thresholds)
-        return [
-          {
-            key: label,
-            label,
-            value,
-            x: point[0],
-            y: point[1],
-            r: overviewMapBubbleRadius(value, maxValue, 10, 42),
-            tier,
-          },
-        ]
-      })
-      return items.sort((a, b) => b.r - a.r)
-    }
-
-    const items = collection.features.flatMap((feat) => {
+  const stateRegions = useMemo((): MapRegion[] => {
+    if (!collection || selectedState) return []
+    return collection.features.flatMap((feat) => {
       const fips = String(feat.id ?? "")
       const name = US_STATE_FIPS_TO_NAME[fips]
       if (!name) return []
+      const d = path(feat as Feature<Geometry>)
+      if (!d) return []
       const value = valueByState.get(name) ?? 0
-      if (value <= 0) return []
-      const centroid = geoCentroid(feat as Feature<Geometry>)
-      const point = projection(centroid)
-      if (!point) return []
-      const tier = overviewMapBubbleTierForValue(value, thresholds)
       return [
         {
           key: name,
           label: name,
           value,
-          x: point[0],
-          y: point[1],
-          r: overviewMapBubbleRadius(value, maxValue, 6, 36),
-          tier,
+          tier:
+            value > 0 ? overviewMapBubbleTierForValue(value, thresholds) : null,
+          pathD: d,
         },
       ]
     })
-    return items.sort((a, b) => b.r - a.r)
+  }, [collection, path, selectedState, thresholds, valueByState])
+
+  const cityRegions = useMemo((): MapRegion[] => {
+    if (!selectedState || !selectedFeature || !counties) return []
+
+    const bbox = geoBounds(selectedFeature as Feature<Geometry>)
+    const countyBuckets = new Map<
+      string,
+      { labels: string[]; values: number[] }
+    >()
+
+    for (const row of cities) {
+      const label = row.city.trim()
+      if (!label) continue
+      const value = valueByCity.get(label) ?? 0
+      if (value <= 0) continue
+      const point = overviewCityPointInBbox(label, bbox)
+      const contained =
+        counties.features.find((feat) =>
+          geoContains(feat as Feature<Geometry>, point)
+        ) ?? null
+      const matched =
+        contained ?? nearestCountyFeature(point, counties.features)
+      if (!matched) continue
+      const countyId = String(matched.id ?? label)
+      const bucket = countyBuckets.get(countyId)
+      if (bucket) {
+        bucket.labels.push(label)
+        bucket.values.push(value)
+      } else {
+        countyBuckets.set(countyId, {
+          labels: [label],
+          values: [value],
+        })
+      }
+    }
+
+    const regions: MapRegion[] = []
+    for (const feat of counties.features) {
+      const d = path(feat as Feature<Geometry>)
+      if (!d) continue
+      const countyId = String(feat.id ?? "")
+      const bucket = countyBuckets.get(countyId)
+      if (!bucket) {
+        regions.push({
+          key: countyId,
+          label: "",
+          value: 0,
+          tier: null,
+          pathD: d,
+        })
+        continue
+      }
+
+      const value = aggregateRegionValues(bucket.values, metricId)
+      const topLabel =
+        bucket.labels[bucket.values.indexOf(Math.max(...bucket.values))] ??
+        bucket.labels[0] ??
+        ""
+
+      regions.push({
+        key: countyId,
+        label: topLabel,
+        value,
+        tier:
+          value > 0 ? overviewMapBubbleTierForValue(value, thresholds) : null,
+        pathD: d,
+      })
+    }
+
+    return regions
   }, [
     cities,
-    collection,
-    maxValue,
-    projection,
+    counties,
+    metricId,
+    path,
     selectedFeature,
     selectedState,
     thresholds,
     valueByCity,
-    valueByState,
   ])
+
+  const regions = selectedState ? cityRegions : stateRegions
+  const hasMetricRegions = regions.some((region) => region.tier !== null)
+  const selectedStateOutline = selectedFeature
+    ? path(selectedFeature as Feature<Geometry>)
+    : null
 
   function wasPanned(): boolean {
     return Boolean(panRef.current?.moved)
@@ -551,13 +612,13 @@ export function OverviewUsaMap({
     )
   }
 
-  const hasBubbles = bubbles.length > 0
-  const hoverValue = selectedState
-    ? (valueByCity.get(hovered ?? "") ?? 0)
-    : (valueByState.get(hovered ?? "") ?? 0)
+  const hoveredRegion = hovered
+    ? (regions.find((region) => region.key === hovered) ?? null)
+    : null
   const canZoomIn = transform.k < MAX_ZOOM - 0.001
   const canZoomOut = transform.k > MIN_ZOOM + 0.001
   const canReset = transform.k !== 1 || transform.x !== 0 || transform.y !== 0
+  const boundaryWidth = selectedState ? 1.15 : 1.35
 
   return (
     <div className={cn("relative h-full min-h-0 w-full", className)}>
@@ -633,113 +694,67 @@ export function OverviewUsaMap({
             transform={`translate(${transform.x} ${transform.y}) scale(${transform.k})`}
           >
             <g>
-              {outlineFeatures.map((feat) => {
-                const d = path(feat as Feature<Geometry>)
-                if (!d) return null
-                const fips = String(feat.id ?? "")
-                const name = US_STATE_FIPS_TO_NAME[fips]
-                const clickable = !selectedState && Boolean(name)
+              {regions.map((region) => {
+                const isHovered = hovered === region.key
+                const fill =
+                  region.tier === null
+                    ? EMPTY_FILL
+                    : OVERVIEW_MAP_TIER_COLORS[region.tier]
+                const stroke = isHovered
+                  ? OVERVIEW_MAP_TIER_STROKES[
+                      (region.tier ?? 3) as OverviewMapBubbleTier
+                    ]
+                  : selectedState
+                    ? COUNTY_BOUNDARY_STROKE
+                    : BOUNDARY_STROKE
                 return (
-                  <path
-                    key={String(feat.id)}
-                    d={d}
-                    fill="#f8fafc"
-                    stroke="#94a3b8"
-                    strokeWidth={selectedState ? 1.35 : 0.9}
-                    vectorEffect="non-scaling-stroke"
-                    className={clickable ? "cursor-pointer" : undefined}
-                    onClick={(event) => {
-                      if (!clickable || !name) return
-                      event.stopPropagation()
-                      drillIntoState(name)
-                    }}
-                  />
-                )
-              })}
-            </g>
-
-            {selectedState && counties ? (
-              <g>
-                {counties.features.map((feat) => {
-                  const d = path(feat as Feature<Geometry>)
-                  if (!d) return null
-                  return (
+                  <g key={region.key}>
                     <path
-                      key={String(feat.id)}
-                      d={d}
-                      fill="#ffffff"
-                      stroke="#cbd5e1"
-                      strokeWidth={0.7}
+                      d={region.pathD}
+                      fill={fill}
+                      stroke={stroke}
+                      strokeWidth={isHovered ? 2 : boundaryWidth}
                       vectorEffect="non-scaling-stroke"
-                    />
-                  )
-                })}
-              </g>
-            ) : null}
-
-            <g>
-              {bubbles.map((bubble) => {
-                const isHovered = hovered === bubble.key
-                const showLabel = selectedState && bubble.r >= 16
-                return (
-                  <g
-                    key={bubble.key}
-                    transform={`translate(${bubble.x} ${bubble.y})`}
-                    className={!selectedState ? "cursor-pointer" : undefined}
-                    onMouseEnter={() => {
-                      if (!wasPanned()) setHovered(bubble.key)
-                    }}
-                    onMouseLeave={() => setHovered(null)}
-                    onClick={(event) => {
-                      if (selectedState) return
-                      event.stopPropagation()
-                      drillIntoState(bubble.label)
-                    }}
-                  >
-                    <circle
-                      r={bubble.r}
-                      fill={OVERVIEW_MAP_TIER_FILLS[bubble.tier]}
-                      stroke={
-                        isHovered
-                          ? OVERVIEW_MAP_TIER_STROKES[bubble.tier]
-                          : OVERVIEW_MAP_TIER_STROKES[
-                              Math.min(8, bubble.tier + 1) as MapBubble["tier"]
-                            ]
-                      }
-                      strokeWidth={isHovered ? 1.6 : selectedState ? 1.25 : 1}
-                      vectorEffect="non-scaling-stroke"
-                      style={{ pointerEvents: "all" }}
+                      className="cursor-pointer"
+                      onMouseEnter={() => {
+                        if (!wasPanned() && (region.label || !selectedState)) {
+                          setHovered(region.key)
+                        }
+                      }}
+                      onMouseLeave={() => setHovered(null)}
+                      onClick={(event) => {
+                        if (selectedState) return
+                        event.stopPropagation()
+                        drillIntoState(region.label)
+                      }}
                     >
-                      <title>
-                        {bubble.label}:{" "}
-                        {formatMetricValue(bubble.value, metricId)}
-                        {valueSuffix &&
-                        metricId !== "fsr" &&
-                        metricId !== "bounce-rate"
-                          ? valueSuffix
-                          : ""}
-                      </title>
-                    </circle>
-                    {showLabel ? (
-                      <text
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        className="pointer-events-none select-none"
-                        style={{
-                          fontSize: Math.max(8, Math.min(11, bubble.r * 0.42)),
-                          fontWeight: 600,
-                          fill: bubble.tier >= 5 ? "#f8fafc" : "#0f172a",
-                        }}
-                      >
-                        {bubble.label.length > 12
-                          ? `${bubble.label.slice(0, 11)}…`
-                          : bubble.label}
-                      </text>
-                    ) : null}
+                      {region.label ? (
+                        <title>
+                          {region.label}:{" "}
+                          {formatMetricValue(region.value, metricId)}
+                          {valueSuffix &&
+                          metricId !== "fsr" &&
+                          metricId !== "bounce-rate"
+                            ? valueSuffix
+                            : ""}
+                        </title>
+                      ) : null}
+                    </path>
                   </g>
                 )
               })}
             </g>
+
+            {selectedStateOutline ? (
+              <path
+                d={selectedStateOutline}
+                fill="none"
+                stroke={BOUNDARY_STROKE}
+                strokeWidth={2.25}
+                vectorEffect="non-scaling-stroke"
+                className="pointer-events-none"
+              />
+            ) : null}
           </g>
         </svg>
       </div>
@@ -752,7 +767,7 @@ export function OverviewUsaMap({
         </div>
       ) : null}
 
-      {!citiesLoading && selectedState && (citiesError || !hasBubbles) ? (
+      {!citiesLoading && selectedState && (citiesError || !hasMetricRegions) ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6">
           <p className="max-w-sm text-center text-sm text-neutral-500">
             {citiesError
@@ -762,25 +777,27 @@ export function OverviewUsaMap({
         </div>
       ) : null}
 
-      {!selectedState && !hasBubbles ? (
+      {!selectedState && !hasMetricRegions ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6">
           <p className="max-w-sm text-center text-sm text-neutral-500">
-            No US state location data for this range yet. Bubbles appear once
+            No US state location data for this range yet. Regions fill once
             GeoIP state is present on events.
           </p>
         </div>
       ) : null}
 
-      {hovered ? (
+      {hoveredRegion && hoveredRegion.label ? (
         <div
           className={cn(
             "pointer-events-none absolute top-3 left-3 rounded-lg border border-neutral-200 bg-white/95 px-3 py-2 text-xs shadow-sm",
             selectedState && "mt-12"
           )}
         >
-          <p className="font-semibold text-neutral-900">{hovered}</p>
+          <p className="font-semibold text-neutral-900">
+            {hoveredRegion.label}
+          </p>
           <p className="mt-0.5 text-neutral-600">
-            {metricLabel}: {formatMetricValue(hoverValue, metricId)}
+            {metricLabel}: {formatMetricValue(hoveredRegion.value, metricId)}
           </p>
           {!selectedState ? (
             <p className="mt-1 text-[10px] text-neutral-400">Click to expand</p>
@@ -788,7 +805,7 @@ export function OverviewUsaMap({
         </div>
       ) : null}
 
-      <div className="absolute right-3 bottom-3 w-40 rounded-lg border border-neutral-200 bg-white/95 px-3 py-2 text-[11px] shadow-sm">
+      <div className="absolute right-3 bottom-3 w-48 rounded-lg border border-neutral-200 bg-white/95 px-3 py-2 text-[11px] shadow-sm">
         <p className="mb-1.5 font-semibold tracking-wide text-neutral-700 uppercase">
           {metricLabel}
           {selectedState ? " · Cities" : ""}
@@ -799,12 +816,40 @@ export function OverviewUsaMap({
               key={tier}
               className="h-full flex-1"
               style={{ backgroundColor: OVERVIEW_MAP_TIER_COLORS[tier] }}
+              title={
+                tier === 0
+                  ? `≤ ${legendLabels[1] ?? minLabel}`
+                  : tier === 8
+                    ? (legendLabels[8] ?? maxLabel)
+                    : `${legendLabels[tier]} – ${String(legendLabels[tier + 1] ?? "").replace(/\+$/, "")}`
+              }
             />
           ))}
         </div>
-        <div className="mt-1 flex justify-between text-[10px] text-neutral-500">
-          <span>{minLabel}</span>
-          <span>{maxLabel}</span>
+        <div className="relative mt-1 h-3.5">
+          {legendLabels.map((label, index) => {
+            // Show endpoints + every other cut to keep the bar readable.
+            const isEndpoint = index === 0 || index === legendLabels.length - 1
+            const isMidTick = index % 2 === 0
+            if (!isEndpoint && !isMidTick) return null
+            const left = (index / (legendLabels.length - 1)) * 100
+            return (
+              <span
+                key={`${label}-${index}`}
+                className={cn(
+                  "absolute top-0 text-[9px] leading-none text-neutral-500",
+                  index === 0
+                    ? "translate-x-0"
+                    : index === legendLabels.length - 1
+                      ? "-translate-x-full"
+                      : "-translate-x-1/2"
+                )}
+                style={{ left: `${left}%` }}
+              >
+                {label}
+              </span>
+            )
+          })}
         </div>
       </div>
     </div>
