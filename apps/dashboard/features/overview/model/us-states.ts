@@ -53,6 +53,10 @@ export const US_STATE_FIPS_TO_NAME: Record<string, string> = {
   "56": "Wyoming",
 }
 
+export const US_STATE_NAME_TO_FIPS: Record<string, string> = Object.fromEntries(
+  Object.entries(US_STATE_FIPS_TO_NAME).map(([fips, name]) => [name, fips])
+)
+
 const US_STATE_CODE_TO_NAME: Record<string, string> = {
   AL: "Alabama",
   AK: "Alaska",
@@ -128,22 +132,33 @@ export function normalizeUsStateName(raw: string): string | null {
 export const US_STATES_TOPOJSON_URL =
   "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"
 
+export const US_COUNTIES_TOPOJSON_URL =
+  "https://cdn.jsdelivr.net/npm/us-atlas@3/counties-10m.json"
+
 export type OverviewMapBubbleTier = 0 | 1 | 2 | 3
 
+/** Solid choropleth fills — map-friendly, no gradients. */
 export const OVERVIEW_MAP_TIER_COLORS: Record<OverviewMapBubbleTier, string> = {
-  0: "rgba(34, 197, 94, 0.55)",
-  1: "rgba(249, 115, 22, 0.55)",
-  2: "rgba(139, 92, 246, 0.5)",
-  3: "rgba(236, 72, 153, 0.55)",
+  0: "#93c5fd",
+  1: "#38bdf8",
+  2: "#0284c7",
+  3: "#0f172a",
 }
 
 export const OVERVIEW_MAP_TIER_STROKES: Record<OverviewMapBubbleTier, string> =
   {
-    0: "rgba(22, 163, 74, 0.85)",
-    1: "rgba(234, 88, 12, 0.85)",
-    2: "rgba(124, 58, 237, 0.85)",
-    3: "rgba(219, 39, 119, 0.85)",
+    0: "#64748b",
+    1: "#0369a1",
+    2: "#0c4a6e",
+    3: "#020617",
   }
+
+export const OVERVIEW_MAP_TIER_FILLS: Record<OverviewMapBubbleTier, string> = {
+  0: "rgba(147, 197, 253, 0.55)",
+  1: "rgba(56, 189, 248, 0.55)",
+  2: "rgba(2, 132, 199, 0.58)",
+  3: "rgba(15, 23, 42, 0.62)",
+}
 
 export function overviewMapBubbleTier(maxValue: number): {
   thresholds: [number, number, number]
@@ -192,10 +207,37 @@ export function overviewMapBubbleTierForValue(
 export function overviewMapBubbleRadius(
   value: number,
   maxValue: number,
-  minR = 4,
-  maxR = 28
+  minR = 5,
+  maxR = 44
 ): number {
   if (maxValue <= 0 || value <= 0) return minR
-  const t = Math.sqrt(value / maxValue)
+  // Area-aware scale with a slightly steeper curve so low vs high values
+  // read clearly as small vs large bubbles on the map.
+  const t = Math.pow(value / maxValue, 0.58)
   return minR + t * (maxR - minR)
+}
+
+function hashString(input: string): number {
+  let h = 2166136261
+  for (let i = 0; i < input.length; i += 1) {
+    h ^= input.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return h >>> 0
+}
+
+/**
+ * Place a city inside a geographic bbox when precise coordinates are unknown.
+ * Positions are stable for a given city name so drill-down views stay consistent.
+ */
+export function overviewCityPointInBbox(
+  city: string,
+  bbox: [[number, number], [number, number]]
+): [number, number] {
+  const [[minLng, minLat], [maxLng, maxLat]] = bbox
+  const pad = 0.18
+  const h = hashString(city.toLowerCase())
+  const u = pad + ((h % 10_000) / 10_000) * (1 - 2 * pad)
+  const v = pad + ((Math.floor(h / 10_000) % 10_000) / 10_000) * (1 - 2 * pad)
+  return [minLng + u * (maxLng - minLng), minLat + v * (maxLat - minLat)]
 }

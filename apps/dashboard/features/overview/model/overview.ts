@@ -107,6 +107,18 @@ export type OverviewStateMetric = {
   bounceRate: number
 }
 
+/** City KPI values within a selected US state (map drill-down). */
+export type OverviewCityMetric = {
+  city: string
+  state: string
+  visitors: number
+  sessions: number
+  pageViews: number
+  formSubmitted: number
+  fsr: number
+  bounceRate: number
+}
+
 export type OverviewKpiByStateByDateRange = Partial<
   Record<OverviewDateRangeId, OverviewStateMetric[]>
 >
