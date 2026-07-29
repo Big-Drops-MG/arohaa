@@ -16,10 +16,12 @@ import { TRAFFIC_PREVIEW_ROW_LIMIT } from "@/features/traffic/view/traffic-card-
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardPreference } from "@/hooks/use-dashboard-preference"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import type { AnalyticsFetchMode } from "@/lib/dashboard/analytics-fetch-mode"
 import {
   buildAnalyticsApiPath,
   shouldUseInitialTabData,
 } from "@/lib/dashboard/analytics-query"
+import { cn } from "@workspace/ui/lib/utils"
 
 const TRAFFIC_REFETCH_MS = 60_000
 
@@ -48,11 +50,17 @@ export function TrafficDashboard({
         : initialData.defaultKpiMetricId
   )
   const [dashboardData, setDashboardData] = useState(initialData)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isBlockingLoad, setIsBlockingLoad] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   const fetchTrafficForRange = useCallback(
-    async (rangeId: typeof dateRangeId, signal?: AbortSignal) => {
-      setIsLoading(true)
+    async (
+      rangeId: typeof dateRangeId,
+      signal?: AbortSignal,
+      mode: AnalyticsFetchMode = "blocking"
+    ) => {
+      if (mode === "blocking") setIsBlockingLoad(true)
+      else setIsRefreshing(true)
 
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/traffic`,
@@ -68,13 +76,11 @@ export function TrafficDashboard({
               body.slice(0, 200)
             )
           }
-          setDashboardData(
-            getTrafficEmptyDashboardData(
-              projectId,
-              rangeId,
-              dashboardData.formType
+          if (mode === "blocking") {
+            setDashboardData((prev) =>
+              getTrafficEmptyDashboardData(projectId, rangeId, prev.formType)
             )
-          )
+          }
           return
         }
         const next = (await res.json()) as TrafficDashboardData
@@ -84,20 +90,19 @@ export function TrafficDashboard({
         if (process.env.NODE_ENV === "development") {
           console.error("[traffic] client fetch failed", err)
         }
-        setDashboardData(
-          getTrafficEmptyDashboardData(
-            projectId,
-            rangeId,
-            dashboardData.formType
+        if (mode === "blocking") {
+          setDashboardData((prev) =>
+            getTrafficEmptyDashboardData(projectId, rangeId, prev.formType)
           )
-        )
+        }
       } finally {
         if (!signal?.aborted) {
-          setIsLoading(false)
+          if (mode === "blocking") setIsBlockingLoad(false)
+          else setIsRefreshing(false)
         }
       }
     },
-    [projectId, customRange, utmFilter, dashboardData.formType]
+    [projectId, customRange, utmFilter]
   )
 
   useEffect(() => {
@@ -110,12 +115,12 @@ export function TrafficDashboard({
       )
     ) {
       setDashboardData(initialData)
-      setIsLoading(false)
+      setIsBlockingLoad(false)
       return
     }
 
     const controller = new AbortController()
-    void fetchTrafficForRange(dateRangeId, controller.signal)
+    void fetchTrafficForRange(dateRangeId, controller.signal, "background")
     return () => controller.abort()
   }, [customRange, dateRangeId, utmFilter, initialData, fetchTrafficForRange])
 
@@ -125,7 +130,7 @@ export function TrafficDashboard({
     const controller = new AbortController()
     const id = window.setInterval(() => {
       if (document.visibilityState !== "visible") return
-      void fetchTrafficForRange(dateRangeId, controller.signal)
+      void fetchTrafficForRange(dateRangeId, controller.signal, "background")
     }, TRAFFIC_REFETCH_MS)
 
     return () => {
@@ -146,10 +151,16 @@ export function TrafficDashboard({
         onCustomRangeChange={setCustomRange}
       />
 
-      {isTabLoading || isLoading ? (
+      {isTabLoading || isBlockingLoad ? (
         <TrafficDashboardSkeleton />
       ) : (
-        <div className="flex flex-col gap-4">
+        <div
+          className={cn(
+            "flex flex-col gap-4 transition-opacity",
+            isRefreshing && "opacity-80"
+          )}
+          aria-busy={isRefreshing}
+        >
           <TrafficKpiRow
             kpis={dashboardData.kpis}
             activeKpiId={activeKpiId}

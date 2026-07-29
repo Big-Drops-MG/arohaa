@@ -30,6 +30,7 @@ import {
 import { HeatmapCanvas } from "@/features/heatmap/view/HeatmapCanvas"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
+import type { AnalyticsFetchMode } from "@/lib/dashboard/analytics-fetch-mode"
 import {
   buildAnalyticsApiPath,
   shouldUseInitialTabData,
@@ -74,7 +75,8 @@ export function HeatmapDashboard({
     projectId,
     omitDefault: true,
   })
-  const [isLoading, setIsLoading] = useState(false)
+  const [isBlockingLoad, setIsBlockingLoad] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   const fetchHeatmap = useCallback(
     async (
@@ -83,9 +85,11 @@ export function HeatmapDashboard({
         mode: HeatmapMode
         device: HeatmapDevice
       },
-      signal?: AbortSignal
+      signal?: AbortSignal,
+      mode: AnalyticsFetchMode = "blocking"
     ) => {
-      setIsLoading(true)
+      if (mode === "blocking") setIsBlockingLoad(true)
+      else setIsRefreshing(true)
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/heatmap`,
         {
@@ -114,7 +118,10 @@ export function HeatmapDashboard({
           console.error("[heatmap] client fetch failed", err)
         }
       } finally {
-        if (!signal?.aborted) setIsLoading(false)
+        if (!signal?.aborted) {
+          if (mode === "blocking") setIsBlockingLoad(false)
+          else setIsRefreshing(false)
+        }
       }
     },
     [projectId, customRange]
@@ -136,12 +143,17 @@ export function HeatmapDashboard({
 
     if (canUseInitial) {
       setDashboardData(initialData)
-      setIsLoading(false)
+      setIsBlockingLoad(false)
       return
     }
 
     const controller = new AbortController()
-    void fetchHeatmap(dateRangeId, { mode, device }, controller.signal)
+    void fetchHeatmap(
+      dateRangeId,
+      { mode, device },
+      controller.signal,
+      "background"
+    )
     return () => controller.abort()
   }, [
     isActive,
@@ -269,10 +281,16 @@ export function HeatmapDashboard({
         }
       />
 
-      {isTabLoading || isLoading ? (
+      {isTabLoading || isBlockingLoad ? (
         <HeatmapDashboardSkeleton />
       ) : (
-        <>
+        <div
+          className={cn(
+            "flex flex-col gap-4 transition-opacity",
+            isRefreshing && "opacity-80"
+          )}
+          aria-busy={isRefreshing}
+        >
           <div className="relative">
             <HeatmapCanvas
               mode={dashboardData.mode}
@@ -321,7 +339,7 @@ export function HeatmapDashboard({
                 : ""}
             </p>
           ) : null}
-        </>
+        </div>
       )}
     </div>
   )

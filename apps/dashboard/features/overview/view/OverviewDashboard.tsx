@@ -103,7 +103,8 @@ export function OverviewDashboard({
   )
   const [alerts, setAlerts] = useState<OverviewAlert[]>(data.alerts)
   const [isFunnelLoading, setIsFunnelLoading] = useState(false)
-  const [isOverviewLoading, setIsOverviewLoading] = useState(false)
+  const [isBlockingLoad, setIsBlockingLoad] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [chartNowNonce, setChartNowNonce] = useState(0)
 
   useEffect(() => {
@@ -123,12 +124,16 @@ export function OverviewDashboard({
       hasCompleteKpiSeries(data, dateRangeId)
     ) {
       setOverviewData(data)
-      setIsOverviewLoading(false)
+      setIsBlockingLoad(false)
+      setIsRefreshing(false)
       return
     }
 
     const controller = new AbortController()
-    setIsOverviewLoading(true)
+    const hasContent = hasCompleteKpiSeries(overviewData, dateRangeId)
+    if (hasContent) setIsRefreshing(true)
+    else setIsBlockingLoad(true)
+
     const url = buildAnalyticsApiPath(
       `/api/landing-pages/${encodeURIComponent(projectId)}/overview`,
       { rangeId: dateRangeId, customRange, utmFilter }
@@ -148,7 +153,8 @@ export function OverviewDashboard({
       })
       .finally(() => {
         if (!controller.signal.aborted) {
-          setIsOverviewLoading(false)
+          setIsBlockingLoad(false)
+          setIsRefreshing(false)
         }
       })
 
@@ -262,7 +268,7 @@ export function OverviewDashboard({
   }, [overviewData.formType, activeKpiId])
 
   const chartKey = `${dateRangeId}-${customRange?.from ?? ""}-${customRange?.to ?? ""}-${activeKpiId}`
-  const showSkeleton = isTabLoading || isOverviewLoading
+  const showSkeleton = isTabLoading || isBlockingLoad
   const stateMetrics = overviewData.kpiByStateByDateRange?.[dateRangeId] ?? []
 
   return (
@@ -272,8 +278,10 @@ export function OverviewDashboard({
       animate="visible"
       className={cn(
         "flex flex-col gap-5 px-6 pb-6 lg:px-8",
-        overviewRechartsPointerFocusResetClassName
+        overviewRechartsPointerFocusResetClassName,
+        isRefreshing && "opacity-80"
       )}
+      aria-busy={isRefreshing || isFunnelLoading}
     >
       <motion.div variants={overviewStaggerItem}>
         <OverviewHeader

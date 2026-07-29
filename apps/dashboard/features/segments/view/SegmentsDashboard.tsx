@@ -11,10 +11,12 @@ import { SegmentsSummaryKpiRow } from "@/features/segments/view/SegmentsSummaryK
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardPreference } from "@/hooks/use-dashboard-preference"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import type { AnalyticsFetchMode } from "@/lib/dashboard/analytics-fetch-mode"
 import {
   buildAnalyticsApiPath,
   shouldUseInitialTabData,
 } from "@/lib/dashboard/analytics-query"
+import { cn } from "@workspace/ui/lib/utils"
 
 const SEGMENTS_REFETCH_MS = 60_000
 
@@ -35,7 +37,8 @@ export function SegmentsDashboard({
     useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isBlockingLoad, setIsBlockingLoad] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [activeKpiId, setActiveKpiId] = useDashboardPreference(
     projectId,
     "kpi:segments",
@@ -43,8 +46,13 @@ export function SegmentsDashboard({
   )
 
   const fetchSegmentsForRange = useCallback(
-    async (rangeId: typeof dateRangeId, signal?: AbortSignal) => {
-      setIsLoading(true)
+    async (
+      rangeId: typeof dateRangeId,
+      signal?: AbortSignal,
+      mode: AnalyticsFetchMode = "blocking"
+    ) => {
+      if (mode === "blocking") setIsBlockingLoad(true)
+      else setIsRefreshing(true)
 
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/segments`,
@@ -60,7 +68,9 @@ export function SegmentsDashboard({
               body.slice(0, 200)
             )
           }
-          setDashboardData(getSegmentsEmptyDashboardData(projectId, rangeId))
+          if (mode === "blocking") {
+            setDashboardData(getSegmentsEmptyDashboardData(projectId, rangeId))
+          }
           return
         }
         const next = (await res.json()) as SegmentsDashboardData
@@ -75,10 +85,13 @@ export function SegmentsDashboard({
         if (process.env.NODE_ENV === "development") {
           console.error("[segments] client fetch failed", err)
         }
-        setDashboardData(getSegmentsEmptyDashboardData(projectId, rangeId))
+        if (mode === "blocking") {
+          setDashboardData(getSegmentsEmptyDashboardData(projectId, rangeId))
+        }
       } finally {
         if (!signal?.aborted) {
-          setIsLoading(false)
+          if (mode === "blocking") setIsBlockingLoad(false)
+          else setIsRefreshing(false)
         }
       }
     },
@@ -95,12 +108,12 @@ export function SegmentsDashboard({
       )
     ) {
       setDashboardData(initialData)
-      setIsLoading(false)
+      setIsBlockingLoad(false)
       return
     }
 
     const controller = new AbortController()
-    void fetchSegmentsForRange(dateRangeId, controller.signal)
+    void fetchSegmentsForRange(dateRangeId, controller.signal, "background")
     return () => controller.abort()
   }, [customRange, dateRangeId, utmFilter, initialData, fetchSegmentsForRange])
 
@@ -110,7 +123,7 @@ export function SegmentsDashboard({
     const controller = new AbortController()
     const id = window.setInterval(() => {
       if (document.visibilityState !== "visible") return
-      void fetchSegmentsForRange(dateRangeId, controller.signal)
+      void fetchSegmentsForRange(dateRangeId, controller.signal, "background")
     }, SEGMENTS_REFETCH_MS)
 
     return () => {
@@ -118,6 +131,8 @@ export function SegmentsDashboard({
       window.clearInterval(id)
     }
   }, [customRange, dateRangeId, utmFilter, fetchSegmentsForRange, isActive])
+
+  const showSkeleton = isTabLoading || isBlockingLoad
 
   return (
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">
@@ -131,10 +146,16 @@ export function SegmentsDashboard({
         onCustomRangeChange={setCustomRange}
       />
 
-      {isTabLoading || isLoading ? (
+      {showSkeleton ? (
         <SegmentsDashboardSkeleton />
       ) : (
-        <div className="flex flex-col gap-4">
+        <div
+          className={cn(
+            "flex flex-col gap-4 transition-opacity",
+            isRefreshing && "opacity-80"
+          )}
+          aria-busy={isRefreshing}
+        >
           <SegmentsSummaryKpiRow
             kpis={dashboardData.summaryKpis}
             activeKpiId={activeKpiId}

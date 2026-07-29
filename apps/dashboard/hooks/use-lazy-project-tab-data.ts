@@ -118,6 +118,8 @@ export function useLazyProjectTabData({
     ? `${customRange.from}:${customRange.to}`
     : "none"
   const filterKeyRef = useRef({ rangeId, utmCacheKey, customRangeCacheKey })
+  const [filterEpoch, setFilterEpoch] = useState(0)
+  const fetchedEpochRef = useRef<Partial<Record<ProjectTabValue, number>>>({})
 
   const fetchTab = useCallback(
     async (tab: ProjectTabValue, signal?: AbortSignal) => {
@@ -146,22 +148,27 @@ export function useLazyProjectTabData({
       return
     }
     filterKeyRef.current = { rangeId, utmCacheKey, customRangeCacheKey }
-    setCache({})
+    inFlightRef.current = null
+    fetchedEpochRef.current = {}
+    setFilterEpoch((value) => value + 1)
   }, [rangeId, utmCacheKey, customRangeCacheKey])
 
   useEffect(() => {
-    if (cache[activeTab] || inFlightRef.current === activeTab) return
+    if (fetchedEpochRef.current[activeTab] === filterEpoch) return
+    if (inFlightRef.current === activeTab) return
 
+    const hasCached = Boolean(cache[activeTab])
     inFlightRef.current = activeTab
     const controller = new AbortController()
     queueMicrotask(() => {
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && !hasCached) {
         setLoadingTab(activeTab)
       }
     })
 
     void fetchTab(activeTab, controller.signal)
       .then((data) => {
+        fetchedEpochRef.current[activeTab] = filterEpoch
         setCache((prev) => ({ ...prev, [activeTab]: data }))
       })
       .catch((err) => {
@@ -169,7 +176,12 @@ export function useLazyProjectTabData({
         if (process.env.NODE_ENV === "development") {
           console.error(`[project-tab] ${activeTab} fetch failed`, err)
         }
-        if (activeTab !== "overview" && activeTab !== "settings") {
+        if (
+          activeTab !== "overview" &&
+          activeTab !== "settings" &&
+          !hasCached
+        ) {
+          fetchedEpochRef.current[activeTab] = filterEpoch
           setCache((prev) => ({
             ...prev,
             [activeTab]: emptyTabData(activeTab, projectId, rangeId, formType),
@@ -189,16 +201,7 @@ export function useLazyProjectTabData({
         inFlightRef.current = null
       }
     }
-  }, [
-    activeTab,
-    cache,
-    customRangeCacheKey,
-    fetchTab,
-    formType,
-    projectId,
-    rangeId,
-    utmCacheKey,
-  ])
+  }, [activeTab, cache, fetchTab, filterEpoch, formType, projectId, rangeId])
 
   return {
     overview: (cache.overview ?? overviewPlaceholder) as OverviewDashboardData,

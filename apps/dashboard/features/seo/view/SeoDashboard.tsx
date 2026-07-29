@@ -15,10 +15,12 @@ import { SeoImportPanel } from "@/features/seo/view/SeoImportPanel"
 import { formatSeoSummaryLabel } from "@/features/seo/utils/seo-format"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
+import type { AnalyticsFetchMode } from "@/lib/dashboard/analytics-fetch-mode"
 import {
   buildAnalyticsApiPath,
   shouldUseInitialTabData,
 } from "@/lib/dashboard/analytics-query"
+import { cn } from "@workspace/ui/lib/utils"
 
 const SEO_REFETCH_MS = 60_000
 
@@ -55,7 +57,8 @@ export function SeoDashboard({
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
   const [dashboardData, setDashboardData] = useState(initialData)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isBlockingLoad, setIsBlockingLoad] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [sortBy, setSortBy] = useDashboardQueryParam("sort_by", {
     parse: (raw) => {
       const allowed: SeoSortField[] = [
@@ -84,9 +87,11 @@ export function SeoDashboard({
       rangeId: typeof dateRangeId,
       nextSortBy: SeoSortField,
       nextSortOrder: SeoSortOrder,
-      signal?: AbortSignal
+      signal?: AbortSignal,
+      mode: AnalyticsFetchMode = "blocking"
     ) => {
-      setIsLoading(true)
+      if (mode === "blocking") setIsBlockingLoad(true)
+      else setIsRefreshing(true)
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/seo`,
         {
@@ -102,16 +107,23 @@ export function SeoDashboard({
       try {
         const res = await fetch(url, { cache: "no-store", signal })
         if (!res.ok) {
-          setDashboardData(getSeoEmptyDashboardData(projectId, rangeId))
+          if (mode === "blocking") {
+            setDashboardData(getSeoEmptyDashboardData(projectId, rangeId))
+          }
           return
         }
         const next = (await res.json()) as SeoDashboardData
         setDashboardData(next)
       } catch {
         if (signal?.aborted) return
-        setDashboardData(getSeoEmptyDashboardData(projectId, rangeId))
+        if (mode === "blocking") {
+          setDashboardData(getSeoEmptyDashboardData(projectId, rangeId))
+        }
       } finally {
-        if (!signal?.aborted) setIsLoading(false)
+        if (!signal?.aborted) {
+          if (mode === "blocking") setIsBlockingLoad(false)
+          else setIsRefreshing(false)
+        }
       }
     },
     [projectId, customRange]
@@ -129,12 +141,18 @@ export function SeoDashboard({
       sortOrder === initialData.defaultSortOrder
     ) {
       setDashboardData(initialData)
-      setIsLoading(false)
+      setIsBlockingLoad(false)
       return
     }
 
     const controller = new AbortController()
-    void fetchSeoForRange(dateRangeId, sortBy, sortOrder, controller.signal)
+    void fetchSeoForRange(
+      dateRangeId,
+      sortBy,
+      sortOrder,
+      controller.signal,
+      "background"
+    )
     return () => controller.abort()
   }, [
     customRange,
@@ -151,7 +169,13 @@ export function SeoDashboard({
     const controller = new AbortController()
     const id = window.setInterval(() => {
       if (document.visibilityState !== "visible") return
-      void fetchSeoForRange(dateRangeId, sortBy, sortOrder, controller.signal)
+      void fetchSeoForRange(
+        dateRangeId,
+        sortBy,
+        sortOrder,
+        controller.signal,
+        "background"
+      )
     }, SEO_REFETCH_MS)
 
     return () => {
@@ -191,14 +215,26 @@ export function SeoDashboard({
       <SeoImportPanel
         projectId={projectId}
         onSynced={() => {
-          void fetchSeoForRange(dateRangeId, sortBy, sortOrder)
+          void fetchSeoForRange(
+            dateRangeId,
+            sortBy,
+            sortOrder,
+            undefined,
+            "background"
+          )
         }}
       />
 
-      {isTabLoading || isLoading ? (
+      {isTabLoading || isBlockingLoad ? (
         <SeoDashboardSkeleton />
       ) : (
-        <div className="flex flex-col gap-4">
+        <div
+          className={cn(
+            "flex flex-col gap-4 transition-opacity",
+            isRefreshing && "opacity-80"
+          )}
+          aria-busy={isRefreshing}
+        >
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {[
               { label: "Total clicks", value: summary.clicks },
