@@ -8,6 +8,7 @@ import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 export type SegmentDefinition = {
   id: string
   workspaceId: string
+  landingPageId: string
   name: string
   description: string | null
   conditions: unknown
@@ -21,9 +22,14 @@ export type SegmentDefinitionResult<T> =
 
 const REQUEST_TIMEOUT_MS = 12_000
 
-async function resolveWorkspaceId(
+type SegmentScope = {
+  workspaceId: string
+  landingPageId: string
+}
+
+async function resolveScope(
   publicId: string
-): Promise<SegmentDefinitionResult<string>> {
+): Promise<SegmentDefinitionResult<SegmentScope>> {
   const actor = await requireLandingPageActor()
   if (!actor) {
     return { ok: false, status: 401, error: "Unauthorized" }
@@ -34,7 +40,13 @@ async function resolveWorkspaceId(
     return { ok: false, status: 404, error: "Not found" }
   }
 
-  return { ok: true, data: landingPage.id }
+  return {
+    ok: true,
+    data: {
+      workspaceId: landingPage.workspaceId,
+      landingPageId: landingPage.id,
+    },
+  }
 }
 
 async function callSegmentsApi<T>(
@@ -102,11 +114,11 @@ async function callSegmentsApi<T>(
 export async function listSegmentDefinitions(
   publicId: string
 ): Promise<SegmentDefinitionResult<SegmentDefinition[]>> {
-  const workspace = await resolveWorkspaceId(publicId)
-  if (!workspace.ok) return workspace
+  const scope = await resolveScope(publicId)
+  if (!scope.ok) return scope
 
   return callSegmentsApi<SegmentDefinition[]>(
-    `/v1/segments?workspace_id=${encodeURIComponent(workspace.data)}`,
+    `/v1/segments?landing_page_id=${encodeURIComponent(scope.data.landingPageId)}`,
     { method: "GET" }
   )
 }
@@ -115,13 +127,14 @@ export async function createSegmentDefinition(
   publicId: string,
   input: { name: string; description?: string; conditions: unknown }
 ): Promise<SegmentDefinitionResult<SegmentDefinition>> {
-  const workspace = await resolveWorkspaceId(publicId)
-  if (!workspace.ok) return workspace
+  const scope = await resolveScope(publicId)
+  if (!scope.ok) return scope
 
   return callSegmentsApi<SegmentDefinition>("/v1/segments", {
     method: "POST",
     body: {
-      workspace_id: workspace.data,
+      workspace_id: scope.data.workspaceId,
+      landing_page_id: scope.data.landingPageId,
       name: input.name,
       description: input.description,
       conditions: input.conditions,
@@ -133,11 +146,11 @@ export async function deleteSegmentDefinition(
   publicId: string,
   segmentId: string
 ): Promise<SegmentDefinitionResult<{ success: boolean }>> {
-  const workspace = await resolveWorkspaceId(publicId)
-  if (!workspace.ok) return workspace
+  const scope = await resolveScope(publicId)
+  if (!scope.ok) return scope
 
   return callSegmentsApi<{ success: boolean }>(
-    `/v1/segments/${encodeURIComponent(segmentId)}?workspace_id=${encodeURIComponent(workspace.data)}`,
+    `/v1/segments/${encodeURIComponent(segmentId)}?landing_page_id=${encodeURIComponent(scope.data.landingPageId)}`,
     { method: "DELETE" }
   )
 }
@@ -146,11 +159,11 @@ export async function previewSegmentDefinition(
   publicId: string,
   conditions: unknown
 ): Promise<SegmentDefinitionResult<{ count: number }>> {
-  const workspace = await resolveWorkspaceId(publicId)
-  if (!workspace.ok) return workspace
+  const scope = await resolveScope(publicId)
+  if (!scope.ok) return scope
 
   return callSegmentsApi<{ count: number }>("/v1/segments/preview", {
     method: "POST",
-    body: { workspace_id: workspace.data, conditions },
+    body: { workspace_id: scope.data.landingPageId, conditions },
   })
 }
