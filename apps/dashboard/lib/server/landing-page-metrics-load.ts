@@ -66,28 +66,22 @@ export async function fetchLandingPageCardMetrics(
     })
 
     if (!resp.ok) {
-      if (process.env.NODE_ENV === "development") {
-        const body = await resp.text().catch(() => "")
-        console.error(
-          `[landing-metrics] API ${resp.status} ${url.pathname}`,
-          body.slice(0, 200)
-        )
-      }
+      const body = await resp.text().catch(() => "")
+      console.error(
+        `[landing-metrics] API ${resp.status} ${url.pathname}`,
+        body.slice(0, 200)
+      )
       return emptyLandingPageMetrics(formType)
     }
 
     const data = (await resp.json()) as LandingPageCardMetrics
     return buildLandingPageMetrics(data, formType)
   } catch (err: any) {
-    if (err.name === "AbortError") {
-      if (process.env.NODE_ENV === "development") {
-        console.warn("[landing-metrics] fetch timed out")
-      }
+    if (err?.name === "AbortError") {
+      console.warn(`[landing-metrics] fetch timed out for ${landingPageId}`)
       return emptyLandingPageMetrics(formType)
     }
-    if (process.env.NODE_ENV === "development") {
-      console.error("[landing-metrics] fetch failed", err?.message || err)
-    }
+    console.error("[landing-metrics] fetch failed", err?.message || err)
     return emptyLandingPageMetrics(formType)
   } finally {
     clearTimeout(timer)

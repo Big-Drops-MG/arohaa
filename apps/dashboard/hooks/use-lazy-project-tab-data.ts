@@ -91,6 +91,16 @@ function emptyTabData(
   }
 }
 
+function seedSettledEpochs(
+  initial: InitialTabData
+): Partial<Record<ProjectTabValue, number>> {
+  const seeded: Partial<Record<ProjectTabValue, number>> = {}
+  for (const tab of Object.keys(initial) as ProjectTabValue[]) {
+    if (initial[tab]) seeded[tab] = 0
+  }
+  return seeded
+}
+
 export function useLazyProjectTabData({
   projectId,
   activeTab,
@@ -119,7 +129,11 @@ export function useLazyProjectTabData({
     : "none"
   const filterKeyRef = useRef({ rangeId, utmCacheKey, customRangeCacheKey })
   const [filterEpoch, setFilterEpoch] = useState(0)
-  const fetchedEpochRef = useRef<Partial<Record<ProjectTabValue, number>>>({})
+  const settledEpochRef = useRef<Partial<Record<ProjectTabValue, number>>>(
+    seedSettledEpochs(initial)
+  )
+  const cacheRef = useRef(cache)
+  cacheRef.current = cache
 
   const fetchTab = useCallback(
     async (tab: ProjectTabValue, signal?: AbortSignal) => {
@@ -138,6 +152,12 @@ export function useLazyProjectTabData({
     [projectId, rangeId, customRange, utmFilter]
   )
 
+  const fetchTabRef = useRef(fetchTab)
+  fetchTabRef.current = fetchTab
+
+  const emptyDataArgsRef = useRef({ rangeId, formType })
+  emptyDataArgsRef.current = { rangeId, formType }
+
   useEffect(() => {
     const prev = filterKeyRef.current
     if (
@@ -149,15 +169,15 @@ export function useLazyProjectTabData({
     }
     filterKeyRef.current = { rangeId, utmCacheKey, customRangeCacheKey }
     inFlightRef.current = null
-    fetchedEpochRef.current = {}
+    settledEpochRef.current = {}
     setFilterEpoch((value) => value + 1)
   }, [rangeId, utmCacheKey, customRangeCacheKey])
 
   useEffect(() => {
-    if (fetchedEpochRef.current[activeTab] === filterEpoch) return
+    if (settledEpochRef.current[activeTab] === filterEpoch) return
     if (inFlightRef.current === activeTab) return
 
-    const hasCached = Boolean(cache[activeTab])
+    const hasCached = Boolean(cacheRef.current[activeTab])
     inFlightRef.current = activeTab
     const controller = new AbortController()
     queueMicrotask(() => {
@@ -166,33 +186,27 @@ export function useLazyProjectTabData({
       }
     })
 
-    void fetchTab(activeTab, controller.signal)
+    void fetchTabRef
+      .current(activeTab, controller.signal)
       .then((data) => {
-        fetchedEpochRef.current[activeTab] = filterEpoch
         setCache((prev) => ({ ...prev, [activeTab]: data }))
       })
       .catch((err) => {
         if (controller.signal.aborted) return
-        if (process.env.NODE_ENV === "development") {
-          console.error(`[project-tab] ${activeTab} fetch failed`, err)
-        }
-        if (
-          activeTab !== "overview" &&
-          activeTab !== "settings" &&
-          !hasCached
-        ) {
-          fetchedEpochRef.current[activeTab] = filterEpoch
-          setCache((prev) => ({
-            ...prev,
-            [activeTab]: emptyTabData(activeTab, projectId, rangeId, formType),
-          }))
-        }
+        console.error(`[project-tab] ${activeTab} fetch failed`, err)
+        if (hasCached) return
+        if (activeTab === "overview" || activeTab === "settings") return
+        const { rangeId: r, formType: f } = emptyDataArgsRef.current
+        setCache((prev) => ({
+          ...prev,
+          [activeTab]: emptyTabData(activeTab, projectId, r, f),
+        }))
       })
       .finally(() => {
-        if (!controller.signal.aborted) {
-          inFlightRef.current = null
-          setLoadingTab((current) => (current === activeTab ? null : current))
-        }
+        if (controller.signal.aborted) return
+        settledEpochRef.current[activeTab] = filterEpoch
+        inFlightRef.current = null
+        setLoadingTab((current) => (current === activeTab ? null : current))
       })
 
     return () => {
@@ -201,7 +215,7 @@ export function useLazyProjectTabData({
         inFlightRef.current = null
       }
     }
-  }, [activeTab, cache, fetchTab, filterEpoch, formType, projectId, rangeId])
+  }, [activeTab, filterEpoch, projectId])
 
   return {
     overview: (cache.overview ?? overviewPlaceholder) as OverviewDashboardData,

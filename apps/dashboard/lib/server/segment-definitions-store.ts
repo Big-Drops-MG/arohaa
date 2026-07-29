@@ -79,12 +79,7 @@ async function callSegmentsApi<T>(
 
     if (!resp.ok) {
       const text = await resp.text().catch(() => "")
-      if (process.env.NODE_ENV === "development") {
-        console.error(
-          `[segments] API ${resp.status} ${path}`,
-          text.slice(0, 200)
-        )
-      }
+      console.error(`[segments] API ${resp.status} ${path}`, text.slice(0, 200))
       return {
         ok: false,
         status: resp.status,
@@ -98,9 +93,7 @@ async function callSegmentsApi<T>(
       err && typeof err === "object" && "name" in err
         ? String((err as { name?: string }).name)
         : ""
-    if (process.env.NODE_ENV === "development") {
-      console.error("[segments] API request failed", err)
-    }
+    console.error("[segments] API request failed", err)
     return {
       ok: false,
       status: name === "AbortError" ? 504 : 502,
