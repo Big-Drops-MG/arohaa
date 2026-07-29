@@ -88,14 +88,10 @@ export function SegmentBuilder({ workspaceId, onSave }: SegmentBuilderProps) {
     setRules(rules.filter((_, i) => i !== index))
   }
 
-  const handleChangeRule = (
-    index: number,
-    key: keyof SegmentRule,
-    value: any
-  ) => {
-    const newRules = [...rules]
-    newRules[index] = { ...newRules[index], [key]: value }
-    setRules(newRules)
+  const handleChangeRule = (index: number, patch: Partial<SegmentRule>) => {
+    setRules((prev) =>
+      prev.map((rule, i) => (i === index ? { ...rule, ...patch } : rule))
+    )
   }
 
   const handleSave = async () => {
@@ -200,7 +196,7 @@ export function SegmentBuilder({ workspaceId, onSave }: SegmentBuilderProps) {
                 <Select
                   value={rule.column}
                   onValueChange={(val) =>
-                    handleChangeRule(index, "column", val)
+                    handleChangeRule(index, { column: val })
                   }
                 >
                   <SelectTrigger className="w-full border-0 bg-white shadow-none focus:ring-0">
@@ -220,7 +216,9 @@ export function SegmentBuilder({ workspaceId, onSave }: SegmentBuilderProps) {
                 <Select
                   value={rule.operator}
                   onValueChange={(val) =>
-                    handleChangeRule(index, "operator", val as SegmentOperator)
+                    handleChangeRule(index, {
+                      operator: val as SegmentOperator,
+                    })
                   }
                 >
                   <SelectTrigger className="w-full border-0 bg-white text-neutral-600 shadow-none focus:ring-0">
@@ -240,7 +238,7 @@ export function SegmentBuilder({ workspaceId, onSave }: SegmentBuilderProps) {
                 <Input
                   value={rule.value as string}
                   onChange={(e) =>
-                    handleChangeRule(index, "value", e.target.value)
+                    handleChangeRule(index, { value: e.target.value })
                   }
                   placeholder="Value..."
                   className="w-full border-0 bg-transparent px-2 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
