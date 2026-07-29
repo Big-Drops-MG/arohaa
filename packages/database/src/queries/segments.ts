@@ -7,6 +7,9 @@ export type SegmentSelect = typeof segments.$inferSelect;
 
 export async function createSegment(data: SegmentInsert): Promise<SegmentSelect> {
   const [result] = await db.insert(segments).values(data).returning();
+  if (!result) {
+    throw new Error('Failed to create segment');
+  }
   return result;
 }
 

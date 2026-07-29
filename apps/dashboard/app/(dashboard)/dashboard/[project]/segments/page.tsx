@@ -1,11 +1,12 @@
 import { SegmentBuilder } from "@/features/segments/view/segment-builder"
 
-export default function SegmentsPage({
-  params,
-}: {
-  params: { project: string }
-}) {
-  // Pass the workspace (project) ID to the SegmentBuilder
+type SegmentsPageProps = {
+  params: Promise<{ project: string }>
+}
+
+export default async function SegmentsPage({ params }: SegmentsPageProps) {
+  const { project } = await params
+
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6 p-8">
       <div className="flex flex-col gap-2">
@@ -18,7 +19,7 @@ export default function SegmentsPage({
       </div>
 
       <div className="mt-8">
-        <SegmentBuilder workspaceId={params.project} />
+        <SegmentBuilder workspaceId={project} />
       </div>
     </div>
   )

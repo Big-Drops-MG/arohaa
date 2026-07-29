@@ -91,11 +91,11 @@ export function SegmentBuilder({ workspaceId, onSave }: SegmentBuilderProps) {
   const handleChangeRule = (
     index: number,
     key: keyof SegmentRule,
-    value: any
+    value: SegmentRule[keyof SegmentRule]
   ) => {
-    const newRules = [...rules]
-    newRules[index] = { ...newRules[index], [key]: value }
-    setRules(newRules)
+    setRules((prev) =>
+      prev.map((rule, i) => (i === index ? { ...rule, [key]: value } : rule))
+    )
   }
 
   const handleSave = async () => {
