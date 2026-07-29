@@ -30,7 +30,7 @@ describe('SegmentCompiler', () => {
       ],
     };
     const result = compiler.compile(group);
-    expect(result.sql).toBe('(city = {seg_p_0: String} AND device_type IN {seg_p_1: Array(String)})');
+    expect(result.sql).toBe('(city = {seg_p_0: String} AND device IN {seg_p_1: Array(String)})');
     expect(result.params).toEqual({
       seg_p_0: 'New York',
       seg_p_1: ['desktop', 'mobile'],

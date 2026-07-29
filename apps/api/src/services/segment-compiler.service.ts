@@ -4,11 +4,11 @@ export const COLUMN_MAP: Record<string, string> = {
   campaign: 'utm_campaign',
   city: 'city',
   country: 'country',
-  device: 'device_type',
+  device: 'device',
   browser: 'browser',
   os: 'os',
   event: 'event_name',
-  path: 'page_url',
+  path: 'url',
 };
 
 export type SegmentOperator =
