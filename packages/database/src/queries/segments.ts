@@ -7,7 +7,7 @@ export type SegmentSelect = typeof segments.$inferSelect;
 
 export async function createSegment(data: SegmentInsert): Promise<SegmentSelect> {
   const [result] = await db.insert(segments).values(data).returning();
-  return result;
+  return result!;
 }
 
 export async function getSegmentsByWorkspace(workspaceId: string): Promise<SegmentSelect[]> {

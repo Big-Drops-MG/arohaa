@@ -35,6 +35,7 @@ import {
 } from "@/features/overview/model/us-states"
 import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
 import type { DashboardCustomRange } from "@/features/traffic/model/traffic-range"
 
 type UsStatesTopology = Topology<{
@@ -107,6 +108,7 @@ export function OverviewUsaMap({
   className,
 }: OverviewUsaMapProps) {
   const { utmFilter } = useDashboardUtmFilter()
+  const { segmentId } = useDashboardSegmentFilter()
   const [collection, setCollection] = useState<FeatureCollection | null>(null)
   const [counties, setCounties] = useState<FeatureCollection | null>(null)
   const [loadError, setLoadError] = useState(false)
@@ -219,7 +221,7 @@ export function OverviewUsaMap({
       })
 
     return () => controller.abort()
-  }, [customRange, dateRangeId, projectId, selectedState, utmFilter])
+  }, [customRange, dateRangeId, projectId, selectedState, utmFilter, segmentId])
 
   const valueByState = useMemo(() => {
     const map = new Map<string, number>()

@@ -8,6 +8,7 @@ import type { ExperimentsDashboardData } from "@/features/experiments/model/expe
 import { ExperimentsCards } from "@/features/experiments/view/ExperimentsCards"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
 import {
   buildAnalyticsApiPath,
   shouldUseInitialTabData,
@@ -31,6 +32,7 @@ export function ExperimentsDashboard({
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
+  const { segmentId } = useDashboardSegmentFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isLoading, setIsLoading] = useState(false)
 
@@ -40,7 +42,7 @@ export function ExperimentsDashboard({
 
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/experiments`,
-        { rangeId, customRange, utmFilter }
+        { rangeId, customRange, utmFilter, segmentId }
       )
       try {
         const res = await fetch(url, { cache: "no-store", signal })
@@ -85,7 +87,7 @@ export function ExperimentsDashboard({
         }
       }
     },
-    [projectId, customRange, utmFilter]
+    [projectId, customRange, utmFilter, segmentId]
   )
 
   useEffect(() => {
@@ -94,7 +96,9 @@ export function ExperimentsDashboard({
         dateRangeId,
         initialData.defaultDateRangeId,
         utmFilter,
-        customRange
+        customRange,
+        undefined,
+        segmentId
       )
     ) {
       setDashboardData(initialData)
@@ -126,7 +130,14 @@ export function ExperimentsDashboard({
       controller.abort()
       window.clearInterval(id)
     }
-  }, [customRange, dateRangeId, utmFilter, fetchExperimentsForRange, isActive])
+  }, [
+    customRange,
+    dateRangeId,
+    utmFilter,
+    segmentId,
+    fetchExperimentsForRange,
+    isActive,
+  ])
 
   return (
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">
