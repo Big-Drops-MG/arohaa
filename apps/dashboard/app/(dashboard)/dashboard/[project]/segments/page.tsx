@@ -18,8 +18,8 @@ export default async function SegmentsPage({ params }: SegmentsPageProps) {
         </p>
       </div>
 
-      <div className="mt-8">
-        <SegmentBuilder workspaceId={project} />
+      <div className="mt-8 rounded-xl border border-neutral-200 bg-white p-6">
+        <SegmentBuilder projectId={project} />
       </div>
     </div>
   )

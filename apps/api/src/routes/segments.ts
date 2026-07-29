@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { verifyInternalApiRequest } from '../lib/internal-api-secret.js';
+import { CLICKHOUSE_EVENTS_TABLE } from '../lib/clickhouse-events-table.js';
 import { getClickHouseClient } from '../services/clickhouse.service.js';
 import { SegmentCompiler, SegmentGroup } from '../services/segment-compiler.service.js';
 import {
@@ -80,7 +81,7 @@ export async function segmentRoutes(server: FastifyInstance) {
         query_params: p,
         query: `
           SELECT count(DISTINCT session_id) as count
-          FROM events_raw
+          FROM ${CLICKHOUSE_EVENTS_TABLE}
           WHERE workspace_id = {wid: UUID} AND ${compiled.sql}
         `
       });

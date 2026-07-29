@@ -1,15 +1,7 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Button } from "@workspace/ui/components/button"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardFooter,
-} from "@workspace/ui/components/card"
 import {
   Select,
   SelectContent,
@@ -21,71 +13,95 @@ import { Input } from "@workspace/ui/components/input"
 import {
   AVAILABLE_COLUMNS,
   AVAILABLE_OPERATORS,
-  SegmentGroup,
-  SegmentRule,
-  SegmentOperator,
-} from "../model/segment-model"
+  type SavedSegment,
+  type SegmentGroup,
+  type SegmentOperator,
+  type SegmentRule,
+} from "@/features/segments/model/segment-model"
 import {
   fetchSegmentPreviewCount,
   saveSegment,
-} from "../controller/segment-controller"
-import { PlusCircle, Trash2, Loader2, Save } from "lucide-react"
+} from "@/features/segments/controller/segment-controller"
+import { Loader2, PlusCircle, Save, Trash2 } from "lucide-react"
 
-interface SegmentBuilderProps {
-  workspaceId: string
-  onSave?: (segment: any) => void
+const PREVIEW_DEBOUNCE_MS = 600
+
+const EMPTY_RULE: SegmentRule = {
+  column: "city",
+  operator: "equals",
+  value: "",
 }
 
-export function SegmentBuilder({ workspaceId, onSave }: SegmentBuilderProps) {
+type SegmentBuilderProps = {
+  projectId: string
+  onSaved?: (segment: SavedSegment) => void
+  onCancel?: () => void
+}
+
+export function SegmentBuilder({
+  projectId,
+  onSaved,
+  onCancel,
+}: SegmentBuilderProps) {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
-  const [rules, setRules] = useState<SegmentRule[]>([
-    { column: "city", operator: "equals", value: "" },
-  ])
+  const [rules, setRules] = useState<SegmentRule[]>([{ ...EMPTY_RULE }])
   const [previewCount, setPreviewCount] = useState<number | null>(null)
   const [isLoadingCount, setIsLoadingCount] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Debounced preview
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      loadPreview()
-    }, 800)
-    return () => clearTimeout(timer)
-  }, [rules])
+  const hasCompleteRules = rules.every(
+    (rule) => String(rule.value).trim() !== ""
+  )
 
-  const loadPreview = async () => {
-    // Only preview if rules are somewhat valid (non empty values)
-    const isValid = rules.every((r) => r.value !== "")
-    if (!isValid) {
+  const loadPreview = useCallback(
+    async (signal: AbortSignal) => {
+      setIsLoadingCount(true)
+      setError(null)
+      try {
+        const conditions: SegmentGroup = { operator: "and", rules }
+        const count = await fetchSegmentPreviewCount(
+          projectId,
+          conditions,
+          signal
+        )
+        if (signal.aborted) return
+        setPreviewCount(count)
+      } catch (err) {
+        if (signal.aborted) return
+        setError(err instanceof Error ? err.message : "Failed to load preview")
+        setPreviewCount(null)
+      } finally {
+        if (!signal.aborted) setIsLoadingCount(false)
+      }
+    },
+    [projectId, rules]
+  )
+
+  useEffect(() => {
+    if (!hasCompleteRules) {
       setPreviewCount(null)
       return
     }
 
-    setIsLoadingCount(true)
-    setError(null)
-    try {
-      const conditionGroup: SegmentGroup = {
-        operator: "and",
-        rules: rules,
-      }
-      const count = await fetchSegmentPreviewCount(workspaceId, conditionGroup)
-      setPreviewCount(count)
-    } catch (err: any) {
-      setError(err.message || "Failed to load preview")
-      setPreviewCount(null)
-    } finally {
-      setIsLoadingCount(false)
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      void loadPreview(controller.signal)
+    }, PREVIEW_DEBOUNCE_MS)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timer)
     }
-  }
+  }, [hasCompleteRules, loadPreview])
 
   const handleAddRule = () => {
-    setRules([...rules, { column: "city", operator: "equals", value: "" }])
+    setRules((prev) => [...prev, { ...EMPTY_RULE }])
   }
 
   const handleRemoveRule = (index: number) => {
-    setRules(rules.filter((_, i) => i !== index))
+    setRules((prev) => prev.filter((_, i) => i !== index))
   }
 
   const handleChangeRule = (
@@ -107,181 +123,164 @@ export function SegmentBuilder({ workspaceId, onSave }: SegmentBuilderProps) {
     setIsSaving(true)
     setError(null)
     try {
-      const conditionGroup: SegmentGroup = {
-        operator: "and",
-        rules: rules,
-      }
+      const conditions: SegmentGroup = { operator: "and", rules }
       const saved = await saveSegment(
-        workspaceId,
-        name,
-        description,
-        conditionGroup
+        projectId,
+        name.trim(),
+        description.trim() || undefined,
+        conditions
       )
-      if (onSave) onSave(saved)
-      // Reset form
       setName("")
       setDescription("")
-      setRules([{ column: "city", operator: "equals", value: "" }])
-    } catch (err: any) {
-      setError(err.message || "Failed to save segment")
+      setRules([{ ...EMPTY_RULE }])
+      setPreviewCount(null)
+      onSaved?.(saved)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save segment")
     } finally {
       setIsSaving(false)
     }
   }
 
   return (
-    <Card className="mx-auto w-full max-w-4xl border-neutral-200 shadow-sm">
-      <CardHeader className="rounded-t-xl border-b border-neutral-200 bg-neutral-50 px-6 py-5">
-        <div className="flex items-start justify-between">
-          <div>
-            <CardTitle className="text-xl font-semibold text-neutral-900">
-              Create Segment
-            </CardTitle>
-            <CardDescription className="mt-1 text-neutral-500">
-              Define conditions to filter your users dynamically.
-            </CardDescription>
+    <div className="flex flex-col gap-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="grid flex-1 gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-neutral-700">
+              Segment name
+            </label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. High intent desktop users"
+            />
           </div>
-          <div className="flex min-w-[120px] flex-col items-end rounded-lg border border-neutral-200 bg-white px-4 py-2 shadow-sm">
-            <span className="text-xs font-semibold tracking-wider text-neutral-500 uppercase">
-              Matching Visitors
-            </span>
-            <div className="mt-1 flex items-center gap-2">
-              {isLoadingCount ? (
-                <Loader2 className="h-5 w-5 animate-spin text-neutral-400" />
-              ) : (
-                <span className="text-2xl font-bold text-neutral-900">
-                  {previewCount !== null ? previewCount.toLocaleString() : "-"}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-6 p-6">
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-neutral-700">
-                Segment Name
-              </label>
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g., High Intent Desktop Users"
-                className="w-full"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-neutral-700">
-                Description (Optional)
-              </label>
-              <Input
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Users who visited from desktop"
-                className="w-full"
-              />
-            </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-neutral-700">
+              Description (optional)
+            </label>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Visitors who arrived from desktop"
+            />
           </div>
         </div>
 
-        <div className="space-y-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-          <div className="mb-2 text-sm font-medium text-neutral-700">
-            Conditions (AND)
+        <div className="flex min-w-[140px] flex-col items-end rounded-lg border border-neutral-200 bg-white px-4 py-2">
+          <span className="text-xs font-semibold tracking-wider text-neutral-500 uppercase">
+            Matching visitors
+          </span>
+          <div className="mt-1 flex h-8 items-center">
+            {isLoadingCount ? (
+              <Loader2 className="h-5 w-5 animate-spin text-neutral-400" />
+            ) : (
+              <span className="text-2xl font-bold text-neutral-900">
+                {previewCount !== null ? previewCount.toLocaleString() : "—"}
+              </span>
+            )}
           </div>
+        </div>
+      </div>
 
-          {rules.map((rule, index) => (
-            <div
-              key={index}
-              className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-white p-2 shadow-sm transition-all hover:border-neutral-300"
-            >
-              <div className="w-[180px]">
-                <Select
-                  value={rule.column}
-                  onValueChange={(val) =>
-                    handleChangeRule(index, "column", val)
-                  }
-                >
-                  <SelectTrigger className="w-full border-0 bg-white shadow-none focus:ring-0">
-                    <SelectValue placeholder="Column" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {AVAILABLE_COLUMNS.map((col) => (
-                      <SelectItem key={col.id} value={col.id}>
-                        {col.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+      <div className="space-y-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+        <div className="text-sm font-medium text-neutral-700">
+          Conditions (all must match)
+        </div>
 
-              <div className="w-[180px]">
-                <Select
-                  value={rule.operator}
-                  onValueChange={(val) =>
-                    handleChangeRule(index, "operator", val as SegmentOperator)
-                  }
-                >
-                  <SelectTrigger className="w-full border-0 bg-white text-neutral-600 shadow-none focus:ring-0">
-                    <SelectValue placeholder="Operator" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {AVAILABLE_OPERATORS.map((op) => (
-                      <SelectItem key={op.id} value={op.id}>
-                        {op.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex-1">
-                <Input
-                  value={rule.value as string}
-                  onChange={(e) =>
-                    handleChangeRule(index, "value", e.target.value)
-                  }
-                  placeholder="Value..."
-                  className="w-full border-0 bg-transparent px-2 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
-                />
-              </div>
-
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => handleRemoveRule(index)}
-                disabled={rules.length === 1}
-                className="text-neutral-400 hover:bg-red-50 hover:text-red-500"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          ))}
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleAddRule}
-            className="mt-2 border-blue-200 bg-white text-blue-600 hover:bg-blue-50"
+        {rules.map((rule, index) => (
+          <div
+            key={index}
+            className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-white p-2"
           >
-            <PlusCircle className="mr-2 h-4 w-4" />
-            Add Condition
-          </Button>
-        </div>
+            <div className="w-[180px]">
+              <Select
+                value={rule.column}
+                onValueChange={(val) => handleChangeRule(index, "column", val)}
+              >
+                <SelectTrigger className="w-full border-0 bg-white shadow-none focus:ring-0">
+                  <SelectValue placeholder="Column" />
+                </SelectTrigger>
+                <SelectContent>
+                  {AVAILABLE_COLUMNS.map((col) => (
+                    <SelectItem key={col.id} value={col.id}>
+                      {col.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-        {error && (
-          <div className="rounded-lg border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-500">
-            {error}
+            <div className="w-[180px]">
+              <Select
+                value={rule.operator}
+                onValueChange={(val) =>
+                  handleChangeRule(index, "operator", val as SegmentOperator)
+                }
+              >
+                <SelectTrigger className="w-full border-0 bg-white text-neutral-600 shadow-none focus:ring-0">
+                  <SelectValue placeholder="Operator" />
+                </SelectTrigger>
+                <SelectContent>
+                  {AVAILABLE_OPERATORS.map((op) => (
+                    <SelectItem key={op.id} value={op.id}>
+                      {op.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex-1">
+              <Input
+                value={String(rule.value)}
+                onChange={(e) =>
+                  handleChangeRule(index, "value", e.target.value)
+                }
+                placeholder="Value..."
+                className="w-full border-0 bg-transparent px-2 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+              />
+            </div>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => handleRemoveRule(index)}
+              disabled={rules.length === 1}
+              className="text-neutral-400 hover:bg-red-50 hover:text-red-500"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
           </div>
-        )}
-      </CardContent>
+        ))}
 
-      <CardFooter className="flex justify-end gap-3 rounded-b-xl border-t border-neutral-200 bg-neutral-50 px-6 py-4">
-        <Button variant="outline">Cancel</Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleAddRule}
+          className="mt-2 bg-white"
+        >
+          <PlusCircle className="mr-2 h-4 w-4" />
+          Add condition
+        </Button>
+      </div>
+
+      {error ? (
+        <div className="rounded-lg border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-600">
+          {error}
+        </div>
+      ) : null}
+
+      <div className="flex justify-end gap-3">
+        {onCancel ? (
+          <Button variant="outline" onClick={onCancel} disabled={isSaving}>
+            Cancel
+          </Button>
+        ) : null}
         <Button
           onClick={handleSave}
-          disabled={isSaving || !name.trim()}
+          disabled={isSaving || !name.trim() || !hasCompleteRules}
           className="bg-neutral-900 text-white hover:bg-neutral-800"
         >
           {isSaving ? (
@@ -289,9 +288,9 @@ export function SegmentBuilder({ workspaceId, onSave }: SegmentBuilderProps) {
           ) : (
             <Save className="mr-2 h-4 w-4" />
           )}
-          Save Segment
+          Save segment
         </Button>
-      </CardFooter>
-    </Card>
+      </div>
+    </div>
   )
 }

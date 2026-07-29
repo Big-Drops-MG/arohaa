@@ -5,6 +5,7 @@ import { SegmentsDashboardSkeleton } from "@/features/dashboard/view/dashboard-s
 import { getSegmentsEmptyDashboardData } from "@/features/segments/controller/segments-empty-data"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import type { SegmentsDashboardData } from "@/features/segments/model/segments"
+import { SavedSegmentsCard } from "@/features/segments/view/SavedSegmentsCard"
 import { SegmentsPerformanceCards } from "@/features/segments/view/SegmentsPerformanceCards"
 import { SegmentsSummaryKpiRow } from "@/features/segments/view/SegmentsSummaryKpiRow"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
@@ -139,6 +140,8 @@ export function SegmentsDashboard({
             activeKpiId={activeKpiId}
             onKpiSelect={setActiveKpiId}
           />
+
+          <SavedSegmentsCard projectId={projectId} />
 
           <SegmentsPerformanceCards data={dashboardData} />
         </div>
