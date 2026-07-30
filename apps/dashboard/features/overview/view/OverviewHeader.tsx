@@ -24,6 +24,7 @@ import {
 } from "@/features/traffic/model/traffic-range"
 import { overviewSelectTriggerClassName } from "@/features/overview/view/overview-select-styles"
 import { ProjectAttributionFilters } from "@/features/dashboard/view/ProjectAttributionFilters"
+import { SegmentPicker } from "@/features/segments/view/segment-picker"
 
 type OverviewHeaderProps = {
   title: string
@@ -158,6 +159,7 @@ export function OverviewHeader({
       <div className="flex w-full flex-col gap-2.5 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
         {actions}
         {projectId ? <ProjectAttributionFilters projectId={projectId} /> : null}
+        {projectId ? <SegmentPicker projectId={projectId} /> : null}
 
         <motion.div
           whileHover={reduceMotion ? undefined : { y: -1 }}

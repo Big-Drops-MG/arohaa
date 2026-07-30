@@ -51,6 +51,8 @@ import type {
   HeatmapMode,
 } from '../types/analytics-heatmap.js'
 import { parseAnalyticsUtmFilter } from '../lib/analytics-utm-filter.js'
+import { getSegmentById } from '@workspace/database'
+import { SegmentCompiler } from '../services/segment-compiler.service.js'
 import {
   ANALYTICS_RANGE_IDS,
   DEFAULT_ANALYTICS_RANGE_ID,
@@ -95,6 +97,7 @@ const workspaceSchema = {
     properties: {
       workspace_id: { type: 'string', format: 'uuid' },
       ...utmFilterSchemaProps,
+            segment_id: { type: 'string', format: 'uuid' },
     },
   },
 } as const
@@ -108,6 +111,7 @@ const rangeSchema = {
       range_id: rangeIdSchema,
       ...customRangeSchemaProps,
       ...utmFilterSchemaProps,
+            segment_id: { type: 'string', format: 'uuid' },
     },
   },
 } as const
@@ -125,6 +129,7 @@ const funnelSchema = {
         enum: ['zip', 'single', 'multiple'],
       },
       ...utmFilterSchemaProps,
+            segment_id: { type: 'string', format: 'uuid' },
     },
   },
 } as const
@@ -264,6 +269,14 @@ async function sendAnalyticsQuery<T>({
   }
 }
 
+
+async function resolveSegmentFilter(segmentId?: string, workspaceId?: string) {
+  if (!segmentId || !workspaceId) return undefined;
+  const segment = await getSegmentById(segmentId);
+  if (!segment || segment.workspaceId !== workspaceId || !segment.conditions) return undefined;
+  return new SegmentCompiler().compile(segment.conditions as any);
+}
+
 export async function analyticsRoutes(server: FastifyInstance) {
   server.get<{
     Querystring: {
@@ -276,6 +289,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       utm_s1?: string
       utm_dim?: string
       utm_value?: string
+      segment_id?: string
     }
   }>(
     '/v1/analytics/overview',
@@ -290,6 +304,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
             range_id: rangeIdSchema,
             ...customRangeSchemaProps,
             ...utmFilterSchemaProps,
+            segment_id: { type: 'string', format: 'uuid' },
           },
         },
       },
@@ -301,7 +316,13 @@ export async function analyticsRoutes(server: FastifyInstance) {
       if (!parsed.ok) {
         return reply.code(400).send({ error: parsed.error })
       }
-      const utmFilter = parseAnalyticsUtmFilter(request.query)
+      const parsedUtm = parseAnalyticsUtmFilter(request.query)
+      const segmentFilter = await resolveSegmentFilter(request.query.segment_id, request.query.workspace_id)
+      const utmFilter = parsedUtm || {}
+      if (segmentFilter) {
+        utmFilter.segmentSql = segmentFilter.sql
+        utmFilter.segmentParams = segmentFilter.params
+      }
       await sendAnalyticsQuery({
         request,
         reply,
@@ -333,6 +354,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       utm_s1?: string
       utm_dim?: string
       utm_value?: string
+      segment_id?: string
     }
   }>(
     '/v1/analytics/overview/cities',
@@ -348,6 +370,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
             range_id: rangeIdSchema,
             ...customRangeSchemaProps,
             ...utmFilterSchemaProps,
+            segment_id: { type: 'string', format: 'uuid' },
           },
         },
       },
@@ -359,7 +382,13 @@ export async function analyticsRoutes(server: FastifyInstance) {
       if (!parsed.ok) {
         return reply.code(400).send({ error: parsed.error })
       }
-      const utmFilter = parseAnalyticsUtmFilter(request.query)
+      const parsedUtm = parseAnalyticsUtmFilter(request.query)
+      const segmentFilter = await resolveSegmentFilter(request.query.segment_id, request.query.workspace_id)
+      const utmFilter = parsedUtm || {}
+      if (segmentFilter) {
+        utmFilter.segmentSql = segmentFilter.sql
+        utmFilter.segmentParams = segmentFilter.params
+      }
       await sendAnalyticsQuery({
         request,
         reply,
@@ -390,6 +419,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       utm_s1?: string
       utm_dim?: string
       utm_value?: string
+      segment_id?: string
     }
   }>(
     '/v1/analytics/traffic',
@@ -400,7 +430,13 @@ export async function analyticsRoutes(server: FastifyInstance) {
       if (!parsed.ok) {
         return reply.code(400).send({ error: parsed.error })
       }
-      const utmFilter = parseAnalyticsUtmFilter(request.query)
+      const parsedUtm = parseAnalyticsUtmFilter(request.query)
+      const segmentFilter = await resolveSegmentFilter(request.query.segment_id, request.query.workspace_id)
+      const utmFilter = parsedUtm || {}
+      if (segmentFilter) {
+        utmFilter.segmentSql = segmentFilter.sql
+        utmFilter.segmentParams = segmentFilter.params
+      }
 
       await sendAnalyticsQuery({
         request,
@@ -431,6 +467,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       utm_s1?: string
       utm_dim?: string
       utm_value?: string
+      segment_id?: string
     }
   }>(
     '/v1/analytics/funnel',
@@ -441,7 +478,13 @@ export async function analyticsRoutes(server: FastifyInstance) {
       if (!parsed.ok) {
         return reply.code(400).send({ error: parsed.error })
       }
-      const utmFilter = parseAnalyticsUtmFilter(request.query)
+      const parsedUtm = parseAnalyticsUtmFilter(request.query)
+      const segmentFilter = await resolveSegmentFilter(request.query.segment_id, request.query.workspace_id)
+      const utmFilter = parsedUtm || {}
+      if (segmentFilter) {
+        utmFilter.segmentSql = segmentFilter.sql
+        utmFilter.segmentParams = segmentFilter.params
+      }
 
       const formType =
         form_type === 'zip' || form_type === 'single' || form_type === 'multiple'
@@ -519,6 +562,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       utm_s1?: string
       utm_dim?: string
       utm_value?: string
+      segment_id?: string
     }
   }>(
     '/v1/analytics/events',
@@ -529,7 +573,13 @@ export async function analyticsRoutes(server: FastifyInstance) {
       if (!parsed.ok) {
         return reply.code(400).send({ error: parsed.error })
       }
-      const utmFilter = parseAnalyticsUtmFilter(request.query)
+      const parsedUtm = parseAnalyticsUtmFilter(request.query)
+      const segmentFilter = await resolveSegmentFilter(request.query.segment_id, request.query.workspace_id)
+      const utmFilter = parsedUtm || {}
+      if (segmentFilter) {
+        utmFilter.segmentSql = segmentFilter.sql
+        utmFilter.segmentParams = segmentFilter.params
+      }
 
       await sendAnalyticsQuery({
         request,
@@ -559,6 +609,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       utm_s1?: string
       utm_dim?: string
       utm_value?: string
+      segment_id?: string
     }
   }>(
     '/v1/analytics/segments',
@@ -569,7 +620,13 @@ export async function analyticsRoutes(server: FastifyInstance) {
       if (!parsed.ok) {
         return reply.code(400).send({ error: parsed.error })
       }
-      const utmFilter = parseAnalyticsUtmFilter(request.query)
+      const parsedUtm = parseAnalyticsUtmFilter(request.query)
+      const segmentFilter = await resolveSegmentFilter(request.query.segment_id, request.query.workspace_id)
+      const utmFilter = parsedUtm || {}
+      if (segmentFilter) {
+        utmFilter.segmentSql = segmentFilter.sql
+        utmFilter.segmentParams = segmentFilter.params
+      }
 
       await sendAnalyticsQuery({
         request,
@@ -600,6 +657,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       utm_s1?: string
       utm_dim?: string
       utm_value?: string
+      segment_id?: string
     }
   }>(
     '/v1/analytics/experiments',
@@ -614,6 +672,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
             range_id: rangeIdSchema,
             ...customRangeSchemaProps,
             ...utmFilterSchemaProps,
+            segment_id: { type: 'string', format: 'uuid' },
           },
         },
       },
@@ -625,7 +684,13 @@ export async function analyticsRoutes(server: FastifyInstance) {
       if (!parsed.ok) {
         return reply.code(400).send({ error: parsed.error })
       }
-      const utmFilter = parseAnalyticsUtmFilter(request.query)
+      const parsedUtm = parseAnalyticsUtmFilter(request.query)
+      const segmentFilter = await resolveSegmentFilter(request.query.segment_id, request.query.workspace_id)
+      const utmFilter = parsedUtm || {}
+      if (segmentFilter) {
+        utmFilter.segmentSql = segmentFilter.sql
+        utmFilter.segmentParams = segmentFilter.params
+      }
 
       await sendAnalyticsQuery({
         request,
@@ -660,6 +725,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
               enum: ['zip', 'single', 'multiple'],
             },
             ...utmFilterSchemaProps,
+            segment_id: { type: 'string', format: 'uuid' },
           },
         },
       },
@@ -737,6 +803,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       utm_s1?: string
       utm_dim?: string
       utm_value?: string
+      segment_id?: string
     }
   }>(
     '/v1/analytics/alerts',
@@ -751,6 +818,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
             range_id: rangeIdSchema,
             ...customRangeSchemaProps,
             ...utmFilterSchemaProps,
+            segment_id: { type: 'string', format: 'uuid' },
           },
         },
       },
@@ -762,7 +830,13 @@ export async function analyticsRoutes(server: FastifyInstance) {
       if (!parsed.ok) {
         return reply.code(400).send({ error: parsed.error })
       }
-      const utmFilter = parseAnalyticsUtmFilter(request.query)
+      const parsedUtm = parseAnalyticsUtmFilter(request.query)
+      const segmentFilter = await resolveSegmentFilter(request.query.segment_id, request.query.workspace_id)
+      const utmFilter = parsedUtm || {}
+      if (segmentFilter) {
+        utmFilter.segmentSql = segmentFilter.sql
+        utmFilter.segmentParams = segmentFilter.params
+      }
 
       await sendAnalyticsQuery({
         request,

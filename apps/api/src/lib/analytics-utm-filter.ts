@@ -4,6 +4,8 @@ export type UtmFilterDimension = 'utm_source' | 'utm_s1'
 export type AnalyticsUtmFilter = {
   utm_source?: string[]
   utm_s1?: string[]
+  segmentSql?: string
+  segmentParams?: Record<string, unknown>
 }
 
 const MAX_VALUE_LEN = 100
@@ -38,7 +40,7 @@ export function parseUtmValueList(
 export function hasAnalyticsUtmFilter(
   filter?: AnalyticsUtmFilter | null,
 ): boolean {
-  return Boolean(filter?.utm_source?.length || filter?.utm_s1?.length)
+  return Boolean(filter?.utm_source?.length || filter?.utm_s1?.length || filter?.segmentSql)
 }
 
 export function normalizeAnalyticsUtmFilter(
@@ -50,6 +52,8 @@ export function normalizeAnalyticsUtmFilter(
   const s1 = parseUtmValueList(filter.utm_s1)
   if (source) next.utm_source = source
   if (s1) next.utm_s1 = s1
+  if (filter.segmentSql) next.segmentSql = filter.segmentSql
+  if (filter.segmentParams) next.segmentParams = filter.segmentParams
   return hasAnalyticsUtmFilter(next) ? next : undefined
 }
 
@@ -86,6 +90,9 @@ export function utmFilterSql(filter?: AnalyticsUtmFilter): string {
   if (normalized.utm_s1?.length) {
     parts.push('utm_s1 IN {utm_s1s:Array(String)}')
   }
+  if (normalized.segmentSql) {
+    parts.push(normalized.segmentSql)
+  }
   return parts.length ? ` AND ${parts.join(' AND ')}` : ''
 }
 
@@ -97,6 +104,9 @@ export function utmFilterParams(
   const params: Record<string, string[]> = {}
   if (normalized.utm_source?.length) params.utm_sources = normalized.utm_source
   if (normalized.utm_s1?.length) params.utm_s1s = normalized.utm_s1
+  if (normalized.segmentParams) {
+    Object.assign(params, normalized.segmentParams)
+  }
   return params
 }
 

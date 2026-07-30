@@ -16,6 +16,7 @@ import { EventTrackingSubmissionOverTimeCard } from "@/features/event-tracking/v
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardPreference } from "@/hooks/use-dashboard-preference"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
 import type { AnalyticsFetchMode } from "@/lib/dashboard/analytics-fetch-mode"
 import {
   buildAnalyticsApiPath,
@@ -51,6 +52,7 @@ export function EventTrackingDashboard({
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
+  const { segmentId } = useDashboardSegmentFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isBlockingLoad, setIsBlockingLoad] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -77,7 +79,7 @@ export function EventTrackingDashboard({
 
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/events`,
-        { rangeId, customRange, utmFilter }
+        { rangeId, customRange, utmFilter, segmentId }
       )
       try {
         const res = await fetch(url, { cache: "no-store", signal })
@@ -128,7 +130,7 @@ export function EventTrackingDashboard({
         }
       }
     },
-    [projectId, customRange, utmFilter, setActiveKpiId]
+    [projectId, customRange, utmFilter, segmentId, setActiveKpiId]
   )
 
   useEffect(() => {
@@ -137,7 +139,9 @@ export function EventTrackingDashboard({
         dateRangeId,
         initialData.defaultDateRangeId,
         utmFilter,
-        customRange
+        customRange,
+        undefined,
+        segmentId
       )
     ) {
       setDashboardData(initialData)
@@ -148,7 +152,14 @@ export function EventTrackingDashboard({
     const controller = new AbortController()
     void fetchEventsForRange(dateRangeId, controller.signal, "background")
     return () => controller.abort()
-  }, [customRange, dateRangeId, utmFilter, initialData, fetchEventsForRange])
+  }, [
+    customRange,
+    dateRangeId,
+    utmFilter,
+    segmentId,
+    initialData,
+    fetchEventsForRange,
+  ])
 
   useEffect(() => {
     if (!isActive) return
@@ -163,7 +174,14 @@ export function EventTrackingDashboard({
       controller.abort()
       window.clearInterval(id)
     }
-  }, [customRange, dateRangeId, utmFilter, fetchEventsForRange, isActive])
+  }, [
+    customRange,
+    dateRangeId,
+    utmFilter,
+    segmentId,
+    fetchEventsForRange,
+    isActive,
+  ])
 
   return (
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">

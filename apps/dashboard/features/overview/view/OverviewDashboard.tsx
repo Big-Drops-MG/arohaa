@@ -34,6 +34,7 @@ import {
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardPreference } from "@/hooks/use-dashboard-preference"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
 import {
   buildAnalyticsApiPath,
   shouldUseInitialTabData,
@@ -89,6 +90,7 @@ export function OverviewDashboard({
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
+  const { segmentId } = useDashboardSegmentFilter()
   const [overviewData, setOverviewData] = useState(data)
   const [activeKpiId, setActiveKpiId] = useDashboardPreference(
     projectId,
@@ -119,7 +121,9 @@ export function OverviewDashboard({
         dateRangeId,
         data.defaultDateRangeId,
         utmFilter,
-        customRange
+        customRange,
+        undefined,
+        segmentId
       ) &&
       hasCompleteKpiSeries(data, dateRangeId)
     ) {
@@ -136,7 +140,7 @@ export function OverviewDashboard({
 
     const url = buildAnalyticsApiPath(
       `/api/landing-pages/${encodeURIComponent(projectId)}/overview`,
-      { rangeId: dateRangeId, customRange, utmFilter }
+      { rangeId: dateRangeId, customRange, utmFilter, segmentId }
     )
 
     void fetch(url, { cache: "no-store", signal: controller.signal })
@@ -165,7 +169,7 @@ export function OverviewDashboard({
     let cancelled = false
     const url = buildAnalyticsApiPath(
       `/api/landing-pages/${encodeURIComponent(projectId)}/alerts`,
-      { rangeId: dateRangeId, customRange, utmFilter }
+      { rangeId: dateRangeId, customRange, utmFilter, segmentId }
     )
 
     void fetch(url, { cache: "no-store" })
@@ -187,7 +191,7 @@ export function OverviewDashboard({
     return () => {
       cancelled = true
     }
-  }, [customRange, projectId, dateRangeId, utmFilter])
+  }, [customRange, projectId, dateRangeId, utmFilter, segmentId])
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -202,7 +206,7 @@ export function OverviewDashboard({
 
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/funnel`,
-        { rangeId, customRange, utmFilter }
+        { rangeId, customRange, utmFilter, segmentId }
       )
       try {
         const res = await fetch(url, { cache: "no-store", signal })
