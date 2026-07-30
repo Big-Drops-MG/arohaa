@@ -17,10 +17,12 @@ import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardPreference } from "@/hooks/use-dashboard-preference"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
+import type { AnalyticsFetchMode } from "@/lib/dashboard/analytics-fetch-mode"
 import {
   buildAnalyticsApiPath,
   shouldUseInitialTabData,
 } from "@/lib/dashboard/analytics-query"
+import { cn } from "@workspace/ui/lib/utils"
 
 const EVENTS_REFETCH_MS = 60_000
 
@@ -52,7 +54,8 @@ export function EventTrackingDashboard({
   const { utmFilter } = useDashboardUtmFilter()
   const { segmentId } = useDashboardSegmentFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isBlockingLoad, setIsBlockingLoad] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [activeKpiId, setActiveKpiId] = useDashboardPreference(
     projectId,
     "kpi:event-tracking",
@@ -66,8 +69,13 @@ export function EventTrackingDashboard({
   )
 
   const fetchEventsForRange = useCallback(
-    async (rangeId: typeof dateRangeId, signal?: AbortSignal) => {
-      setIsLoading(true)
+    async (
+      rangeId: typeof dateRangeId,
+      signal?: AbortSignal,
+      mode: AnalyticsFetchMode = "blocking"
+    ) => {
+      if (mode === "blocking") setIsBlockingLoad(true)
+      else setIsRefreshing(true)
 
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/events`,
@@ -83,13 +91,15 @@ export function EventTrackingDashboard({
               body.slice(0, 200)
             )
           }
-          setDashboardData((prev) =>
-            getEventTrackingEmptyDashboardData(
-              projectId,
-              rangeId,
-              prev.formType
+          if (mode === "blocking") {
+            setDashboardData((prev) =>
+              getEventTrackingEmptyDashboardData(
+                projectId,
+                rangeId,
+                prev.formType
+              )
             )
-          )
+          }
           return
         }
         const next = (await res.json()) as EventTrackingDashboardData
@@ -104,12 +114,19 @@ export function EventTrackingDashboard({
         if (process.env.NODE_ENV === "development") {
           console.error("[events] client fetch failed", err)
         }
-        setDashboardData((prev) =>
-          getEventTrackingEmptyDashboardData(projectId, rangeId, prev.formType)
-        )
+        if (mode === "blocking") {
+          setDashboardData((prev) =>
+            getEventTrackingEmptyDashboardData(
+              projectId,
+              rangeId,
+              prev.formType
+            )
+          )
+        }
       } finally {
         if (!signal?.aborted) {
-          setIsLoading(false)
+          if (mode === "blocking") setIsBlockingLoad(false)
+          else setIsRefreshing(false)
         }
       }
     },
@@ -128,12 +145,12 @@ export function EventTrackingDashboard({
       )
     ) {
       setDashboardData(initialData)
-      setIsLoading(false)
+      setIsBlockingLoad(false)
       return
     }
 
     const controller = new AbortController()
-    void fetchEventsForRange(dateRangeId, controller.signal)
+    void fetchEventsForRange(dateRangeId, controller.signal, "background")
     return () => controller.abort()
   }, [
     customRange,
@@ -150,7 +167,7 @@ export function EventTrackingDashboard({
     const controller = new AbortController()
     const id = window.setInterval(() => {
       if (document.visibilityState !== "visible") return
-      void fetchEventsForRange(dateRangeId, controller.signal)
+      void fetchEventsForRange(dateRangeId, controller.signal, "background")
     }, EVENTS_REFETCH_MS)
 
     return () => {
@@ -178,10 +195,16 @@ export function EventTrackingDashboard({
         onCustomRangeChange={setCustomRange}
       />
 
-      {isTabLoading || isLoading ? (
+      {isTabLoading || isBlockingLoad ? (
         <EventTrackingDashboardSkeleton />
       ) : (
-        <div className="flex flex-col gap-4">
+        <div
+          className={cn(
+            "flex flex-col gap-4 transition-opacity",
+            isRefreshing && "opacity-80"
+          )}
+          aria-busy={isRefreshing}
+        >
           <EventTrackingKpiRow
             kpis={dashboardData.kpis}
             activeKpiId={activeKpiId}

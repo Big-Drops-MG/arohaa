@@ -57,20 +57,17 @@ function ProjectDashboardViewInner({
   overviewPlaceholder,
   initial,
 }: Omit<ProjectDashboardViewProps, "initialTab" | "rangeId">) {
-  const { searchParams, isPending } = useDashboardNavigation()
+  const { isPending } = useDashboardNavigation()
   const [activeTab, setActiveTab] = useDashboardQueryParam("tab", {
     parse: parseProjectTab,
-    projectId,
+    // Do not restore tab from localStorage — bare /dashboard/{id} must open Overview.
+    omitDefault: true,
     // Tab bodies load via client fetch; refreshing RSC here races replace and
     // leaves the controlled Tabs on the previous value until a second click.
     refreshOnChange: false,
   })
   const { dateRangeId, customRange } = useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
-
-  // Remount tab bodies when shareable filters change so client state resets
-  // with the soft-refreshed server payload (no hard window.reload).
-  const panelKey = searchParams.toString()
 
   const {
     overview,
@@ -134,14 +131,12 @@ function ProjectDashboardViewInner({
             <TabsContent key={tab.value} value={tab.value}>
               {activeTab !== tab.value ? null : tab.value === "overview" ? (
                 <OverviewDashboard
-                  key={panelKey}
                   data={overview}
                   projectId={projectId}
                   isLoading={isTabLoading("overview")}
                 />
               ) : tab.value === "traffic" ? (
                 <TrafficDashboard
-                  key={panelKey}
                   data={traffic}
                   projectId={projectId}
                   isActive
@@ -149,7 +144,6 @@ function ProjectDashboardViewInner({
                 />
               ) : tab.value === "funnel" ? (
                 <FunnelDashboard
-                  key={panelKey}
                   data={funnel}
                   projectId={projectId}
                   isActive
@@ -157,7 +151,6 @@ function ProjectDashboardViewInner({
                 />
               ) : tab.value === "heatmap" ? (
                 <HeatmapDashboard
-                  key={panelKey}
                   data={heatmap}
                   projectId={projectId}
                   isActive
@@ -165,7 +158,6 @@ function ProjectDashboardViewInner({
                 />
               ) : tab.value === "event-tracking" ? (
                 <EventTrackingDashboard
-                  key={panelKey}
                   data={eventTracking}
                   projectId={projectId}
                   isActive
@@ -173,7 +165,6 @@ function ProjectDashboardViewInner({
                 />
               ) : tab.value === "segments" ? (
                 <SegmentsDashboard
-                  key={panelKey}
                   data={segments}
                   projectId={projectId}
                   isActive
@@ -181,7 +172,6 @@ function ProjectDashboardViewInner({
                 />
               ) : tab.value === "experiments" ? (
                 <ExperimentsDashboard
-                  key={panelKey}
                   data={experiments}
                   projectId={projectId}
                   isActive
@@ -189,7 +179,6 @@ function ProjectDashboardViewInner({
                 />
               ) : tab.value === "seo" ? (
                 <SeoDashboard
-                  key={panelKey}
                   data={seo}
                   projectId={projectId}
                   isActive
@@ -197,7 +186,6 @@ function ProjectDashboardViewInner({
                 />
               ) : tab.value === "utm" ? (
                 <UtmDashboard
-                  key={panelKey}
                   data={utm}
                   projectId={projectId}
                   isActive
@@ -205,7 +193,6 @@ function ProjectDashboardViewInner({
                 />
               ) : tab.value === "alerts" ? (
                 <AlertsDashboard
-                  key={panelKey}
                   data={alerts}
                   projectId={projectId}
                   isActive
@@ -213,7 +200,6 @@ function ProjectDashboardViewInner({
                 />
               ) : tab.value === "settings" && settings ? (
                 <SettingsDashboard
-                  key={panelKey}
                   initialData={settings}
                   projectId={projectId}
                 />

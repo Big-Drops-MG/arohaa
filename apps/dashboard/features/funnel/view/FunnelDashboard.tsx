@@ -18,10 +18,12 @@ import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardPreference } from "@/hooks/use-dashboard-preference"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
+import type { AnalyticsFetchMode } from "@/lib/dashboard/analytics-fetch-mode"
 import {
   buildAnalyticsApiPath,
   shouldUseInitialTabData,
 } from "@/lib/dashboard/analytics-query"
+import { cn } from "@workspace/ui/lib/utils"
 
 const FUNNEL_REFETCH_MS = 60_000
 
@@ -51,11 +53,17 @@ export function FunnelDashboard({
         : FUNNEL_DEFAULT_KPI_METRIC_ID
   )
   const [dashboardData, setDashboardData] = useState(initialData)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isBlockingLoad, setIsBlockingLoad] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   const fetchFunnelForRange = useCallback(
-    async (rangeId: typeof dateRangeId, signal?: AbortSignal) => {
-      setIsLoading(true)
+    async (
+      rangeId: typeof dateRangeId,
+      signal?: AbortSignal,
+      mode: AnalyticsFetchMode = "blocking"
+    ) => {
+      if (mode === "blocking") setIsBlockingLoad(true)
+      else setIsRefreshing(true)
 
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/funnel`,
@@ -71,9 +79,11 @@ export function FunnelDashboard({
               body.slice(0, 200)
             )
           }
-          setDashboardData((prev) =>
-            getFunnelEmptyDashboardData(projectId, rangeId, prev.formType)
-          )
+          if (mode === "blocking") {
+            setDashboardData((prev) =>
+              getFunnelEmptyDashboardData(projectId, rangeId, prev.formType)
+            )
+          }
           return
         }
         const next = (await res.json()) as FunnelDashboardData
@@ -83,12 +93,15 @@ export function FunnelDashboard({
         if (process.env.NODE_ENV === "development") {
           console.error("[funnel] client fetch failed", err)
         }
-        setDashboardData((prev) =>
-          getFunnelEmptyDashboardData(projectId, rangeId, prev.formType)
-        )
+        if (mode === "blocking") {
+          setDashboardData((prev) =>
+            getFunnelEmptyDashboardData(projectId, rangeId, prev.formType)
+          )
+        }
       } finally {
         if (!signal?.aborted) {
-          setIsLoading(false)
+          if (mode === "blocking") setIsBlockingLoad(false)
+          else setIsRefreshing(false)
         }
       }
     },
@@ -107,12 +120,12 @@ export function FunnelDashboard({
       )
     ) {
       setDashboardData(initialData)
-      setIsLoading(false)
+      setIsBlockingLoad(false)
       return
     }
 
     const controller = new AbortController()
-    void fetchFunnelForRange(dateRangeId, controller.signal)
+    void fetchFunnelForRange(dateRangeId, controller.signal, "background")
     return () => controller.abort()
   }, [
     customRange,
@@ -129,7 +142,7 @@ export function FunnelDashboard({
     const controller = new AbortController()
     const id = window.setInterval(() => {
       if (document.visibilityState !== "visible") return
-      void fetchFunnelForRange(dateRangeId, controller.signal)
+      void fetchFunnelForRange(dateRangeId, controller.signal, "background")
     }, FUNNEL_REFETCH_MS)
 
     return () => {
@@ -157,10 +170,16 @@ export function FunnelDashboard({
         onCustomRangeChange={setCustomRange}
       />
 
-      {isTabLoading || isLoading ? (
+      {isTabLoading || isBlockingLoad ? (
         <FunnelDashboardSkeleton />
       ) : (
-        <div className="flex flex-col gap-4">
+        <div
+          className={cn(
+            "flex flex-col gap-4 transition-opacity",
+            isRefreshing && "opacity-80"
+          )}
+          aria-busy={isRefreshing}
+        >
           <FunnelKpiRow
             metrics={dashboardData.metrics}
             activeKpiId={activeKpiId}

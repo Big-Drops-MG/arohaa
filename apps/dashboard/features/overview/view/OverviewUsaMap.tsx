@@ -1,17 +1,25 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react"
 import {
   geoAlbers,
   geoAlbersUsa,
   geoBounds,
   geoCentroid,
+  geoContains,
+  geoDistance,
   geoPath,
 } from "d3-geo"
 import { feature } from "topojson-client"
 import type { Feature, FeatureCollection, Geometry } from "geojson"
 import type { GeometryCollection, Topology } from "topojson-specification"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Minus, Plus, RotateCcw } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import type {
   OverviewCityMetric,
@@ -21,7 +29,7 @@ import type {
 } from "@/features/overview/model/overview"
 import {
   OVERVIEW_MAP_TIER_COLORS,
-  OVERVIEW_MAP_TIER_FILLS,
+  OVERVIEW_MAP_TIER_IDS,
   OVERVIEW_MAP_TIER_STROKES,
   US_COUNTIES_TOPOJSON_URL,
   US_STATE_FIPS_TO_NAME,
@@ -29,9 +37,9 @@ import {
   US_STATES_TOPOJSON_URL,
   normalizeUsStateName,
   overviewCityPointInBbox,
-  overviewMapBubbleRadius,
   overviewMapBubbleTier,
   overviewMapBubbleTierForValue,
+  type OverviewMapBubbleTier,
 } from "@/features/overview/model/us-states"
 import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
@@ -57,15 +65,30 @@ type OverviewUsaMapProps = {
   className?: string
 }
 
-type MapBubble = {
+type MapRegion = {
   key: string
   label: string
   value: number
+  tier: OverviewMapBubbleTier | null
+  pathD: string
+}
+
+type MapTransform = {
+  k: number
   x: number
   y: number
-  r: number
-  tier: 0 | 1 | 2 | 3
 }
+
+const MAP_WIDTH = 720
+const MAP_HEIGHT = 420
+const MIN_ZOOM = 1
+const MAX_ZOOM = 12
+const ZOOM_STEP = 1.4
+const PAN_THRESHOLD_PX = 6
+const EMPTY_FILL = "#f8fafc"
+const BOUNDARY_STROKE = "#334155"
+const COUNTY_BOUNDARY_STROKE = "#64748b"
+const IDENTITY_TRANSFORM: MapTransform = { k: 1, x: 0, y: 0 }
 
 function metricValue(
   row: OverviewStateMetric | OverviewCityMetric,
@@ -97,6 +120,65 @@ function formatMetricValue(
   return value.toLocaleString("en-US")
 }
 
+function aggregateRegionValues(
+  values: number[],
+  metricId: OverviewKpiMetricId
+): number {
+  if (values.length === 0) return 0
+  if (metricId === "fsr" || metricId === "bounce-rate") {
+    return values.reduce((sum, value) => sum + value, 0) / values.length
+  }
+  return values.reduce((sum, value) => sum + value, 0)
+}
+
+function nearestCountyFeature(
+  point: [number, number],
+  features: Feature[]
+): Feature | null {
+  let best: Feature | null = null
+  let bestDistance = Number.POSITIVE_INFINITY
+  for (const feat of features) {
+    const centroid = geoCentroid(feat as Feature<Geometry>)
+    const distance = geoDistance(point, centroid)
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = feat
+    }
+  }
+  return best
+}
+
+function clampZoom(k: number): number {
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, k))
+}
+
+function zoomAround(
+  current: MapTransform,
+  factor: number,
+  cx: number,
+  cy: number
+): MapTransform {
+  const nextK = clampZoom(current.k * factor)
+  if (nextK === current.k) return current
+  const scale = nextK / current.k
+  return {
+    k: nextK,
+    x: cx - (cx - current.x) * scale,
+    y: cy - (cy - current.y) * scale,
+  }
+}
+
+function clientPointInSvg(
+  svg: SVGSVGElement,
+  clientX: number,
+  clientY: number
+): { x: number; y: number } {
+  const rect = svg.getBoundingClientRect()
+  const x = ((clientX - rect.left) / rect.width) * MAP_WIDTH
+  const y = ((clientY - rect.top) / rect.height) * MAP_HEIGHT
+  return { x, y }
+}
+
 export function OverviewUsaMap({
   metricId,
   metricLabel,
@@ -117,6 +199,24 @@ export function OverviewUsaMap({
   const [cities, setCities] = useState<OverviewCityMetric[]>([])
   const [citiesLoading, setCitiesLoading] = useState(false)
   const [citiesError, setCitiesError] = useState(false)
+  const [transform, setTransform] = useState<MapTransform>(IDENTITY_TRANSFORM)
+  const [isPanning, setIsPanning] = useState(false)
+
+  const svgRef = useRef<SVGSVGElement | null>(null)
+  const viewportRef = useRef<HTMLDivElement | null>(null)
+  const transformRef = useRef(transform)
+  const panRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    originX: number
+    originY: number
+    moved: boolean
+  } | null>(null)
+
+  useEffect(() => {
+    transformRef.current = transform
+  }, [transform])
 
   useEffect(() => {
     let cancelled = false
@@ -223,6 +323,29 @@ export function OverviewUsaMap({
     return () => controller.abort()
   }, [customRange, dateRangeId, projectId, selectedState, utmFilter, segmentId])
 
+  useEffect(() => {
+    setTransform(IDENTITY_TRANSFORM)
+    setIsPanning(false)
+    panRef.current = null
+  }, [selectedState])
+
+  useEffect(() => {
+    const el = viewportRef.current
+    if (!el) return
+
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault()
+      const svg = svgRef.current
+      if (!svg) return
+      const point = clientPointInSvg(svg, event.clientX, event.clientY)
+      const factor = event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP
+      setTransform((current) => zoomAround(current, factor, point.x, point.y))
+    }
+
+    el.addEventListener("wheel", onWheel, { passive: false })
+    return () => el.removeEventListener("wheel", onWheel)
+  }, [])
+
   const valueByState = useMemo(() => {
     const map = new Map<string, number>()
     for (const row of states) {
@@ -252,113 +375,144 @@ export function OverviewUsaMap({
     )
   }, [collection, selectedState])
 
-  const maxValue = useMemo(() => {
-    const source = selectedState ? valueByCity.values() : valueByState.values()
-    let max = 0
-    for (const value of source) {
-      if (value > max) max = value
-    }
-    return max
-  }, [selectedState, valueByCity, valueByState])
-
-  const { thresholds, labels } = useMemo(
-    () => overviewMapBubbleTier(maxValue),
-    [maxValue]
+  const { thresholds, legendLabels, minLabel, maxLabel } = useMemo(
+    () => overviewMapBubbleTier(metricId),
+    [metricId]
   )
-
-  const width = 720
-  const height = 420
 
   const projection = useMemo(() => {
     if (selectedFeature) {
       return geoAlbers().fitExtent(
         [
           [28, 28],
-          [width - 28, height - 28],
+          [MAP_WIDTH - 28, MAP_HEIGHT - 28],
         ],
         selectedFeature as Feature<Geometry>
       )
     }
     const proj = geoAlbersUsa()
     if (!collection || collection.features.length === 0) {
-      return proj.translate([width / 2, height / 2]).scale(900)
+      return proj.translate([MAP_WIDTH / 2, MAP_HEIGHT / 2]).scale(900)
     }
-    return proj.fitSize([width, height], collection)
+    return proj.fitSize([MAP_WIDTH, MAP_HEIGHT], collection)
   }, [collection, selectedFeature])
 
   const path = useMemo(() => geoPath(projection), [projection])
 
-  const outlineFeatures = useMemo(() => {
-    if (!collection) return []
-    if (selectedFeature) return [selectedFeature]
-    return collection.features
-  }, [collection, selectedFeature])
-
-  const bubbles = useMemo((): MapBubble[] => {
-    if (!collection) return []
-
-    if (selectedState && selectedFeature) {
-      const bbox = geoBounds(selectedFeature as Feature<Geometry>)
-      const items = cities.flatMap((row) => {
-        const label = row.city.trim()
-        if (!label) return []
-        const value = valueByCity.get(label) ?? 0
-        if (value <= 0) return []
-        const [lng, lat] = overviewCityPointInBbox(label, bbox)
-        const point = projection([lng, lat])
-        if (!point) return []
-        const tier = overviewMapBubbleTierForValue(value, thresholds)
-        return [
-          {
-            key: label,
-            label,
-            value,
-            x: point[0],
-            y: point[1],
-            r: overviewMapBubbleRadius(value, maxValue, 10, 42),
-            tier,
-          },
-        ]
-      })
-      return items.sort((a, b) => b.r - a.r)
-    }
-
-    const items = collection.features.flatMap((feat) => {
+  const stateRegions = useMemo((): MapRegion[] => {
+    if (!collection || selectedState) return []
+    return collection.features.flatMap((feat) => {
       const fips = String(feat.id ?? "")
       const name = US_STATE_FIPS_TO_NAME[fips]
       if (!name) return []
+      const d = path(feat as Feature<Geometry>)
+      if (!d) return []
       const value = valueByState.get(name) ?? 0
-      if (value <= 0) return []
-      const centroid = geoCentroid(feat as Feature<Geometry>)
-      const point = projection(centroid)
-      if (!point) return []
-      const tier = overviewMapBubbleTierForValue(value, thresholds)
       return [
         {
           key: name,
           label: name,
           value,
-          x: point[0],
-          y: point[1],
-          r: overviewMapBubbleRadius(value, maxValue, 6, 36),
-          tier,
+          tier:
+            value > 0 ? overviewMapBubbleTierForValue(value, thresholds) : null,
+          pathD: d,
         },
       ]
     })
-    return items.sort((a, b) => b.r - a.r)
+  }, [collection, path, selectedState, thresholds, valueByState])
+
+  const cityRegions = useMemo((): MapRegion[] => {
+    if (!selectedState || !selectedFeature || !counties) return []
+
+    const bbox = geoBounds(selectedFeature as Feature<Geometry>)
+    const countyBuckets = new Map<
+      string,
+      { labels: string[]; values: number[] }
+    >()
+
+    for (const row of cities) {
+      const label = row.city.trim()
+      if (!label) continue
+      const value = valueByCity.get(label) ?? 0
+      if (value <= 0) continue
+      const point = overviewCityPointInBbox(label, bbox)
+      const contained =
+        counties.features.find((feat) =>
+          geoContains(feat as Feature<Geometry>, point)
+        ) ?? null
+      const matched =
+        contained ?? nearestCountyFeature(point, counties.features)
+      if (!matched) continue
+      const countyId = String(matched.id ?? label)
+      const bucket = countyBuckets.get(countyId)
+      if (bucket) {
+        bucket.labels.push(label)
+        bucket.values.push(value)
+      } else {
+        countyBuckets.set(countyId, {
+          labels: [label],
+          values: [value],
+        })
+      }
+    }
+
+    const regions: MapRegion[] = []
+    for (const feat of counties.features) {
+      const d = path(feat as Feature<Geometry>)
+      if (!d) continue
+      const countyId = String(feat.id ?? "")
+      const bucket = countyBuckets.get(countyId)
+      if (!bucket) {
+        regions.push({
+          key: countyId,
+          label: "",
+          value: 0,
+          tier: null,
+          pathD: d,
+        })
+        continue
+      }
+
+      const value = aggregateRegionValues(bucket.values, metricId)
+      const topLabel =
+        bucket.labels[bucket.values.indexOf(Math.max(...bucket.values))] ??
+        bucket.labels[0] ??
+        ""
+
+      regions.push({
+        key: countyId,
+        label: topLabel,
+        value,
+        tier:
+          value > 0 ? overviewMapBubbleTierForValue(value, thresholds) : null,
+        pathD: d,
+      })
+    }
+
+    return regions
   }, [
     cities,
-    collection,
-    maxValue,
-    projection,
+    counties,
+    metricId,
+    path,
     selectedFeature,
     selectedState,
     thresholds,
     valueByCity,
-    valueByState,
   ])
 
+  const regions = selectedState ? cityRegions : stateRegions
+  const hasMetricRegions = regions.some((region) => region.tier !== null)
+  const selectedStateOutline = selectedFeature
+    ? path(selectedFeature as Feature<Geometry>)
+    : null
+
+  function wasPanned(): boolean {
+    return Boolean(panRef.current?.moved)
+  }
+
   function drillIntoState(stateName: string) {
+    if (wasPanned() || selectedState) return
     const normalized = normalizeUsStateName(stateName)
     if (!normalized) return
     setHovered(null)
@@ -370,6 +524,67 @@ export function OverviewUsaMap({
     setHovered(null)
     setCities([])
     setCitiesError(false)
+  }
+
+  function zoomBy(factor: number) {
+    setTransform((current) =>
+      zoomAround(current, factor, MAP_WIDTH / 2, MAP_HEIGHT / 2)
+    )
+  }
+
+  function resetView() {
+    setTransform(IDENTITY_TRANSFORM)
+  }
+
+  function onPointerDown(event: ReactPointerEvent<SVGSVGElement>) {
+    if (event.button !== 0) return
+    const svg = svgRef.current
+    if (!svg) return
+    const point = clientPointInSvg(svg, event.clientX, event.clientY)
+    panRef.current = {
+      pointerId: event.pointerId,
+      startX: point.x,
+      startY: point.y,
+      originX: transformRef.current.x,
+      originY: transformRef.current.y,
+      moved: false,
+    }
+  }
+
+  function onPointerMove(event: ReactPointerEvent<SVGSVGElement>) {
+    const pan = panRef.current
+    if (!pan || pan.pointerId !== event.pointerId) return
+    const svg = svgRef.current
+    if (!svg) return
+    const point = clientPointInSvg(svg, event.clientX, event.clientY)
+    const dx = point.x - pan.startX
+    const dy = point.y - pan.startY
+    if (!pan.moved) {
+      if (Math.hypot(dx, dy) <= PAN_THRESHOLD_PX) return
+      pan.moved = true
+      setHovered(null)
+      setIsPanning(true)
+      svg.setPointerCapture(event.pointerId)
+    }
+    setTransform({
+      k: transformRef.current.k,
+      x: pan.originX + dx,
+      y: pan.originY + dy,
+    })
+  }
+
+  function endPan(event: ReactPointerEvent<SVGSVGElement>) {
+    const pan = panRef.current
+    if (!pan || pan.pointerId !== event.pointerId) return
+    const svg = svgRef.current
+    if (svg?.hasPointerCapture(event.pointerId)) {
+      svg.releasePointerCapture(event.pointerId)
+    }
+    // Keep moved flag until after the click event so handlers can ignore drags.
+    window.setTimeout(() => {
+      if (panRef.current === pan) panRef.current = null
+    }, 0)
+    setIsPanning(false)
   }
 
   if (loadError) {
@@ -399,10 +614,13 @@ export function OverviewUsaMap({
     )
   }
 
-  const hasBubbles = bubbles.length > 0
-  const hoverValue = selectedState
-    ? (valueByCity.get(hovered ?? "") ?? 0)
-    : (valueByState.get(hovered ?? "") ?? 0)
+  const hoveredRegion = hovered
+    ? (regions.find((region) => region.key === hovered) ?? null)
+    : null
+  const canZoomIn = transform.k < MAX_ZOOM - 0.001
+  const canZoomOut = transform.k > MIN_ZOOM + 0.001
+  const canReset = transform.k !== 1 || transform.x !== 0 || transform.y !== 0
+  const boundaryWidth = selectedState ? 1.15 : 1.35
 
   return (
     <div className={cn("relative h-full min-h-0 w-full", className)}>
@@ -422,116 +640,126 @@ export function OverviewUsaMap({
         </div>
       ) : null}
 
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="xMidYMid meet"
-        className="h-full w-full"
-        role="img"
-        aria-label={
-          selectedState
-            ? `${metricLabel} by city in ${selectedState}`
-            : `${metricLabel} by US state`
-        }
-      >
-        <g>
-          {outlineFeatures.map((feat) => {
-            const d = path(feat as Feature<Geometry>)
-            if (!d) return null
-            const fips = String(feat.id ?? "")
-            const name = US_STATE_FIPS_TO_NAME[fips]
-            const clickable =
-              !selectedState &&
-              Boolean(name && (valueByState.get(name) ?? 0) > 0)
-            return (
+      <div className="absolute top-3 right-3 z-10 flex flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white/95 shadow-sm">
+        <button
+          type="button"
+          onClick={() => zoomBy(ZOOM_STEP)}
+          disabled={!canZoomIn}
+          aria-label="Zoom in"
+          className="inline-flex size-8 items-center justify-center text-neutral-700 transition-colors hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Plus className="size-3.5" aria-hidden />
+        </button>
+        <div className="h-px bg-neutral-200" />
+        <button
+          type="button"
+          onClick={() => zoomBy(1 / ZOOM_STEP)}
+          disabled={!canZoomOut}
+          aria-label="Zoom out"
+          className="inline-flex size-8 items-center justify-center text-neutral-700 transition-colors hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Minus className="size-3.5" aria-hidden />
+        </button>
+        <div className="h-px bg-neutral-200" />
+        <button
+          type="button"
+          onClick={resetView}
+          disabled={!canReset}
+          aria-label="Reset map view"
+          className="inline-flex size-8 items-center justify-center text-neutral-700 transition-colors hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <RotateCcw className="size-3.5" aria-hidden />
+        </button>
+      </div>
+
+      <div ref={viewportRef} className="h-full min-h-0 w-full overflow-hidden">
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`}
+          preserveAspectRatio="xMidYMid meet"
+          className={cn(
+            "h-full w-full touch-none select-none",
+            isPanning ? "cursor-grabbing" : "cursor-grab"
+          )}
+          role="img"
+          aria-label={
+            selectedState
+              ? `${metricLabel} by city in ${selectedState}`
+              : `${metricLabel} by US state`
+          }
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endPan}
+          onPointerCancel={endPan}
+        >
+          <g
+            transform={`translate(${transform.x} ${transform.y}) scale(${transform.k})`}
+          >
+            <g>
+              {regions.map((region) => {
+                const isHovered = hovered === region.key
+                const fill =
+                  region.tier === null
+                    ? EMPTY_FILL
+                    : OVERVIEW_MAP_TIER_COLORS[region.tier]
+                const stroke = isHovered
+                  ? OVERVIEW_MAP_TIER_STROKES[
+                      (region.tier ?? 3) as OverviewMapBubbleTier
+                    ]
+                  : selectedState
+                    ? COUNTY_BOUNDARY_STROKE
+                    : BOUNDARY_STROKE
+                return (
+                  <g key={region.key}>
+                    <path
+                      d={region.pathD}
+                      fill={fill}
+                      stroke={stroke}
+                      strokeWidth={isHovered ? 2 : boundaryWidth}
+                      vectorEffect="non-scaling-stroke"
+                      className="cursor-pointer"
+                      onMouseEnter={() => {
+                        if (!wasPanned() && (region.label || !selectedState)) {
+                          setHovered(region.key)
+                        }
+                      }}
+                      onMouseLeave={() => setHovered(null)}
+                      onClick={(event) => {
+                        if (selectedState) return
+                        event.stopPropagation()
+                        drillIntoState(region.label)
+                      }}
+                    >
+                      {region.label ? (
+                        <title>
+                          {region.label}:{" "}
+                          {formatMetricValue(region.value, metricId)}
+                          {valueSuffix &&
+                          metricId !== "fsr" &&
+                          metricId !== "bounce-rate"
+                            ? valueSuffix
+                            : ""}
+                        </title>
+                      ) : null}
+                    </path>
+                  </g>
+                )
+              })}
+            </g>
+
+            {selectedStateOutline ? (
               <path
-                key={String(feat.id)}
-                d={d}
-                fill="#f8fafc"
-                stroke="#94a3b8"
-                strokeWidth={selectedState ? 1.35 : 0.9}
-                className={clickable ? "cursor-pointer" : undefined}
-                onClick={() => {
-                  if (clickable && name) drillIntoState(name)
-                }}
+                d={selectedStateOutline}
+                fill="none"
+                stroke={BOUNDARY_STROKE}
+                strokeWidth={2.25}
+                vectorEffect="non-scaling-stroke"
+                className="pointer-events-none"
               />
-            )
-          })}
-        </g>
-
-        {selectedState && counties ? (
-          <g>
-            {counties.features.map((feat) => {
-              const d = path(feat as Feature<Geometry>)
-              if (!d) return null
-              return (
-                <path
-                  key={String(feat.id)}
-                  d={d}
-                  fill="#ffffff"
-                  stroke="#cbd5e1"
-                  strokeWidth={0.7}
-                />
-              )
-            })}
+            ) : null}
           </g>
-        ) : null}
-
-        <g>
-          {bubbles.map((bubble) => {
-            const isHovered = hovered === bubble.key
-            const showLabel = selectedState && bubble.r >= 16
-            return (
-              <g
-                key={bubble.key}
-                transform={`translate(${bubble.x} ${bubble.y})`}
-                className="cursor-pointer"
-                onMouseEnter={() => setHovered(bubble.key)}
-                onMouseLeave={() => setHovered(null)}
-                onClick={() => {
-                  if (!selectedState) drillIntoState(bubble.label)
-                }}
-              >
-                {/* City/state region outline — same language as map borders */}
-                <circle
-                  r={bubble.r}
-                  fill={OVERVIEW_MAP_TIER_FILLS[bubble.tier]}
-                  stroke={
-                    isHovered
-                      ? OVERVIEW_MAP_TIER_STROKES[bubble.tier]
-                      : "#64748b"
-                  }
-                  strokeWidth={isHovered ? 1.6 : selectedState ? 1.25 : 1}
-                >
-                  <title>
-                    {bubble.label}: {formatMetricValue(bubble.value, metricId)}
-                    {valueSuffix &&
-                    metricId !== "fsr" &&
-                    metricId !== "bounce-rate"
-                      ? valueSuffix
-                      : ""}
-                  </title>
-                </circle>
-                {showLabel ? (
-                  <text
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    className="pointer-events-none select-none"
-                    style={{
-                      fontSize: Math.max(8, Math.min(11, bubble.r * 0.42)),
-                      fontWeight: 600,
-                      fill: bubble.tier >= 2 ? "#f8fafc" : "#0f172a",
-                    }}
-                  >
-                    {bubble.label.length > 12
-                      ? `${bubble.label.slice(0, 11)}…`
-                      : bubble.label}
-                  </text>
-                ) : null}
-              </g>
-            )
-          })}
-        </g>
-      </svg>
+        </svg>
+      </div>
 
       {selectedState && citiesLoading ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/40">
@@ -541,7 +769,7 @@ export function OverviewUsaMap({
         </div>
       ) : null}
 
-      {!citiesLoading && selectedState && (citiesError || !hasBubbles) ? (
+      {!citiesLoading && selectedState && (citiesError || !hasMetricRegions) ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6">
           <p className="max-w-sm text-center text-sm text-neutral-500">
             {citiesError
@@ -551,25 +779,27 @@ export function OverviewUsaMap({
         </div>
       ) : null}
 
-      {!selectedState && !hasBubbles ? (
+      {!selectedState && !hasMetricRegions ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6">
           <p className="max-w-sm text-center text-sm text-neutral-500">
-            No US state location data for this range yet. Bubbles appear once
+            No US state location data for this range yet. Regions fill once
             GeoIP state is present on events.
           </p>
         </div>
       ) : null}
 
-      {hovered ? (
+      {hoveredRegion && hoveredRegion.label ? (
         <div
           className={cn(
-            "pointer-events-none absolute top-3 rounded-lg border border-neutral-200 bg-white/95 px-3 py-2 text-xs shadow-sm",
-            selectedState ? "right-3" : "left-3"
+            "pointer-events-none absolute top-3 left-3 rounded-lg border border-neutral-200 bg-white/95 px-3 py-2 text-xs shadow-sm",
+            selectedState && "mt-12"
           )}
         >
-          <p className="font-semibold text-neutral-900">{hovered}</p>
+          <p className="font-semibold text-neutral-900">
+            {hoveredRegion.label}
+          </p>
           <p className="mt-0.5 text-neutral-600">
-            {metricLabel}: {formatMetricValue(hoverValue, metricId)}
+            {metricLabel}: {formatMetricValue(hoveredRegion.value, metricId)}
           </p>
           {!selectedState ? (
             <p className="mt-1 text-[10px] text-neutral-400">Click to expand</p>
@@ -577,22 +807,52 @@ export function OverviewUsaMap({
         </div>
       ) : null}
 
-      <div className="absolute right-3 bottom-3 rounded-lg border border-neutral-200 bg-white/95 px-3 py-2 text-[11px] shadow-sm">
+      <div className="absolute right-3 bottom-3 w-48 rounded-lg border border-neutral-200 bg-white/95 px-3 py-2 text-[11px] shadow-sm">
         <p className="mb-1.5 font-semibold tracking-wide text-neutral-700 uppercase">
           {metricLabel}
           {selectedState ? " · Cities" : ""}
         </p>
-        <ul className="space-y-1">
-          {([0, 1, 2, 3] as const).map((tier) => (
-            <li key={tier} className="flex items-center gap-2 text-neutral-600">
-              <span
-                className="inline-block size-2.5 rounded-full border border-slate-500/70"
-                style={{ backgroundColor: OVERVIEW_MAP_TIER_COLORS[tier] }}
-              />
-              <span>{labels[tier]}</span>
-            </li>
+        <div className="flex h-2.5 overflow-hidden rounded-sm border border-neutral-200/80">
+          {OVERVIEW_MAP_TIER_IDS.map((tier) => (
+            <span
+              key={tier}
+              className="h-full flex-1"
+              style={{ backgroundColor: OVERVIEW_MAP_TIER_COLORS[tier] }}
+              title={
+                tier === 0
+                  ? `≤ ${legendLabels[1] ?? minLabel}`
+                  : tier === 8
+                    ? (legendLabels[8] ?? maxLabel)
+                    : `${legendLabels[tier]} – ${String(legendLabels[tier + 1] ?? "").replace(/\+$/, "")}`
+              }
+            />
           ))}
-        </ul>
+        </div>
+        <div className="relative mt-1 h-3.5">
+          {legendLabels.map((label, index) => {
+            // Show endpoints + every other cut to keep the bar readable.
+            const isEndpoint = index === 0 || index === legendLabels.length - 1
+            const isMidTick = index % 2 === 0
+            if (!isEndpoint && !isMidTick) return null
+            const left = (index / (legendLabels.length - 1)) * 100
+            return (
+              <span
+                key={`${label}-${index}`}
+                className={cn(
+                  "absolute top-0 text-[9px] leading-none text-neutral-500",
+                  index === 0
+                    ? "translate-x-0"
+                    : index === legendLabels.length - 1
+                      ? "-translate-x-full"
+                      : "-translate-x-1/2"
+                )}
+                style={{ left: `${left}%` }}
+              >
+                {label}
+              </span>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

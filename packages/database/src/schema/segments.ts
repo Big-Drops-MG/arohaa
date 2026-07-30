@@ -1,11 +1,5 @@
-import { sql } from 'drizzle-orm';
-import {
-  jsonb,
-  pgTable,
-  text,
-  timestamp,
-  index,
-} from 'drizzle-orm/pg-core';
+import { jsonb, pgTable, text, timestamp, index } from 'drizzle-orm/pg-core';
+import { landingPages } from './landing-pages.js';
 import { workspaces } from './workspace.js';
 
 export const segments = pgTable(
@@ -17,6 +11,9 @@ export const segments = pgTable(
     workspaceId: text('workspaceId')
       .notNull()
       .references(() => workspaces.id, { onDelete: 'cascade' }),
+    landingPageId: text('landingPageId')
+      .notNull()
+      .references(() => landingPages.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     description: text('description'),
     conditions: jsonb('conditions').notNull(),
@@ -25,5 +22,8 @@ export const segments = pgTable(
   },
   (table) => ({
     workspaceIdx: index('segment_workspace_id_idx').on(table.workspaceId),
+    landingPageIdx: index('segment_landing_page_id_idx').on(
+      table.landingPageId,
+    ),
   }),
 );

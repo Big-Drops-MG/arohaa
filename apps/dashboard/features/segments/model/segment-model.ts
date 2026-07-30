@@ -19,6 +19,15 @@ export type SegmentGroup = {
   rules: (SegmentRule | SegmentGroup)[]
 }
 
+export type SavedSegment = {
+  id: string
+  name: string
+  description: string | null
+  conditions: SegmentGroup
+  createdAt: string
+  updatedAt: string
+}
+
 export const AVAILABLE_COLUMNS = [
   { id: "source", label: "UTM Source" },
   { id: "medium", label: "UTM Medium" },

@@ -1,3 +1,5 @@
+import type { OverviewKpiMetricId } from "@/features/overview/model/overview"
+
 /** US state FIPS id → canonical name (matches us-atlas topojson feature ids). */
 export const US_STATE_FIPS_TO_NAME: Record<string, string> = {
   "01": "Alabama",
@@ -135,73 +137,125 @@ export const US_STATES_TOPOJSON_URL =
 export const US_COUNTIES_TOPOJSON_URL =
   "https://cdn.jsdelivr.net/npm/us-atlas@3/counties-10m.json"
 
-export type OverviewMapBubbleTier = 0 | 1 | 2 | 3
+export type OverviewMapBubbleTier = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
 
-/** Solid choropleth fills — map-friendly, no gradients. */
+/** ColorBrewer YlGnBu-9 sequential scale (low → high). */
 export const OVERVIEW_MAP_TIER_COLORS: Record<OverviewMapBubbleTier, string> = {
-  0: "#93c5fd",
-  1: "#38bdf8",
-  2: "#0284c7",
-  3: "#0f172a",
+  0: "#ffffd9",
+  1: "#edf9b1",
+  2: "#c7e9b4",
+  3: "#7fcdbb",
+  4: "#41b6c4",
+  5: "#1d91c0",
+  6: "#225ea8",
+  7: "#253494",
+  8: "#071d58",
 }
 
 export const OVERVIEW_MAP_TIER_STROKES: Record<OverviewMapBubbleTier, string> =
   {
-    0: "#64748b",
-    1: "#0369a1",
-    2: "#0c4a6e",
-    3: "#020617",
+    0: "#c7e9b4",
+    1: "#7fcdbb",
+    2: "#41b6c4",
+    3: "#1d91c0",
+    4: "#225ea8",
+    5: "#253494",
+    6: "#071d58",
+    7: "#071d58",
+    8: "#020b2e",
   }
 
-export const OVERVIEW_MAP_TIER_FILLS: Record<OverviewMapBubbleTier, string> = {
-  0: "rgba(147, 197, 253, 0.55)",
-  1: "rgba(56, 189, 248, 0.55)",
-  2: "rgba(2, 132, 199, 0.58)",
-  3: "rgba(15, 23, 42, 0.62)",
+function hexToRgba(hex: string, alpha: number): string {
+  const raw = hex.replace("#", "")
+  const r = Number.parseInt(raw.slice(0, 2), 16)
+  const g = Number.parseInt(raw.slice(2, 4), 16)
+  const b = Number.parseInt(raw.slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
-export function overviewMapBubbleTier(maxValue: number): {
-  thresholds: [number, number, number]
-  labels: [string, string, string, string]
+export const OVERVIEW_MAP_TIER_FILLS: Record<OverviewMapBubbleTier, string> = {
+  0: hexToRgba(OVERVIEW_MAP_TIER_COLORS[0], 0.88),
+  1: hexToRgba(OVERVIEW_MAP_TIER_COLORS[1], 0.88),
+  2: hexToRgba(OVERVIEW_MAP_TIER_COLORS[2], 0.88),
+  3: hexToRgba(OVERVIEW_MAP_TIER_COLORS[3], 0.9),
+  4: hexToRgba(OVERVIEW_MAP_TIER_COLORS[4], 0.9),
+  5: hexToRgba(OVERVIEW_MAP_TIER_COLORS[5], 0.92),
+  6: hexToRgba(OVERVIEW_MAP_TIER_COLORS[6], 0.92),
+  7: hexToRgba(OVERVIEW_MAP_TIER_COLORS[7], 0.94),
+  8: hexToRgba(OVERVIEW_MAP_TIER_COLORS[8], 0.95),
+}
+
+export const OVERVIEW_MAP_TIER_IDS = [
+  0, 1, 2, 3, 4, 5, 6, 7, 8,
+] as const satisfies readonly OverviewMapBubbleTier[]
+
+function formatOverviewMapSlabLabel(value: number, isPercent: boolean): string {
+  if (isPercent) {
+    if (Number.isInteger(value)) return `${value}%`
+    return `${value.toFixed(1)}%`
+  }
+  if (value >= 1_000_000)
+    return `${(value / 1_000_000).toFixed(value % 1_000_000 === 0 ? 0 : 1)}M`
+  if (value >= 1_000)
+    return `${(value / 1_000).toFixed(value % 1_000 === 0 ? 0 : 1)}K`
+  if (Number.isInteger(value) || value >= 10) return String(Math.round(value))
+  return value.toFixed(1)
+}
+
+/**
+ * Absolute choropleth cut points (8 → 9 color slabs).
+ * Colors encode fixed performance bands, not relative rank within the current dataset.
+ */
+export function overviewMapAbsoluteThresholds(
+  metricId: OverviewKpiMetricId
+): number[] {
+  switch (metricId) {
+    case "fsr":
+    case "bounce-rate":
+      // Percentage points 0–100
+      return [10, 20, 30, 40, 50, 60, 70, 85]
+    case "visitors":
+    case "sessions":
+    case "page-views":
+    case "form-submitted":
+      return [5, 10, 20, 35, 50, 75, 100, 150]
+  }
+}
+
+export function overviewMapBubbleTier(metricId: OverviewKpiMetricId): {
+  thresholds: number[]
+  legendLabels: string[]
+  minLabel: string
+  maxLabel: string
 } {
-  const max = Math.max(0, maxValue)
-  if (max <= 0) {
-    return {
-      thresholds: [0, 0, 0],
-      labels: ["0", "0", "0", "0"],
-    }
-  }
-
-  const t1 = max * 0.15
-  const t2 = max * 0.4
-  const t3 = max * 0.7
-
-  const fmt = (v: number) => {
-    if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`
-    if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`
-    if (Number.isInteger(v) || v >= 10) return String(Math.round(v))
-    return v.toFixed(1)
-  }
+  const thresholds = overviewMapAbsoluteThresholds(metricId)
+  const isPercent = metricId === "fsr" || metricId === "bounce-rate"
+  const last = thresholds[thresholds.length - 1] ?? 0
+  const legendLabels = [
+    formatOverviewMapSlabLabel(0, isPercent),
+    ...thresholds.map((t) => formatOverviewMapSlabLabel(t, isPercent)),
+  ]
+  // Final label is open-ended (“150+”) so the scale reads as absolute slabs.
+  legendLabels[legendLabels.length - 1] =
+    `${formatOverviewMapSlabLabel(last, isPercent)}+`
 
   return {
-    thresholds: [t1, t2, t3],
-    labels: [
-      `< ${fmt(t1)}`,
-      `${fmt(t1)} – ${fmt(t2)}`,
-      `${fmt(t2)} – ${fmt(t3)}`,
-      `> ${fmt(t3)}`,
-    ],
+    thresholds,
+    legendLabels,
+    minLabel: legendLabels[0] ?? "0",
+    maxLabel: legendLabels[legendLabels.length - 1] ?? "0",
   }
 }
 
 export function overviewMapBubbleTierForValue(
   value: number,
-  thresholds: [number, number, number]
+  thresholds: readonly number[]
 ): OverviewMapBubbleTier {
-  if (value <= thresholds[0]) return 0
-  if (value <= thresholds[1]) return 1
-  if (value <= thresholds[2]) return 2
-  return 3
+  let tier = 0
+  for (let i = 0; i < thresholds.length; i += 1) {
+    if (value > (thresholds[i] ?? 0)) tier = i + 1
+  }
+  return Math.min(8, tier) as OverviewMapBubbleTier
 }
 
 export function overviewMapBubbleRadius(

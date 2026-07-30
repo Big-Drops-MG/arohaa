@@ -7,14 +7,19 @@ export type SegmentSelect = typeof segments.$inferSelect;
 
 export async function createSegment(data: SegmentInsert): Promise<SegmentSelect> {
   const [result] = await db.insert(segments).values(data).returning();
-  return result!;
+  if (!result) {
+    throw new Error('Failed to create segment');
+  }
+  return result;
 }
 
-export async function getSegmentsByWorkspace(workspaceId: string): Promise<SegmentSelect[]> {
+export async function getSegmentsByLandingPage(
+  landingPageId: string,
+): Promise<SegmentSelect[]> {
   return db
     .select()
     .from(segments)
-    .where(eq(segments.workspaceId, workspaceId))
+    .where(eq(segments.landingPageId, landingPageId))
     .orderBy(segments.createdAt);
 }
 
@@ -28,21 +33,24 @@ export async function getSegmentById(id: string): Promise<SegmentSelect | undefi
 
 export async function updateSegment(
   id: string,
-  workspaceId: string,
-  data: Partial<Omit<SegmentInsert, 'id' | 'workspaceId' | 'createdAt'>>
+  landingPageId: string,
+  data: Partial<Omit<SegmentInsert, 'id' | 'workspaceId' | 'landingPageId' | 'createdAt'>>
 ): Promise<SegmentSelect | undefined> {
   const [result] = await db
     .update(segments)
     .set({ ...data, updatedAt: new Date() })
-    .where(and(eq(segments.id, id), eq(segments.workspaceId, workspaceId)))
+    .where(and(eq(segments.id, id), eq(segments.landingPageId, landingPageId)))
     .returning();
   return result;
 }
 
-export async function deleteSegment(id: string, workspaceId: string): Promise<SegmentSelect | undefined> {
+export async function deleteSegment(
+  id: string,
+  landingPageId: string,
+): Promise<SegmentSelect | undefined> {
   const [result] = await db
     .delete(segments)
-    .where(and(eq(segments.id, id), eq(segments.workspaceId, workspaceId)))
+    .where(and(eq(segments.id, id), eq(segments.landingPageId, landingPageId)))
     .returning();
   return result;
 }

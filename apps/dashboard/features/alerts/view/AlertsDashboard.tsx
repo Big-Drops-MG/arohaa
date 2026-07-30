@@ -9,10 +9,12 @@ import { getAlertsEmptyDashboardData } from "@/features/alerts/controller/alerts
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
+import type { AnalyticsFetchMode } from "@/lib/dashboard/analytics-fetch-mode"
 import {
   buildAnalyticsApiPath,
   shouldUseInitialTabData,
 } from "@/lib/dashboard/analytics-query"
+import { cn } from "@workspace/ui/lib/utils"
 
 const ALERTS_REFETCH_MS = 60_000
 
@@ -34,11 +36,17 @@ export function AlertsDashboard({
   const { utmFilter } = useDashboardUtmFilter()
   const { segmentId } = useDashboardSegmentFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isBlockingLoad, setIsBlockingLoad] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   const fetchAlertsForRange = useCallback(
-    async (rangeId: typeof dateRangeId, signal?: AbortSignal) => {
-      setIsLoading(true)
+    async (
+      rangeId: typeof dateRangeId,
+      signal?: AbortSignal,
+      mode: AnalyticsFetchMode = "blocking"
+    ) => {
+      if (mode === "blocking") setIsBlockingLoad(true)
+      else setIsRefreshing(true)
 
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/alerts`,
@@ -54,7 +62,9 @@ export function AlertsDashboard({
               body.slice(0, 200)
             )
           }
-          setDashboardData(getAlertsEmptyDashboardData(projectId, rangeId))
+          if (mode === "blocking") {
+            setDashboardData(getAlertsEmptyDashboardData(projectId, rangeId))
+          }
           return
         }
         const next = (await res.json()) as AlertsDashboardData
@@ -64,10 +74,13 @@ export function AlertsDashboard({
         if (process.env.NODE_ENV === "development") {
           console.error("[alerts] client fetch failed", err)
         }
-        setDashboardData(getAlertsEmptyDashboardData(projectId, rangeId))
+        if (mode === "blocking") {
+          setDashboardData(getAlertsEmptyDashboardData(projectId, rangeId))
+        }
       } finally {
         if (!signal?.aborted) {
-          setIsLoading(false)
+          if (mode === "blocking") setIsBlockingLoad(false)
+          else setIsRefreshing(false)
         }
       }
     },
@@ -86,12 +99,12 @@ export function AlertsDashboard({
       )
     ) {
       setDashboardData(initialData)
-      setIsLoading(false)
+      setIsBlockingLoad(false)
       return
     }
 
     const controller = new AbortController()
-    void fetchAlertsForRange(dateRangeId, controller.signal)
+    void fetchAlertsForRange(dateRangeId, controller.signal, "background")
     return () => controller.abort()
   }, [
     customRange,
@@ -108,7 +121,7 @@ export function AlertsDashboard({
     const controller = new AbortController()
     const id = window.setInterval(() => {
       if (document.visibilityState !== "visible") return
-      void fetchAlertsForRange(dateRangeId, controller.signal)
+      void fetchAlertsForRange(dateRangeId, controller.signal, "background")
     }, ALERTS_REFETCH_MS)
 
     return () => {
@@ -136,10 +149,15 @@ export function AlertsDashboard({
         onCustomRangeChange={setCustomRange}
       />
 
-      {isTabLoading || isLoading ? (
+      {isTabLoading || isBlockingLoad ? (
         <AlertsDashboardSkeleton />
       ) : (
-        <AlertsListCard items={dashboardData.items} projectId={projectId} />
+        <div
+          className={cn("transition-opacity", isRefreshing && "opacity-80")}
+          aria-busy={isRefreshing}
+        >
+          <AlertsListCard items={dashboardData.items} projectId={projectId} />
+        </div>
       )}
     </div>
   )
