@@ -37,6 +37,26 @@ export type CompiledSegment = {
   params: Record<string, unknown>;
 };
 
+/**
+ * Segment values are typed by hand ("Mobile") while ClickHouse stores the raw
+ * tracked casing ("mobile"), so equality is matched case-insensitively — the
+ * same way `contains` already behaves via ILIKE. Numbers pass through.
+ */
+function foldCase(value: SegmentRule['value']): SegmentRule['value'] {
+  if (Array.isArray(value)) return value.map((item) => foldCase(item)) as (string | number)[];
+  return typeof value === 'string' ? value.toLowerCase() : value;
+}
+
+function isStringComparison(value: SegmentRule['value']): boolean {
+  return Array.isArray(value)
+    ? value.some((item) => typeof item === 'string')
+    : typeof value === 'string';
+}
+
+function foldCaseSql(column: string, value: SegmentRule['value']): string {
+  return isStringComparison(value) ? `lower(${column})` : column;
+}
+
 export class SegmentCompiler {
   private paramCounter = 0;
   private params: Record<string, unknown> = {};
@@ -80,9 +100,11 @@ export class SegmentCompiler {
 
     switch (rule.operator) {
       case 'equals':
-        return `${chColumn} = {${paramName}: ${this.getParamType(rule.value)}}`;
+        this.params[paramName] = foldCase(rule.value);
+        return `${foldCaseSql(chColumn, rule.value)} = {${paramName}: ${this.getParamType(rule.value)}}`;
       case 'not_equals':
-        return `${chColumn} != {${paramName}: ${this.getParamType(rule.value)}}`;
+        this.params[paramName] = foldCase(rule.value);
+        return `${foldCaseSql(chColumn, rule.value)} != {${paramName}: ${this.getParamType(rule.value)}}`;
       case 'contains':
         this.params[paramName] = `%${rule.value}%`;
         return `${chColumn} ILIKE {${paramName}: String}`;
@@ -93,12 +115,14 @@ export class SegmentCompiler {
         if (!Array.isArray(rule.value)) {
           throw new Error(`Operator 'in' requires an array value`);
         }
-        return `${chColumn} IN {${paramName}: Array(${this.getParamArrayType(rule.value)})}`;
+        this.params[paramName] = foldCase(rule.value);
+        return `${foldCaseSql(chColumn, rule.value)} IN {${paramName}: Array(${this.getParamArrayType(rule.value)})}`;
       case 'not_in':
         if (!Array.isArray(rule.value)) {
           throw new Error(`Operator 'not_in' requires an array value`);
         }
-        return `${chColumn} NOT IN {${paramName}: Array(${this.getParamArrayType(rule.value)})}`;
+        this.params[paramName] = foldCase(rule.value);
+        return `${foldCaseSql(chColumn, rule.value)} NOT IN {${paramName}: Array(${this.getParamArrayType(rule.value)})}`;
       case 'greater_than':
         return `${chColumn} > {${paramName}: ${this.getParamType(rule.value)}}`;
       case 'less_than':

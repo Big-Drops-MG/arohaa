@@ -16,8 +16,30 @@ describe('SegmentCompiler', () => {
       rules: [{ column: 'city', operator: 'equals', value: 'New York' }],
     };
     const result = compiler.compile(group);
-    expect(result.sql).toBe('(city = {seg_p_0: String})');
-    expect(result.params).toEqual({ seg_p_0: 'New York' });
+    expect(result.sql).toBe('(lower(city) = {seg_p_0: String})');
+    expect(result.params).toEqual({ seg_p_0: 'new york' });
+  });
+
+  it('matches equality case-insensitively so typed values find tracked values', () => {
+    const compiler = new SegmentCompiler();
+    const group: SegmentGroup = {
+      operator: 'and',
+      rules: [{ column: 'device', operator: 'equals', value: 'Mobile' }],
+    };
+    const result = compiler.compile(group);
+    expect(result.sql).toBe('(lower(device) = {seg_p_0: String})');
+    expect(result.params).toEqual({ seg_p_0: 'mobile' });
+  });
+
+  it('leaves numeric comparisons untouched', () => {
+    const compiler = new SegmentCompiler();
+    const group: SegmentGroup = {
+      operator: 'and',
+      rules: [{ column: 'city', operator: 'greater_than', value: 5 }],
+    };
+    const result = compiler.compile(group);
+    expect(result.sql).toBe('(city > {seg_p_0: Float64})');
+    expect(result.params).toEqual({ seg_p_0: 5 });
   });
 
   it('should compile multiple rules with AND', () => {
@@ -30,9 +52,11 @@ describe('SegmentCompiler', () => {
       ],
     };
     const result = compiler.compile(group);
-    expect(result.sql).toBe('(city = {seg_p_0: String} AND device IN {seg_p_1: Array(String)})');
+    expect(result.sql).toBe(
+      '(lower(city) = {seg_p_0: String} AND lower(device) IN {seg_p_1: Array(String)})',
+    );
     expect(result.params).toEqual({
-      seg_p_0: 'New York',
+      seg_p_0: 'new york',
       seg_p_1: ['desktop', 'mobile'],
     });
   });
@@ -53,11 +77,13 @@ describe('SegmentCompiler', () => {
       ],
     };
     const result = compiler.compile(group);
-    expect(result.sql).toBe('(country = {seg_p_0: String} OR (city ILIKE {seg_p_1: String} AND browser != {seg_p_2: String}))');
+    expect(result.sql).toBe(
+      '(lower(country) = {seg_p_0: String} OR (city ILIKE {seg_p_1: String} AND lower(browser) != {seg_p_2: String}))',
+    );
     expect(result.params).toEqual({
-      seg_p_0: 'US',
+      seg_p_0: 'us',
       seg_p_1: '%Lon%',
-      seg_p_2: 'Chrome',
+      seg_p_2: 'chrome',
     });
   });
 
