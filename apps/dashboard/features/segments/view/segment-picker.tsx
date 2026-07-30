@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Filter, Check } from "lucide-react"
+import { Check, ChevronDown, Users } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import {
   Popover,
@@ -10,119 +10,125 @@ import {
 } from "@workspace/ui/components/popover"
 import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
 import { overviewSelectTriggerClassName } from "@/features/overview/view/overview-select-styles"
-import { SegmentGroup } from "../model/segment-model"
-import { fetchSegmentPreviewCount } from "../controller/segment-controller"
+import type { SavedSegment } from "@/features/segments/model/segment-model"
+import { fetchSavedSegments } from "@/features/segments/controller/segment-controller"
 
-// Simplified segment list fetcher (since we need it here)
-async function fetchSegments(workspaceId: string) {
-  const res = await fetch(
-    `/api/proxy/v1/segments?workspace_id=${encodeURIComponent(workspaceId)}`
-  )
-  if (!res.ok) return []
-  const data = await res.json()
-  return data.segments || []
-}
+const ALL_SEGMENTS_LABEL = "All segments"
 
 export function SegmentPicker({ projectId }: { projectId: string }) {
   const { segmentId, setSegmentId, clearSegmentFilter } =
     useDashboardSegmentFilter()
   const [open, setOpen] = useState(false)
-  const [segments, setSegments] = useState<any[]>([])
+  const [segments, setSegments] = useState<SavedSegment[]>([])
   const [isLoading, setIsLoading] = useState(false)
 
+  // Load once on mount so the trigger can name an already-applied segment,
+  // then refresh whenever the popover is opened.
   useEffect(() => {
-    if (!open && segments.length > 0) return
-    if (open) {
-      setIsLoading(true)
-      fetchSegments(projectId)
-        .then(setSegments)
-        .finally(() => setIsLoading(false))
-    }
-  }, [open, projectId, segments.length])
+    const controller = new AbortController()
+    setIsLoading(true)
 
-  const activeSegment = segments.find((s) => s.id === segmentId)
-  const label = activeSegment ? activeSegment.name : "All Traffic"
+    fetchSavedSegments(projectId, controller.signal)
+      .then((data) => {
+        if (controller.signal.aborted) return
+        setSegments(data)
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setSegments([])
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [projectId, open])
+
+  const activeSegment = segments.find((segment) => segment.id === segmentId)
+  const label = activeSegment ? activeSegment.name : ALL_SEGMENTS_LABEL
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        className={cn(
-          overviewSelectTriggerClassName,
-          "h-8 gap-1.5 px-3",
-          segmentId &&
-            "border-neutral-300 bg-neutral-100 text-neutral-900 shadow-sm"
-        )}
-      >
-        <Filter className="size-3.5 opacity-60" />
-        <span className="max-w-[120px] truncate">{label}</span>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            overviewSelectTriggerClassName,
+            "inline-flex w-full max-w-full items-center justify-between sm:w-auto sm:max-w-64 sm:min-w-44",
+            segmentId && "border-neutral-300 bg-neutral-100 text-neutral-900"
+          )}
+          aria-label="Segment filter"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <Users className="size-3.5 shrink-0 text-neutral-500" />
+            <span className="truncate">{label}</span>
+          </span>
+          <ChevronDown className="size-3.5 shrink-0 text-neutral-400" />
+        </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-[240px] p-0" sideOffset={8}>
-        <div className="flex flex-col border-b border-neutral-200">
-          <div className="px-3 py-2 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
-            Segments
-          </div>
 
+      <PopoverContent
+        align="end"
+        side="bottom"
+        sideOffset={8}
+        className="w-[min(100vw-2rem,17rem)] overflow-hidden rounded-lg border border-neutral-200 bg-white p-0 text-neutral-900 shadow-lg ring-1 shadow-neutral-950/8 ring-black/5"
+      >
+        <div className="px-3 pt-2.5 pb-1 text-[11px] font-semibold tracking-wide text-neutral-500 uppercase">
+          Segments
+        </div>
+
+        <div className="flex max-h-80 flex-col overflow-y-auto pb-1">
           <button
             type="button"
             className={cn(
-              "flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-100",
-              !segmentId && "bg-neutral-50 font-medium"
+              "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-100",
+              !segmentId && "bg-neutral-100 font-medium"
             )}
             onClick={() => {
               clearSegmentFilter()
               setOpen(false)
             }}
           >
-            <span
-              className={cn(
-                "flex size-4 shrink-0 items-center justify-center rounded border",
-                !segmentId
-                  ? "border-neutral-900 bg-neutral-900 text-white"
-                  : "border-neutral-300 bg-white text-transparent"
-              )}
-            >
-              <Check className="size-2.5" strokeWidth={3} />
-            </span>
-            All Traffic
+            <span>{ALL_SEGMENTS_LABEL}</span>
+            {!segmentId ? (
+              <Check className="size-3.5 shrink-0 text-neutral-900" />
+            ) : null}
           </button>
-        </div>
 
-        <div className="flex max-h-[300px] flex-col overflow-y-auto p-1">
-          {isLoading ? (
-            <div className="p-3 text-center text-sm text-neutral-500">
-              Loading...
+          {isLoading && segments.length === 0 ? (
+            <div className="space-y-2 px-3 py-3" aria-busy>
+              {Array.from({ length: 3 }, (_, i) => (
+                <div
+                  key={i}
+                  className="h-8 w-full animate-pulse rounded-md bg-neutral-100"
+                />
+              ))}
             </div>
           ) : segments.length === 0 ? (
-            <div className="p-3 text-center text-sm text-neutral-500">
-              No saved segments
-            </div>
+            <p className="px-3 py-6 text-center text-sm text-neutral-500">
+              No saved segments yet
+            </p>
           ) : (
-            segments.map((seg) => {
-              const isSelected = seg.id === segmentId
+            segments.map((segment) => {
+              const isSelected = segment.id === segmentId
               return (
                 <button
-                  key={seg.id}
+                  key={segment.id}
                   type="button"
                   className={cn(
-                    "flex items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-neutral-100",
-                    isSelected && "bg-neutral-50 font-medium"
+                    "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-100",
+                    isSelected && "bg-neutral-100 font-medium"
                   )}
                   onClick={() => {
-                    setSegmentId(seg.id)
+                    setSegmentId(segment.id)
                     setOpen(false)
                   }}
                 >
-                  <span
-                    className={cn(
-                      "flex size-4 shrink-0 items-center justify-center rounded border",
-                      isSelected
-                        ? "border-neutral-900 bg-neutral-900 text-white"
-                        : "border-neutral-300 bg-white text-transparent"
-                    )}
-                  >
-                    <Check className="size-2.5" strokeWidth={3} />
+                  <span className="min-w-0 flex-1 truncate">
+                    {segment.name}
                   </span>
-                  <span className="flex-1 truncate">{seg.name}</span>
+                  {isSelected ? (
+                    <Check className="size-3.5 shrink-0 text-neutral-900" />
+                  ) : null}
                 </button>
               )
             })

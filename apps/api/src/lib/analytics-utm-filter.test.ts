@@ -53,4 +53,34 @@ describe('analytics utm filter', () => {
       'utm_source:facebook,google|utm_s1:S1',
     )
   })
+
+  it('applies the compiled segment as an extra AND clause with its params', () => {
+    const filter = {
+      segmentSql: '(city = {seg_p_0: String})',
+      segmentParams: { seg_p_0: 'Pune' },
+    }
+    expect(utmFilterSql(filter)).toBe(' AND (city = {seg_p_0: String})')
+    expect(utmFilterParams(filter)).toEqual({ seg_p_0: 'Pune' })
+  })
+
+  it('gives segmented and unsegmented requests distinct cache keys', () => {
+    const unsegmented = { utm_source: ['google'] }
+    const segmented = {
+      utm_source: ['google'],
+      segmentSql: '(city = {seg_p_0: String})',
+      segmentParams: { seg_p_0: 'Pune' },
+    }
+    const otherSegment = {
+      utm_source: ['google'],
+      segmentSql: '(city = {seg_p_0: String})',
+      segmentParams: { seg_p_0: 'Mumbai' },
+    }
+
+    expect(utmFilterCacheKey(segmented)).not.toBe(
+      utmFilterCacheKey(unsegmented),
+    )
+    expect(utmFilterCacheKey(segmented)).not.toBe(
+      utmFilterCacheKey(otherSegment),
+    )
+  })
 })

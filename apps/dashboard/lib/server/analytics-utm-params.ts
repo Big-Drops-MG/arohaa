@@ -17,6 +17,9 @@ export function appendDashboardUtmParams(
   const s1 = serializeUtmValueList(normalized.utm_s1)
   if (source) url.searchParams.set("utm_source", source)
   if (s1) url.searchParams.set("utm_s1", s1)
+  if (normalized.segment_id) {
+    url.searchParams.set("segment_id", normalized.segment_id)
+  }
 }
 
 export function appendDashboardCustomRangeParams(
@@ -37,6 +40,7 @@ export function parseUtmFilterFromSearchParams(
     utm_s1: searchParams.get("utm_s1"),
     utm_dim: searchParams.get("utm_dim"),
     utm_value: searchParams.get("utm_value"),
+    segment_id: searchParams.get("segment_id"),
   })
 }
 

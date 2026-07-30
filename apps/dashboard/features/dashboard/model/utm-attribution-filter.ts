@@ -1,9 +1,15 @@
 export type UtmFilterDimension = "utm_source" | "utm_s1"
 
-/** Multi-select AND filters across UTM Source and UTM S1. */
+/**
+ * Multi-select AND filters across UTM Source and UTM S1, plus an optional saved
+ * segment. The segment rides along so it reaches the analytics API through the
+ * same plumbing, but it is owned by a separate picker and is deliberately
+ * excluded from `hasDashboardUtmFilter` / the UTM trigger label.
+ */
 export type DashboardUtmFilter = {
   utm_source?: string[]
   utm_s1?: string[]
+  segment_id?: string
 }
 
 export const UTM_FILTER_DIMENSIONS: readonly UtmFilterDimension[] = [
@@ -68,9 +74,11 @@ export function normalizeDashboardUtmFilter(
   const next: DashboardUtmFilter = {}
   const source = parseUtmValueList(filter.utm_source)
   const s1 = parseUtmValueList(filter.utm_s1)
+  const segmentId = sanitizeUtmValue(filter.segment_id)
   if (source) next.utm_source = source
   if (s1) next.utm_s1 = s1
-  return hasDashboardUtmFilter(next) ? next : undefined
+  if (segmentId) next.segment_id = segmentId
+  return hasDashboardUtmFilter(next) || next.segment_id ? next : undefined
 }
 
 /**
@@ -83,17 +91,23 @@ export function parseDashboardUtmFilterFromParams(params: {
   utm_medium?: string | string[] | null
   utm_dim?: string | null
   utm_value?: string | null
+  segment_id?: string | null
 }): DashboardUtmFilter | undefined {
+  const segmentId = sanitizeUtmValue(params.segment_id)
+
   const fromExplicit = normalizeDashboardUtmFilter({
     utm_source: parseUtmValueList(params.utm_source),
     utm_s1: parseUtmValueList(params.utm_s1),
+    segment_id: segmentId,
   })
   if (fromExplicit) return fromExplicit
 
   const dim = params.utm_dim?.trim()
   const value = sanitizeUtmValue(params.utm_value)
-  if (!dim || !value || !isUtmFilterDimension(dim)) return undefined
-  return { [dim]: [value] }
+  if (!dim || !value || !isUtmFilterDimension(dim)) {
+    return segmentId ? { segment_id: segmentId } : undefined
+  }
+  return normalizeDashboardUtmFilter({ [dim]: [value], segment_id: segmentId })
 }
 
 /** @deprecated Prefer parseDashboardUtmFilterFromParams */
@@ -146,6 +160,7 @@ export function utmFilterCacheKey(filter?: DashboardUtmFilter | null): string {
     normalized.utm_s1?.length
       ? `utm_s1:${[...normalized.utm_s1].sort().join(",")}`
       : null,
+    normalized.segment_id ? `segment:${normalized.segment_id}` : null,
   ]
     .filter(Boolean)
     .join("|")

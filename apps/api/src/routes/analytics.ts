@@ -52,7 +52,10 @@ import type {
 } from '../types/analytics-heatmap.js'
 import { parseAnalyticsUtmFilter } from '../lib/analytics-utm-filter.js'
 import { getSegmentById } from '@workspace/database'
-import { SegmentCompiler } from '../services/segment-compiler.service.js'
+import {
+  SegmentCompiler,
+  type SegmentGroup,
+} from '../services/segment-compiler.service.js'
 import {
   ANALYTICS_RANGE_IDS,
   DEFAULT_ANALYTICS_RANGE_ID,
@@ -270,11 +273,18 @@ async function sendAnalyticsQuery<T>({
 }
 
 
-async function resolveSegmentFilter(segmentId?: string, workspaceId?: string) {
-  if (!segmentId || !workspaceId) return undefined;
+/**
+ * Analytics scopes by landing page: the `workspace_id` query param carries the
+ * landing page id (ClickHouse stores it in its `workspace_id` column), so the
+ * ownership check must compare against the segment's landingPageId.
+ */
+async function resolveSegmentFilter(segmentId?: string, landingPageId?: string) {
+  if (!segmentId || !landingPageId) return undefined;
   const segment = await getSegmentById(segmentId);
-  if (!segment || segment.workspaceId !== workspaceId || !segment.conditions) return undefined;
-  return new SegmentCompiler().compile(segment.conditions as any);
+  if (!segment || segment.landingPageId !== landingPageId || !segment.conditions) {
+    return undefined;
+  }
+  return new SegmentCompiler().compile(segment.conditions as SegmentGroup);
 }
 
 export async function analyticsRoutes(server: FastifyInstance) {

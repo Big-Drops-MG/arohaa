@@ -46,6 +46,7 @@ type ProjectPageProps = {
     utm_medium?: string
     utm_dim?: string
     utm_value?: string
+    segment_id?: string
   }>
 }
 
@@ -80,6 +81,7 @@ export default async function ProjectPage({
     utm_s1,
     utm_dim,
     utm_value,
+    segment_id,
   } = await searchParams
   const rangeId = parseTrafficRangeId(rangeIdParam)
   const customRange = parseDashboardCustomRange(from, to)
@@ -89,6 +91,7 @@ export default async function ProjectPage({
     utm_s1,
     utm_dim,
     utm_value,
+    segment_id,
   })
 
   const actor = await requireLandingPageActor()

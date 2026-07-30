@@ -120,6 +120,11 @@ export function utmFilterCacheKey(filter?: AnalyticsUtmFilter): string {
     normalized.utm_s1?.length
       ? `utm_s1:${[...normalized.utm_s1].sort().join(',')}`
       : null,
+    // Without the segment the cache would serve unfiltered rows for a
+    // segmented request (and vice versa).
+    normalized.segmentSql
+      ? `segment:${normalized.segmentSql}:${JSON.stringify(normalized.segmentParams ?? {})}`
+      : null,
   ]
     .filter(Boolean)
     .join('|')
