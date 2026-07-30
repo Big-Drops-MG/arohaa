@@ -163,7 +163,7 @@ export function OverviewDashboard({
       })
 
     return () => controller.abort()
-  }, [customRange, data, projectId, dateRangeId, utmFilter])
+  }, [customRange, data, projectId, dateRangeId, utmFilter, segmentId])
 
   useEffect(() => {
     let cancelled = false
@@ -224,7 +224,7 @@ export function OverviewDashboard({
         }
       }
     },
-    [projectId, customRange, utmFilter]
+    [projectId, customRange, utmFilter, segmentId]
   )
 
   useEffect(() => {
@@ -233,7 +233,9 @@ export function OverviewDashboard({
         dateRangeId,
         data.defaultDateRangeId,
         utmFilter,
-        customRange
+        customRange,
+        undefined,
+        segmentId
       )
     ) {
       setFunnelSteps(data.funnel)
@@ -244,7 +246,14 @@ export function OverviewDashboard({
     const controller = new AbortController()
     void fetchFunnelForRange(dateRangeId, controller.signal)
     return () => controller.abort()
-  }, [customRange, dateRangeId, utmFilter, data, fetchFunnelForRange])
+  }, [
+    customRange,
+    dateRangeId,
+    utmFilter,
+    segmentId,
+    data,
+    fetchFunnelForRange,
+  ])
 
   const chartPoints = useMemo(() => {
     void chartNowNonce

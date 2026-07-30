@@ -33,6 +33,7 @@ import {
   type ProjectTabData,
 } from "@/hooks/use-lazy-project-tab-data"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import {
   DashboardNavigationProvider,
@@ -68,6 +69,7 @@ function ProjectDashboardViewInner({
   })
   const { dateRangeId, customRange } = useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
+  const { segmentId } = useDashboardSegmentFilter()
 
   const {
     overview,
@@ -88,6 +90,7 @@ function ProjectDashboardViewInner({
     rangeId: dateRangeId,
     customRange,
     utmFilter,
+    segmentId,
     formType,
     overviewPlaceholder,
     initial,

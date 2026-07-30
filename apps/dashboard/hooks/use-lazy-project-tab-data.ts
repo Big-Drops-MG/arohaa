@@ -52,7 +52,8 @@ function tabApiPath(
   tab: ProjectTabValue,
   rangeId: OverviewDateRangeId,
   utmFilter?: DashboardUtmFilter,
-  customRange?: DashboardCustomRange
+  customRange?: DashboardCustomRange,
+  segmentId?: string | null
 ): string {
   const base = `/api/landing-pages/${encodeURIComponent(projectId)}`
   if (tab === "settings") return `${base}/settings`
@@ -60,7 +61,12 @@ function tabApiPath(
 
   const path = tab === "event-tracking" ? `${base}/events` : `${base}/${tab}`
 
-  return buildAnalyticsApiPath(path, { rangeId, customRange, utmFilter })
+  return buildAnalyticsApiPath(path, {
+    rangeId,
+    customRange,
+    utmFilter,
+    segmentId,
+  })
 }
 
 function emptyTabData(
@@ -107,6 +113,7 @@ export function useLazyProjectTabData({
   rangeId,
   customRange,
   utmFilter,
+  segmentId,
   formType,
   overviewPlaceholder,
   initial,
@@ -116,6 +123,7 @@ export function useLazyProjectTabData({
   rangeId: OverviewDateRangeId
   customRange?: DashboardCustomRange
   utmFilter?: DashboardUtmFilter
+  segmentId?: string | null
   formType: OverviewLandingFormType
   overviewPlaceholder: OverviewDashboardData
   initial: InitialTabData
@@ -127,7 +135,13 @@ export function useLazyProjectTabData({
   const customRangeCacheKey = customRange
     ? `${customRange.from}:${customRange.to}`
     : "none"
-  const filterKeyRef = useRef({ rangeId, utmCacheKey, customRangeCacheKey })
+  const segmentCacheKey = segmentId ?? "none"
+  const filterKeyRef = useRef({
+    rangeId,
+    utmCacheKey,
+    customRangeCacheKey,
+    segmentCacheKey,
+  })
   const [filterEpoch, setFilterEpoch] = useState(0)
   const settledEpochRef = useRef<Partial<Record<ProjectTabValue, number>>>(
     seedSettledEpochs(initial)
@@ -138,7 +152,7 @@ export function useLazyProjectTabData({
   const fetchTab = useCallback(
     async (tab: ProjectTabValue, signal?: AbortSignal) => {
       const res = await fetch(
-        tabApiPath(projectId, tab, rangeId, utmFilter, customRange),
+        tabApiPath(projectId, tab, rangeId, utmFilter, customRange, segmentId),
         {
           cache: "no-store",
           signal,
@@ -149,7 +163,7 @@ export function useLazyProjectTabData({
       }
       return (await res.json()) as ProjectTabData[typeof tab]
     },
-    [projectId, rangeId, customRange, utmFilter]
+    [projectId, rangeId, customRange, utmFilter, segmentId]
   )
 
   const fetchTabRef = useRef(fetchTab)
@@ -163,15 +177,21 @@ export function useLazyProjectTabData({
     if (
       prev.rangeId === rangeId &&
       prev.utmCacheKey === utmCacheKey &&
-      prev.customRangeCacheKey === customRangeCacheKey
+      prev.customRangeCacheKey === customRangeCacheKey &&
+      prev.segmentCacheKey === segmentCacheKey
     ) {
       return
     }
-    filterKeyRef.current = { rangeId, utmCacheKey, customRangeCacheKey }
+    filterKeyRef.current = {
+      rangeId,
+      utmCacheKey,
+      customRangeCacheKey,
+      segmentCacheKey,
+    }
     inFlightRef.current = null
     settledEpochRef.current = {}
     setFilterEpoch((value) => value + 1)
-  }, [rangeId, utmCacheKey, customRangeCacheKey])
+  }, [rangeId, utmCacheKey, customRangeCacheKey, segmentCacheKey])
 
   useEffect(() => {
     if (settledEpochRef.current[activeTab] === filterEpoch) return
