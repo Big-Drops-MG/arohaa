@@ -8,6 +8,7 @@ import type { SegmentsDashboardData } from "@/features/segments/model/segments"
 import { SavedSegmentsCard } from "@/features/segments/view/SavedSegmentsCard"
 import { SegmentsPerformanceCards } from "@/features/segments/view/SegmentsPerformanceCards"
 import { SegmentsSummaryKpiRow } from "@/features/segments/view/SegmentsSummaryKpiRow"
+import { CohortRetentionSection } from "@/features/retention/view/CohortRetentionSection"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardPreference } from "@/hooks/use-dashboard-preference"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
@@ -181,6 +182,8 @@ export function SegmentsDashboard({
           />
 
           <SavedSegmentsCard projectId={projectId} />
+
+          <CohortRetentionSection projectId={projectId} />
 
           <SegmentsPerformanceCards data={dashboardData} />
         </div>

@@ -46,6 +46,10 @@ import {
   emptyAnalyticsHeatmap,
   getAnalyticsHeatmap,
 } from '../services/analytics-heatmap.service.js'
+import {
+  getCohortRetention,
+  type CohortSplitBy,
+} from '../services/analytics-retention.service.js'
 import type {
   HeatmapDevice,
   HeatmapMode,
@@ -652,6 +656,61 @@ export async function analyticsRoutes(server: FastifyInstance) {
           }),
         logLabel: 'analytics segments query ok',
         logContext: { range_id: parsed.rangeId },
+      })
+    },
+  )
+
+  server.get<{
+    Querystring: {
+      workspace_id: string
+      segment_id?: string
+      split_by?: CohortSplitBy
+    }
+  }>(
+    '/v1/analytics/cohorts',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['workspace_id'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            segment_id: { type: 'string', format: 'uuid' },
+            split_by: {
+              type: 'string',
+              enum: ['utm_source', 'utm_campaign'],
+            },
+          },
+        },
+      },
+      config: ANALYTICS_RATE_LIMIT,
+    },
+    async (request, reply) => {
+      const { workspace_id, segment_id, split_by } = request.query
+
+      let segmentGroup: SegmentGroup | null = null
+      if (segment_id) {
+        const segment = await getSegmentById(segment_id)
+        if (
+          segment &&
+          segment.landingPageId === workspace_id &&
+          segment.conditions
+        ) {
+          segmentGroup = segment.conditions as SegmentGroup
+        }
+      }
+
+      await sendAnalyticsQuery({
+        request,
+        reply,
+        workspaceId: workspace_id,
+        emptyValue: [] as Awaited<ReturnType<typeof getCohortRetention>>,
+        run: () => getCohortRetention(workspace_id, segmentGroup, split_by),
+        logLabel: 'analytics cohorts query ok',
+        logContext: {
+          split_by: split_by ?? 'none',
+          segment_id: segment_id ?? null,
+        },
       })
     },
   )
