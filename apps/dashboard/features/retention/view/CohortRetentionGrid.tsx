@@ -1,4 +1,6 @@
-import React from "react"
+"use client"
+
+import { useEffect, useMemo, useState } from "react"
 import {
   Card,
   CardHeader,
@@ -14,13 +16,27 @@ import {
 } from "../utils/retention-matrix"
 import { exportRetentionCsv } from "../utils/export-csv"
 
+const PAGE_SIZE = 15
+
 interface Props {
   data: CohortRetentionRow[]
   maxWeeks?: number
 }
 
 export function CohortRetentionGrid({ data, maxWeeks = 8 }: Props) {
-  const matrix = buildRetentionMatrix(data, maxWeeks)
+  const matrix = useMemo(
+    () => buildRetentionMatrix(data, maxWeeks),
+    [data, maxWeeks]
+  )
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE)
+  }, [data])
+
+  const visibleRows = matrix.slice(0, visibleCount)
+  const hasMore = visibleCount < matrix.length
+  const remaining = Math.max(0, matrix.length - visibleCount)
 
   return (
     <Card className="max-w-full">
@@ -59,7 +75,7 @@ export function CohortRetentionGrid({ data, maxWeeks = 8 }: Props) {
               </tr>
             </thead>
             <tbody>
-              {matrix.map((row) => (
+              {visibleRows.map((row) => (
                 <tr
                   key={`${row.cohortWeek}-${row.channel || "all"}`}
                   className="border-b transition-colors last:border-0 hover:bg-muted/50"
@@ -101,7 +117,6 @@ export function CohortRetentionGrid({ data, maxWeeks = 8 }: Props) {
                             {week.retentionPercent.toFixed(1)}%
                           </span>
 
-                          {/* Hover Detail Tooltip */}
                           <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden -translate-x-1/2 group-hover:block">
                             <div className="rounded-md border bg-popover p-2 text-xs whitespace-nowrap text-popover-foreground shadow-md">
                               <p className="mb-1 font-semibold">
@@ -137,6 +152,27 @@ export function CohortRetentionGrid({ data, maxWeeks = 8 }: Props) {
             </div>
           )}
         </div>
+
+        {matrix.length > 0 && (
+          <div className="flex flex-col items-center gap-2 border-t pt-4">
+            <p className="text-xs text-muted-foreground">
+              Showing {visibleRows.length} of {matrix.length} cohorts
+            </p>
+            {hasMore && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setVisibleCount((count) =>
+                    Math.min(count + PAGE_SIZE, matrix.length)
+                  )
+                }
+              >
+                Load more ({Math.min(PAGE_SIZE, remaining)} more)
+              </Button>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   )
