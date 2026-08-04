@@ -59,26 +59,28 @@ function fmtPct(v: number): string {
   return `${safeNum(v).toFixed(1)}%`
 }
 
-function performanceByTimeColumns(showDate: boolean) {
+function performanceByTimeColumns(showDate: boolean, formType?: string) {
+  const formLabel = formType === "zip" ? "Zip Submitted" : "Form Submitted"
   return showDate
     ? [
         { key: "label", label: "Day" },
         { key: "date", label: "Date" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
+        { key: "formSubmitted", label: formLabel },
         { key: "fsr", label: "FSR" },
       ]
     : [
         { key: "label", label: "Day" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
+        { key: "formSubmitted", label: formLabel },
         { key: "fsr", label: "FSR" },
       ]
 }
 
 export function buildSegmentsDashboardData(
   data: AnalyticsSegments,
-  rangeId: RangeId
+  rangeId: RangeId,
+  formType?: string
 ): SegmentsDashboardData {
   const {
     summaryKpis,
@@ -123,7 +125,10 @@ export function buildSegmentsDashboardData(
       columns: [
         { key: "label", label: "City" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
+        {
+          key: "formSubmitted",
+          label: formType === "zip" ? "Zip Submitted" : "Form Submitted",
+        },
         { key: "fsr", label: "FSR" },
       ],
       rows: mapRows(performanceByLocation),
@@ -133,14 +138,17 @@ export function buildSegmentsDashboardData(
       columns: [
         { key: "label", label: "Device" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
+        {
+          key: "formSubmitted",
+          label: formType === "zip" ? "Zip Submitted" : "Form Submitted",
+        },
         { key: "fsr", label: "FSR" },
       ],
       rows: mapRows(performanceByDevice),
     },
     performanceByTime: {
       title: "Performance by time",
-      columns: performanceByTimeColumns(showDate),
+      columns: performanceByTimeColumns(showDate, formType),
       rows: mapTimeRows(performanceByTime),
     },
   }
@@ -225,10 +233,14 @@ export async function loadSegmentsDashboardData({
     customRange
   )
   if (!analytics) {
-    return getSegmentsEmptyDashboardData(landingPagePublicId, rangeId)
+    return getSegmentsEmptyDashboardData(
+      landingPagePublicId,
+      rangeId,
+      row.formType
+    )
   }
 
-  return buildSegmentsDashboardData(analytics, rangeId)
+  return buildSegmentsDashboardData(analytics, rangeId, row.formType)
 }
 
 export async function loadSegmentsDashboardDataForApi(
@@ -261,9 +273,16 @@ export async function loadSegmentsDashboardDataForApi(
   if (!analytics) {
     return {
       ok: true,
-      data: getSegmentsEmptyDashboardData(landingPagePublicId, rangeId),
+      data: getSegmentsEmptyDashboardData(
+        landingPagePublicId,
+        rangeId,
+        row.formType
+      ),
     }
   }
 
-  return { ok: true, data: buildSegmentsDashboardData(analytics, rangeId) }
+  return {
+    ok: true,
+    data: buildSegmentsDashboardData(analytics, rangeId, row.formType),
+  }
 }
