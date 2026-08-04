@@ -2,29 +2,40 @@ import type {
   OverviewDateRangeId,
   OverviewLandingFormType,
 } from "@/features/overview/model/overview"
+import {
+  conversionRateLabel,
+  conversionSubmittedColumnLabel,
+  hasConversionMetrics,
+} from "@/features/overview/model/overview"
 import type { TrafficBreakdownTable } from "@/features/traffic/model/traffic"
 
 function formSubmittedLabel(formType: OverviewLandingFormType): string {
-  return formType === "zip" ? "Zip Submitted" : "Form Submitted"
+  return conversionSubmittedColumnLabel(formType)
 }
 
 function rateLabel(formType: OverviewLandingFormType): string {
-  return formType === "zip" ? "ZSR" : "FSR"
+  return conversionRateLabel(formType)
 }
 
 function performanceMetricColumns(
   formType: OverviewLandingFormType,
   dimension: { id: string; label: string }
 ): TrafficBreakdownTable["columns"] {
-  const formSubmitted = formSubmittedLabel(formType)
-  const rate = rateLabel(formType)
-
-  return [
+  const columns: TrafficBreakdownTable["columns"] = [
     { id: dimension.id, label: dimension.label },
     { id: "visitors", label: "Visitors", align: "right" },
-    { id: "formSubmitted", label: formSubmitted, align: "right" },
-    { id: "rate", label: rate, align: "right" },
   ]
+  if (hasConversionMetrics(formType)) {
+    columns.push(
+      {
+        id: "formSubmitted",
+        label: formSubmittedLabel(formType),
+        align: "right",
+      },
+      { id: "rate", label: rateLabel(formType), align: "right" }
+    )
+  }
+  return columns
 }
 
 export function segmentPerformanceLocationColumns(

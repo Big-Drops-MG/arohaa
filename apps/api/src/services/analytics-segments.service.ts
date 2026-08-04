@@ -188,7 +188,7 @@ export async function getAnalyticsSegments({
         SELECT
           if(city = '', 'Unknown', city) AS label,
           uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-          uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
+          uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
           uniqExact(session_id) AS sessions
         FROM events_raw
         WHERE ${where}
@@ -204,7 +204,7 @@ export async function getAnalyticsSegments({
         SELECT
           lower(device) AS label,
           uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-          uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
+          uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
           uniqExact(session_id) AS sessions
         FROM events_raw
         WHERE ${where}
@@ -220,7 +220,7 @@ export async function getAnalyticsSegments({
         SELECT
           ${chToDayOfWeek('created_at', 1)} AS label,
           uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-          uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
+          uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
           uniqExact(session_id) AS sessions
         FROM events_raw
         WHERE ${where}
@@ -236,7 +236,7 @@ export async function getAnalyticsSegments({
             SELECT
               ${chDayBucketKey('created_at')} AS bucket,
               uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-              uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
+              uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
               uniqExact(session_id) AS sessions
             FROM events_raw
             WHERE ${where}
@@ -251,7 +251,7 @@ export async function getAnalyticsSegments({
         query: `
         SELECT
           ${chToHour('created_at')} AS label,
-          uniqExactIf(session_id, event_name = 'form_success') AS form_submitted
+          uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted
         FROM events_raw
         WHERE ${where}
         GROUP BY label

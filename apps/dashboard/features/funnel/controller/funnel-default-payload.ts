@@ -12,7 +12,8 @@ const DEFAULT_MULTI_STEP_LABELS = [] as const
 
 function funnelTailLabels(
   formType: OverviewLandingFormType
-): readonly [string, string] {
+): readonly string[] {
+  if (formType === "none") return ["Service Clicked"]
   return formType === "zip"
     ? (["Zip Started", "Zip Submitted"] as const)
     : (["Form Started", "Form Submitted"] as const)
@@ -21,7 +22,7 @@ function funnelTailLabels(
 export function defaultFunnelSteps(
   formType: OverviewLandingFormType
 ): FunnelStep[] {
-  const labels = [...FUNNEL_BASE_LABELS, ...funnelTailLabels(formType)] as const
+  const labels = [...FUNNEL_BASE_LABELS, ...funnelTailLabels(formType)]
   return labels.map((label) => ({
     label,
     value: "0",
@@ -31,7 +32,15 @@ export function defaultFunnelSteps(
 export function defaultFunnelMetricKpis(
   formType: OverviewLandingFormType
 ): FunnelMetricKpi[] {
-  const labels = [...FUNNEL_BASE_LABELS, ...funnelTailLabels(formType)] as const
+  if (formType === "none") {
+    return [
+      { id: "landing-page-visits", label: "Landing Page Visits", value: "0" },
+      { id: "interactions", label: "Interactions", value: "0" },
+      { id: "form-submitted", label: "Service Clicked", value: "0" },
+    ]
+  }
+
+  const labels = [...FUNNEL_BASE_LABELS, ...funnelTailLabels(formType)]
   return labels.map((label, index) => ({
     id: funnelKpiMetricIdAtIndex(index),
     label,

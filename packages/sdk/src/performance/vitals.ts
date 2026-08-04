@@ -11,6 +11,7 @@ interface EventTimingEntry extends PerformanceEntry {
 
 const VITALS_EVENT = "web_vitals"
 
+let fcpValue = 0
 let lcpValue = 0
 let clsValue = 0
 let inpValue = 0
@@ -44,6 +45,7 @@ function reportVital(
 function flushAll(): void {
   if (reported) return
   reported = true
+  reportVital("FCP", fcpValue)
   reportVital("LCP", lcpValue)
   reportVital("CLS", clsValue, true)
   reportVital("INP", inpValue)
@@ -56,6 +58,14 @@ export function monitorWebVitals(): void {
   ) {
     return
   }
+
+  safeObserve("paint", (entryList) => {
+    for (const entry of entryList.getEntries()) {
+      if (entry.name === "first-contentful-paint") {
+        fcpValue = entry.startTime
+      }
+    }
+  })
 
   safeObserve("largest-contentful-paint", (entryList) => {
     const entries = entryList.getEntries()

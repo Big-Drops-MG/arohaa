@@ -9,6 +9,7 @@ export function getSegmentsPlaceholderData(
   const formLabel = formType === "zip" ? "Zip Submitted" : "Form Submitted"
 
   return {
+    formType: "single",
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: "7d",
     summaryKpis: [

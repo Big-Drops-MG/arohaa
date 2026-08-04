@@ -33,7 +33,7 @@ const eventBodyProperties = {
   url: { type: 'string', format: 'uri-reference', maxLength: 2048 },
   page: { type: 'string', maxLength: 256 },
   variant: { type: 'string', maxLength: 32 },
-  formtype: { type: 'string', enum: ['zip', 'single', 'multiple'] },
+  formtype: { type: 'string', enum: ['zip', 'single', 'multiple', 'none'] },
   utm_source: { type: 'string', maxLength: 100 },
   utm_medium: { type: 'string', maxLength: 100 },
   utm_campaign: { type: 'string', maxLength: 255 },

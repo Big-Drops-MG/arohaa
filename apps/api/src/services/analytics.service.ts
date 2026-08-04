@@ -121,7 +121,7 @@ function fsrPct(submitted: number, sessions: number): number {
   return sessions > 0 ? round1((submitted / sessions) * 100) : 0
 }
 
-type LandingFormType = 'zip' | 'single' | 'multiple'
+type LandingFormType = 'zip' | 'single' | 'multiple' | 'none'
 
 type TimeMetricRow = {
   bucket: string
@@ -156,11 +156,19 @@ const EMPTY_BUCKET_METRICS: BucketMetrics = {
 }
 
 function parseLandingFormType(raw: string | undefined): LandingFormType {
-  if (raw === 'zip' || raw === 'single' || raw === 'multiple') return raw
+  if (
+    raw === 'zip' ||
+    raw === 'single' ||
+    raw === 'multiple' ||
+    raw === 'none'
+  ) {
+    return raw
+  }
   return 'single'
 }
 
 function submissionEventName(formType: LandingFormType): string {
+  if (formType === 'none') return 'service_click'
   return formType === 'zip' ? 'zip_submit' : 'form_success'
 }
 
@@ -468,7 +476,7 @@ export async function getAnalyticsOverview(
       query: `
         SELECT
           countIf(event_name = 'page_view') AS page_views,
-          uniqExactIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth')) AS interactions,
+          uniqExactIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth','service_click')) AS interactions,
           uniqExactIf(session_id, event_name = 'form_start') AS form_started,
           uniqExactIf(session_id, event_name = '${submitEvent}') AS form_submitted
         FROM events_raw
@@ -665,6 +673,20 @@ export async function getAnalyticsOverview(
     }
   })
 
+  const funnel =
+    formType === 'none'
+      ? [
+          { label: 'Landing Page Visits', count: n(fd.page_views) },
+          { label: 'Interactions', count: n(fd.interactions) },
+          { label: 'Service Clicked', count: n(fd.form_submitted) },
+        ]
+      : [
+          { label: 'Landing Page Visits', count: n(fd.page_views) },
+          { label: 'Interactions', count: n(fd.interactions) },
+          { label: 'Form Started', count: n(fd.form_started) },
+          { label: 'Form Submitted', count: n(fd.form_submitted) },
+        ]
+
   const result: AnalyticsOverview = {
     rangeId: window.rangeId,
     kpis: {
@@ -678,12 +700,7 @@ export async function getAnalyticsOverview(
     series: kpiSeries.visitors,
     kpiSeries,
     kpiByState,
-    funnel: [
-      { label: 'Landing Page Visits', count: n(fd.page_views) },
-      { label: 'Interactions', count: n(fd.interactions) },
-      { label: 'Form Started', count: n(fd.form_started) },
-      { label: 'Form Submitted', count: n(fd.form_submitted) },
-    ],
+    funnel,
     uniqueVisitors7d: n(rolling.unique_visitors_7d),
     avgEngagedSecPerSession: n(engRow?.avg_sec),
     topCity: cityRow?.city ?? '-',
@@ -713,9 +730,24 @@ const ZERO_KPIS: RangeKpis = {
 export function emptyAnalyticsOverview(
   rangeId: AnalyticsRangeId = DEFAULT_ANALYTICS_RANGE_ID,
   custom?: AnalyticsCustomRange,
+  formType: LandingFormType = 'single',
 ): AnalyticsOverview {
   const window = resolveAnalyticsWindow(rangeId, new Date(), custom)
   const kpiSeries = buildKpiSeries(window, new Map())
+
+  const funnel =
+    formType === 'none'
+      ? [
+          { label: 'Landing Page Visits', count: 0 },
+          { label: 'Interactions', count: 0 },
+          { label: 'Service Clicked', count: 0 },
+        ]
+      : [
+          { label: 'Landing Page Visits', count: 0 },
+          { label: 'Interactions', count: 0 },
+          { label: 'Form Started', count: 0 },
+          { label: 'Form Submitted', count: 0 },
+        ]
 
   return {
     rangeId: window.rangeId,
@@ -723,12 +755,7 @@ export function emptyAnalyticsOverview(
     series: kpiSeries.visitors,
     kpiSeries,
     kpiByState: [],
-    funnel: [
-      { label: 'Landing Page Visits', count: 0 },
-      { label: 'Interactions', count: 0 },
-      { label: 'Form Started', count: 0 },
-      { label: 'Form Submitted', count: 0 },
-    ],
+    funnel,
     uniqueVisitors7d: 0,
     avgEngagedSecPerSession: 0,
     topCity: '-',

@@ -1,17 +1,26 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Loader2 } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import { Label } from "@workspace/ui/components/label"
 import type { OverviewLandingFormType } from "@/features/overview/model/overview"
+import type { LandingPageService } from "@/features/settings/model/landing-page-services"
 import type {
   LandingPageRecord,
   LandingPageSettingsData,
 } from "@/features/settings/model/landing-page-settings"
 import { FormTypeFieldset } from "@/features/settings/view/FormTypeFieldset"
+import { ServicesFieldset } from "@/features/settings/view/ServicesFieldset"
 import { SettingsSectionCard } from "@/features/settings/view/SettingsSectionCard"
+
+type ServiceCandidate = {
+  publicId: string
+  brandName: string
+  landingPageUrl: string
+  formType?: string
+}
 
 type SettingsGeneralSectionProps = {
   landingPage: LandingPageRecord
@@ -30,10 +39,46 @@ export function SettingsGeneralSection({
   const [formType, setFormType] = useState<OverviewLandingFormType>(
     landingPage.formType
   )
+  const [services, setServices] = useState<LandingPageService[]>(
+    landingPage.services ?? []
+  )
+  const [candidates, setCandidates] = useState<ServiceCandidate[]>([])
   const [notes, setNotes] = useState(landingPage.notes ?? "")
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    setBrandName(landingPage.brandName)
+    setLandingPageUrl(landingPage.landingPageUrl)
+    setFaviconUrl(landingPage.faviconUrl ?? "")
+    setFormType(landingPage.formType)
+    setServices(landingPage.services ?? [])
+    setNotes(landingPage.notes ?? "")
+  }, [landingPage])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch("/api/landing-pages", { cache: "no-store" })
+        if (!res.ok) return
+        const data = (await res.json().catch(() => ({}))) as {
+          landingPages?: ServiceCandidate[]
+        }
+        if (cancelled) return
+        const rows = Array.isArray(data.landingPages) ? data.landingPages : []
+        setCandidates(
+          rows.filter((row) => row.publicId !== landingPage.publicId)
+        )
+      } catch {
+        // ignore candidate load failures
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [landingPage.publicId])
 
   const handleSave = useCallback(async () => {
     setError(null)
@@ -41,18 +86,23 @@ export function SettingsGeneralSection({
     setIsSaving(true)
 
     try {
+      const body: Record<string, unknown> = {
+        brandName,
+        landingPageUrl,
+        formType,
+        faviconUrl,
+        notes,
+      }
+      if (formType === "none") {
+        body.services = services
+      }
+
       const res = await fetch(
         `/api/landing-pages/${encodeURIComponent(landingPage.publicId)}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            brandName,
-            landingPageUrl,
-            formType,
-            faviconUrl,
-            notes,
-          }),
+          body: JSON.stringify(body),
         }
       )
 
@@ -118,6 +168,7 @@ export function SettingsGeneralSection({
     landingPageUrl,
     notes,
     onSaved,
+    services,
   ])
 
   const isValid =
@@ -174,6 +225,15 @@ export function SettingsGeneralSection({
         </div>
 
         <FormTypeFieldset value={formType} onChange={setFormType} />
+
+        {formType === "none" ? (
+          <ServicesFieldset
+            services={services}
+            onChange={setServices}
+            candidates={candidates}
+            disabled={isSaving}
+          />
+        ) : null}
 
         <div className="space-y-2">
           <Label htmlFor="settings-notes">Notes</Label>

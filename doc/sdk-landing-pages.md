@@ -11,7 +11,7 @@ The browser SDK:
 - Sends events to your ingestion API at `{apiBase}/v1/ingest`. On a **visible** page, events use `fetch` with `keepalive: true` so conversions survive an immediate redirect. `sendBeacon` is used only when the page is already hidden/unloading.
 - Persists a durable anonymous `uid`, a sliding session `sid`, and a lightweight `fp` fingerprint in `localStorage` (privacy-oriented, no invasive cookies for identity).
 - Attaches marketing fields from the current URL (UTM parameters) and `document.referrer` on every event.
-- Optionally records Core Web Vitals (LCP, CLS, INP) and periodic visibility-aware heartbeats for engagement metrics.
+- Optionally records Core Web Vitals (LCP, FCP, CLS, INP) and periodic visibility-aware heartbeats for engagement metrics.
 - Uses an outbox in `localStorage` for failed sends (network or 5xx-class responses), with retries when the tab comes back online or becomes visible again.
 
 The API validates payloads strictly; use sensible event names and JSON-serializable props.

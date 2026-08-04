@@ -15,6 +15,10 @@ import {
   parseOptionalFaviconUrl,
   parseOptionalNotes,
 } from "@/lib/server/landing-page-validation"
+import {
+  mergeServicesIntoMetadata,
+  normalizeLandingPageServicesInput,
+} from "@/features/settings/model/landing-page-services"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import { buildHtmlVerificationMetaTag } from "@/lib/server/landing-snippet"
 import { writeLandingPageAuditLog } from "@/lib/server/landing-audit-log"
@@ -185,6 +189,14 @@ export async function PATCH(
       nextMetadata = liveChange.metadata
       liveStatusChanged = true
     }
+  }
+
+  if ("services" in record) {
+    const parsed = normalizeLandingPageServicesInput(record.services)
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 })
+    }
+    nextMetadata = mergeServicesIntoMetadata(nextMetadata, parsed.value)
   }
 
   const nextHtmlVerificationToken =

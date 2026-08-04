@@ -1,38 +1,58 @@
+import type {
+  OverviewDateRangeId,
+  OverviewLandingFormType,
+} from "@/features/overview/model/overview"
+import {
+  conversionRateLabel,
+  conversionSubmittedColumnLabel,
+  hasConversionMetrics,
+} from "@/features/overview/model/overview"
 import type { SegmentsDashboardData } from "@/features/segments/model/segments"
-import type { OverviewDateRangeId } from "@/features/overview/model/overview"
 import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-range"
+
+function formSubmittedLabel(formType: OverviewLandingFormType): string {
+  return conversionSubmittedColumnLabel(formType)
+}
+
+function rateLabel(formType: OverviewLandingFormType): string {
+  return conversionRateLabel(formType)
+}
 
 function performanceByTimeColumns(
   rangeId: OverviewDateRangeId,
-  formType?: string
+  formType: OverviewLandingFormType
 ) {
   const showDate = rangeId !== "today" && rangeId !== "yesterday"
-  const formLabel = formType === "zip" ? "Zip Submitted" : "Form Submitted"
-  return showDate
-    ? [
-        { key: "label", label: "Day" },
-        { key: "date", label: "Date" },
-        { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: formLabel },
-        { key: "fsr", label: "FSR" },
-      ]
-    : [
-        { key: "label", label: "Day" },
-        { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: formLabel },
-        { key: "fsr", label: "FSR" },
-      ]
+  const showForm = hasConversionMetrics(formType)
+  const formSubmitted = formSubmittedLabel(formType)
+  const rate = rateLabel(formType)
+
+  return [
+    { key: "label", label: "Day" },
+    ...(showDate ? [{ key: "date", label: "Date" }] : []),
+    { key: "visitors", label: "Visitors" },
+    ...(showForm
+      ? [
+          { key: "formSubmitted", label: formSubmitted },
+          { key: "fsr", label: rate },
+        ]
+      : []),
+  ]
 }
 
 export function getSegmentsEmptyDashboardData(
   _landingPagePublicId: string,
   rangeId: OverviewDateRangeId = "7d",
-  formType?: string
+  formType: OverviewLandingFormType = "single"
 ): SegmentsDashboardData {
   void _landingPagePublicId
-  const formLabel = formType === "zip" ? "Zip Submitted" : "Form Submitted"
+
+  const showForm = hasConversionMetrics(formType)
+  const formSubmitted = formSubmittedLabel(formType)
+  const rate = rateLabel(formType)
 
   return {
+    formType,
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: rangeId,
     summaryKpis: [
@@ -40,15 +60,31 @@ export function getSegmentsEmptyDashboardData(
       { label: "Top Device", value: "-" },
       { label: "Best Day", value: "-" },
       { label: "Best Time", value: "-" },
-      { label: "Highest FSR", value: "0%" },
+      ...(showForm
+        ? [
+            {
+              label:
+                formType === "zip"
+                  ? "Highest ZSR"
+                  : formType === "none"
+                    ? "Highest SCR"
+                    : "Highest FSR",
+              value: "0%",
+            },
+          ]
+        : []),
     ],
     performanceByLocation: {
       title: "Performance by location",
       columns: [
         { key: "label", label: "City" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: formLabel },
-        { key: "fsr", label: "FSR" },
+        ...(showForm
+          ? [
+              { key: "formSubmitted", label: formSubmitted },
+              { key: "fsr", label: rate },
+            ]
+          : []),
       ],
       rows: [],
     },
@@ -57,8 +93,12 @@ export function getSegmentsEmptyDashboardData(
       columns: [
         { key: "label", label: "Device" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: formLabel },
-        { key: "fsr", label: "FSR" },
+        ...(showForm
+          ? [
+              { key: "formSubmitted", label: formSubmitted },
+              { key: "fsr", label: rate },
+            ]
+          : []),
       ],
       rows: [],
     },

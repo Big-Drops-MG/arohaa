@@ -4,6 +4,7 @@ import { setupScrollTracking } from "../events/scroll.events"
 import { setupClickTracking } from "../events/click.events"
 import { setupAttentionTracking } from "../events/attention.events"
 import { setupFormTracking } from "../events/form-tracking"
+import { setupServiceClickTracking } from "../events/service-click.events"
 import { startHeartbeat } from "../events/heartbeat"
 import { monitorWebVitals } from "../performance/vitals"
 import { attemptSend } from "../services/network.service"
@@ -21,6 +22,7 @@ export function setupLifecycle(): void {
   setupClickTracking()
   setupAttentionTracking()
   setupFormTracking()
+  setupServiceClickTracking()
   startHeartbeat()
   monitorWebVitals()
 

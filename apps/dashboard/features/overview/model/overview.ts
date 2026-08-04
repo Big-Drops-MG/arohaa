@@ -23,13 +23,48 @@ export type OverviewDateRangeId =
   | "last_month"
   | "custom"
 
-export type OverviewLandingFormType = "zip" | "single" | "multiple"
+export type OverviewLandingFormType = "zip" | "single" | "multiple" | "none"
+
+export const LANDING_FORM_TYPE_OPTIONS = [
+  { value: "single" as const, label: "Single Step" },
+  { value: "multiple" as const, label: "Multi Step" },
+  { value: "zip" as const, label: "Zip" },
+  { value: "none" as const, label: "None (Hub)" },
+] as const
 
 export function parseOverviewLandingFormType(
   raw: string | null | undefined
 ): OverviewLandingFormType {
-  if (raw === "zip" || raw === "single" || raw === "multiple") return raw
+  if (
+    raw === "zip" ||
+    raw === "single" ||
+    raw === "multiple" ||
+    raw === "none"
+  ) {
+    return raw
+  }
   return "single"
+}
+
+/** Whether this form type tracks form/zip submissions (not hub service clicks). */
+export function hasFormSubmissionMetrics(
+  formType: OverviewLandingFormType
+): boolean {
+  return formType !== "none"
+}
+
+/** Hub pages convert via service/vertical clicks instead of forms. */
+export function hasServiceClickMetrics(
+  formType: OverviewLandingFormType
+): boolean {
+  return formType === "none"
+}
+
+/** Form submits, zip submits, or service clicks — all conversion metrics. */
+export function hasConversionMetrics(
+  formType: OverviewLandingFormType
+): boolean {
+  return hasFormSubmissionMetrics(formType) || hasServiceClickMetrics(formType)
 }
 
 export type OverviewDateRangeOption = {
@@ -54,9 +89,25 @@ export const OVERVIEW_KPI_METRIC_ORDER: readonly OverviewKpiMetricId[] = [
   "bounce-rate",
 ]
 
+export function overviewKpiMetricOrder(
+  _formType: OverviewLandingFormType
+): readonly OverviewKpiMetricId[] {
+  return OVERVIEW_KPI_METRIC_ORDER
+}
+
 export function overviewKpiLabelsForFormType(
   formType: OverviewLandingFormType
 ): Record<OverviewKpiMetricId, string> {
+  if (formType === "none") {
+    return {
+      visitors: "Visitors",
+      sessions: "Sessions",
+      "page-views": "Page Views",
+      "form-submitted": "Service Clicks",
+      fsr: "SCR (Service Click Rate)",
+      "bounce-rate": "Bounce Rate",
+    }
+  }
   const isZip = formType === "zip"
   return {
     visitors: "Visitors",
@@ -66,6 +117,28 @@ export function overviewKpiLabelsForFormType(
     fsr: isZip ? "ZSR (Zip Success Rate)" : "FSR (Form Success Rate)",
     "bounce-rate": "Bounce Rate",
   }
+}
+
+export function conversionSubmitLabel(
+  formType: OverviewLandingFormType
+): string {
+  if (formType === "none") return "Service Clicks"
+  if (formType === "zip") return "Zip Submits"
+  return "Form Submits"
+}
+
+export function conversionRateLabel(formType: OverviewLandingFormType): string {
+  if (formType === "none") return "SCR"
+  if (formType === "zip") return "ZSR"
+  return "FSR"
+}
+
+export function conversionSubmittedColumnLabel(
+  formType: OverviewLandingFormType
+): string {
+  if (formType === "none") return "Service Clicked"
+  if (formType === "zip") return "Zip Submitted"
+  return "Form Submitted"
 }
 
 export type OverviewKpi = {

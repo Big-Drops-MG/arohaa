@@ -23,9 +23,13 @@ export const EVENT_TRACKING_FORM_METRIC_ORDER: readonly EventTrackingMetricId[] 
     "success-rate",
   ]
 
+export const EVENT_TRACKING_NONE_METRIC_ORDER: readonly EventTrackingMetricId[] =
+  ["total-events", "call-clicks", "form-submitted", "success-rate"]
+
 export function eventTrackingMetricOrder(
   formType: OverviewLandingFormType
 ): readonly EventTrackingMetricId[] {
+  if (formType === "none") return EVENT_TRACKING_NONE_METRIC_ORDER
   return formType === "zip"
     ? EVENT_TRACKING_ZIP_METRIC_ORDER
     : EVENT_TRACKING_FORM_METRIC_ORDER
@@ -54,12 +58,21 @@ export type EventTrackingPieSegment = {
   color: string
 }
 
+export type EventTrackingServiceRow = {
+  serviceId: string
+  serviceLabel: string
+  clicks: string
+  href: string | null
+  targetPublicId: string | null
+}
+
 export type EventTrackingDashboardData = {
   formType: OverviewLandingFormType
   dateRangeOptions: OverviewDateRangeOption[]
   defaultDateRangeId: OverviewDateRangeId
   kpis: EventTrackingKpi[]
   submissionRows: EventTrackingSubmissionRow[]
+  serviceRows: EventTrackingServiceRow[]
   kpiSegments: EventTrackingKpiSegment[]
   /** @deprecated Use kpiSegments */
   pieSegments: EventTrackingPieSegment[]

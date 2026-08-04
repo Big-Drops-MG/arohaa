@@ -38,6 +38,7 @@ export function getEventTrackingPlaceholderData(
       { id: "call-clicks", value: 340 },
       { id: "form-start", value: 980 },
     ],
+    serviceRows: [],
     pieSegments: [],
   }
 }

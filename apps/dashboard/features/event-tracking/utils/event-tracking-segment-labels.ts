@@ -4,6 +4,12 @@ import type { EventTrackingKpiSegmentId } from "@/features/event-tracking/model/
 export function eventTrackingSubmissionColumnLabels(
   formType: OverviewLandingFormType
 ) {
+  if (formType === "none") {
+    return {
+      formSubmitted: "Service Clicked",
+      share: "% Share",
+    }
+  }
   const isZip = formType === "zip"
   return {
     formSubmitted: isZip ? "Zip Submitted" : "Form Submitted",
@@ -14,6 +20,7 @@ export function eventTrackingSubmissionColumnLabels(
 export function eventTrackingSubmissionOverTimeTitle(
   formType: OverviewLandingFormType
 ): string {
+  if (formType === "none") return "Service Clicks Over Time"
   return formType === "zip"
     ? "Zip Submission Over Time"
     : "Form Submission Over Time"
@@ -22,6 +29,9 @@ export function eventTrackingSubmissionOverTimeTitle(
 export function eventTrackingKpiSegmentOrder(
   formType: OverviewLandingFormType
 ): EventTrackingKpiSegmentId[] {
+  if (formType === "none") {
+    return ["form-submitted", "call-clicks"]
+  }
   if (formType === "zip") {
     return ["call-clicks", "form-submitted"]
   }
@@ -32,9 +42,9 @@ export function eventTrackingKpiSegmentLabel(
   formType: OverviewLandingFormType,
   id: EventTrackingKpiSegmentId
 ): string {
-  const isZip = formType === "zip"
   if (id === "form-submitted") {
-    return isZip ? "Zip Submitted" : "Form Submitted"
+    if (formType === "none") return "Service Clicks"
+    return formType === "zip" ? "Zip Submitted" : "Form Submitted"
   }
   if (id === "call-clicks") return "Call Clicks"
   if (id === "zip-submit") return "Zip Submit"

@@ -12,7 +12,12 @@ import { eventTrackingMetricOrder } from "@/features/event-tracking/model/event-
 import { EVENT_TRACKING_PREVIEW_ROW_LIMIT } from "@/features/event-tracking/view/event-tracking-card-layout"
 import { EventTrackingKpiPerformanceCard } from "@/features/event-tracking/view/EventTrackingKpiPerformanceCard"
 import { EventTrackingKpiRow } from "@/features/event-tracking/view/EventTrackingKpiRow"
+import { EventTrackingServicesCard } from "@/features/event-tracking/view/EventTrackingServicesCard"
 import { EventTrackingSubmissionOverTimeCard } from "@/features/event-tracking/view/EventTrackingSubmissionOverTimeCard"
+import {
+  hasConversionMetrics,
+  hasServiceClickMetrics,
+} from "@/features/overview/model/overview"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardPreference } from "@/hooks/use-dashboard-preference"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
@@ -212,18 +217,24 @@ export function EventTrackingDashboard({
           />
 
           <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:*:min-h-0">
-            <EventTrackingSubmissionOverTimeCard
-              formType={dashboardData.formType}
-              rows={dashboardData.submissionRows}
-              expandable
-              previewRowLimit={EVENT_TRACKING_PREVIEW_ROW_LIMIT}
-            />
+            {hasConversionMetrics(dashboardData.formType) ? (
+              <EventTrackingSubmissionOverTimeCard
+                formType={dashboardData.formType}
+                rows={dashboardData.submissionRows}
+                expandable
+                previewRowLimit={EVENT_TRACKING_PREVIEW_ROW_LIMIT}
+              />
+            ) : null}
             <EventTrackingKpiPerformanceCard
               formType={dashboardData.formType}
               segments={dashboardData.kpiSegments}
               expandable
             />
           </div>
+
+          {hasServiceClickMetrics(dashboardData.formType) ? (
+            <EventTrackingServicesCard rows={dashboardData.serviceRows} />
+          ) : null}
         </div>
       )}
     </div>

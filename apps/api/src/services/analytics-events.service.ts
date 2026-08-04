@@ -44,7 +44,7 @@ export async function getAnalyticsEvents({
   const now = new Date()
   const window = resolveAnalyticsWindow(rangeId, now, custom)
   const utmKey = utmFilterCacheKey(utmFilter)
-  const cacheKey = `analytics:events:v3-abs:${workspaceId}:${rangeCacheKey(window, utmKey)}`
+  const cacheKey = `analytics:events:v4-services:${workspaceId}:${rangeCacheKey(window, utmKey)}`
   const cached = await readAnalyticsCache<AnalyticsEvents>(cacheKey)
   if (cached) return cached
 
@@ -56,7 +56,7 @@ export async function getAnalyticsEvents({
     ...utmFilterParams(utmFilter),
   }
 
-  const [kpiRes, dateRes] = await Promise.all([
+  const [kpiRes, dateRes, serviceRes] = await Promise.all([
     ch.query({
       format: 'JSON',
       query_params: p,
@@ -66,7 +66,7 @@ export async function getAnalyticsEvents({
           countIf(event_name = 'zip_submit') AS zip_submit,
           countIf(event_name = 'call_click') AS call_click,
           countIf(event_name = 'form_start') AS form_started,
-          countIf(event_name = 'form_success') AS form_submitted,
+          countIf(event_name IN ('form_success', 'service_click')) AS form_submitted,
           uniqExact(session_id) AS total_sessions
         FROM events_raw
         WHERE ${where}
@@ -79,12 +79,28 @@ export async function getAnalyticsEvents({
         SELECT 
           ${chDayBucketKey('created_at')} AS date_label,
           countIf(event_name = 'zip_submit') AS zip_submitted,
-          countIf(event_name = 'form_success') AS form_submitted,
+          countIf(event_name IN ('form_success', 'service_click')) AS form_submitted,
           uniqExact(session_id) AS total_sessions
         FROM events_raw
         WHERE ${where}
         GROUP BY date_label
         ORDER BY date_label ASC
+      `,
+    }),
+    ch.query({
+      format: 'JSON',
+      query_params: p,
+      query: `
+        SELECT
+          nullIf(JSONExtractString(properties, 'service_id'), '') AS service_id,
+          nullIf(JSONExtractString(properties, 'service_label'), '') AS service_label,
+          uniqExact(session_id) AS clicks
+        FROM events_raw
+        WHERE ${where}
+          AND event_name = 'service_click'
+        GROUP BY service_id, service_label
+        ORDER BY clicks DESC
+        LIMIT 50
       `,
     }),
   ])
@@ -105,8 +121,15 @@ export async function getAnalyticsEvents({
     total_sessions: string
   }
 
+  type ServiceRow = {
+    service_id: string
+    service_label: string
+    clicks: string
+  }
+
   const kpiData = ((await kpiRes.json()) as CHJson<KpiRow>).data[0] ?? ({} as Partial<KpiRow>)
   const dateData = ((await dateRes.json()) as CHJson<DateRow>).data
+  const serviceData = ((await serviceRes.json()) as CHJson<ServiceRow>).data
 
   const totalEvents = n(kpiData.total_events)
   const zipSubmit = n(kpiData.zip_submit)
@@ -137,6 +160,12 @@ export async function getAnalyticsEvents({
     }
   })
 
+  const serviceRows = serviceData.map((row) => ({
+    serviceId: row.service_id || 'unknown',
+    serviceLabel: row.service_label || row.service_id || 'Unknown',
+    clicks: n(row.clicks),
+  }))
+
   const result = {
     kpis: {
       totalEvents,
@@ -152,7 +181,8 @@ export async function getAnalyticsEvents({
       { name: 'ZIP Submit', value: zipSubmit },
       { name: 'Call Clicks', value: callClicks },
       { name: 'Form Submitted', value: formSubmitted },
-    ]
+    ],
+    serviceRows,
   }
 
   await writeAnalyticsCache(cacheKey, result)
@@ -176,5 +206,6 @@ export function emptyAnalyticsEvents(): AnalyticsEvents {
       { name: 'Call Clicks', value: 0 },
       { name: 'Form Submitted', value: 0 },
     ],
+    serviceRows: [],
   }
 }

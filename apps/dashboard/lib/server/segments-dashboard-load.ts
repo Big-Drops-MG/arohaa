@@ -1,6 +1,13 @@
 import { notFound } from "next/navigation"
 import { getSegmentsEmptyDashboardData } from "@/features/segments/controller/segments-empty-data"
 import type { SegmentsDashboardData } from "@/features/segments/model/segments"
+import type { OverviewLandingFormType } from "@/features/overview/model/overview"
+import {
+  conversionRateLabel,
+  conversionSubmittedColumnLabel,
+  hasConversionMetrics,
+  parseOverviewLandingFormType,
+} from "@/features/overview/model/overview"
 import {
   DEFAULT_TRAFFIC_RANGE_ID,
   TRAFFIC_DATE_RANGE_OPTIONS,
@@ -59,28 +66,39 @@ function fmtPct(v: number): string {
   return `${safeNum(v).toFixed(1)}%`
 }
 
-function performanceByTimeColumns(showDate: boolean, formType?: string) {
-  const formLabel = formType === "zip" ? "Zip Submitted" : "Form Submitted"
-  return showDate
-    ? [
-        { key: "label", label: "Day" },
-        { key: "date", label: "Date" },
-        { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: formLabel },
-        { key: "fsr", label: "FSR" },
-      ]
-    : [
-        { key: "label", label: "Day" },
-        { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: formLabel },
-        { key: "fsr", label: "FSR" },
-      ]
+function formSubmittedLabel(formType: OverviewLandingFormType): string {
+  return conversionSubmittedColumnLabel(formType)
+}
+
+function rateLabel(formType: OverviewLandingFormType): string {
+  return conversionRateLabel(formType)
+}
+
+function performanceByTimeColumns(
+  showDate: boolean,
+  formType: OverviewLandingFormType
+) {
+  const showForm = hasConversionMetrics(formType)
+  const formSubmitted = formSubmittedLabel(formType)
+  const rate = rateLabel(formType)
+
+  return [
+    { key: "label", label: "Day" },
+    ...(showDate ? [{ key: "date", label: "Date" }] : []),
+    { key: "visitors", label: "Visitors" },
+    ...(showForm
+      ? [
+          { key: "formSubmitted", label: formSubmitted },
+          { key: "fsr", label: rate },
+        ]
+      : []),
+  ]
 }
 
 export function buildSegmentsDashboardData(
   data: AnalyticsSegments,
   rangeId: RangeId,
-  formType?: string
+  formType: OverviewLandingFormType = "single"
 ): SegmentsDashboardData {
   const {
     summaryKpis,
@@ -89,12 +107,20 @@ export function buildSegmentsDashboardData(
     performanceByTime,
   } = data
 
+  const showForm = hasConversionMetrics(formType)
+  const formSubmitted = formSubmittedLabel(formType)
+  const rate = rateLabel(formType)
+
   const mapRows = (rows: AnalyticsSegmentsRow[]) =>
     rows.map((row) => ({
       label: row.label,
       visitors: fmtCount(row.visitors),
-      formSubmitted: fmtCount(row.formSubmitted),
-      fsr: fmtPct(row.fsr),
+      ...(showForm
+        ? {
+            formSubmitted: fmtCount(row.formSubmitted),
+            fsr: fmtPct(row.fsr),
+          }
+        : {}),
     }))
 
   const showDate = performanceByTime.some((row) => Boolean(row.date))
@@ -103,14 +129,19 @@ export function buildSegmentsDashboardData(
       const base = {
         label: row.label,
         visitors: fmtCount(row.visitors),
-        formSubmitted: fmtCount(row.formSubmitted),
-        fsr: fmtPct(row.fsr),
+        ...(showForm
+          ? {
+              formSubmitted: fmtCount(row.formSubmitted),
+              fsr: fmtPct(row.fsr),
+            }
+          : {}),
       }
       if (!showDate) return base
       return { ...base, date: row.date ?? "" }
     })
 
   return {
+    formType,
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: rangeId,
     summaryKpis: [
@@ -118,18 +149,31 @@ export function buildSegmentsDashboardData(
       { label: "Top Device", value: summaryKpis.topDevice },
       { label: "Best Day", value: summaryKpis.bestDay },
       { label: "Best Time", value: summaryKpis.bestTime },
-      { label: "Highest FSR", value: fmtPct(summaryKpis.highestFsr) },
+      ...(showForm
+        ? [
+            {
+              label:
+                formType === "zip"
+                  ? "Highest ZSR"
+                  : formType === "none"
+                    ? "Highest SCR"
+                    : "Highest FSR",
+              value: fmtPct(summaryKpis.highestFsr),
+            },
+          ]
+        : []),
     ],
     performanceByLocation: {
       title: "Performance by location",
       columns: [
         { key: "label", label: "City" },
         { key: "visitors", label: "Visitors" },
-        {
-          key: "formSubmitted",
-          label: formType === "zip" ? "Zip Submitted" : "Form Submitted",
-        },
-        { key: "fsr", label: "FSR" },
+        ...(showForm
+          ? [
+              { key: "formSubmitted", label: formSubmitted },
+              { key: "fsr", label: rate },
+            ]
+          : []),
       ],
       rows: mapRows(performanceByLocation),
     },
@@ -138,11 +182,12 @@ export function buildSegmentsDashboardData(
       columns: [
         { key: "label", label: "Device" },
         { key: "visitors", label: "Visitors" },
-        {
-          key: "formSubmitted",
-          label: formType === "zip" ? "Zip Submitted" : "Form Submitted",
-        },
-        { key: "fsr", label: "FSR" },
+        ...(showForm
+          ? [
+              { key: "formSubmitted", label: formSubmitted },
+              { key: "fsr", label: rate },
+            ]
+          : []),
       ],
       rows: mapRows(performanceByDevice),
     },
@@ -226,6 +271,8 @@ export async function loadSegmentsDashboardData({
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
 
+  const formType = parseOverviewLandingFormType(row.formType)
+
   const analytics = await fetchSegmentsAnalytics(
     row.id,
     rangeId,
@@ -233,14 +280,10 @@ export async function loadSegmentsDashboardData({
     customRange
   )
   if (!analytics) {
-    return getSegmentsEmptyDashboardData(
-      landingPagePublicId,
-      rangeId,
-      row.formType
-    )
+    return getSegmentsEmptyDashboardData(landingPagePublicId, rangeId, formType)
   }
 
-  return buildSegmentsDashboardData(analytics, rangeId, row.formType)
+  return buildSegmentsDashboardData(analytics, rangeId, formType)
 }
 
 export async function loadSegmentsDashboardDataForApi(
@@ -264,6 +307,8 @@ export async function loadSegmentsDashboardDataForApi(
     return { ok: false, status: 404, error: "Not found" }
   }
 
+  const formType = parseOverviewLandingFormType(row.formType)
+
   const analytics = await fetchSegmentsAnalytics(
     row.id,
     rangeId,
@@ -276,13 +321,13 @@ export async function loadSegmentsDashboardDataForApi(
       data: getSegmentsEmptyDashboardData(
         landingPagePublicId,
         rangeId,
-        row.formType
+        formType
       ),
     }
   }
 
   return {
     ok: true,
-    data: buildSegmentsDashboardData(analytics, rangeId, row.formType),
+    data: buildSegmentsDashboardData(analytics, rangeId, formType),
   }
 }
