@@ -158,6 +158,11 @@ const INGEST_ANALYTICS_ENDPOINTS: EndpointDef[] = [
   { name: "Analytics: alerts", method: "GET", path: "/v1/analytics/alerts" },
   { name: "Analytics: seo", method: "GET", path: "/v1/analytics/seo" },
   {
+    name: "Analytics: web-vitals",
+    method: "GET",
+    path: "/v1/analytics/web-vitals",
+  },
+  {
     name: "Analytics: landing summary",
     method: "GET",
     path: "/v1/analytics/landing-summary",
@@ -226,6 +231,11 @@ const DASHBOARD_ENDPOINTS: EndpointDef[] = [
     name: "SEO",
     method: "GET",
     path: `/api/landing-pages/${DASH_PROBE_ID}/seo`,
+  },
+  {
+    name: "Web Vital",
+    method: "GET",
+    path: `/api/landing-pages/${DASH_PROBE_ID}/web-vital`,
   },
   {
     name: "UTM",

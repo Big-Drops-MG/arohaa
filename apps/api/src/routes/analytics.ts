@@ -41,6 +41,10 @@ import {
   getAnalyticsSeo,
   syncSeoResults,
 } from '../services/analytics-seo.service.js'
+import {
+  emptyAnalyticsWebVitals,
+  getAnalyticsWebVitals,
+} from '../services/analytics-web-vitals.service.js'
 import { getDiscoveredUtmParams, getUtmDimensionValues } from '../services/analytics-utm-discover.service.js'
 import {
   emptyAnalyticsHeatmap,
@@ -1005,6 +1009,53 @@ export async function analyticsRoutes(server: FastifyInstance) {
           }),
         logLabel: 'analytics seo query ok',
         logContext: { range_id: parsed.rangeId, lp_public_id, sort_by: sortBy },
+      })
+    },
+  )
+
+  server.get<{
+    Querystring: {
+      workspace_id: string
+      range_id?: string
+      from?: string
+      to?: string
+    }
+  }>(
+    '/v1/analytics/web-vitals',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['workspace_id'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            range_id: rangeIdSchema,
+            ...customRangeSchemaProps,
+          },
+        },
+      },
+      config: ANALYTICS_RATE_LIMIT,
+    },
+    async (request, reply) => {
+      const { workspace_id } = request.query
+      const parsed = parseRangeQuery(request.query)
+      if (!parsed.ok) {
+        return reply.code(400).send({ error: parsed.error })
+      }
+
+      await sendAnalyticsQuery({
+        request,
+        reply,
+        workspaceId: workspace_id,
+        emptyValue: emptyAnalyticsWebVitals(parsed.rangeId),
+        run: () =>
+          getAnalyticsWebVitals({
+            workspaceId: workspace_id,
+            rangeId: parsed.rangeId,
+            custom: parsed.custom,
+          }),
+        logLabel: 'analytics web-vitals query ok',
+        logContext: { range_id: parsed.rangeId },
       })
     },
   )

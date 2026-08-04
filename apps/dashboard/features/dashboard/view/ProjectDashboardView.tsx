@@ -19,6 +19,7 @@ import type {
 import { OverviewDashboard } from "@/features/overview/view/OverviewDashboard"
 import { SegmentsDashboard } from "@/features/segments/view/SegmentsDashboard"
 import { SeoDashboard } from "@/features/seo/view/SeoDashboard"
+import { WebVitalDashboard } from "@/features/web-vital/view/WebVitalDashboard"
 import { UtmDashboard } from "@/features/utm/view/UtmDashboard"
 import { SettingsDashboard } from "@/features/settings/view/SettingsDashboard"
 import { TrafficDashboard } from "@/features/traffic/view/TrafficDashboard"
@@ -80,6 +81,7 @@ function ProjectDashboardViewInner({
     segments,
     experiments,
     seo,
+    webVital,
     utm,
     alerts,
     settings,
@@ -186,6 +188,13 @@ function ProjectDashboardViewInner({
                   projectId={projectId}
                   isActive
                   isLoading={isTabLoading("seo")}
+                />
+              ) : tab.value === "web-vital" ? (
+                <WebVitalDashboard
+                  data={webVital}
+                  projectId={projectId}
+                  isActive
+                  isLoading={isTabLoading("web-vital")}
                 />
               ) : tab.value === "utm" ? (
                 <UtmDashboard

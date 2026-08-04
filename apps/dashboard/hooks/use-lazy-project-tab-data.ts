@@ -20,6 +20,8 @@ import type { SegmentsDashboardData } from "@/features/segments/model/segments"
 import { getSegmentsEmptyDashboardData } from "@/features/segments/controller/segments-empty-data"
 import type { SeoDashboardData } from "@/features/seo/model/seo"
 import { getSeoEmptyDashboardData } from "@/features/seo/controller/seo-empty-data"
+import type { WebVitalDashboardData } from "@/features/web-vital/model/web-vital"
+import { getWebVitalEmptyDashboardData } from "@/features/web-vital/controller/web-vital-empty-data"
 import type { UtmDashboardData } from "@/features/utm/model/utm"
 import { getUtmEmptyDashboardData } from "@/features/utm/controller/utm-empty-data"
 import type { LandingPageSettingsData } from "@/features/settings/model/landing-page-settings"
@@ -40,6 +42,7 @@ export type ProjectTabData = {
   segments: SegmentsDashboardData
   experiments: ExperimentsDashboardData
   seo: SeoDashboardData
+  "web-vital": WebVitalDashboardData
   utm: UtmDashboardData
   alerts: AlertsDashboardData
   settings: LandingPageSettingsData
@@ -90,6 +93,8 @@ function emptyTabData(
       return getExperimentsEmptyDashboardData(projectId, rangeId, formType)
     case "seo":
       return getSeoEmptyDashboardData(projectId, rangeId)
+    case "web-vital":
+      return getWebVitalEmptyDashboardData(projectId, rangeId)
     case "utm":
       return getUtmEmptyDashboardData(projectId)
     case "alerts":
@@ -255,6 +260,8 @@ export function useLazyProjectTabData({
       cache.experiments ??
       getExperimentsEmptyDashboardData(projectId, rangeId, formType),
     seo: cache.seo ?? getSeoEmptyDashboardData(projectId, rangeId),
+    webVital:
+      cache["web-vital"] ?? getWebVitalEmptyDashboardData(projectId, rangeId),
     utm: cache.utm ?? getUtmEmptyDashboardData(projectId),
     alerts: cache.alerts ?? getAlertsEmptyDashboardData(projectId, rangeId),
     settings: cache.settings ?? null,
