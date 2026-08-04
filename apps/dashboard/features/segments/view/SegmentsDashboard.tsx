@@ -72,7 +72,9 @@ export function SegmentsDashboard({
             )
           }
           if (mode === "blocking") {
-            setDashboardData(getSegmentsEmptyDashboardData(projectId, rangeId))
+            setDashboardData((prev) =>
+              getSegmentsEmptyDashboardData(projectId, rangeId, prev.formType)
+            )
           }
           return
         }
@@ -89,7 +91,9 @@ export function SegmentsDashboard({
           console.error("[segments] client fetch failed", err)
         }
         if (mode === "blocking") {
-          setDashboardData(getSegmentsEmptyDashboardData(projectId, rangeId))
+          setDashboardData((prev) =>
+            getSegmentsEmptyDashboardData(projectId, rangeId, prev.formType)
+          )
         }
       } finally {
         if (!signal?.aborted) {

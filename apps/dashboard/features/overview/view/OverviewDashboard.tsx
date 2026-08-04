@@ -11,7 +11,7 @@ import {
 } from "@/features/dashboard/view/dashboard-skeletons"
 import {
   overviewKpiLabelsForFormType,
-  OVERVIEW_KPI_METRIC_ORDER,
+  overviewKpiMetricOrder,
   type OverviewAlert,
   type OverviewDashboardData,
   type OverviewFunnelStep,
@@ -51,23 +51,13 @@ function valueSuffixForMetric(id: OverviewKpiMetricId): string | undefined {
   return undefined
 }
 
-const OVERVIEW_SERIES_METRICS: readonly OverviewKpiMetricId[] = [
-  "visitors",
-  "sessions",
-  "page-views",
-  "form-submitted",
-  "fsr",
-  "bounce-rate",
-]
-
 function hasCompleteKpiSeries(
   data: OverviewDashboardData,
   rangeId: OverviewDashboardData["defaultDateRangeId"]
 ): boolean {
   const series = data.kpiSeriesByDateRange?.[rangeId]
-  return OVERVIEW_SERIES_METRICS.every(
-    (metricId) => (series?.[metricId]?.length ?? 0) > 0
-  )
+  const metrics = overviewKpiMetricOrder(data.formType)
+  return metrics.every((metricId) => (series?.[metricId]?.length ?? 0) > 0)
 }
 
 function funnelStepsFromApiPayload(
@@ -95,10 +85,13 @@ export function OverviewDashboard({
   const [activeKpiId, setActiveKpiId] = useDashboardPreference(
     projectId,
     "kpi:overview",
-    (raw) =>
-      raw && (OVERVIEW_KPI_METRIC_ORDER as readonly string[]).includes(raw)
-        ? (raw as OverviewKpiMetricId)
-        : data.defaultKpiMetricId
+    (raw) => {
+      const order = overviewKpiMetricOrder(data.formType)
+      if (raw && (order as readonly string[]).includes(raw)) {
+        return raw as OverviewKpiMetricId
+      }
+      return data.defaultKpiMetricId
+    }
   )
   const [funnelSteps, setFunnelSteps] = useState<OverviewFunnelStep[]>(
     data.funnel
@@ -113,7 +106,13 @@ export function OverviewDashboard({
     setOverviewData(data)
     setFunnelSteps(data.funnel)
     setAlerts(data.alerts)
-  }, [data])
+    const order = overviewKpiMetricOrder(data.formType)
+    setActiveKpiId((current) =>
+      (order as readonly string[]).includes(current)
+        ? current
+        : data.defaultKpiMetricId
+    )
+  }, [data, setActiveKpiId])
 
   useEffect(() => {
     if (

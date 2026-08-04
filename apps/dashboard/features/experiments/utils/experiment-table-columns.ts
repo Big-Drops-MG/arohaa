@@ -1,5 +1,10 @@
 import type { ExperimentVariantRef } from "@/features/experiments/model/experiments"
 import type { OverviewLandingFormType } from "@/features/overview/model/overview"
+import {
+  conversionRateLabel,
+  conversionSubmittedColumnLabel,
+  hasConversionMetrics,
+} from "@/features/overview/model/overview"
 import type { TrafficBreakdownTable } from "@/features/traffic/model/traffic"
 
 /**
@@ -32,21 +37,22 @@ export function experimentVariantRateColumnId(label: string): string {
 export function experimentVariantPerformanceSubmitLabel(
   formType: OverviewLandingFormType
 ): string {
+  if (formType === "none") return "Service Click"
   return formType === "zip" ? "Zip Submit" : "Form Submit"
 }
 
 export function experimentVariantPerformanceRateLabel(
   formType: OverviewLandingFormType
 ): string {
-  return formType === "zip" ? "ZSR" : "FSR"
+  return conversionRateLabel(formType)
 }
 
 function formSubmittedLabel(formType: OverviewLandingFormType): string {
-  return formType === "zip" ? "Zip Submitted" : "Form Submitted"
+  return conversionSubmittedColumnLabel(formType)
 }
 
 function rateLabel(formType: OverviewLandingFormType): string {
-  return formType === "zip" ? "ZSR" : "FSR"
+  return conversionRateLabel(formType)
 }
 
 function variantIdFromRow(row: Record<string, string>): string | null {
@@ -79,22 +85,31 @@ export function experimentVariantsFromPerformanceTable(
 export function experimentVariantPerformanceColumns(
   formType: OverviewLandingFormType
 ): TrafficBreakdownTable["columns"] {
-  return [
+  const columns: TrafficBreakdownTable["columns"] = [
     { id: "variant", label: "Variant" },
     { id: "visitors", label: "Visitors", align: "right" },
-    {
-      id: "formSubmitted",
-      label: formSubmittedLabel(formType),
-      align: "right",
-    },
-    { id: "rate", label: rateLabel(formType), align: "right" },
   ]
+  if (hasConversionMetrics(formType)) {
+    columns.push(
+      {
+        id: "formSubmitted",
+        label: formSubmittedLabel(formType),
+        align: "right",
+      },
+      { id: "rate", label: rateLabel(formType), align: "right" }
+    )
+  }
+  return columns
 }
 
 export function experimentPerformanceByLocationColumns(
   formType: OverviewLandingFormType,
   variants: ExperimentVariantRef[]
 ): TrafficBreakdownTable["columns"] {
+  if (!hasConversionMetrics(formType)) {
+    return [{ id: "city", label: "City" }]
+  }
+
   const rate = rateLabel(formType)
 
   return [

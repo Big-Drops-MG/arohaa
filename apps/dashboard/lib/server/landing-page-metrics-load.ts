@@ -54,7 +54,8 @@ export async function fetchLandingPageCardMetrics(
     if (
       formType === "zip" ||
       formType === "single" ||
-      formType === "multiple"
+      formType === "multiple" ||
+      formType === "none"
     ) {
       url.searchParams.set("form_type", formType)
     }

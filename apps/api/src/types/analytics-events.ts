@@ -25,8 +25,15 @@ export interface AnalyticsEventsPieSegment {
   value: number
 }
 
+export interface AnalyticsEventsServiceRow {
+  serviceId: string
+  serviceLabel: string
+  clicks: number
+}
+
 export interface AnalyticsEvents {
   kpis: AnalyticsEventsKpis
   submissionRows: AnalyticsEventsSubmissionRow[]
   pieSegments: AnalyticsEventsPieSegment[]
+  serviceRows: AnalyticsEventsServiceRow[]
 }

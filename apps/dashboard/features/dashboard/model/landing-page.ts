@@ -4,6 +4,7 @@ export type LandingPageMetric = {
 }
 
 export function submissionMetricLabel(formType: string): string {
+  if (formType === "none") return "Service Clicks"
   return formType === "zip" ? "Zip Submits" : "Form Submits"
 }
 

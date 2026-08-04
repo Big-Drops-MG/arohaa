@@ -1,13 +1,10 @@
 "use client"
 
 import { cn } from "@workspace/ui/lib/utils"
-import type { OverviewLandingFormType } from "@/features/overview/model/overview"
-
-const FORM_TYPE_OPTIONS = [
-  { value: "single" as const, label: "Single Step" },
-  { value: "multiple" as const, label: "Multi Step" },
-  { value: "zip" as const, label: "Zip" },
-] as const
+import {
+  LANDING_FORM_TYPE_OPTIONS,
+  type OverviewLandingFormType,
+} from "@/features/overview/model/overview"
 
 type FormTypeFieldsetProps = {
   value: OverviewLandingFormType
@@ -25,8 +22,16 @@ export function FormTypeFieldset({
   return (
     <fieldset className="space-y-3" disabled={disabled}>
       <legend className="text-sm font-medium text-foreground">Form type</legend>
-      <div className="grid gap-3 md:grid-cols-3" role="presentation">
-        {FORM_TYPE_OPTIONS.map((opt) => {
+      <p className="text-xs text-muted-foreground">
+        None (Hub) is for main pages that route users into service/vertical
+        landing pages. Conversion is measured as service clicks, not form
+        submits.
+      </p>
+      <div
+        className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+        role="presentation"
+      >
+        {LANDING_FORM_TYPE_OPTIONS.map((opt) => {
           const selected = value === opt.value
           return (
             <label

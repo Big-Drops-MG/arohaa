@@ -1,4 +1,5 @@
 import type { OverviewLandingFormType } from "@/features/overview/model/overview"
+import type { LandingPageService } from "@/features/settings/model/landing-page-services"
 
 export type LandingPageRecord = {
   id: string
@@ -18,6 +19,7 @@ export type LandingPageRecord = {
   formType: OverviewLandingFormType
   faviconUrl: string | null
   notes: string | null
+  services: LandingPageService[]
   isLive: boolean
   createdAt: string
   updatedAt: string

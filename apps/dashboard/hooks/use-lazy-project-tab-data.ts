@@ -85,7 +85,7 @@ function emptyTabData(
     case "event-tracking":
       return getEventTrackingEmptyDashboardData(projectId, rangeId, formType)
     case "segments":
-      return getSegmentsEmptyDashboardData(projectId, rangeId)
+      return getSegmentsEmptyDashboardData(projectId, rangeId, formType)
     case "experiments":
       return getExperimentsEmptyDashboardData(projectId, rangeId, formType)
     case "seo":
@@ -249,7 +249,8 @@ export function useLazyProjectTabData({
       cache["event-tracking"] ??
       getEventTrackingEmptyDashboardData(projectId, rangeId, formType),
     segments:
-      cache.segments ?? getSegmentsEmptyDashboardData(projectId, rangeId),
+      cache.segments ??
+      getSegmentsEmptyDashboardData(projectId, rangeId, formType),
     experiments:
       cache.experiments ??
       getExperimentsEmptyDashboardData(projectId, rangeId, formType),

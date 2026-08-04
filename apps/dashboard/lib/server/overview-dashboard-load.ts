@@ -10,7 +10,7 @@ import {
 } from "@/features/funnel/controller/funnel-default-payload"
 import { getOverviewPlaceholderData } from "@/features/overview/controller/overview-placeholder-data"
 import { overviewChartPointsForRange } from "@/features/overview/utils/overview-chart-buckets"
-import { OVERVIEW_KPI_METRIC_ORDER } from "@/features/overview/model/overview"
+import { overviewKpiMetricOrder } from "@/features/overview/model/overview"
 import { defaultSegmentsByDateRange } from "@/features/segments/controller/segments-default-payload"
 import { defaultSegmentsPerformanceByDateRange } from "@/features/segments/controller/segments-performance-default-payload"
 import { defaultTrafficTablesByDateRange } from "@/features/traffic/controller/traffic-default-payload"
@@ -74,9 +74,11 @@ function funnelStepsFromOverviewApi(
   formType: OverviewLandingFormType
 ): OverviewFunnelStep[] {
   const funnelTail =
-    formType === "zip"
-      ? (["Zip Started", "Zip Submitted"] as const)
-      : (["Form Started", "Form Submitted"] as const)
+    formType === "none"
+      ? (["Service Clicked"] as const)
+      : formType === "zip"
+        ? (["Zip Started", "Zip Submitted"] as const)
+        : (["Form Started", "Form Submitted"] as const)
   const funnelLabels = ["Landing Page Visits", "Interactions", ...funnelTail]
 
   return data.funnel.map((step, i) => ({
@@ -183,7 +185,7 @@ export function buildEmptyOverviewForRange(
     customRange
   )
   const kpiSeries = Object.fromEntries(
-    OVERVIEW_KPI_METRIC_ORDER.map((metricId: OverviewKpiMetricId) => [
+    overviewKpiMetricOrder(formType).map((metricId: OverviewKpiMetricId) => [
       metricId,
       zeroSeries,
     ])

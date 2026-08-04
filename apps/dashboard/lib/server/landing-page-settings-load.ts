@@ -1,6 +1,10 @@
 import { notFound } from "next/navigation"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
 import type { LandingPageSettingsData } from "@/features/settings/model/landing-page-settings"
+import {
+  parseLandingPageServices,
+  servicesForSdkSnippet,
+} from "@/features/settings/model/landing-page-services"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { toLandingPageRecord } from "@/lib/server/landing-page-json"
 import {
@@ -21,6 +25,9 @@ export async function loadLandingPageSettingsData(
 
   const { ingestApiBase, sdkScriptUrl } = resolveLandingSdkEnv()
   const formType = parseOverviewLandingFormType(row.formType)
+  const services = servicesForSdkSnippet(
+    parseLandingPageServices(row.metadata as Record<string, unknown> | null)
+  )
 
   const sdkSnippetHtml =
     ingestApiBase != null
@@ -31,6 +38,7 @@ export async function loadLandingPageSettingsData(
           publicLandingId: row.publicId,
           pageHostname: row.hostname,
           formType,
+          services,
         })
       : ""
 

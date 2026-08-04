@@ -1,3 +1,4 @@
+import { getConfig } from "../model/config"
 import { trackFormStart, trackFormSubmit, trackFormSuccess } from "./form.events"
 import {
   formIdFromForm,
@@ -251,6 +252,8 @@ export function setupFormDomTracking(): void {
 }
 
 export function setupFormTracking(): void {
+  if (getConfig().formtype === "none") return
+
   installFormFetchTracking()
   setupFormSubmitTracking()
   setupZipSubmitClickTracking()

@@ -7,6 +7,7 @@ export function getSegmentsPlaceholderData(
   void _landingPagePublicId
 
   return {
+    formType: "single",
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: "7d",
     summaryKpis: [

@@ -9,6 +9,7 @@ import {
   experimentVariantRowId,
 } from "@/features/experiments/utils/experiment-table-columns"
 import { experimentsSectionToBreakdownTable } from "@/features/experiments/utils/experiments-section-to-table"
+import { hasConversionMetrics } from "@/features/overview/model/overview"
 import {
   sortTrafficTableRows,
   sortTrafficTableRowsByMaxRate,
@@ -21,6 +22,7 @@ type ExperimentsCardsProps = {
 }
 
 export function ExperimentsCards({ data }: ExperimentsCardsProps) {
+  const showForm = hasConversionMetrics(data.formType)
   const variantPerformance = sortTrafficTableRows(
     experimentsSectionToBreakdownTable(data.variantPerformance)
   )
@@ -51,27 +53,31 @@ export function ExperimentsCards({ data }: ExperimentsCardsProps) {
         expandable
         previewRowLimit={EXPERIMENTS_PREVIEW_ROW_LIMIT}
       />
-      <ExperimentsTableCard
-        title={data.performanceByLocation.title}
-        table={performanceByLocation}
-        highlight={highlights.performanceByLocation}
-        expandable
-        previewRowLimit={EXPERIMENTS_PREVIEW_ROW_LIMIT}
-      />
-      <ExperimentsTableCard
-        title={data.performanceByState.title}
-        table={performanceByState}
-        highlight={highlights.performanceByState}
-        expandable
-        previewRowLimit={EXPERIMENTS_PREVIEW_ROW_LIMIT}
-      />
-      <ExperimentsTableCard
-        title={data.performanceByZipcode.title}
-        table={performanceByZipcode}
-        highlight={highlights.performanceByZipcode}
-        expandable
-        previewRowLimit={EXPERIMENTS_PREVIEW_ROW_LIMIT}
-      />
+      {showForm ? (
+        <>
+          <ExperimentsTableCard
+            title={data.performanceByLocation.title}
+            table={performanceByLocation}
+            highlight={highlights.performanceByLocation}
+            expandable
+            previewRowLimit={EXPERIMENTS_PREVIEW_ROW_LIMIT}
+          />
+          <ExperimentsTableCard
+            title={data.performanceByState.title}
+            table={performanceByState}
+            highlight={highlights.performanceByState}
+            expandable
+            previewRowLimit={EXPERIMENTS_PREVIEW_ROW_LIMIT}
+          />
+          <ExperimentsTableCard
+            title={data.performanceByZipcode.title}
+            table={performanceByZipcode}
+            highlight={highlights.performanceByZipcode}
+            expandable
+            previewRowLimit={EXPERIMENTS_PREVIEW_ROW_LIMIT}
+          />
+        </>
+      ) : null}
     </div>
   )
 }

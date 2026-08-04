@@ -103,7 +103,7 @@ function zipcodeBreakdownQuery(
       SELECT
         session_id,
         any(${variantExpr}) AS variant_label,
-        max(event_name = 'form_success') AS has_form_success,
+        max(event_name IN ('form_success', 'service_click')) AS has_form_success,
         anyIf(
           if(zipcode != '', zipcode, nullIf(JSONExtractString(properties, 'zip'), '')),
           zipcode != '' OR JSONExtractString(properties, 'zip') != ''
@@ -131,7 +131,7 @@ function locationBreakdownQuery(
     SELECT
       ${labelExpr} AS location_label,
       ${variantExpr} AS variant_label,
-      uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
+      uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
       uniqExact(session_id) AS sessions
     FROM events_raw
     WHERE ${whereSql}
@@ -394,7 +394,7 @@ export async function getAnalyticsExperiments({
           SELECT
             ${variantExpr} AS variant_label,
             uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-            uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
+            uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
             uniqExact(session_id) AS sessions
           FROM events_raw
           WHERE ${whereSql}
@@ -466,7 +466,7 @@ export async function getAnalyticsExperiments({
           SELECT
             ${singleVariantExpr} AS variant_label,
             uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-            uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
+            uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
             uniqExact(session_id) AS sessions
           FROM events_raw
           WHERE ${singleWhere}

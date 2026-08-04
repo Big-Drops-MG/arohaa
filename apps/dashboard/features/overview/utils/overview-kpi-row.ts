@@ -1,6 +1,6 @@
 import {
-  OVERVIEW_KPI_METRIC_ORDER,
   overviewKpiLabelsForFormType,
+  overviewKpiMetricOrder,
   type OverviewDashboardData,
   type OverviewDateRangeId,
   type OverviewKpi,
@@ -18,7 +18,7 @@ export function overviewKpisForDateRange(
 ): OverviewKpi[] {
   const values = data.kpisByDateRange[rangeId] ?? {}
   const labels = overviewKpiLabelsForFormType(data.formType)
-  return OVERVIEW_KPI_METRIC_ORDER.map((id) => {
+  return overviewKpiMetricOrder(data.formType).map((id) => {
     const raw = values[id]
     const trimmed = raw?.trim() ?? ""
     return {

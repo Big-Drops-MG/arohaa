@@ -1,4 +1,9 @@
 import type { OverviewLandingFormType } from "@/features/overview/model/overview"
+import {
+  conversionRateLabel,
+  conversionSubmittedColumnLabel,
+  hasConversionMetrics,
+} from "@/features/overview/model/overview"
 import { TRAFFIC_RANGE_IDS } from "@/features/traffic/model/traffic-range"
 import type {
   TrafficBreakdownTable,
@@ -10,11 +15,11 @@ import type {
 export function trafficFormSubmittedLabel(
   formType: OverviewLandingFormType
 ): string {
-  return formType === "zip" ? "Zip Submitted" : "Form Submitted"
+  return conversionSubmittedColumnLabel(formType)
 }
 
 export function trafficRateLabel(formType: OverviewLandingFormType): string {
-  return formType === "zip" ? "ZSR" : "FSR"
+  return conversionRateLabel(formType)
 }
 
 export function trafficTableColumns(formType: OverviewLandingFormType): {
@@ -25,6 +30,7 @@ export function trafficTableColumns(formType: OverviewLandingFormType): {
   utmParameters: TrafficBreakdownTable["columns"]
   topPages: TrafficBreakdownTable["columns"]
 } {
+  const showForm = hasConversionMetrics(formType)
   const formSubmitted = trafficFormSubmittedLabel(formType)
   const rate = trafficRateLabel(formType)
 
@@ -33,19 +39,43 @@ export function trafficTableColumns(formType: OverviewLandingFormType): {
       { id: "date", label: "Date" },
       { id: "visitors", label: "Visitors", align: "right" },
       { id: "sessions", label: "Sessions", align: "right" },
-      { id: "formSubmitted", label: formSubmitted, align: "right" },
+      ...(showForm
+        ? [
+            {
+              id: "formSubmitted" as const,
+              label: formSubmitted,
+              align: "right" as const,
+            },
+          ]
+        : []),
     ],
     byLocation: [
       { id: "city", label: "City" },
       { id: "visitors", label: "Visitors", align: "right" },
-      { id: "formSubmitted", label: formSubmitted, align: "right" },
-      { id: "rate", label: rate, align: "right" },
+      ...(showForm
+        ? [
+            {
+              id: "formSubmitted" as const,
+              label: formSubmitted,
+              align: "right" as const,
+            },
+            { id: "rate" as const, label: rate, align: "right" as const },
+          ]
+        : []),
     ],
     byDevice: [
       { id: "device", label: "Device" },
       { id: "visitors", label: "Visitors", align: "right" },
-      { id: "formSubmitted", label: formSubmitted, align: "right" },
-      { id: "rate", label: rate, align: "right" },
+      ...(showForm
+        ? [
+            {
+              id: "formSubmitted" as const,
+              label: formSubmitted,
+              align: "right" as const,
+            },
+            { id: "rate" as const, label: rate, align: "right" as const },
+          ]
+        : []),
     ],
     referrers: [
       { id: "source", label: "Referrer" },

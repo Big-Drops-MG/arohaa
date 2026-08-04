@@ -30,6 +30,7 @@ export function getEventTrackingEmptyDashboardData(
     kpis: eventTrackingKpisForFormType(formType, emptySource),
     submissionRows: [],
     kpiSegments: [],
+    serviceRows: [],
     pieSegments: [],
   }
 }

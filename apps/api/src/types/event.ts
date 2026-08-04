@@ -11,7 +11,7 @@ export interface IngestEventBody {
   url?: string
   page?: string
   variant?: string
-  formtype?: 'zip' | 'single' | 'multiple'
+  formtype?: 'zip' | 'single' | 'multiple' | 'none'
   utm_source?: string
   utm_medium?: string
   utm_campaign?: string

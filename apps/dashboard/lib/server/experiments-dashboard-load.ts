@@ -8,6 +8,7 @@ import {
   experimentVariantRateColumnId,
 } from "@/features/experiments/utils/experiment-table-columns"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
+import { hasConversionMetrics } from "@/features/overview/model/overview"
 import {
   DEFAULT_TRAFFIC_RANGE_ID,
   TRAFFIC_DATE_RANGE_OPTIONS,
@@ -161,9 +162,20 @@ function mergeVariantRosterWithAnalytics(
 
 function buildWinnerCallout(
   rows: AnalyticsVariantPerformanceRow[],
-  controlVariant: string | null
+  controlVariant: string | null,
+  formType: ReturnType<typeof parseOverviewLandingFormType>
 ): string | null {
   if (rows.length === 0) return null
+
+  if (!hasConversionMetrics(formType)) {
+    let best = rows[0]!
+    for (const row of rows) {
+      if (row.visitors > best.visitors) best = row
+    }
+    return `${experimentVariantDisplayLabel(best.variant)} leads with ${fmtCount(best.visitors)} visitors`
+  }
+
+  const rateLabel = experimentVariantPerformanceRateLabel(formType)
 
   if (controlVariant) {
     const controlLabel = experimentVariantDisplayLabel(controlVariant)
@@ -179,16 +191,16 @@ function buildWinnerCallout(
       }
     }
     if (best && (best.fsrLiftAbs ?? 0) > 0) {
-      return `${experimentVariantDisplayLabel(best.variant)} leads vs ${controlLabel} by ${fmtLiftPct(best.fsrLiftAbs)} FSR points (${fmtLiftPct(best.fsrLiftPct)} relative)`
+      return `${experimentVariantDisplayLabel(best.variant)} leads vs ${controlLabel} by ${fmtLiftPct(best.fsrLiftAbs)} ${rateLabel} points (${fmtLiftPct(best.fsrLiftPct)} relative)`
     }
-    return `Control ${controlLabel} is ahead or tied on FSR`
+    return `Control ${controlLabel} is ahead or tied on ${rateLabel}`
   }
 
   let best = rows[0]!
   for (const row of rows) {
     if (row.fsr > best.fsr) best = row
   }
-  return `${experimentVariantDisplayLabel(best.variant)} leads with ${fmtPct(best.fsr)} FSR`
+  return `${experimentVariantDisplayLabel(best.variant)} leads with ${fmtPct(best.fsr)} ${rateLabel}`
 }
 
 export function buildExperimentsDashboardData(
@@ -206,6 +218,7 @@ export function buildExperimentsDashboardData(
   } = data
 
   const rateLabel = experimentVariantPerformanceRateLabel(formType)
+  const showForm = hasConversionMetrics(formType)
   const controlVariant =
     data.controlVariant ??
     config?.variants.find((variant) => variant.isControl)?.label ??
@@ -219,16 +232,20 @@ export function buildExperimentsDashboardData(
   const controlVariantLabel = controlVariant
     ? experimentVariantDisplayLabel(controlVariant)
     : null
-  const showLift = Boolean(controlVariant)
+  const showLift = showForm && Boolean(controlVariant)
 
   const columns = [
     { key: "variant", label: "Variant" },
     { key: "visitors", label: "Visitors" },
-    {
-      key: "formSubmitted",
-      label: experimentVariantPerformanceSubmitLabel(formType),
-    },
-    { key: "fsr", label: rateLabel },
+    ...(showForm
+      ? [
+          {
+            key: "formSubmitted",
+            label: experimentVariantPerformanceSubmitLabel(formType),
+          },
+          { key: "fsr", label: rateLabel },
+        ]
+      : []),
   ]
   if (showLift) {
     columns.push(
@@ -266,8 +283,10 @@ export function buildExperimentsDashboardData(
         const base: Record<string, string> = {
           variant: experimentVariantDisplayLabel(row.variant),
           visitors: fmtCount(row.visitors),
-          formSubmitted: fmtCount(row.formSubmitted),
-          fsr: fmtPct(row.fsr),
+        }
+        if (showForm) {
+          base.formSubmitted = fmtCount(row.formSubmitted)
+          base.fsr = fmtPct(row.fsr)
         }
         if (showLift) {
           base.fsrLift = row.isControl ? "Control" : fmtLiftAbs(row.fsrLiftAbs)
@@ -278,36 +297,46 @@ export function buildExperimentsDashboardData(
         return base
       }),
     },
-    performanceByLocation: buildDimensionPerformanceSection(
-      "Performance by location",
-      "city",
-      "City",
-      performanceByLocation,
-      variants,
-      rateLabel
-    ),
-    performanceByState: buildDimensionPerformanceSection(
-      "Performance by state",
-      "state",
-      "State",
-      performanceByState,
-      variants,
-      rateLabel
-    ),
-    performanceByZipcode: buildDimensionPerformanceSection(
-      "Performance by zipcode",
-      "zipcode",
-      "Zipcode",
-      performanceByZipcode,
-      variants,
-      rateLabel
-    ),
+    performanceByLocation: showForm
+      ? buildDimensionPerformanceSection(
+          "Performance by location",
+          "city",
+          "City",
+          performanceByLocation,
+          variants,
+          rateLabel
+        )
+      : { title: "Performance by location", columns: [], rows: [] },
+    performanceByState: showForm
+      ? buildDimensionPerformanceSection(
+          "Performance by state",
+          "state",
+          "State",
+          performanceByState,
+          variants,
+          rateLabel
+        )
+      : { title: "Performance by state", columns: [], rows: [] },
+    performanceByZipcode: showForm
+      ? buildDimensionPerformanceSection(
+          "Performance by zipcode",
+          "zipcode",
+          "Zipcode",
+          performanceByZipcode,
+          variants,
+          rateLabel
+        )
+      : { title: "Performance by zipcode", columns: [], rows: [] },
     controlVariant: controlVariantLabel,
     mode:
       config && config.variants.length > 0
         ? "multi_domain"
         : (data.mode ?? "data_variant"),
-    winnerCallout: buildWinnerCallout(variantPerformance, controlVariant),
+    winnerCallout: buildWinnerCallout(
+      variantPerformance,
+      controlVariant,
+      formType
+    ),
     config,
     siblings,
   }

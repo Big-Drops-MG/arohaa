@@ -12,6 +12,15 @@ import type {
 export function eventTrackingLabelsForFormType(
   formType: OverviewLandingFormType
 ): Record<EventTrackingMetricId, string> {
+  if (formType === "none") {
+    return {
+      "total-events": "Total Events",
+      "call-clicks": "Call Clicks",
+      "form-started": "Form Started",
+      "form-submitted": "Service Clicks",
+      "success-rate": "SCR",
+    }
+  }
   const isZip = formType === "zip"
   return {
     "total-events": "Total Events",

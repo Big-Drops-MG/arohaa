@@ -51,7 +51,7 @@ function beaconIngest(event: string, props?: Record<string, unknown>): boolean {
     props: props ?? {},
   }
   if (lpId) payload.lp_id = lpId
-  if (formtype === "zip" || formtype === "single" || formtype === "multiple") {
+  if (formtype === "zip" || formtype === "single" || formtype === "multiple" || formtype === "none") {
     payload.formtype = formtype
   }
 

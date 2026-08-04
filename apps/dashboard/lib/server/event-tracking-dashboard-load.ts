@@ -5,6 +5,7 @@ import { eventTrackingKpisForFormType } from "@/features/event-tracking/utils/ev
 import { eventTrackingKpiSegmentOrder } from "@/features/event-tracking/utils/event-tracking-segment-labels"
 import { withSubmissionShare } from "@/features/event-tracking/utils/event-tracking-submission-share"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
+import { parseLandingPageServices } from "@/features/settings/model/landing-page-services"
 import {
   DEFAULT_TRAFFIC_RANGE_ID,
   TRAFFIC_DATE_RANGE_OPTIONS,
@@ -43,9 +44,16 @@ interface AnalyticsEventsSubmissionRow {
   zsr?: number
 }
 
+interface AnalyticsEventsServiceRow {
+  serviceId: string
+  serviceLabel: string
+  clicks: number
+}
+
 interface AnalyticsEvents {
   kpis: AnalyticsEventsKpis
   submissionRows: AnalyticsEventsSubmissionRow[]
+  serviceRows?: AnalyticsEventsServiceRow[]
 }
 
 function safeNum(value: number | undefined): number {
@@ -87,7 +95,8 @@ function buildKpiSegments(
 export function buildEventTrackingDashboardData(
   data: AnalyticsEvents,
   formType: ReturnType<typeof parseOverviewLandingFormType>,
-  rangeId: RangeId
+  rangeId: RangeId,
+  configuredServices: ReturnType<typeof parseLandingPageServices> = []
 ): EventTrackingDashboardData {
   const { kpis } = data
   const kpiSource = {
@@ -113,12 +122,61 @@ export function buildEventTrackingDashboardData(
 
   const kpiSegments = buildKpiSegments(formType, kpis)
 
+  const clicksById = new Map(
+    (data.serviceRows ?? []).map((row) => [
+      row.serviceId,
+      { label: row.serviceLabel, clicks: safeNum(row.clicks) },
+    ])
+  )
+  const clicksByLabel = new Map(
+    (data.serviceRows ?? []).map((row) => [
+      row.serviceLabel.toLowerCase(),
+      safeNum(row.clicks),
+    ])
+  )
+
+  const serviceRows =
+    formType === "none"
+      ? (() => {
+          const seen = new Set<string>()
+          const rows = configuredServices.map((service) => {
+            seen.add(service.id)
+            const fromId = clicksById.get(service.id)
+            const clicks =
+              fromId?.clicks ??
+              clicksByLabel.get(service.label.toLowerCase()) ??
+              0
+            return {
+              serviceId: service.id,
+              serviceLabel: service.label,
+              clicks: fmtCount(clicks),
+              href: service.href,
+              targetPublicId: service.targetPublicId,
+            }
+          })
+
+          for (const row of data.serviceRows ?? []) {
+            if (seen.has(row.serviceId)) continue
+            rows.push({
+              serviceId: row.serviceId,
+              serviceLabel: row.serviceLabel,
+              clicks: fmtCount(row.clicks),
+              href: null,
+              targetPublicId: null,
+            })
+          }
+
+          return rows
+        })()
+      : []
+
   return {
     formType,
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: rangeId,
     kpis: kpiList,
     submissionRows,
+    serviceRows,
     kpiSegments,
     pieSegments: [],
   }
@@ -197,6 +255,9 @@ export async function loadEventTrackingDashboardData({
   if (!row) notFound()
 
   const formType = parseOverviewLandingFormType(row.formType)
+  const configuredServices = parseLandingPageServices(
+    row.metadata as Record<string, unknown> | null
+  )
 
   const analytics = await fetchEventTrackingAnalytics(
     row.id,
@@ -212,7 +273,12 @@ export async function loadEventTrackingDashboardData({
     )
   }
 
-  return buildEventTrackingDashboardData(analytics, formType, rangeId)
+  return buildEventTrackingDashboardData(
+    analytics,
+    formType,
+    rangeId,
+    configuredServices
+  )
 }
 
 export async function loadEventTrackingDashboardDataForApi(
@@ -237,6 +303,9 @@ export async function loadEventTrackingDashboardDataForApi(
   }
 
   const formType = parseOverviewLandingFormType(row.formType)
+  const configuredServices = parseLandingPageServices(
+    row.metadata as Record<string, unknown> | null
+  )
 
   const analytics = await fetchEventTrackingAnalytics(
     row.id,
@@ -257,6 +326,11 @@ export async function loadEventTrackingDashboardDataForApi(
 
   return {
     ok: true,
-    data: buildEventTrackingDashboardData(analytics, formType, rangeId),
+    data: buildEventTrackingDashboardData(
+      analytics,
+      formType,
+      rangeId,
+      configuredServices
+    ),
   }
 }

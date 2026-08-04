@@ -29,7 +29,8 @@ export function parseLandingPageFormType(
   if (
     normalized !== "zip" &&
     normalized !== "multiple" &&
-    normalized !== "single"
+    normalized !== "single" &&
+    normalized !== "none"
   ) {
     return { ok: false, error: "Invalid formType" }
   }

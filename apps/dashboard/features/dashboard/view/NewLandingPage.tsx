@@ -15,6 +15,7 @@ import {
 import { cn } from "@workspace/ui/lib/utils"
 import { CheckCircle2, XCircle, Loader2, Copy, Check } from "lucide-react"
 import type { OverviewLandingFormType } from "@/features/overview/model/overview"
+import { LANDING_FORM_TYPE_OPTIONS } from "@/features/overview/model/overview"
 import {
   overviewSelectContentClassName,
   overviewSelectItemClassName,
@@ -28,11 +29,7 @@ type ConnectionStatus = "idle" | "checking" | "connected" | "failed"
 const POLL_MS = 2000
 const TIMEOUT_MS = 90_000
 
-const FORM_TYPE_OPTIONS = [
-  { value: "single" as const, label: "Single Step" },
-  { value: "multiple" as const, label: "Multi Step" },
-  { value: "zip" as const, label: "Zip" },
-] as const
+const FORM_TYPE_OPTIONS = LANDING_FORM_TYPE_OPTIONS
 
 type ParentProjectOption = {
   publicId: string
@@ -157,7 +154,8 @@ export function NewLandingPage({
     if (
       parentFormType === "single" ||
       parentFormType === "multiple" ||
-      parentFormType === "zip"
+      parentFormType === "zip" ||
+      parentFormType === "none"
     ) {
       setFormType(parentFormType)
     }
@@ -464,7 +462,10 @@ export function NewLandingPage({
             <legend className="text-sm font-medium text-foreground">
               Form type
             </legend>
-            <div className="grid gap-3 md:grid-cols-3" role="presentation">
+            <div
+              className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+              role="presentation"
+            >
               {FORM_TYPE_OPTIONS.map((opt) => {
                 const selected = formType === opt.value
                 return (

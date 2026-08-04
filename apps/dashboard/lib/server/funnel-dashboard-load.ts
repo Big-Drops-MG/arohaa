@@ -52,6 +52,9 @@ function fmtChange(pct: number | null) {
 }
 
 function metricLabelsForFormType(formType: OverviewLandingFormType): string[] {
+  if (formType === "none") {
+    return ["Landing Page Visits", "Interactions", "Service Clicked"]
+  }
   const tail =
     formType === "zip"
       ? (["Zip Started", "Zip Submitted"] as const)
@@ -76,13 +79,18 @@ export function buildFunnelDashboardData(
 ): FunnelDashboardData {
   const metrics = relabelMetrics(data.metrics, formType)
 
+  const metricIds =
+    formType === "none"
+      ? (["landing-page-visits", "interactions", "form-submitted"] as const)
+      : null
+
   return {
     formType,
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: data.rangeId,
     defaultKpiMetricId: "landing-page-visits",
     metrics: metrics.map((metric, index) => ({
-      id: funnelKpiMetricIdAtIndex(index),
+      id: metricIds?.[index] ?? funnelKpiMetricIdAtIndex(index),
       label: metric.label,
       value: fmtCount(metric.count),
       ...fmtChange(metric.changePct),

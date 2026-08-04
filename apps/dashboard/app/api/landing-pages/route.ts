@@ -132,12 +132,12 @@ export async function POST(request: NextRequest) {
       ? String((body as Record<string, unknown>).landingPageUrl)
       : ""
 
-  let formType: "single" | "multiple" | "zip" = "single"
+  let formType: "single" | "multiple" | "zip" | "none" = "single"
   if (typeof body === "object" && body !== null && "formType" in body) {
     const ft = String((body as Record<string, unknown>).formType)
       .trim()
       .toLowerCase()
-    if (ft === "zip" || ft === "multiple" || ft === "single") {
+    if (ft === "zip" || ft === "multiple" || ft === "single" || ft === "none") {
       formType = ft
     } else {
       return NextResponse.json({ error: "Invalid formType" }, { status: 400 })

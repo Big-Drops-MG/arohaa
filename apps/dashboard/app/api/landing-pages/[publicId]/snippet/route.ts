@@ -9,6 +9,10 @@ import {
 } from "@/lib/server/landing-snippet"
 import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
+import {
+  parseLandingPageServices,
+  servicesForSdkSnippet,
+} from "@/features/settings/model/landing-page-services"
 
 export async function GET(
   _request: NextRequest,
@@ -39,6 +43,9 @@ export async function GET(
   }
 
   const formType = parseOverviewLandingFormType(row.formType)
+  const services = servicesForSdkSnippet(
+    parseLandingPageServices(row.metadata as Record<string, unknown> | null)
+  )
 
   const sdkSnippetHtml = buildLandingSdkScriptTag({
     sdkScriptUrl,
@@ -47,6 +54,7 @@ export async function GET(
     publicLandingId: row.publicId,
     pageHostname: row.hostname,
     formType,
+    services,
   })
 
   const htmlVerificationMetaTag = row.htmlVerificationToken

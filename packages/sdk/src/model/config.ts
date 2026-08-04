@@ -18,7 +18,12 @@ let initialized = false
 function parseFormType(
   formtype: string | null | undefined,
 ): SDKConfig["formtype"] {
-  if (formtype === "zip" || formtype === "single" || formtype === "multiple") {
+  if (
+    formtype === "zip" ||
+    formtype === "single" ||
+    formtype === "multiple" ||
+    formtype === "none"
+  ) {
     return formtype
   }
 

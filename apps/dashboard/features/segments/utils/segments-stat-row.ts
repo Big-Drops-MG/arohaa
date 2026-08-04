@@ -1,5 +1,5 @@
 import {
-  SEGMENT_METRIC_ORDER,
+  segmentMetricOrder,
   type SegmentKpi,
   type SegmentMetricId,
 } from "@/features/segments/model/segments"
@@ -12,13 +12,17 @@ import type {
 export function segmentLabelsForFormType(
   formType: OverviewLandingFormType
 ): Record<SegmentMetricId, string> {
-  const isZip = formType === "zip"
   return {
     "top-region": "Top Region",
     "top-device": "Top Device",
     "best-day": "Best Day",
     "best-time": "Best Time",
-    "highest-fsr": isZip ? "Highest ZSR" : "Highest FSR",
+    "highest-fsr":
+      formType === "none"
+        ? "Highest SCR"
+        : formType === "zip"
+          ? "Highest ZSR"
+          : "Highest FSR",
   }
 }
 
@@ -34,7 +38,7 @@ export function segmentKpisForDateRange(
   const labels = segmentLabelsForFormType(data.formType)
   const values = data.segmentsByDateRange[rangeId] ?? {}
 
-  return SEGMENT_METRIC_ORDER.map((id) => {
+  return segmentMetricOrder(data.formType).map((id) => {
     const raw = values[id]?.trim()
     return {
       id,

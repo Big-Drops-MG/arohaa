@@ -2,6 +2,7 @@ import type {
   OverviewDateRangeId,
   OverviewLandingFormType,
 } from "@/features/overview/model/overview"
+import { hasConversionMetrics } from "@/features/overview/model/overview"
 import {
   trafficFormSubmittedLabel,
   trafficRateLabel,
@@ -16,6 +17,7 @@ export function getTrafficEmptyDashboardData(
 ): TrafficDashboardData {
   void _landingPagePublicId
 
+  const showForm = hasConversionMetrics(formType)
   const formSubmitted = trafficFormSubmittedLabel(formType)
   const rate = trafficRateLabel(formType)
 
@@ -41,7 +43,7 @@ export function getTrafficEmptyDashboardData(
         { key: "date", label: "Date" },
         { key: "visitors", label: "Visitors" },
         { key: "sessions", label: "Sessions" },
-        { key: "formSubmitted", label: formSubmitted },
+        ...(showForm ? [{ key: "formSubmitted", label: formSubmitted }] : []),
       ],
       rows: [],
     },
@@ -50,8 +52,12 @@ export function getTrafficEmptyDashboardData(
       columns: [
         { key: "device", label: "Device" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: formSubmitted },
-        { key: "fsr", label: rate },
+        ...(showForm
+          ? [
+              { key: "formSubmitted", label: formSubmitted },
+              { key: "fsr", label: rate },
+            ]
+          : []),
       ],
       rows: [],
     },
@@ -68,8 +74,12 @@ export function getTrafficEmptyDashboardData(
       columns: [
         { key: "city", label: "City" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: formSubmitted },
-        { key: "fsr", label: rate },
+        ...(showForm
+          ? [
+              { key: "formSubmitted", label: formSubmitted },
+              { key: "fsr", label: rate },
+            ]
+          : []),
       ],
       rows: [],
     },

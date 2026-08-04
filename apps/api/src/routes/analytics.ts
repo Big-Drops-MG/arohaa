@@ -133,7 +133,7 @@ const funnelSchema = {
       ...customRangeSchemaProps,
       form_type: {
         type: 'string',
-        enum: ['zip', 'single', 'multiple'],
+        enum: ['zip', 'single', 'multiple', 'none'],
       },
       ...utmFilterSchemaProps,
             segment_id: { type: 'string', format: 'uuid' },
@@ -314,7 +314,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
           required: ['workspace_id'],
           properties: {
             workspace_id: { type: 'string', format: 'uuid' },
-            form_type: { type: 'string', enum: ['zip', 'single', 'multiple'] },
+            form_type: { type: 'string', enum: ['zip', 'single', 'multiple', 'none'] },
             range_id: rangeIdSchema,
             ...customRangeSchemaProps,
             ...utmFilterSchemaProps,
@@ -337,21 +337,32 @@ export async function analyticsRoutes(server: FastifyInstance) {
         utmFilter.segmentSql = segmentFilter.sql
         utmFilter.segmentParams = segmentFilter.params
       }
+      const formType =
+        form_type === 'zip' ||
+        form_type === 'single' ||
+        form_type === 'multiple' ||
+        form_type === 'none'
+          ? form_type
+          : 'single'
       await sendAnalyticsQuery({
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: emptyAnalyticsOverview(parsed.rangeId, parsed.custom),
+        emptyValue: emptyAnalyticsOverview(
+          parsed.rangeId,
+          parsed.custom,
+          formType,
+        ),
         run: () =>
           getAnalyticsOverview(
             workspace_id,
-            form_type,
+            formType,
             utmFilter,
             parsed.rangeId,
             parsed.custom,
           ),
         logLabel: 'analytics overview query ok',
-        logContext: { range_id: parsed.rangeId },
+        logContext: { range_id: parsed.rangeId, form_type: formType },
       })
     },
   )
@@ -380,7 +391,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
           properties: {
             workspace_id: { type: 'string', format: 'uuid' },
             state: { type: 'string', minLength: 1, maxLength: 80 },
-            form_type: { type: 'string', enum: ['zip', 'single', 'multiple'] },
+            form_type: { type: 'string', enum: ['zip', 'single', 'multiple', 'none'] },
             range_id: rangeIdSchema,
             ...customRangeSchemaProps,
             ...utmFilterSchemaProps,
@@ -501,7 +512,10 @@ export async function analyticsRoutes(server: FastifyInstance) {
       }
 
       const formType =
-        form_type === 'zip' || form_type === 'single' || form_type === 'multiple'
+        form_type === 'zip' ||
+        form_type === 'single' ||
+        form_type === 'multiple' ||
+        form_type === 'none'
           ? form_type
           : 'single'
 
@@ -509,7 +523,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: emptyAnalyticsFunnel(parsed.rangeId),
+        emptyValue: emptyAnalyticsFunnel(parsed.rangeId, formType),
         run: () =>
           getAnalyticsFunnel({
             workspaceId: workspace_id,
@@ -791,7 +805,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
             workspace_id: { type: 'string', format: 'uuid' },
             form_type: {
               type: 'string',
-              enum: ['zip', 'single', 'multiple'],
+              enum: ['zip', 'single', 'multiple', 'none'],
             },
             ...utmFilterSchemaProps,
             segment_id: { type: 'string', format: 'uuid' },

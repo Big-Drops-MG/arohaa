@@ -12,7 +12,8 @@ export type LandingSdkSnippetInput = {
   workspaceUuid: string
   publicLandingId: string
   pageHostname: string
-  formType?: "single" | "multiple" | "zip"
+  formType?: "single" | "multiple" | "zip" | "none"
+  services?: Array<{ id: string; label: string; href?: string }>
 }
 
 export function buildLandingSdkScriptTag(
@@ -25,8 +26,12 @@ export function buildLandingSdkScriptTag(
   const page = escapeHtmlAttribute(options.pageHostname)
   const formType = options.formType ?? "single"
   const ft = escapeHtmlAttribute(formType)
+  const servicesAttr =
+    formType === "none" && options.services && options.services.length > 0
+      ? ` data-services="${escapeHtmlAttribute(JSON.stringify(options.services))}"`
+      : ""
   const stub = `<script>!function(w){if(w.arohaa)return;var a=function(){(a.q=a.q||[]).push(arguments)};a.q=[];a.l=Date.now();w.arohaa=a}(window);</script>`
-  const tag = `<script src="${src}" async data-wid="${wid}" data-api="${api}" data-lp-id="${lp}" data-page="${page}" data-formtype="${ft}"></script>`
+  const tag = `<script src="${src}" async data-wid="${wid}" data-api="${api}" data-lp-id="${lp}" data-page="${page}" data-formtype="${ft}"${servicesAttr}></script>`
   return `${stub}\n${tag}`
 }
 

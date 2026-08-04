@@ -41,6 +41,8 @@ export function formatLandingFormType(formType: string): string {
       return "Multi Step"
     case "zip":
       return "Zip"
+    case "none":
+      return "None (Hub)"
     default:
       return formType
   }

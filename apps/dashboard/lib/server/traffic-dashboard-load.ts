@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation"
 import type { OverviewLandingFormType } from "@/features/overview/model/overview"
-import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
+import {
+  hasConversionMetrics,
+  parseOverviewLandingFormType,
+} from "@/features/overview/model/overview"
 import {
   trafficFormSubmittedLabel,
   trafficRateLabel,
@@ -51,6 +54,7 @@ export function buildTrafficDashboardData(
   formType: OverviewLandingFormType
 ): TrafficDashboardData {
   const { kpis } = data
+  const showForm = hasConversionMetrics(formType)
   const formSubmitted = trafficFormSubmittedLabel(formType)
   const rate = trafficRateLabel(formType)
 
@@ -84,13 +88,13 @@ export function buildTrafficDashboardData(
         { key: "date", label: "Date" },
         { key: "visitors", label: "Visitors" },
         { key: "sessions", label: "Sessions" },
-        { key: "formSubmitted", label: formSubmitted },
+        ...(showForm ? [{ key: "formSubmitted", label: formSubmitted }] : []),
       ],
       rows: data.trafficByTime.map((row) => ({
         date: row.date,
         visitors: fmtCount(row.visitors),
         sessions: fmtCount(row.sessions),
-        formSubmitted: fmtCount(row.formSubmitted),
+        ...(showForm ? { formSubmitted: fmtCount(row.formSubmitted) } : {}),
       })),
     },
     trafficByDevice: {
@@ -98,14 +102,22 @@ export function buildTrafficDashboardData(
       columns: [
         { key: "device", label: "Device" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: formSubmitted },
-        { key: "fsr", label: rate },
+        ...(showForm
+          ? [
+              { key: "formSubmitted", label: formSubmitted },
+              { key: "fsr", label: rate },
+            ]
+          : []),
       ],
       rows: data.trafficByDevice.map((row) => ({
         device: row.device,
         visitors: fmtCount(row.visitors),
-        formSubmitted: fmtCount(row.formSubmitted),
-        fsr: fmtPct(row.fsr),
+        ...(showForm
+          ? {
+              formSubmitted: fmtCount(row.formSubmitted),
+              fsr: fmtPct(row.fsr),
+            }
+          : {}),
       })),
     },
     topPages: {
@@ -124,14 +136,22 @@ export function buildTrafficDashboardData(
       columns: [
         { key: "city", label: "City" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: formSubmitted },
-        { key: "fsr", label: rate },
+        ...(showForm
+          ? [
+              { key: "formSubmitted", label: formSubmitted },
+              { key: "fsr", label: rate },
+            ]
+          : []),
       ],
       rows: data.trafficByLocation.map((row) => ({
         city: row.city || "Unknown",
         visitors: fmtCount(row.visitors),
-        formSubmitted: fmtCount(row.formSubmitted),
-        fsr: fmtPct(row.fsr),
+        ...(showForm
+          ? {
+              formSubmitted: fmtCount(row.formSubmitted),
+              fsr: fmtPct(row.fsr),
+            }
+          : {}),
       })),
     },
     referrers: data.referrers.map((row) => ({

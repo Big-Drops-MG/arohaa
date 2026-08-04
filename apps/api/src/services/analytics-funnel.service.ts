@@ -43,15 +43,15 @@ type CoreFunnelRow = {
   zip_submitted: string
 }
 
-export type FunnelFormType = 'zip' | 'single' | 'multiple'
+export type FunnelFormType = 'zip' | 'single' | 'multiple' | 'none'
 
 function coreFunnelQuery(whereClause: string): string {
   return `
     SELECT
       countIf(event_name = 'page_view') AS page_views,
-      uniqExactIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth')) AS interactions,
+      uniqExactIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth','service_click')) AS interactions,
       uniqExactIf(session_id, event_name = 'form_start') AS form_started,
-      uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
+      uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
       uniqExactIf(session_id, event_name = 'zip_start') AS zip_started,
       uniqExactIf(session_id, event_name = 'zip_submit') AS zip_submitted
     FROM events_raw
@@ -161,6 +161,24 @@ function buildMetrics(
   previous: ReturnType<typeof parseCoreFunnel>,
   formType: FunnelFormType,
 ): FunnelMetricRow[] {
+  const defs: Array<{ label: string; cur: number; prev: number }> = [
+    { label: 'Landing Page Visits', cur: current.pageViews, prev: previous.pageViews },
+    { label: 'Interactions', cur: current.interactions, prev: previous.interactions },
+  ]
+
+  if (formType === "none") {
+    defs.push({
+      label: 'Service Clicked',
+      cur: current.formSubmitted || current.zipSubmitted,
+      prev: previous.formSubmitted || previous.zipSubmitted,
+    })
+    return defs.map(({ label, cur, prev }) => ({
+      label,
+      count: cur,
+      changePct: computePeriodChangePct(cur, prev),
+    }))
+  }
+
   const isZip = formType === 'zip'
 
   const submittedCur = isZip
@@ -177,12 +195,10 @@ function buildMetrics(
     ? Math.max(previous.zipStarted, previous.formStarted, submittedPrev)
     : previous.formStarted
 
-  const defs = [
-    { label: 'Landing Page Visits', cur: current.pageViews, prev: previous.pageViews },
-    { label: 'Interactions', cur: current.interactions, prev: previous.interactions },
+  defs.push(
     { label: 'Form Started', cur: startedCur, prev: startedPrev },
     { label: 'Form Submitted', cur: submittedCur, prev: submittedPrev },
-  ]
+  )
 
   return defs.map(({ label, cur, prev }) => ({
     label,
@@ -350,13 +366,19 @@ export async function getAnalyticsFunnel({
   const response: FunnelDashboardResponse = {
     rangeId: window.rangeId,
     metrics: buildMetrics(currentCore, previousCore, formType),
-    multiStepSteps: buildMultiStepSteps(
-      currentSteps,
-      previousSteps,
-      currentCore,
-      previousCore,
-    ),
-    dropOffRows: buildDropOffRows(dropOffRows),
+    multiStepSteps:
+      formType === 'multiple'
+        ? buildMultiStepSteps(
+            currentSteps,
+            previousSteps,
+            currentCore,
+            previousCore,
+          )
+        : [],
+    dropOffRows:
+      formType === 'single' || formType === 'multiple'
+        ? buildDropOffRows(dropOffRows)
+        : [],
   }
 
   try {
@@ -369,17 +391,27 @@ export async function getAnalyticsFunnel({
 
 export { computePeriodChangePct } from '../lib/funnel-trend.js'
 
-const EMPTY_FUNNEL_METRICS: Omit<FunnelMetricRow, 'count' | 'changePct'>[] = [
-  { label: 'Landing Page Visits' },
-  { label: 'Interactions' },
-  { label: 'Form Started' },
-  { label: 'Form Submitted' },
-]
+export function emptyAnalyticsFunnel(
+  rangeId: AnalyticsRangeId,
+  formType: FunnelFormType = 'single',
+): FunnelDashboardResponse {
+  const labels =
+    formType === 'none'
+      ? ([
+          'Landing Page Visits',
+          'Interactions',
+          'Service Clicked',
+        ] as const)
+      : ([
+          'Landing Page Visits',
+          'Interactions',
+          'Form Started',
+          'Form Submitted',
+        ] as const)
 
-export function emptyAnalyticsFunnel(rangeId: AnalyticsRangeId): FunnelDashboardResponse {
   return {
     rangeId,
-    metrics: EMPTY_FUNNEL_METRICS.map(({ label }) => ({
+    metrics: labels.map((label) => ({
       label,
       count: 0,
       changePct: null,

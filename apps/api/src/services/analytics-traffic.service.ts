@@ -203,7 +203,7 @@ function trafficByTimeQuery(
         ${timeBucketExpr(window.granularity, 'events')} AS bucket,
         uniqExactIf(user_id, event_name = 'page_view') AS visitors,
         uniqExact(session_id) AS sessions,
-        uniqExactIf(session_id, event_name = 'form_success') AS form_submitted
+        uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted
       FROM events_raw
       WHERE ${rangeLookbackFilter(utmFilter)}
       GROUP BY bucket
@@ -229,7 +229,7 @@ function trafficByDeviceQuery(utmFilter?: AnalyticsUtmFilter): string {
     SELECT
       lower(device) AS device,
       uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-      uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
+      uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
       uniqExact(session_id) AS sessions
     FROM events_raw
     WHERE ${rangeFilter(utmFilter)}
@@ -262,7 +262,7 @@ function trafficByLocationQuery(utmFilter?: AnalyticsUtmFilter): string {
     SELECT
       city_label AS city,
       uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-      uniqExactIf(session_id, event_name = 'form_success') AS form_submitted,
+      uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
       uniqExact(session_id) AS sessions
     FROM (
       SELECT
