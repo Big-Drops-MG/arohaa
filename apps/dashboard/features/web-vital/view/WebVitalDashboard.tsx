@@ -4,7 +4,10 @@ import { useCallback, useEffect, useState } from "react"
 import { cn } from "@workspace/ui/lib/utils"
 import { WebVitalDashboardSkeleton } from "@/features/dashboard/view/dashboard-skeletons"
 import { getWebVitalEmptyDashboardData } from "@/features/web-vital/controller/web-vital-empty-data"
-import type { WebVitalDashboardData } from "@/features/web-vital/model/web-vital"
+import {
+  WEB_VITAL_EMPTY_DEVICES,
+  type WebVitalDashboardData,
+} from "@/features/web-vital/model/web-vital"
 import {
   formatWebVitalRating,
   formatWebVitalValue,
@@ -104,12 +107,15 @@ export function WebVitalDashboard({
     return () => controller.abort()
   }, [isActive, customRange, dateRangeId, fetchWebVital, initialData])
 
-  const hasData = dashboardData.totalSamples > 0
+  const deviceRows =
+    dashboardData.devices.length > 0
+      ? dashboardData.devices
+      : WEB_VITAL_EMPTY_DEVICES
 
   return (
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">
       <OverviewHeader
-        title="Web Vital"
+        title="Web Vitals"
         projectId={projectId}
         dateRangeOptions={dashboardData.dateRangeOptions}
         dateRangeId={dateRangeId}
@@ -121,12 +127,17 @@ export function WebVitalDashboard({
             <p className="font-semibold text-white">How to read Web Vitals</p>
             <ul className="list-disc space-y-1.5 pl-4 text-neutral-200">
               <li>
-                Values are field p75 from real visits (LCP, CLS, INP via the
+                <span className="font-medium text-white">p75</span> is the 75th
+                percentile: 75% of visits were at this value or better (lower
+                for timing metrics; lower CLS is better).
+              </li>
+              <li>
+                Values come from real field visits (LCP, FCP, CLS, INP via the
                 SDK).
               </li>
               <li>
-                Lighthouse score is a weighted composite of those three Core Web
-                Vitals.
+                Lighthouse score is a weighted composite of FCP, LCP, INP, and
+                CLS.
               </li>
               <li>
                 The map shows performance score by US state where samples are
@@ -142,13 +153,13 @@ export function WebVitalDashboard({
       ) : (
         <div
           className={cn(
-            "flex flex-col gap-4 transition-opacity",
+            "grid gap-4 transition-opacity lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:items-stretch",
             isRefreshing && "opacity-80"
           )}
           aria-busy={isRefreshing}
         >
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <LighthouseScoreGauge score={dashboardData.lighthouseScore} />
+          <div className="flex flex-col gap-3">
+            <LighthouseScoreGauge score={dashboardData.lighthouseScore ?? 0} />
 
             {dashboardData.metrics.map((metric) => (
               <div
@@ -174,43 +185,40 @@ export function WebVitalDashboard({
                   </span>
                 </div>
 
-                <p className="mt-3 text-2xl font-semibold tracking-tight text-neutral-900 tabular-nums">
-                  {metric.samples > 0
-                    ? formatWebVitalValue(metric.p75, metric.unit)
-                    : "—"}
+                <p className="mt-2.5 text-2xl font-semibold tracking-tight text-neutral-900 tabular-nums">
+                  {formatWebVitalValue(metric.p75, metric.unit)}
                 </p>
 
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-neutral-500">
                   <span>
                     p75 · score{" "}
                     <span className="font-medium text-neutral-700 tabular-nums">
-                      {metric.samples > 0 ? metric.score : "—"}
+                      {metric.score}
                     </span>
                   </span>
                   <span className="text-neutral-300" aria-hidden>
                     ·
                   </span>
                   <span>{metricDescription(metric.name)}</span>
-                  {metric.samples > 0 ? (
-                    <>
-                      <span className="text-neutral-300" aria-hidden>
-                        ·
-                      </span>
-                      <span className="tabular-nums">
-                        {metric.samples.toLocaleString()} samples
-                      </span>
-                    </>
-                  ) : null}
+                  <span className="text-neutral-300" aria-hidden>
+                    ·
+                  </span>
+                  <span className="tabular-nums">
+                    {metric.samples.toLocaleString()} samples
+                  </span>
                 </div>
               </div>
             ))}
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-            <WebVitalsUsaMap states={dashboardData.states} />
+          <div className="flex min-h-0 min-w-0 flex-col gap-4">
+            <WebVitalsUsaMap
+              states={dashboardData.states}
+              className="shrink-0"
+            />
 
-            <div className="rounded-xl border border-border bg-white">
-              <div className="border-b border-neutral-100 px-4 py-3">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-white">
+              <div className="shrink-0 border-b border-neutral-100 px-4 py-3">
                 <h3 className="text-sm font-semibold text-neutral-900">
                   By device
                 </h3>
@@ -218,59 +226,57 @@ export function WebVitalDashboard({
                   p75 Core Web Vitals per device class
                 </p>
               </div>
-              {dashboardData.devices.length === 0 ? (
-                <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-                  {hasData
-                    ? "No device breakdown yet."
-                    : "No web vitals collected for this range. Metrics appear after the SDK reports LCP, CLS, and INP."}
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[360px] text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-neutral-100 text-xs text-muted-foreground">
-                        <th className="px-4 py-2.5 font-medium">Device</th>
-                        <th className="px-3 py-2.5 font-medium tabular-nums">
-                          Score
-                        </th>
-                        <th className="px-3 py-2.5 font-medium tabular-nums">
-                          LCP
-                        </th>
-                        <th className="px-3 py-2.5 font-medium tabular-nums">
-                          CLS
-                        </th>
-                        <th className="px-3 py-2.5 font-medium tabular-nums">
-                          INP
-                        </th>
+              <div className="min-h-0 flex-1 overflow-x-auto">
+                <table className="h-full w-full min-w-[420px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-neutral-100 text-xs text-muted-foreground">
+                      <th className="px-4 py-2.5 font-medium">Device</th>
+                      <th className="px-3 py-2.5 font-medium tabular-nums">
+                        Score
+                      </th>
+                      <th className="px-3 py-2.5 font-medium tabular-nums">
+                        LCP
+                      </th>
+                      <th className="px-3 py-2.5 font-medium tabular-nums">
+                        FCP
+                      </th>
+                      <th className="px-3 py-2.5 font-medium tabular-nums">
+                        CLS
+                      </th>
+                      <th className="px-3 py-2.5 font-medium tabular-nums">
+                        INP
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-50">
+                    {deviceRows.map((row) => (
+                      <tr key={row.device} className="h-[33.333%]">
+                        <td className="px-4 py-2.5 align-middle font-medium text-neutral-900">
+                          {formatDeviceLabel(row.device)}
+                          <span className="mt-0.5 block text-[11px] font-normal text-neutral-400">
+                            {row.samples.toLocaleString()} samples
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 align-middle text-neutral-700 tabular-nums">
+                          {row.performanceScore ?? 0}
+                        </td>
+                        <td className="px-3 py-2.5 align-middle text-neutral-700 tabular-nums">
+                          {formatWebVitalValue(row.lcpP75, "ms")}
+                        </td>
+                        <td className="px-3 py-2.5 align-middle text-neutral-700 tabular-nums">
+                          {formatWebVitalValue(row.fcpP75, "ms")}
+                        </td>
+                        <td className="px-3 py-2.5 align-middle text-neutral-700 tabular-nums">
+                          {formatWebVitalValue(row.clsP75, "unitless")}
+                        </td>
+                        <td className="px-3 py-2.5 align-middle text-neutral-700 tabular-nums">
+                          {formatWebVitalValue(row.inpP75, "ms")}
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-50">
-                      {dashboardData.devices.map((row) => (
-                        <tr key={row.device}>
-                          <td className="px-4 py-2.5 font-medium text-neutral-900">
-                            {formatDeviceLabel(row.device)}
-                            <span className="mt-0.5 block text-[11px] font-normal text-neutral-400">
-                              {row.samples.toLocaleString()} samples
-                            </span>
-                          </td>
-                          <td className="px-3 py-2.5 text-neutral-700 tabular-nums">
-                            {row.performanceScore ?? "—"}
-                          </td>
-                          <td className="px-3 py-2.5 text-neutral-700 tabular-nums">
-                            {formatWebVitalValue(row.lcpP75, "ms")}
-                          </td>
-                          <td className="px-3 py-2.5 text-neutral-700 tabular-nums">
-                            {formatWebVitalValue(row.clsP75, "unitless")}
-                          </td>
-                          <td className="px-3 py-2.5 text-neutral-700 tabular-nums">
-                            {formatWebVitalValue(row.inpP75, "ms")}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>

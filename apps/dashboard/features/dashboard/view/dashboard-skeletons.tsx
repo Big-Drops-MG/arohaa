@@ -274,13 +274,16 @@ export function SeoDashboardSkeleton() {
 
 export function WebVitalDashboardSkeleton() {
   return (
-    <div className="flex flex-col gap-4" aria-busy>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }, (_, i) => (
-          <Skeleton key={i} className="h-[148px] w-full rounded-xl" />
+    <div
+      className="grid gap-4 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:items-start"
+      aria-busy
+    >
+      <div className="flex flex-col gap-3">
+        {Array.from({ length: 5 }, (_, i) => (
+          <Skeleton key={i} className="h-[120px] w-full rounded-xl" />
         ))}
       </div>
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+      <div className="flex min-w-0 flex-col gap-4">
         <Skeleton className="min-h-[360px] w-full rounded-xl" />
         <DashboardAnalyticCardSkeleton rows={5} />
       </div>

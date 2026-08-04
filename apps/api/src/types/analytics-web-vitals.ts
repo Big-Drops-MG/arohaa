@@ -1,6 +1,6 @@
 import type { AnalyticsRangeId } from '../lib/analytics-range.js'
 
-export type WebVitalName = 'LCP' | 'CLS' | 'INP'
+export type WebVitalName = 'LCP' | 'FCP' | 'CLS' | 'INP'
 
 export type WebVitalRating = 'good' | 'needs-improvement' | 'poor' | 'none'
 
@@ -17,6 +17,7 @@ export type WebVitalMetricSummary = {
 
 export type WebVitalDeviceBreakdown = {
   device: string
+  fcpP75: number | null
   lcpP75: number | null
   clsP75: number | null
   inpP75: number | null
@@ -26,6 +27,7 @@ export type WebVitalDeviceBreakdown = {
 
 export type WebVitalStateMetric = {
   state: string
+  fcpP75: number | null
   lcpP75: number | null
   clsP75: number | null
   inpP75: number | null
@@ -35,7 +37,7 @@ export type WebVitalStateMetric = {
 
 export type AnalyticsWebVitals = {
   rangeId: AnalyticsRangeId
-  /** Composite 0–100 score from LCP / INP / CLS (Lighthouse-style). */
+  /** Composite 0–100 score from FCP / LCP / INP / CLS. */
   lighthouseScore: number | null
   metrics: WebVitalMetricSummary[]
   devices: WebVitalDeviceBreakdown[]

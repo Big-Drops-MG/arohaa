@@ -233,7 +233,7 @@ const DASHBOARD_ENDPOINTS: EndpointDef[] = [
     path: `/api/landing-pages/${DASH_PROBE_ID}/seo`,
   },
   {
-    name: "Web Vital",
+    name: "Web Vitals",
     method: "GET",
     path: `/api/landing-pages/${DASH_PROBE_ID}/web-vital`,
   },

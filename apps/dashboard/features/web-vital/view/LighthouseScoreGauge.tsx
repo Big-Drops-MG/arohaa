@@ -79,13 +79,13 @@ export function LighthouseScoreGauge({
             className="text-3xl font-semibold tracking-tight tabular-nums"
             style={{ color }}
           >
-            {score == null ? "—" : Math.round(score)}
+            {score == null ? 0 : Math.round(score)}
           </span>
           <span className="text-[10px] text-neutral-400">/ 100</span>
         </div>
       </div>
       <p className="mt-2.5 text-center text-[11px] leading-snug text-neutral-500">
-        From field p75 LCP, INP & CLS
+        From field p75 FCP, LCP, INP & CLS
       </p>
     </div>
   )

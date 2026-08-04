@@ -30,7 +30,37 @@ type CHJson<T> = { data: T[] }
 const n = (v: string | number | null | undefined): number =>
   typeof v === 'number' ? v : Number(v ?? 0) || 0
 
-const VITAL_NAMES: readonly WebVitalName[] = ['LCP', 'CLS', 'INP']
+const VITAL_NAMES: readonly WebVitalName[] = ['LCP', 'FCP', 'CLS', 'INP']
+
+const EMPTY_DEVICES: WebVitalDeviceBreakdown[] = [
+  {
+    device: 'desktop',
+    fcpP75: 0,
+    lcpP75: 0,
+    clsP75: 0,
+    inpP75: 0,
+    samples: 0,
+    performanceScore: 0,
+  },
+  {
+    device: 'tablet',
+    fcpP75: 0,
+    lcpP75: 0,
+    clsP75: 0,
+    inpP75: 0,
+    samples: 0,
+    performanceScore: 0,
+  },
+  {
+    device: 'mobile',
+    fcpP75: 0,
+    lcpP75: 0,
+    clsP75: 0,
+    inpP75: 0,
+    samples: 0,
+    performanceScore: 0,
+  },
+]
 
 const RESOLVED_DEVICE_SQL = `
   multiIf(
@@ -46,7 +76,7 @@ export function emptyAnalyticsWebVitals(
 ): AnalyticsWebVitals {
   return {
     rangeId,
-    lighthouseScore: null,
+    lighthouseScore: 0,
     metrics: VITAL_NAMES.map((name) => ({
       name,
       p75: 0,
@@ -56,7 +86,7 @@ export function emptyAnalyticsWebVitals(
       score: 0,
       unit: webVitalUnit(name),
     })),
-    devices: [],
+    devices: EMPTY_DEVICES.map((row) => ({ ...row })),
     states: [],
     totalSamples: 0,
   }
@@ -102,13 +132,13 @@ export async function getAnalyticsWebVitals({
 }): Promise<AnalyticsWebVitals> {
   const now = new Date()
   const window = resolveAnalyticsWindow(rangeId, now, custom)
-  const cacheKey = `analytics:web-vitals:v1:${workspaceId}:${rangeCacheKey(window)}`
+  const cacheKey = `analytics:web-vitals:v2:${workspaceId}:${rangeCacheKey(window)}`
   const cached = await readAnalyticsCache<AnalyticsWebVitals>(cacheKey)
   if (cached) return cached
 
   const where = `${rangeFilter()}
     AND event_name = 'web_vitals'
-    AND metric_name IN ('LCP', 'CLS', 'INP')
+    AND metric_name IN ('LCP', 'FCP', 'CLS', 'INP')
     AND metric_value >= 0
     AND metric_value = metric_value`
 
@@ -140,9 +170,11 @@ export async function getAnalyticsWebVitals({
       query: `
         SELECT
           ${RESOLVED_DEVICE_SQL} AS device,
+          quantileExactIf(0.75)(metric_value, metric_name = 'FCP') AS fcp_p75,
           quantileExactIf(0.75)(metric_value, metric_name = 'LCP') AS lcp_p75,
           quantileExactIf(0.75)(metric_value, metric_name = 'CLS') AS cls_p75,
           quantileExactIf(0.75)(metric_value, metric_name = 'INP') AS inp_p75,
+          countIf(metric_name = 'FCP') AS fcp_samples,
           countIf(metric_name = 'LCP') AS lcp_samples,
           countIf(metric_name = 'CLS') AS cls_samples,
           countIf(metric_name = 'INP') AS inp_samples,
@@ -159,9 +191,11 @@ export async function getAnalyticsWebVitals({
       query: `
         SELECT
           state AS state,
+          quantileExactIf(0.75)(metric_value, metric_name = 'FCP') AS fcp_p75,
           quantileExactIf(0.75)(metric_value, metric_name = 'LCP') AS lcp_p75,
           quantileExactIf(0.75)(metric_value, metric_name = 'CLS') AS cls_p75,
           quantileExactIf(0.75)(metric_value, metric_name = 'INP') AS inp_p75,
+          countIf(metric_name = 'FCP') AS fcp_samples,
           countIf(metric_name = 'LCP') AS lcp_samples,
           countIf(metric_name = 'CLS') AS cls_samples,
           countIf(metric_name = 'INP') AS inp_samples,
@@ -178,9 +212,11 @@ export async function getAnalyticsWebVitals({
   ])
 
   type BreakdownRow = {
+    fcp_p75: string | number
     lcp_p75: string | number
     cls_p75: string | number
     inp_p75: string | number
+    fcp_samples: string | number
     lcp_samples: string | number
     cls_samples: string | number
     inp_samples: string | number
@@ -210,35 +246,45 @@ export async function getAnalyticsWebVitals({
     metrics.map((m) => [m.name, m.samples > 0 ? m.p75 : null]),
   ) as Record<WebVitalName, number | null>
 
-  const lighthouseScore = compositeLighthouseScore(byName)
+  const lighthouseScore = compositeLighthouseScore(byName) ?? 0
 
-  function mapBreakdown(row: BreakdownRow): {
-    lcpP75: number | null
-    clsP75: number | null
-    inpP75: number | null
-    samples: number
-    performanceScore: number | null
-  } {
-    const lcpP75 = n(row.lcp_samples) > 0 ? n(row.lcp_p75) : null
-    const clsP75 = n(row.cls_samples) > 0 ? n(row.cls_p75) : null
-    const inpP75 = n(row.inp_samples) > 0 ? n(row.inp_p75) : null
+  function mapBreakdown(row: BreakdownRow): Omit<
+    WebVitalDeviceBreakdown,
+    'device'
+  > {
+    const fcpP75 = n(row.fcp_samples) > 0 ? n(row.fcp_p75) : 0
+    const lcpP75 = n(row.lcp_samples) > 0 ? n(row.lcp_p75) : 0
+    const clsP75 = n(row.cls_samples) > 0 ? n(row.cls_p75) : 0
+    const inpP75 = n(row.inp_samples) > 0 ? n(row.inp_p75) : 0
+    const hasAny =
+      n(row.fcp_samples) > 0 ||
+      n(row.lcp_samples) > 0 ||
+      n(row.cls_samples) > 0 ||
+      n(row.inp_samples) > 0
     return {
+      fcpP75,
       lcpP75,
       clsP75,
       inpP75,
       samples: n(row.samples),
-      performanceScore: compositeLighthouseScore({
-        LCP: lcpP75,
-        CLS: clsP75,
-        INP: inpP75,
-      }),
+      performanceScore: hasAny
+        ? (compositeLighthouseScore({
+            FCP: n(row.fcp_samples) > 0 ? fcpP75 : null,
+            LCP: n(row.lcp_samples) > 0 ? lcpP75 : null,
+            CLS: n(row.cls_samples) > 0 ? clsP75 : null,
+            INP: n(row.inp_samples) > 0 ? inpP75 : null,
+          }) ?? 0)
+        : 0,
     }
   }
 
-  const devices: WebVitalDeviceBreakdown[] = deviceRows.map((row) => ({
-    device: row.device || 'unknown',
-    ...mapBreakdown(row),
-  }))
+  const devices: WebVitalDeviceBreakdown[] =
+    deviceRows.length > 0
+      ? deviceRows.map((row) => ({
+          device: row.device || 'unknown',
+          ...mapBreakdown(row),
+        }))
+      : EMPTY_DEVICES.map((row) => ({ ...row }))
 
   const states: WebVitalStateMetric[] = stateRows.map((row) => ({
     state: row.state,

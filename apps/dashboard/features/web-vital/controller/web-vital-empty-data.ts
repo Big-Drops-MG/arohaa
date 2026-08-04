@@ -1,5 +1,8 @@
 import type { OverviewDateRangeId } from "@/features/overview/model/overview"
-import type { WebVitalDashboardData } from "@/features/web-vital/model/web-vital"
+import {
+  WEB_VITAL_EMPTY_DEVICES,
+  type WebVitalDashboardData,
+} from "@/features/web-vital/model/web-vital"
 import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-range"
 
 export function getWebVitalEmptyDashboardData(
@@ -9,10 +12,19 @@ export function getWebVitalEmptyDashboardData(
   return {
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: rangeId,
-    lighthouseScore: null,
+    lighthouseScore: 0,
     metrics: [
       {
         name: "LCP",
+        p75: 0,
+        avg: 0,
+        samples: 0,
+        rating: "none",
+        score: 0,
+        unit: "ms",
+      },
+      {
+        name: "FCP",
         p75: 0,
         avg: 0,
         samples: 0,
@@ -39,7 +51,7 @@ export function getWebVitalEmptyDashboardData(
         unit: "ms",
       },
     ],
-    devices: [],
+    devices: WEB_VITAL_EMPTY_DEVICES.map((row) => ({ ...row })),
     states: [],
     totalSamples: 0,
   }
