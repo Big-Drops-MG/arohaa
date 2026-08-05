@@ -23,6 +23,7 @@ type LeadsApiResponse = {
     sessionId: string
     createdAt: string
     zip: string
+    email?: string
     fields: Record<string, string>
   }>
   total?: number
@@ -110,6 +111,7 @@ export async function loadDataExportDashboardData({
       sessionId: lead.sessionId,
       createdAt: lead.createdAt,
       zip: lead.zip,
+      email: lead.email ?? "",
       fields: lead.fields ?? {},
     })),
     total: analytics.total ?? 0,

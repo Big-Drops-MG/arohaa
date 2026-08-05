@@ -70,11 +70,26 @@ export interface EnrichmentForRow {
   zipcode: string
 }
 
-function zipFromProps(props: Record<string, unknown> | undefined): string {
-  const raw = props?.zip ?? props?.zipCode ?? props?.zipcode
+function zipFromValue(raw: unknown): string {
   if (typeof raw === 'string' || typeof raw === 'number') {
     const digits = String(raw).replace(/\D/g, '').slice(0, 5)
     return digits.length === 5 ? digits : ''
+  }
+  return ''
+}
+
+function zipFromProps(props: Record<string, unknown> | undefined): string {
+  const direct = zipFromValue(props?.zip ?? props?.zipCode ?? props?.zipcode)
+  if (direct) return direct
+  const fields = props?.fields
+  if (fields && typeof fields === 'object' && !Array.isArray(fields)) {
+    const record = fields as Record<string, unknown>
+    return (
+      zipFromValue(record.zip) ||
+      zipFromValue(record.zipCode) ||
+      zipFromValue(record.zipcode) ||
+      zipFromValue(record.postal)
+    )
   }
   return ''
 }
@@ -84,8 +99,8 @@ export function ingestBodyToEventRow(
   traceId: string,
   enrichment: EnrichmentForRow,
 ): EventRow {
-  const submittedZip = zipFromProps(body.props)
   const materialized = materializeOpaqueProps(body.props)
+  const submittedZip = zipFromProps(body.props) || zipFromProps(materialized)
 
   return {
     event_name: body.event_name ?? body.ev ?? '',

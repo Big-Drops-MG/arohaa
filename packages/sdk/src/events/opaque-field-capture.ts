@@ -53,6 +53,38 @@ function readValue(
   return (el.value ?? "").trim()
 }
 
+const PEELABLE_RADIO_BASE_RE =
+  /^(?:car|driver|vehicle)_\d+_(?:year|make|model|gender|married|fault|dui|military|sr22|credit|homeowner|education|occupation|license|age)$/i
+
+function peelRadioField(
+  key: string,
+  value: string,
+): { key: string; value: string } | null {
+  const idx = key.lastIndexOf("_")
+  if (idx <= 0) return null
+  const base = key.slice(0, idx)
+  const option = key.slice(idx + 1)
+  if (!option || !PEELABLE_RADIO_BASE_RE.test(base)) return null
+  const lower = value.trim().toLowerCase()
+  if (["on", "true", "1", "yes"].includes(lower)) {
+    return { key: base, value: option }
+  }
+  if (lower === option.toLowerCase()) {
+    return { key: base, value: option }
+  }
+  return null
+}
+
+function clearSiblingOptionKeys(base: string): void {
+  for (const existing of Object.keys(fieldValues)) {
+    if (existing === base) continue
+    if (existing.startsWith(`${base}_`)) {
+      delete fieldValues[existing]
+      lockedKeys.delete(existing)
+    }
+  }
+}
+
 function isDigestValue(value: string): boolean {
   return /^[a-f0-9]{64}$/i.test(value)
 }
@@ -84,9 +116,9 @@ function ingestField(el: Element): void {
     }
   }
   if (isPhoneField(el)) return
-  const key = fieldKey(el)
+  let key = fieldKey(el)
   if (!key || SKIP_KEY_RE.test(key)) return
-  const value = readValue(el)
+  let value = readValue(el)
   if (!value) {
     if (!lockedKeys.has(key)) delete fieldValues[key]
     return
@@ -94,6 +126,19 @@ function ingestField(el: Element): void {
 
   if (isDigestValue(value)) {
     return
+  }
+
+  const peeled = peelRadioField(key, value)
+  if (peeled) {
+    key = peeled.key
+    value = peeled.value
+    clearSiblingOptionKeys(key)
+  } else if (
+    el instanceof HTMLInputElement &&
+    el.type === "checkbox" &&
+    ["on", "true", "1", "yes"].includes(value.toLowerCase())
+  ) {
+    value = "Yes"
   }
 
   if (lockedKeys.has(key) && !isContactAddress(value)) {

@@ -1,0 +1,61 @@
+import { describe, expect, it } from 'vitest'
+import {
+  fieldsWithoutReserved,
+  normalizeLeadFields,
+  pickLeadEmail,
+  pickLeadZip,
+} from './lead-fields.js'
+
+describe('normalizeLeadFields', () => {
+  it('collapses radio option keys with on values', () => {
+    expect(
+      normalizeLeadFields({
+        car_0_make_BUI: 'on',
+        car_0_year_2014: 'on',
+        car_0_model_1270: 'on',
+        driver_0_married_yes: 'on',
+        second_vehicle: 'on',
+        currently_insured: 'on',
+        address: '123 Main',
+        email: 'a@b.com',
+      }),
+    ).toEqual({
+      car_0_make: 'BUI',
+      car_0_year: '2014',
+      car_0_model: '1270',
+      driver_0_married: 'yes',
+      second_vehicle: 'Yes',
+      currently_insured: 'Yes',
+      address: '123 Main',
+      email: 'a@b.com',
+    })
+  })
+
+  it('collapses when value matches option suffix', () => {
+    expect(
+      normalizeLeadFields({
+        driver_0_gender_male: 'male',
+      }),
+    ).toEqual({ driver_0_gender: 'male' })
+  })
+
+  it('drops hashed email digests', () => {
+    const digest = 'a'.repeat(64)
+    expect(normalizeLeadFields({ email: digest, city: 'Austin' })).toEqual({
+      city: 'Austin',
+    })
+  })
+})
+
+describe('pickLead helpers', () => {
+  it('picks email and zip', () => {
+    const fields = normalizeLeadFields({
+      email: 'lead@example.com',
+      zipcode: '90210',
+      city: 'LA',
+    })
+    expect(pickLeadEmail(fields)).toBe('lead@example.com')
+    expect(pickLeadZip(fields)).toBe('90210')
+    expect(fieldsWithoutReserved(fields)).toEqual({ city: 'LA' })
+  })
+})

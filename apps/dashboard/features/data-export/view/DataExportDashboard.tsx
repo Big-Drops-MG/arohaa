@@ -18,12 +18,35 @@ type DataExportDashboardProps = {
   isLoading?: boolean
 }
 
+const PREFERRED_FIELD_ORDER = [
+  "address",
+  "city",
+  "state",
+  "first_name",
+  "last_name",
+  "name",
+]
+
 function formatWhen(value: string): string {
   const d = new Date(
     value.includes("T") ? value : value.replace(" ", "T") + "Z"
   )
   if (Number.isNaN(d.getTime())) return value
   return d.toLocaleString()
+}
+
+function sortFieldKeys(keys: string[]): string[] {
+  const preferred = new Map(
+    PREFERRED_FIELD_ORDER.map((key, index) => [key, index])
+  )
+  return [...keys].sort((a, b) => {
+    const ai = preferred.get(a.toLowerCase())
+    const bi = preferred.get(b.toLowerCase())
+    if (ai != null && bi != null) return ai - bi
+    if (ai != null) return -1
+    if (bi != null) return 1
+    return a.localeCompare(b)
+  })
 }
 
 export function DataExportDashboard({
@@ -43,7 +66,7 @@ export function DataExportDashboard({
     for (const lead of dashboardData.leads) {
       for (const key of Object.keys(lead.fields)) keys.add(key)
     }
-    return [...keys].sort((a, b) => a.localeCompare(b)).slice(0, 12)
+    return sortFieldKeys([...keys])
   }, [dashboardData.leads])
 
   const fetchPage = useCallback(
@@ -160,6 +183,8 @@ export function DataExportDashboard({
     )
   }
 
+  const colCount = 5 + fieldKeys.length
+
   return (
     <div className="space-y-4">
       <OverviewHeader
@@ -173,13 +198,18 @@ export function DataExportDashboard({
       />
 
       <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full min-w-[640px] text-left text-sm">
+        <table className="w-full min-w-180 text-left text-sm">
           <thead className="border-b bg-muted/40">
             <tr>
+              <th className="px-3 py-2 font-medium">#</th>
               <th className="px-3 py-2 font-medium">When</th>
               <th className="px-3 py-2 font-medium">Zip</th>
+              <th className="px-3 py-2 font-medium">Email</th>
               {fieldKeys.map((key) => (
-                <th key={key} className="px-3 py-2 font-medium">
+                <th
+                  key={key}
+                  className="px-3 py-2 font-medium whitespace-nowrap"
+                >
                   {key}
                 </th>
               ))}
@@ -191,23 +221,27 @@ export function DataExportDashboard({
               <tr>
                 <td
                   className="px-3 py-6 text-muted-foreground"
-                  colSpan={3 + fieldKeys.length}
+                  colSpan={colCount}
                 >
                   No captured rows for this range yet.
                 </td>
               </tr>
             ) : (
-              dashboardData.leads.map((lead) => (
+              dashboardData.leads.map((lead, index) => (
                 <tr
                   key={`${lead.sessionId}-${lead.createdAt}`}
                   className="border-b"
                 >
+                  <td className="px-3 py-2 text-muted-foreground">
+                    {index + 1}
+                  </td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {formatWhen(lead.createdAt)}
                   </td>
                   <td className="px-3 py-2">{lead.zip || "—"}</td>
+                  <td className="px-3 py-2">{lead.email || "—"}</td>
                   {fieldKeys.map((key) => (
-                    <td key={key} className="max-w-[14rem] truncate px-3 py-2">
+                    <td key={key} className="max-w-[16rem] truncate px-3 py-2">
                       {lead.fields[key] || "—"}
                     </td>
                   ))}

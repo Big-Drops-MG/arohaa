@@ -7,6 +7,7 @@ export type DataExportLeadRow = {
   sessionId: string
   createdAt: string
   zip: string
+  email: string
   fields: Record<string, string>
 }
 
