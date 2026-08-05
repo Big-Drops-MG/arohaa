@@ -26,8 +26,7 @@ export async function initSDK(): Promise<void> {
     return
   }
 
-  // Report document height to a parent frame (heatmap preview) even when the
-  // page is UTM-gated, since the overlay needs the real rendered height.
+
   setupFrameSizeReporter()
 
   const blocked = await enforceUtmBlockGate(config)

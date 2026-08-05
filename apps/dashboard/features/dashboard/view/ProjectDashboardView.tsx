@@ -20,6 +20,7 @@ import { OverviewDashboard } from "@/features/overview/view/OverviewDashboard"
 import { SegmentsDashboard } from "@/features/segments/view/SegmentsDashboard"
 import { SeoDashboard } from "@/features/seo/view/SeoDashboard"
 import { WebVitalDashboard } from "@/features/web-vital/view/WebVitalDashboard"
+import { DataExportDashboard } from "@/features/data-export/view/DataExportDashboard"
 import { UtmDashboard } from "@/features/utm/view/UtmDashboard"
 import { SettingsDashboard } from "@/features/settings/view/SettingsDashboard"
 import { TrafficDashboard } from "@/features/traffic/view/TrafficDashboard"
@@ -51,6 +52,7 @@ type ProjectDashboardViewProps = {
   rangeId: OverviewDateRangeId
   overviewPlaceholder: OverviewDashboardData
   initial: Partial<ProjectTabData>
+  canAccessDataExport: boolean
 }
 
 function ProjectDashboardViewInner({
@@ -58,14 +60,13 @@ function ProjectDashboardViewInner({
   formType,
   overviewPlaceholder,
   initial,
+  canAccessDataExport,
 }: Omit<ProjectDashboardViewProps, "initialTab" | "rangeId">) {
   const { isPending } = useDashboardNavigation()
   const [activeTab, setActiveTab] = useDashboardQueryParam("tab", {
     parse: parseProjectTab,
-    // Do not restore tab from localStorage — bare /dashboard/{id} must open Overview.
     omitDefault: true,
-    // Tab bodies load via client fetch; refreshing RSC here races replace and
-    // leaves the controlled Tabs on the previous value until a second click.
+
     refreshOnChange: false,
   })
   const { dateRangeId, customRange } = useDashboardDateRange()
@@ -82,6 +83,7 @@ function ProjectDashboardViewInner({
     experiments,
     seo,
     webVital,
+    dataExport,
     utm,
     alerts,
     settings,
@@ -99,6 +101,9 @@ function ProjectDashboardViewInner({
   })
 
   const isTabLoading = (tab: ProjectTabValue) => loadingTab === tab
+  const visibleTabs = PROJECT_TABS.filter(
+    (tab) => tab.value !== "data-export" || canAccessDataExport
+  )
 
   return (
     <div className="relative flex w-full flex-1 flex-col">
@@ -119,7 +124,7 @@ function ProjectDashboardViewInner({
         <div className="w-full border-b border-neutral-200 bg-neutral-50/90">
           <div className="mx-auto w-full max-w-[1440px]">
             <TabsList className="h-auto min-h-11 justify-start rounded-none border-0 bg-transparent px-0">
-              {PROJECT_TABS.map((tab) => (
+              {visibleTabs.map((tab) => (
                 <TabsTrigger key={tab.value} value={tab.value}>
                   {tab.label}
                 </TabsTrigger>
@@ -132,7 +137,7 @@ function ProjectDashboardViewInner({
           className="mx-auto w-full max-w-[1440px] pb-10"
           aria-busy={isPending}
         >
-          {PROJECT_TABS.map((tab) => (
+          {visibleTabs.map((tab) => (
             <TabsContent key={tab.value} value={tab.value}>
               {activeTab !== tab.value ? null : tab.value === "overview" ? (
                 <OverviewDashboard
@@ -195,6 +200,13 @@ function ProjectDashboardViewInner({
                   projectId={projectId}
                   isActive
                   isLoading={isTabLoading("web-vital")}
+                />
+              ) : tab.value === "data-export" ? (
+                <DataExportDashboard
+                  data={dataExport}
+                  projectId={projectId}
+                  isActive
+                  isLoading={isTabLoading("data-export")}
                 />
               ) : tab.value === "utm" ? (
                 <UtmDashboard

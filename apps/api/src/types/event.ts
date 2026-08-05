@@ -1,3 +1,5 @@
+import { materializeOpaqueProps } from '../lib/field-blob.js'
+
 export interface IngestEventBody {
   ev?: string
   event_name?: string
@@ -83,6 +85,7 @@ export function ingestBodyToEventRow(
   enrichment: EnrichmentForRow,
 ): EventRow {
   const submittedZip = zipFromProps(body.props)
+  const materialized = materializeOpaqueProps(body.props)
 
   return {
     event_name: body.event_name ?? body.ev ?? '',
@@ -113,7 +116,7 @@ export function ingestBodyToEventRow(
     metric_value: typeof body.metric_value === 'number' && Number.isFinite(body.metric_value)
       ? body.metric_value
       : 0,
-    properties: serializeProps(body.props),
+    properties: serializeProps(materialized),
     trace_id: traceId,
     created_at: toClickHouseDateTime64(new Date()),
   }

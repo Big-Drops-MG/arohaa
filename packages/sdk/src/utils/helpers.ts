@@ -51,8 +51,6 @@ export function getDocumentSize(): { width: number; height: number } {
     1
   )
 
-  // Prefer measured content. Only use scroll metrics when content could not be
-  // measured — scrollHeight often equals a stretched 100vh iframe shell.
   const width =
     contentRight > 1
       ? Math.ceil(contentRight)

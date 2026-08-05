@@ -18,6 +18,8 @@ export type LandingPageRecord = {
   lastSeenAt: string | null
   lastEventAt: string | null
   formType: OverviewLandingFormType
+  redirectPageUrl: string | null
+  redirectHostname: string | null
   faviconUrl: string | null
   notes: string | null
   channelType: LandingPageChannelType | null

@@ -6,6 +6,7 @@ import {
   generateHtmlVerificationToken,
   landingPages,
   normalizeLandingPageUrl,
+  normalizeOptionalRedirectUrl,
   normalizedBrandName,
 } from "@workspace/database"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
@@ -109,6 +110,9 @@ export async function PATCH(
     formType: row.formType,
     faviconUrl: row.faviconUrl,
     notes: row.notes,
+    redirectPageUrl: row.redirectPageUrl,
+    redirectHostname: row.redirectHostname,
+    redirectOrigin: row.redirectOrigin,
     verificationMethod: row.verificationMethod,
     htmlTokenRotated: false,
   }
@@ -174,6 +178,27 @@ export async function PATCH(
       return NextResponse.json({ error: parsed.error }, { status: 400 })
     }
     nextNotes = parsed.value
+  }
+
+  let nextRedirectPageUrl = row.redirectPageUrl ?? null
+  let nextRedirectHostname = row.redirectHostname ?? null
+  let nextRedirectOrigin = row.redirectOrigin ?? null
+  if ("redirectPageUrl" in record) {
+    const parsed = normalizeOptionalRedirectUrl(
+      record.redirectPageUrl == null ? "" : String(record.redirectPageUrl)
+    )
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 })
+    }
+    nextRedirectPageUrl = parsed.redirectPageUrl
+    nextRedirectHostname = parsed.redirectHostname
+    nextRedirectOrigin = parsed.redirectOrigin
+  }
+
+  if (nextFormType !== "zip") {
+    nextRedirectPageUrl = null
+    nextRedirectHostname = null
+    nextRedirectOrigin = null
   }
 
   let nextStatus = row.status
@@ -250,6 +275,9 @@ export async function PATCH(
         formType: nextFormType,
         faviconUrl: nextFaviconUrl,
         notes: nextNotes,
+        redirectPageUrl: nextRedirectPageUrl,
+        redirectHostname: nextRedirectHostname,
+        redirectOrigin: nextRedirectOrigin,
         htmlVerificationToken: nextHtmlVerificationToken ?? null,
         status: statusForUpdate,
         metadata: metadataForUpdate,

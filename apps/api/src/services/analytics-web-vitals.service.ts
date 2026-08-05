@@ -63,12 +63,7 @@ const EMPTY_DEVICES: WebVitalDeviceBreakdown[] = [
 ]
 
 const RESOLVED_DEVICE_SQL = `
-  multiIf(
-    device IN ('mobile', 'tablet', 'desktop'), device,
-    viewport_width > 0 AND viewport_width < 768, 'mobile',
-    viewport_width >= 768 AND viewport_width < 1024, 'tablet',
-    'desktop'
-  )
+  if(device IN ('mobile', 'tablet', 'desktop'), device, 'desktop')
 `
 
 export function emptyAnalyticsWebVitals(

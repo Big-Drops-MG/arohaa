@@ -26,6 +26,8 @@ export function toLandingPageRecord(row: LandingRow): LandingPageRecord {
     lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
     lastEventAt: row.lastEventAt?.toISOString() ?? null,
     formType: parseOverviewLandingFormType(row.formType),
+    redirectPageUrl: row.redirectPageUrl ?? null,
+    redirectHostname: row.redirectHostname ?? null,
     faviconUrl: row.faviconUrl,
     notes: row.notes,
     channelType: parseLandingPageChannelType(metadata),

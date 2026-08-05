@@ -24,6 +24,8 @@ import { loadOverviewDashboardData } from "@/lib/server/overview-dashboard-load"
 import { loadSegmentsDashboardData } from "@/lib/server/segments-dashboard-load"
 import { loadSeoDashboardData } from "@/lib/server/seo-dashboard-load"
 import { loadWebVitalDashboardData } from "@/lib/server/web-vital-dashboard-load"
+import { loadDataExportDashboardData } from "@/lib/server/data-export-dashboard-load"
+import { canAccessDataExport } from "@/lib/server/data-export-acl"
 import { loadUtmDashboardData } from "@/lib/server/utm-dashboard-load"
 import { loadTrafficDashboardData } from "@/lib/server/traffic-dashboard-load"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
@@ -103,6 +105,11 @@ export default async function ProjectPage({
 
   const formType = parseOverviewLandingFormType(row.formType)
   const overviewPlaceholder = getOverviewPlaceholderData(project, formType)
+  const allowDataExport = canAccessDataExport(actor.email)
+
+  if (tab === "data-export" && !allowDataExport) {
+    notFound()
+  }
 
   let overview = null
   let traffic = null
@@ -113,6 +120,7 @@ export default async function ProjectPage({
   let experiments = null
   let seo = null
   let webVital = null
+  let dataExport = null
   let utm = null
   let alerts = null
   let settings = null
@@ -189,6 +197,13 @@ export default async function ProjectPage({
         customRange,
       })
       break
+    case "data-export":
+      dataExport = await loadDataExportDashboardData({
+        landingPagePublicId: project,
+        rangeId,
+        customRange,
+      })
+      break
     case "utm":
       utm = await loadUtmDashboardData(project)
       break
@@ -214,6 +229,7 @@ export default async function ProjectPage({
         initialTab={tab}
         rangeId={rangeId}
         overviewPlaceholder={overviewPlaceholder}
+        canAccessDataExport={allowDataExport}
         initial={{
           overview: overview ?? undefined,
           traffic: traffic ?? undefined,
@@ -224,6 +240,7 @@ export default async function ProjectPage({
           experiments: experiments ?? undefined,
           seo: seo ?? undefined,
           "web-vital": webVital ?? undefined,
+          "data-export": dataExport ?? undefined,
           utm: utm ?? undefined,
           alerts: alerts ?? undefined,
           settings: settings ?? undefined,

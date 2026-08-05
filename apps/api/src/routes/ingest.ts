@@ -52,7 +52,7 @@ const eventBodyProperties = {
   props: {
     type: 'object',
     additionalProperties: true,
-    maxProperties: 15,
+    maxProperties: 20,
   },
 } as const
 

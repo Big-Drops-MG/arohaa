@@ -1,0 +1,156 @@
+import { getClickHouseClient } from './clickhouse.service.js'
+import {
+  rangeFilter,
+  rangeQueryParams,
+  resolveAnalyticsWindow,
+  type AnalyticsCustomRange,
+  type AnalyticsRangeId,
+} from '../lib/analytics-range.js'
+import { isPhoneFieldKey } from '../lib/field-blob.js'
+
+type CHJson<T> = { data: T[] }
+
+export type FunnelLeadRow = {
+  sessionId: string
+  createdAt: string
+  zip: string
+  fields: Record<string, string>
+}
+
+export type FunnelLeadsResponse = {
+  rangeId: AnalyticsRangeId
+  leads: FunnelLeadRow[]
+  total: number
+  limit: number
+  offset: number
+  hasMore: boolean
+}
+
+function parseFields(raw: string): Record<string, string> {
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return {}
+    const props = parsed as Record<string, unknown>
+    const source =
+      props.fields && typeof props.fields === 'object' && !Array.isArray(props.fields)
+        ? (props.fields as Record<string, unknown>)
+        : props
+    const out: Record<string, string> = {}
+    for (const [k, v] of Object.entries(source)) {
+      if (k === 'fields' || k === '_k') continue
+      if (isPhoneFieldKey(k)) continue
+      if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+        out[k] = String(v)
+      }
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+export async function getFunnelLeads({
+  workspaceId,
+  rangeId,
+  custom,
+  limit = 15,
+  offset = 0,
+}: {
+  workspaceId: string
+  rangeId: AnalyticsRangeId
+  custom?: AnalyticsCustomRange
+  limit?: number
+  offset?: number
+}): Promise<FunnelLeadsResponse> {
+  const safeLimit = Math.min(50, Math.max(1, Math.floor(limit) || 15))
+  const safeOffset = Math.max(0, Math.floor(offset) || 0)
+  const window = resolveAnalyticsWindow(rangeId, new Date(), custom)
+  const ch = getClickHouseClient()
+  const where = `${rangeFilter()}
+    AND event_name IN ('form_success', 'form_step_complete', 'form_step_view')
+    AND properties LIKE '%"fields"%'`
+
+  const p = {
+    wid: workspaceId,
+    ...rangeQueryParams(window),
+    lim: safeLimit,
+    off: safeOffset,
+  }
+
+  const [countRes, rowsRes] = await Promise.all([
+    ch.query({
+      format: 'JSON',
+      query_params: p,
+      query: `
+        SELECT count() AS c
+        FROM (
+          SELECT session_id
+          FROM events_raw
+          WHERE ${where}
+          GROUP BY session_id
+        )
+      `,
+    }),
+    ch.query({
+      format: 'JSON',
+      query_params: p,
+      query: `
+        SELECT
+          session_id,
+          max(created_at) AS created_at,
+          argMax(zipcode, created_at) AS zipcode,
+          argMax(properties, created_at) AS properties
+        FROM events_raw
+        WHERE ${where}
+        GROUP BY session_id
+        ORDER BY created_at DESC
+        LIMIT {lim:UInt32} OFFSET {off:UInt32}
+      `,
+    }),
+  ])
+
+  const total = Number(
+    ((await countRes.json()) as CHJson<{ c: string | number }>).data?.[0]?.c ??
+      0,
+  )
+  const rows =
+    (
+      (await rowsRes.json()) as CHJson<{
+        session_id: string
+        created_at: string
+        zipcode: string
+        properties: string
+      }>
+    ).data ?? []
+
+  const leads: FunnelLeadRow[] = rows.map((row) => ({
+    sessionId: row.session_id,
+    createdAt: row.created_at,
+    zip: row.zipcode || '',
+    fields: parseFields(row.properties || '{}'),
+  }))
+
+  return {
+    rangeId: window.rangeId,
+    leads,
+    total,
+    limit: safeLimit,
+    offset: safeOffset,
+    hasMore: safeOffset + leads.length < total,
+  }
+}
+
+export function emptyFunnelLeads(
+  rangeId: AnalyticsRangeId,
+  limit = 15,
+  offset = 0,
+): FunnelLeadsResponse {
+  return {
+    rangeId,
+    leads: [],
+    total: 0,
+    limit,
+    offset,
+    hasMore: false,
+  }
+}

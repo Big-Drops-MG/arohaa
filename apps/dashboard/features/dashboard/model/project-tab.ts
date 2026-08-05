@@ -8,6 +8,7 @@ export const PROJECT_TABS = [
   { value: "experiments", label: "Experiments" },
   { value: "seo", label: "SEO" },
   { value: "web-vital", label: "Web Vitals" },
+  { value: "data-export", label: "Data Export" },
   { value: "utm", label: "UTM Control" },
   { value: "alerts", label: "Alerts" },
   { value: "settings", label: "Settings" },

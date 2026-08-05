@@ -196,8 +196,16 @@ function buildMetrics(
     : previous.formStarted
 
   defs.push(
-    { label: 'Form Started', cur: startedCur, prev: startedPrev },
-    { label: 'Form Submitted', cur: submittedCur, prev: submittedPrev },
+    {
+      label: isZip ? 'Zip Started' : 'Form Started',
+      cur: startedCur,
+      prev: startedPrev,
+    },
+    {
+      label: isZip ? 'Zip Submitted' : 'Form Submitted',
+      cur: submittedCur,
+      prev: submittedPrev,
+    },
   )
 
   return defs.map(({ label, cur, prev }) => ({
@@ -262,7 +270,7 @@ function buildMultiStepSteps(
     previousCore.formSubmitted > 0
   ) {
     steps.push({
-      label: 'Form Submitted',
+      label: 'Lead Submitted',
       count: currentCore.formSubmitted,
       changePct: computePeriodChangePct(
         currentCore.formSubmitted,
@@ -300,6 +308,7 @@ export interface GetAnalyticsFunnelParams {
   workspaceId: string
   rangeId: AnalyticsRangeId
   formType?: FunnelFormType
+  hasRedirect?: boolean
   utmFilter?: AnalyticsUtmFilter
   custom?: AnalyticsCustomRange
 }
@@ -308,13 +317,15 @@ export async function getAnalyticsFunnel({
   workspaceId,
   rangeId,
   formType = 'single',
+  hasRedirect = false,
   utmFilter,
   custom,
 }: GetAnalyticsFunnelParams): Promise<FunnelDashboardResponse> {
   const now = new Date()
   const window = resolveAnalyticsWindow(rangeId, now, custom)
   const utmKey = utmFilterCacheKey(utmFilter)
-  const cacheKey = `analytics:funnel:v8:${workspaceId}:${rangeCacheKey(window, utmKey)}:${formType}`
+  const showOfferSteps = formType === 'multiple' || (formType === 'zip' && hasRedirect)
+  const cacheKey = `analytics:funnel:v9:${workspaceId}:${rangeCacheKey(window, utmKey)}:${formType}:${showOfferSteps ? 'r1' : 'r0'}`
   try {
     const cachedStr = await redis.get(cacheKey)
     if (cachedStr) {
@@ -366,15 +377,14 @@ export async function getAnalyticsFunnel({
   const response: FunnelDashboardResponse = {
     rangeId: window.rangeId,
     metrics: buildMetrics(currentCore, previousCore, formType),
-    multiStepSteps:
-      formType === 'multiple'
-        ? buildMultiStepSteps(
-            currentSteps,
-            previousSteps,
-            currentCore,
-            previousCore,
-          )
-        : [],
+    multiStepSteps: showOfferSteps
+      ? buildMultiStepSteps(
+          currentSteps,
+          previousSteps,
+          currentCore,
+          previousCore,
+        )
+      : [],
     dropOffRows:
       formType === 'single' || formType === 'multiple'
         ? buildDropOffRows(dropOffRows)
@@ -402,12 +412,19 @@ export function emptyAnalyticsFunnel(
           'Interactions',
           'Service Clicked',
         ] as const)
-      : ([
-          'Landing Page Visits',
-          'Interactions',
-          'Form Started',
-          'Form Submitted',
-        ] as const)
+      : formType === 'zip'
+        ? ([
+            'Landing Page Visits',
+            'Interactions',
+            'Zip Started',
+            'Zip Submitted',
+          ] as const)
+        : ([
+            'Landing Page Visits',
+            'Interactions',
+            'Form Started',
+            'Form Submitted',
+          ] as const)
 
   return {
     rangeId,

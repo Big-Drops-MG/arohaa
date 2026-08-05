@@ -5,6 +5,7 @@ import { ingestHostnameMatchesLanding } from '@workspace/database/landing/normal
 type LandingRowLite = {
   id: string
   hostname: string
+  redirectHostname: string | null
   status: string
   verifiedAt: Date | null
   publicId: string
@@ -52,6 +53,7 @@ export async function reconcileLandingPageIngest(payload: {
     SELECT
       lp.id,
       lp.hostname,
+      lp."redirectHostname" AS "redirectHostname",
       lp.status,
       lp."verifiedAt",
       lp."publicId",
@@ -76,7 +78,13 @@ export async function reconcileLandingPageIngest(payload: {
     return { outcome: 'reject', reason: 'WID_MISMATCH' }
   }
 
-  if (!ingestHostnameMatchesLanding(payload.eventUrl, row.hostname)) {
+  if (
+    !ingestHostnameMatchesLanding(
+      payload.eventUrl,
+      row.hostname,
+      row.redirectHostname,
+    )
+  ) {
     return { outcome: 'reject', reason: 'HOSTNAME_MISMATCH' }
   }
 

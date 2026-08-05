@@ -26,9 +26,10 @@ export function FunnelDetailCards({
   multiStepSteps,
   dropOffRows,
 }: FunnelDetailCardsProps) {
-  if (formType === "zip" || formType === "none") return null
+  if (formType === "none") return null
 
-  const showMultiStep = formType === "multiple"
+  const showMultiStep =
+    formType === "multiple" || (formType === "zip" && multiStepSteps.length > 0)
   const showDropOff = formType === "single" || formType === "multiple"
 
   if (!showMultiStep && !showDropOff) return null

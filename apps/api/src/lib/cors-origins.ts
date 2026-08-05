@@ -29,7 +29,10 @@ function parseEnvOrigins(): Set<string> {
 
 async function loadLandingPageOrigins(): Promise<Set<string>> {
   const rows = await db
-    .select({ origin: landingPages.origin })
+    .select({
+      origin: landingPages.origin,
+      redirectOrigin: landingPages.redirectOrigin,
+    })
     .from(landingPages)
     .where(isNull(landingPages.deletedAt))
 
@@ -37,6 +40,10 @@ async function loadLandingPageOrigins(): Promise<Set<string>> {
   for (const row of rows) {
     const origin = normalizeOrigin(row.origin)
     if (origin) origins.add(origin)
+    if (row.redirectOrigin) {
+      const redirect = normalizeOrigin(row.redirectOrigin)
+      if (redirect) origins.add(redirect)
+    }
   }
   return origins
 }
