@@ -70,9 +70,15 @@ export function DataExportDashboard({
   }, [dashboardData.leads])
 
   const fetchPage = useCallback(
-    async (offset: number, append: boolean, signal?: AbortSignal) => {
+    async (
+      offset: number,
+      append: boolean,
+      signal?: AbortSignal,
+      options?: { quiet?: boolean }
+    ) => {
+      const quiet = options?.quiet === true
       if (append) setLoadingMore(true)
-      else setIsBlockingLoad(true)
+      else if (!quiet) setIsBlockingLoad(true)
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/data-export`,
         { rangeId: dateRangeId, customRange }
@@ -86,7 +92,7 @@ export function DataExportDashboard({
           signal,
         })
         if (!res.ok) {
-          if (!append) {
+          if (!append && !quiet) {
             setDashboardData(
               getDataExportEmptyDashboardData(
                 dateRangeId,
@@ -110,7 +116,7 @@ export function DataExportDashboard({
         )
       } catch {
         if (signal?.aborted) return
-        if (!append) {
+        if (!append && !quiet) {
           setDashboardData(
             getDataExportEmptyDashboardData(
               dateRangeId,
@@ -145,6 +151,18 @@ export function DataExportDashboard({
     void fetchPage(0, false, controller.signal)
     return () => controller.abort()
   }, [customRange, dateRangeId, fetchPage, initialData, isActive])
+
+  useEffect(() => {
+    if (!isActive || !dashboardData.hasRedirect) return
+    const controller = new AbortController()
+    const id = setInterval(() => {
+      void fetchPage(0, false, controller.signal, { quiet: true })
+    }, 15_000)
+    return () => {
+      clearInterval(id)
+      controller.abort()
+    }
+  }, [dashboardData.hasRedirect, fetchPage, isActive])
 
   if (isTabLoading || isBlockingLoad) {
     return (

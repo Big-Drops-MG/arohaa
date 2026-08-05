@@ -14,6 +14,13 @@ const FLUSH_INTERVAL_MS = 5000;
 const MAX_HEATMAP_BATCH_SIZE = 5000;
 const HEATMAP_FLUSH_INTERVAL_MS = 2000;
 
+const PRIORITY_EVENT_NAMES = new Set([
+  'form_success',
+  'form_step_complete',
+  'form_submit',
+  'zip_submit',
+]);
+
 //
 // 1. Redis Connection Initialization
 //
@@ -86,9 +93,9 @@ async function startQueueConsumption() {
   
   while (!isShuttingDown) {
     try {
-      // BLPOP blocks for 1 second waiting for an item
       const result = await redis.blpop('analytics_queue', 1);
       
+      let priorityFlush = false;
       if (result) {
         const [, payload] = result;
         try {
@@ -96,6 +103,9 @@ async function startQueueConsumption() {
           if (validateEvent(rawEvent)) {
             const safeEvent = anonymizeEvent(rawEvent);
             batch.push(safeEvent);
+            if (PRIORITY_EVENT_NAMES.has(safeEvent.event_name)) {
+              priorityFlush = true;
+            }
           } else {
             await redis.lpush('failed_events', JSON.stringify({ reason: 'validation_failed', payload, timestamp: Date.now() }));
           }
@@ -105,9 +115,12 @@ async function startQueueConsumption() {
         }
       }
 
-      // Check if we need to flush
       const timeSinceFlush = Date.now() - lastFlushTime;
-      if (batch.length >= MAX_BATCH_SIZE || (batch.length > 0 && timeSinceFlush >= FLUSH_INTERVAL_MS)) {
+      if (
+        batch.length >= MAX_BATCH_SIZE ||
+        (batch.length > 0 && timeSinceFlush >= FLUSH_INTERVAL_MS) ||
+        (batch.length > 0 && priorityFlush)
+      ) {
         const currentBatch = [...batch];
         batch = [];
         lastFlushTime = Date.now();
@@ -116,7 +129,6 @@ async function startQueueConsumption() {
       
     } catch (err) {
       logger.error({ err }, 'error in queue consumption loop');
-      // Brief pause to prevent tight looping on Redis connection issues
       await new Promise(resolve => setTimeout(resolve, 1000)); 
     }
   }
@@ -159,16 +171,13 @@ async function startHeatmapConsumption() {
   }
 }
 
-//
-// 4. Graceful Shutdown Handling
-//
+
 async function shutdown(signal) {
   if (isShuttingDown) return; // Prevent double execution
   isShuttingDown = true;
   logger.info({ signal }, 'shutdown initiated');
   
   try {
-    // 1. Flush any remaining events in the batch
     if (batch.length > 0) {
       logger.info({ rows: batch.length }, 'flushing pending events before shutdown');
       const currentBatch = [...batch];
@@ -183,19 +192,16 @@ async function shutdown(signal) {
       await dbWriter.flushHeatmapBatch(currentBatch);
     }
     
-    // 2. Close ClickHouse connection
     if (clickHouseClient) {
       await clickHouseClient.close();
       logger.info('clickhouse disconnected');
     }
 
-    // 3. Close Redis connection
     if (redis) {
       await redis.quit();
       logger.info('redis disconnected');
     }
 
-    // Flush Sentry events
     await Sentry.close(2000);
 
     logger.info('shutdown complete');
@@ -210,14 +216,11 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => shutdown(signal));
 }
 
-//
-// 5. Startup Sequence
-//
+
 async function start() {
   logger.info('starting worker');
 
   try {
-    // Wait for Redis to be ready
     await new Promise((resolve, reject) => {
       if (redis.status === 'ready') return resolve();
       redis.once('ready', resolve);
@@ -225,11 +228,9 @@ async function start() {
     });
     logger.info('redis connected');
 
-    // Initialize ClickHouse client
     clickHouseClient = getClickHouseClient();
     dbWriter = new DbWriter(clickHouseClient, redis);
 
-    // Validate ClickHouse connection
     const result = await clickHouseClient.query({
       query: 'SELECT 1 AS ok',
       format: 'JSON',
@@ -242,7 +243,6 @@ async function start() {
 
     logger.info('worker ready');
     
-    // Start processing
     startQueueConsumption();
     startHeatmapConsumption();
   } catch (err) {
