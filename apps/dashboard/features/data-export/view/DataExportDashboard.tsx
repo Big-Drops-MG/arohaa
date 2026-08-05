@@ -10,6 +10,10 @@ import {
   buildAnalyticsApiPath,
   shouldUseInitialTabData,
 } from "@/lib/dashboard/analytics-query"
+import {
+  formatInDashboardTimezone,
+  getDashboardTimezoneAbbreviation,
+} from "@/lib/datetime"
 
 type DataExportDashboardProps = {
   data: DataExportDashboardData
@@ -32,7 +36,16 @@ function formatWhen(value: string): string {
     value.includes("T") ? value : value.replace(" ", "T") + "Z"
   )
   if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleString()
+  const formatted = formatInDashboardTimezone(d, {
+    month: "numeric",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  })
+  return `${formatted} ${getDashboardTimezoneAbbreviation(d)}`
 }
 
 function sortFieldKeys(keys: string[]): string[] {
