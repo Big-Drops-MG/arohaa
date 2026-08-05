@@ -1,4 +1,5 @@
 import type { OverviewLandingFormType } from "@/features/overview/model/overview"
+import type { LandingPageChannelType } from "@/features/settings/model/landing-page-channel-types"
 import type { LandingPageService } from "@/features/settings/model/landing-page-services"
 
 export type LandingPageRecord = {
@@ -19,6 +20,7 @@ export type LandingPageRecord = {
   formType: OverviewLandingFormType
   faviconUrl: string | null
   notes: string | null
+  channelType: LandingPageChannelType | null
   services: LandingPageService[]
   isLive: boolean
   createdAt: string

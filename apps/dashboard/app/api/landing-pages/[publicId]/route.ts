@@ -16,6 +16,11 @@ import {
   parseOptionalNotes,
 } from "@/lib/server/landing-page-validation"
 import {
+  mergeChannelTypeIntoMetadata,
+  normalizeLandingPageChannelTypeInput,
+  parseLandingPageChannelType,
+} from "@/features/settings/model/landing-page-channel-types"
+import {
   mergeServicesIntoMetadata,
   normalizeLandingPageServicesInput,
 } from "@/features/settings/model/landing-page-services"
@@ -199,6 +204,16 @@ export async function PATCH(
     nextMetadata = mergeServicesIntoMetadata(nextMetadata, parsed.value)
   }
 
+  if ("channelType" in record || "channelTypes" in record) {
+    const raw =
+      "channelType" in record ? record.channelType : record.channelTypes
+    const parsed = normalizeLandingPageChannelTypeInput(raw)
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 })
+    }
+    nextMetadata = mergeChannelTypeIntoMetadata(nextMetadata, parsed.value)
+  }
+
   const nextHtmlVerificationToken =
     urlChanged || !row.htmlVerificationToken
       ? generateHtmlVerificationToken()
@@ -282,19 +297,31 @@ export async function PATCH(
     })
   }
 
+  const beforeChannelType = parseLandingPageChannelType(
+    row.metadata as Record<string, unknown> | null
+  )
+  const afterChannelType = parseLandingPageChannelType(
+    saved.metadata as Record<string, unknown> | null
+  )
+  const channelTypeChanged = beforeChannelType !== afterChannelType
+
   const generalFieldsChanged =
     nextBrand !== row.brandName ||
     urlChanged ||
     nextFormType !== row.formType ||
     nextFaviconUrl !== row.faviconUrl ||
-    nextNotes !== row.notes
+    nextNotes !== row.notes ||
+    channelTypeChanged
 
   if (generalFieldsChanged) {
     await writeLandingPageAuditLog({
       actorUserId: actor.id,
       landingPageId: row.id,
       action: "update",
-      beforePayload: before,
+      beforePayload: {
+        ...before,
+        channelType: beforeChannelType,
+      },
       afterPayload: {
         brandName: saved.brandName,
         landingPageUrl: saved.landingPageUrl,
@@ -304,6 +331,7 @@ export async function PATCH(
         formType: saved.formType,
         faviconUrl: saved.faviconUrl,
         notes: saved.notes,
+        channelType: afterChannelType,
         verificationMethod: saved.verificationMethod,
         htmlTokenRotated: urlChanged,
       },

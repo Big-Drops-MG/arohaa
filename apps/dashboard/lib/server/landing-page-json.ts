@@ -2,12 +2,14 @@ import type { InferSelectModel } from "drizzle-orm"
 import type { landingPages } from "@workspace/database"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
 import type { LandingPageRecord } from "@/features/settings/model/landing-page-settings"
+import { parseLandingPageChannelType } from "@/features/settings/model/landing-page-channel-types"
 import { parseLandingPageServices } from "@/features/settings/model/landing-page-services"
 import { isLandingPageLive } from "@/lib/server/landing-page-live"
 
 type LandingRow = InferSelectModel<typeof landingPages>
 
 export function toLandingPageRecord(row: LandingRow): LandingPageRecord {
+  const metadata = row.metadata as Record<string, unknown> | null
   return {
     id: row.id,
     workspaceId: row.workspaceId,
@@ -26,9 +28,8 @@ export function toLandingPageRecord(row: LandingRow): LandingPageRecord {
     formType: parseOverviewLandingFormType(row.formType),
     faviconUrl: row.faviconUrl,
     notes: row.notes,
-    services: parseLandingPageServices(
-      row.metadata as Record<string, unknown> | null
-    ),
+    channelType: parseLandingPageChannelType(metadata),
+    services: parseLandingPageServices(metadata),
     isLive: isLandingPageLive(row.status),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

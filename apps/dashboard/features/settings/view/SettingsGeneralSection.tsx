@@ -12,8 +12,10 @@ import type {
   LandingPageSettingsData,
 } from "@/features/settings/model/landing-page-settings"
 import { FormTypeFieldset } from "@/features/settings/view/FormTypeFieldset"
+import { ChannelTypeFieldset } from "@/features/settings/view/ChannelTypeFieldset"
 import { ServicesFieldset } from "@/features/settings/view/ServicesFieldset"
 import { SettingsSectionCard } from "@/features/settings/view/SettingsSectionCard"
+import type { LandingPageChannelType } from "@/features/settings/model/landing-page-channel-types"
 
 type ServiceCandidate = {
   publicId: string
@@ -42,6 +44,9 @@ export function SettingsGeneralSection({
   const [services, setServices] = useState<LandingPageService[]>(
     landingPage.services ?? []
   )
+  const [channelType, setChannelType] = useState<LandingPageChannelType | null>(
+    landingPage.channelType ?? null
+  )
   const [candidates, setCandidates] = useState<ServiceCandidate[]>([])
   const [notes, setNotes] = useState(landingPage.notes ?? "")
   const [error, setError] = useState<string | null>(null)
@@ -54,6 +59,7 @@ export function SettingsGeneralSection({
     setFaviconUrl(landingPage.faviconUrl ?? "")
     setFormType(landingPage.formType)
     setServices(landingPage.services ?? [])
+    setChannelType(landingPage.channelType ?? null)
     setNotes(landingPage.notes ?? "")
   }, [landingPage])
 
@@ -92,6 +98,7 @@ export function SettingsGeneralSection({
         formType,
         faviconUrl,
         notes,
+        channelType,
       }
       if (formType === "none") {
         body.services = services
@@ -161,6 +168,7 @@ export function SettingsGeneralSection({
     }
   }, [
     brandName,
+    channelType,
     faviconUrl,
     formType,
     landingPage.formType,
@@ -225,6 +233,12 @@ export function SettingsGeneralSection({
         </div>
 
         <FormTypeFieldset value={formType} onChange={setFormType} />
+
+        <ChannelTypeFieldset
+          value={channelType}
+          onChange={setChannelType}
+          disabled={isSaving}
+        />
 
         {formType === "none" ? (
           <ServicesFieldset
