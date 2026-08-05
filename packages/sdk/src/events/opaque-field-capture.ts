@@ -8,6 +8,9 @@ const SKIP_KEY_RE =
 
 const EMAIL_KEY_RE = /^(email|e-mail|email_address|emailaddress)$/i
 
+const NOISE_KEY_RE =
+  /^(input|select|textarea|search|xxtrustedform\w*|trustedform\w*|jornaya_lead_id|leadid_token|universal_leadid|consent-confirmation-certificate-id)$/i
+
 let captureInstalled = false
 let valueHookInstalled = false
 let stepIndex = 0
@@ -103,7 +106,18 @@ function fieldKey(
   const aria = el.getAttribute("aria-label")?.trim()
   if (aria) return aria.replace(/\s+/g, "_").slice(0, 40)
 
-  return el.tagName.toLowerCase()
+  return ""
+}
+
+function isSkippedInputType(el: HTMLInputElement): boolean {
+  const t = el.type.toLowerCase()
+  return (
+    t === "password" ||
+    t === "hidden" ||
+    t === "submit" ||
+    t === "button" ||
+    t === "file"
+  )
 }
 
 function readValue(
@@ -185,30 +199,18 @@ function ingestField(el: Element): void {
   ) {
     return
   }
-  if (el instanceof HTMLInputElement) {
-    const t = el.type.toLowerCase()
-    if (
-      t === "password" ||
-      t === "hidden" ||
-      t === "submit" ||
-      t === "button" ||
-      t === "file"
-    ) {
-      return
-    }
-  }
+  if (el instanceof HTMLInputElement && isSkippedInputType(el)) return
   if (isPhoneField(el)) return
   let key = fieldKey(el)
-  if (!key || SKIP_KEY_RE.test(key)) return
+  if (!key || SKIP_KEY_RE.test(key) || NOISE_KEY_RE.test(key)) return
   let value = readValue(el)
   if (!value) {
     if (!lockedKeys.has(key)) delete fieldValues[key]
     return
   }
 
-  if (isDigestValue(value)) {
-    return
-  }
+  if (isDigestValue(value)) return
+  if (EMAIL_KEY_RE.test(key) && !value.includes("@")) return
 
   const peeled = peelRadioField(key, value)
   if (peeled) {
@@ -223,19 +225,9 @@ function ingestField(el: Element): void {
     value = "Yes"
   }
 
-  if (lockedKeys.has(key) && !isContactAddress(value)) {
-    return
-  }
+  if (lockedKeys.has(key) && !isContactAddress(value)) return
 
-  const shouldLock =
-    isContactAddress(value) ||
-    EMAIL_KEY_RE.test(key) ||
-    key === "first_name" ||
-    key === "last_name" ||
-    /^dob-0-(month|day|year)$/i.test(key) ||
-    key === "dob"
-
-  storeField(key, value, shouldLock)
+  storeField(key, value, isContactAddress(value))
   if (/^dob-0-(month|day|year)$/i.test(key)) composeDobIntoFieldValues()
 }
 
@@ -264,25 +256,10 @@ function installValueHooks(): void {
     set(next: string) {
       try {
         const el = this as HTMLInputElement
-        if (!isPhoneField(el)) {
-          const key = fieldKey(el)
-          const incoming = String(next ?? "").trim()
-          if (key && incoming && !isDigestValue(incoming) && !SKIP_KEY_RE.test(key)) {
-            if (EMAIL_KEY_RE.test(key)) {
-              if (isContactAddress(incoming) || incoming.includes("@")) {
-                storeField(key, incoming, true)
-              }
-            } else if (!lockedKeys.has(key) || isContactAddress(incoming)) {
-              const shouldLock =
-                isContactAddress(incoming) ||
-                key === "first_name" ||
-                key === "last_name" ||
-                /^dob-0-(month|day|year)$/i.test(key) ||
-                key === "dob"
-              storeField(key, incoming, shouldLock)
-              if (/^dob-0-(month|day|year)$/i.test(key)) composeDobIntoFieldValues()
-            }
-          }
+        const incoming = String(next ?? "").trim()
+        const key = isSkippedInputType(el) || isPhoneField(el) ? "" : fieldKey(el)
+        if (key && EMAIL_KEY_RE.test(key) && isContactAddress(incoming)) {
+          storeField(key, incoming, true)
         }
       } catch {
         /* ignore hook errors */
@@ -298,20 +275,23 @@ function isTerminalRoute(hash = typeof window !== "undefined" ? window.location.
 
 function sanitizeFieldValues(): void {
   for (const [key, value] of Object.entries(fieldValues)) {
-    if (!value || isDigestValue(value)) {
+    if (!value || isDigestValue(value) || NOISE_KEY_RE.test(key)) {
       delete fieldValues[key]
       lockedKeys.delete(key)
     }
   }
   composeDobIntoFieldValues()
+  if (fieldValues.dob) {
+    delete fieldValues["dob-0-month"]
+    delete fieldValues["dob-0-day"]
+    delete fieldValues["dob-0-year"]
+  }
 }
 
 function hasMeaningfulFields(): boolean {
   for (const [key, value] of Object.entries(fieldValues)) {
     if (!value?.trim()) continue
-    if (/^(consent-confirmation-certificate-id|jornaya_lead_id|leadid_token|search)$/i.test(key)) {
-      continue
-    }
+    if (NOISE_KEY_RE.test(key)) continue
     if (isDigestValue(value)) continue
     return true
   }

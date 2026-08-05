@@ -8,6 +8,11 @@ const PEELABLE_BASE_RE =
 const EMAIL_KEY_RE = /^(email|e-mail|email_address|emailaddress)$/i
 const ZIP_KEY_RE = /^(zip|zipcode|zip_code|postal)$/i
 
+const NOISE_FIELD_RE =
+  /^(input|select|textarea|search|xxtrustedform\w*|trustedform\w*|jornaya_lead_id|leadid_token|universal_leadid|consent-confirmation-certificate-id)$/i
+
+const DOB_PART_RE = /^dob-0-(month|day|year)$/i
+
 function isDigestValue(value: string): boolean {
   return /^[a-f0-9]{64}$/i.test(value)
 }
@@ -38,7 +43,7 @@ export function normalizeLeadFields(
   const out: Record<string, string> = {}
 
   for (const [key, value] of Object.entries(raw)) {
-    if (!key || isPhoneFieldKey(key)) continue
+    if (!key || isPhoneFieldKey(key) || NOISE_FIELD_RE.test(key)) continue
     const trimmed = String(value ?? '').trim()
     if (!trimmed) continue
     if (EMAIL_KEY_RE.test(key) && isDigestValue(trimmed)) continue
@@ -58,7 +63,16 @@ export function normalizeLeadFields(
   }
 
   composeDob(out)
+  dropDobParts(out)
   return out
+}
+
+function dropDobParts(fields: Record<string, string>): void {
+  const year = fields['dob-0-year'] ?? ''
+  if (!fields.dob && year.replace(/\D/g, '').length === 4) return
+  for (const key of Object.keys(fields)) {
+    if (DOB_PART_RE.test(key)) delete fields[key]
+  }
 }
 
 function pad2(value: string): string {
@@ -103,16 +117,13 @@ export function fieldsWithoutReserved(
   const out: Record<string, string> = {}
   for (const [key, value] of Object.entries(fields)) {
     if (EMAIL_KEY_RE.test(key) || ZIP_KEY_RE.test(key)) continue
-    if (fields.dob && /^dob-0-(month|day|year)$/i.test(key)) continue
+    if (NOISE_FIELD_RE.test(key)) continue
+    if (fields.dob && DOB_PART_RE.test(key)) continue
     out[key] = value
   }
   return out
 }
 
-const NOISE_FIELD_RE =
-  /^(consent-confirmation-certificate-id|jornaya_lead_id|leadid_token|search)$/i
-
-/** True when the row has something worth showing in Data Export. */
 export function isDisplayableLead(input: {
   zip?: string
   email?: string

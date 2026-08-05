@@ -3,6 +3,8 @@ import crypto from 'crypto';
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const EMAIL_KEY_HINT = /email/i;
 
+const LEAD_FIELDS_KEY = 'fields';
+
 export function hashEmail(email) {
   return crypto.createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
 }
@@ -19,6 +21,8 @@ function maskPropertiesObject(props) {
   const next = { ...props };
 
   for (const [key, value] of Object.entries(next)) {
+    if (key === LEAD_FIELDS_KEY) continue;
+
     if (typeof value === 'string') {
       if (EMAIL_KEY_HINT.test(key) || EMAIL_REGEX.test(value)) {
         next[key] = maskEmailValue(value);
