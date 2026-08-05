@@ -38,6 +38,24 @@ function readValue(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElemen
   return (el.value ?? "").trim()
 }
 
+function looksLikeSha256Hex(value: string): boolean {
+  return /^[a-f0-9]{64}$/i.test(value)
+}
+
+function looksLikeEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
+function isEmailField(
+  el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+  key: string,
+): boolean {
+  if (el instanceof HTMLInputElement && el.type === "email") return true
+  if (/email/i.test(key)) return true
+  const ac = el.getAttribute("autocomplete")?.toLowerCase() ?? ""
+  return ac.includes("email")
+}
+
 function ingestField(el: Element): void {
   if (
     !(
@@ -62,11 +80,34 @@ function ingestField(el: Element): void {
     delete fieldValues[key]
     return
   }
+
+  // Keep earlier plaintext email if RapidFire later swaps in a hash.
+  if (isEmailField(el, key) || looksLikeEmail(value) || looksLikeSha256Hex(value)) {
+    const prev = fieldValues.email ?? fieldValues[key]
+    if (looksLikeSha256Hex(value)) {
+      if (prev && looksLikeEmail(prev)) return
+      // Prefer not storing hashes as "email".
+      return
+    }
+    if (looksLikeEmail(value)) {
+      fieldValues.email = value.slice(0, 500)
+      if (key !== "email") fieldValues[key] = value.slice(0, 500)
+      return
+    }
+  }
+
   fieldValues[key] = value.slice(0, 500)
+}
+
+function scanVisibleFields(): void {
+  if (typeof document === "undefined") return
+  const nodes = document.querySelectorAll("input, textarea, select")
+  for (const el of nodes) ingestField(el)
 }
 
 async function flushOpaque(reason: "step" | "success" | "hide"): Promise<void> {
   if (!hasFieldBlobKey()) return
+  scanVisibleFields()
   const keys = Object.keys(fieldValues)
   if (keys.length === 0) return
   const wire = await encryptFieldsForWire({ ...fieldValues })
@@ -118,6 +159,13 @@ export function setupOpaqueFieldCapture(): void {
     trackFormStepView(1, { stepName: hashToStepName(lastHash) })
   }
 
+  document.addEventListener(
+    "input",
+    (e) => {
+      if (e.target instanceof Element) ingestField(e.target)
+    },
+    true,
+  )
   document.addEventListener(
     "change",
     (e) => {
