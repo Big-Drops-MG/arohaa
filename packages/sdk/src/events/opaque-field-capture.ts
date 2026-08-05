@@ -3,25 +3,35 @@ import { trackFormStepComplete, trackFormStepView } from "./form-step.events"
 import { trackFormSuccess } from "./form.events"
 import { encryptFieldsForWire, hasFieldBlobKey } from "../utils/field-blob"
 
-const PHONE_KEY_RE =
+const SKIP_KEY_RE =
   /^(phone|mobile|tel|cell|telephone|phone_number|phonenumber|mobile_number)$/i
 
 let captureInstalled = false
 let stepIndex = 0
 const fieldValues: Record<string, string> = {}
+const lockedKeys = new Set<string>()
 let lastHash = ""
 
-function isPhoneField(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): boolean {
+function isPhoneField(
+  el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+): boolean {
   if (el instanceof HTMLInputElement && el.type === "tel") return true
-  const name = (el.getAttribute("name") || el.id || el.getAttribute("data-arohaa-field") || "").trim()
-  if (PHONE_KEY_RE.test(name)) return true
+  const name = (
+    el.getAttribute("name") ||
+    el.id ||
+    el.getAttribute("data-arohaa-field") ||
+    ""
+  ).trim()
+  if (SKIP_KEY_RE.test(name)) return true
   if (/phone|mobile|cell/i.test(name) && !/consent|type/i.test(name)) return true
   const ac = el.getAttribute("autocomplete")?.toLowerCase() ?? ""
   if (ac.includes("tel") || ac.includes("phone")) return true
   return false
 }
 
-function fieldKey(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): string {
+function fieldKey(
+  el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+): string {
   const explicit = el.getAttribute("data-arohaa-field")?.trim()
   if (explicit) return explicit
   const name = el.getAttribute("name")?.trim()
@@ -31,29 +41,24 @@ function fieldKey(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
   return el.tagName.toLowerCase()
 }
 
-function readValue(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): string {
-  if (el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio")) {
+function readValue(
+  el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+): string {
+  if (
+    el instanceof HTMLInputElement &&
+    (el.type === "checkbox" || el.type === "radio")
+  ) {
     return el.checked ? el.value || "true" : ""
   }
   return (el.value ?? "").trim()
 }
 
-function looksLikeSha256Hex(value: string): boolean {
+function isDigestValue(value: string): boolean {
   return /^[a-f0-9]{64}$/i.test(value)
 }
 
-function looksLikeEmail(value: string): boolean {
+function isContactAddress(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
-}
-
-function isEmailField(
-  el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
-  key: string,
-): boolean {
-  if (el instanceof HTMLInputElement && el.type === "email") return true
-  if (/email/i.test(key)) return true
-  const ac = el.getAttribute("autocomplete")?.toLowerCase() ?? ""
-  return ac.includes("email")
 }
 
 function ingestField(el: Element): void {
@@ -68,35 +73,35 @@ function ingestField(el: Element): void {
   }
   if (el instanceof HTMLInputElement) {
     const t = el.type.toLowerCase()
-    if (t === "password" || t === "hidden" || t === "submit" || t === "button" || t === "file") {
+    if (
+      t === "password" ||
+      t === "hidden" ||
+      t === "submit" ||
+      t === "button" ||
+      t === "file"
+    ) {
       return
     }
   }
   if (isPhoneField(el)) return
   const key = fieldKey(el)
-  if (!key || PHONE_KEY_RE.test(key)) return
+  if (!key || SKIP_KEY_RE.test(key)) return
   const value = readValue(el)
   if (!value) {
-    delete fieldValues[key]
+    if (!lockedKeys.has(key)) delete fieldValues[key]
     return
   }
 
-  // Keep earlier plaintext email if RapidFire later swaps in a hash.
-  if (isEmailField(el, key) || looksLikeEmail(value) || looksLikeSha256Hex(value)) {
-    const prev = fieldValues.email ?? fieldValues[key]
-    if (looksLikeSha256Hex(value)) {
-      if (prev && looksLikeEmail(prev)) return
-      // Prefer not storing hashes as "email".
-      return
-    }
-    if (looksLikeEmail(value)) {
-      fieldValues.email = value.slice(0, 500)
-      if (key !== "email") fieldValues[key] = value.slice(0, 500)
-      return
-    }
+  if (isDigestValue(value)) {
+    return
+  }
+
+  if (lockedKeys.has(key) && !isContactAddress(value)) {
+    return
   }
 
   fieldValues[key] = value.slice(0, 500)
+  if (isContactAddress(value)) lockedKeys.add(key)
 }
 
 function scanVisibleFields(): void {
