@@ -29,6 +29,7 @@ import {
   overviewSelectItemClassName,
   overviewSelectTriggerClassName,
 } from "@/features/overview/view/overview-select-styles"
+import { SearchableSelect } from "@/features/segments/view/SearchableSelect"
 import { Loader2, Plus, Save, Trash2, Users, X } from "lucide-react"
 
 const PREVIEW_DEBOUNCE_MS = 600
@@ -130,6 +131,15 @@ function SegmentValueField({
     return [...set]
   }, [options, selected])
 
+  const selectOptions = useMemo(
+    () =>
+      availableOptions.map((option) => ({
+        value: option,
+        label: option,
+      })),
+    [availableOptions]
+  )
+
   if (isLoading) {
     return (
       <div className="flex h-9 items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 text-sm text-muted-foreground shadow-xs">
@@ -166,36 +176,22 @@ function SegmentValueField({
   }
 
   if (multi) {
+    const remaining = selectOptions.filter(
+      (option) => !selected.includes(option.value)
+    )
     return (
       <div className="space-y-2">
-        <Select
+        <SearchableSelect
           key={selected.join("\0")}
+          options={remaining}
+          placeholder="Add a value…"
+          searchPlaceholder="Search values…"
+          emptyMessage="No matching values"
           onValueChange={(next) => {
             if (!next || selected.includes(next)) return
             onChange([...selected, next])
           }}
-        >
-          <SelectTrigger
-            className={cn(overviewSelectTriggerClassName, "h-9 w-full")}
-          >
-            <SelectValue placeholder="Add a value…" />
-          </SelectTrigger>
-          <SelectContent
-            className={cn(overviewSelectContentClassName, "max-h-64")}
-          >
-            {availableOptions
-              .filter((option) => !selected.includes(option))
-              .map((option) => (
-                <SelectItem
-                  key={option}
-                  value={option}
-                  className={overviewSelectItemClassName}
-                >
-                  {option}
-                </SelectItem>
-              ))}
-          </SelectContent>
-        </Select>
+        />
         {selected.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {selected.map((value) => (
@@ -225,29 +221,14 @@ function SegmentValueField({
   }
 
   return (
-    <Select
-      value={String(rule.value || "")}
-      onValueChange={(next) => onChange(next)}
-    >
-      <SelectTrigger
-        className={cn(overviewSelectTriggerClassName, "h-9 w-full")}
-      >
-        <SelectValue placeholder="Select a value…" />
-      </SelectTrigger>
-      <SelectContent className={cn(overviewSelectContentClassName, "max-h-64")}>
-        {availableOptions.map((option) => (
-          <SelectItem
-            key={option}
-            value={option}
-            className={overviewSelectItemClassName}
-          >
-            <span className="truncate" title={option}>
-              {option}
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <SearchableSelect
+      options={selectOptions}
+      value={String(rule.value || "") || undefined}
+      placeholder="Select a value…"
+      searchPlaceholder="Search values…"
+      emptyMessage="No matching values"
+      onValueChange={onChange}
+    />
   )
 }
 
@@ -552,36 +533,19 @@ export function SegmentBuilder({
                       >
                         Property
                       </label>
-                      <Select
+                      <SearchableSelect
+                        id={`segment-column-${index}`}
+                        aria-label="Property"
+                        options={AVAILABLE_COLUMNS.map((col) => ({
+                          value: col.id,
+                          label: col.label,
+                        }))}
                         value={rule.column}
+                        placeholder="Property"
+                        searchPlaceholder="Search properties…"
+                        emptyMessage="No matching properties"
                         onValueChange={(val) => handleChangeColumn(index, val)}
-                      >
-                        <SelectTrigger
-                          id={`segment-column-${index}`}
-                          className={cn(
-                            overviewSelectTriggerClassName,
-                            "h-9 w-full"
-                          )}
-                        >
-                          <SelectValue placeholder="Property" />
-                        </SelectTrigger>
-                        <SelectContent
-                          className={cn(
-                            overviewSelectContentClassName,
-                            "max-h-72"
-                          )}
-                        >
-                          {AVAILABLE_COLUMNS.map((col) => (
-                            <SelectItem
-                              key={col.id}
-                              value={col.id}
-                              className={overviewSelectItemClassName}
-                            >
-                              {col.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      />
                     </div>
 
                     <div className="space-y-1.5 sm:space-y-0">
