@@ -36,6 +36,8 @@ export type LandingPageListItem = {
   faviconUrl: string | null
   isLive: boolean
   metrics: LandingPageMetric[]
+  /** Optional channel tag from project settings (email | social). */
+  channelType: "email" | "social" | null
   /** Label held in the experiment this page participates in, if any. */
   variantLabel: string | null
   experimentName: string | null

@@ -9,6 +9,7 @@ import type {
   LandingPageListItem,
   LandingPageNavItem,
 } from "@/features/dashboard/model/landing-page"
+import { parseLandingPageChannelType } from "@/features/settings/model/landing-page-channel-types"
 import { fetchLandingPageCardMetrics } from "@/lib/server/landing-page-metrics-load"
 import { isLandingPageLive } from "@/lib/server/landing-page-live"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
@@ -41,6 +42,7 @@ export async function getLandingPageList(): Promise<LandingPageListItem[]> {
       faviconUrl: landingPages.faviconUrl,
       status: landingPages.status,
       formType: landingPages.formType,
+      metadata: landingPages.metadata,
     })
     .from(landingPages)
     .where(isNull(landingPages.deletedAt))
@@ -62,6 +64,9 @@ export async function getLandingPageList(): Promise<LandingPageListItem[]> {
       faviconUrl: row.faviconUrl,
       isLive: isLandingPageLive(row.status),
       metrics: metricsList[index]!,
+      channelType: parseLandingPageChannelType(
+        row.metadata as Record<string, unknown> | null
+      ),
       variantLabel: membership?.label ?? null,
       experimentName: membership?.experimentName ?? null,
       experimentGroupName: membership?.groupName ?? null,

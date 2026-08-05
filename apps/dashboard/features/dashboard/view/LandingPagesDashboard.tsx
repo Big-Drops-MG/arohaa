@@ -23,7 +23,7 @@ export function LandingPagesDashboard({ pages }: LandingPagesDashboardProps) {
       ? pages
       : pages.filter((page) => {
           const searchableText =
-            `${page.brandName} ${page.landingPageUrl} ${page.experimentName ?? ""} ${page.experimentGroupName ?? ""} ${page.variantLabel ?? ""}`.toLowerCase()
+            `${page.brandName} ${page.landingPageUrl} ${page.channelType ?? ""} ${page.experimentName ?? ""} ${page.experimentGroupName ?? ""} ${page.variantLabel ?? ""}`.toLowerCase()
           return searchableText.includes(normalizedQuery)
         })
 
