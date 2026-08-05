@@ -2,17 +2,17 @@ import { track } from "../core/tracker"
 import { trackFormStepComplete, trackFormStepView } from "./form-step.events"
 import { trackFormSuccess } from "./form.events"
 import { encryptFieldsForWire, hasFieldBlobKey } from "../utils/field-blob"
+import { KEYS, RE, TOKENS } from "./field-tokens"
 
 const SKIP_KEY_RE =
   /^(phone|mobile|tel|cell|telephone|phone_number|phonenumber|mobile_number)$/i
 
-const EMAIL_KEY_RE = /^(email|e-mail|email_address|emailaddress)$/i
+const EMAIL_KEY_RE = RE.emailKey
 
 const NOISE_KEY_RE =
   /^(input|select|textarea|search|xxtrustedform\w*|trustedform\w*|jornaya_lead_id|leadid_token|universal_leadid|consent-confirmation-certificate-id)$/i
 
 let captureInstalled = false
-let valueHookInstalled = false
 let stepIndex = 0
 const fieldValues: Record<string, string> = {}
 const lockedKeys = new Set<string>()
@@ -28,9 +28,9 @@ function isDobControl(
   el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
 ): boolean {
   const cls = classNameOf(el)
-  if (/dob-\d+-(month|day|year)|birthday-year/i.test(cls)) return true
+  if (RE.dobControl.test(cls)) return true
   const ph = (el.getAttribute("placeholder") || "").trim()
-  return /^(mm|dd|yyyy)$/i.test(ph)
+  return RE.dobPlaceholder.test(ph)
 }
 
 function isZipControl(
@@ -85,21 +85,19 @@ function fieldKey(
   if (id) return id
 
   const cls = classNameOf(el)
-  const dobClass = cls
-    .split(/\s+/)
-    .find((c) => /^dob-\d+-(month|day|year)$/i.test(c))
+  const dobClass = cls.split(/\s+/).find((c) => RE.dobPartClass.test(c))
   if (dobClass) return dobClass.toLowerCase()
-  if (/birthday-year/i.test(cls)) return "dob-0-year"
+  if (RE.birthdayYear.test(cls)) return KEYS.dobYear
 
   const placeholder = (el.getAttribute("placeholder") || "").trim()
   if (placeholder) {
     const p = placeholder.toLowerCase()
-    if (p === "mm") return "dob-0-month"
-    if (p === "dd") return "dob-0-day"
-    if (p === "yyyy") return "dob-0-year"
-    if (p.includes("first") && p.includes("name")) return "first_name"
-    if (p.includes("last") && p.includes("name")) return "last_name"
-    if (p === "email" || p.includes("email")) return "email"
+    if (p === TOKENS.MM) return KEYS.dobMonth
+    if (p === TOKENS.DD) return KEYS.dobDay
+    if (p === TOKENS.YYYY) return KEYS.dobYear
+    if (p.includes(TOKENS.FIRST) && p.includes(TOKENS.NAME)) return KEYS.firstName
+    if (p.includes(TOKENS.LAST) && p.includes(TOKENS.NAME)) return KEYS.lastName
+    if (p === TOKENS.EMAIL || p.includes(TOKENS.EMAIL)) return KEYS.email
     return placeholder.replace(/\s+/g, "_").slice(0, 40)
   }
 
@@ -173,15 +171,15 @@ function isContactAddress(value: string): boolean {
 }
 
 function composeDobIntoFieldValues(): void {
-  const month = fieldValues["dob-0-month"]
-  const day = fieldValues["dob-0-day"]
-  const year = fieldValues["dob-0-year"]
+  const month = fieldValues[KEYS.dobMonth]
+  const day = fieldValues[KEYS.dobDay]
+  const year = fieldValues[KEYS.dobYear]
   if (!month || !day || !year) return
   const mm = month.replace(/\D/g, "").padStart(2, "0").slice(-2)
   const dd = day.replace(/\D/g, "").padStart(2, "0").slice(-2)
   const yyyy = year.replace(/\D/g, "").slice(0, 4)
   if (mm.length !== 2 || dd.length !== 2 || yyyy.length !== 4) return
-  fieldValues.dob = `${mm}/${dd}/${yyyy}`
+  fieldValues[KEYS.dob] = `${mm}/${dd}/${yyyy}`
 }
 
 function storeField(key: string, value: string, lock = false): void {
@@ -228,7 +226,7 @@ function ingestField(el: Element): void {
   if (lockedKeys.has(key) && !isContactAddress(value)) return
 
   storeField(key, value, isContactAddress(value))
-  if (/^dob-0-(month|day|year)$/i.test(key)) composeDobIntoFieldValues()
+  if (RE.dobPartClass.test(key)) composeDobIntoFieldValues()
 }
 
 function scanVisibleFields(): void {
@@ -236,37 +234,6 @@ function scanVisibleFields(): void {
   const nodes = document.querySelectorAll("input, textarea, select")
   for (const el of nodes) ingestField(el)
   composeDobIntoFieldValues()
-}
-
-function installValueHooks(): void {
-  if (valueHookInstalled || typeof HTMLInputElement === "undefined") return
-  const desc = Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
-    "value",
-  )
-  if (!desc?.get || !desc?.set) return
-  valueHookInstalled = true
-  const { get, set } = desc
-  Object.defineProperty(HTMLInputElement.prototype, "value", {
-    configurable: true,
-    enumerable: desc.enumerable,
-    get() {
-      return get.call(this)
-    },
-    set(next: string) {
-      try {
-        const el = this as HTMLInputElement
-        const incoming = String(next ?? "").trim()
-        const key = isSkippedInputType(el) || isPhoneField(el) ? "" : fieldKey(el)
-        if (key && EMAIL_KEY_RE.test(key) && isContactAddress(incoming)) {
-          storeField(key, incoming, true)
-        }
-      } catch {
-        /* ignore hook errors */
-      }
-      return set.call(this, next)
-    },
-  })
 }
 
 function isTerminalRoute(hash = typeof window !== "undefined" ? window.location.hash : ""): boolean {
@@ -281,10 +248,10 @@ function sanitizeFieldValues(): void {
     }
   }
   composeDobIntoFieldValues()
-  if (fieldValues.dob) {
-    delete fieldValues["dob-0-month"]
-    delete fieldValues["dob-0-day"]
-    delete fieldValues["dob-0-year"]
+  if (fieldValues[KEYS.dob]) {
+    delete fieldValues[KEYS.dobMonth]
+    delete fieldValues[KEYS.dobDay]
+    delete fieldValues[KEYS.dobYear]
   }
 }
 
@@ -349,7 +316,6 @@ function onRouteMaybeChanged(): void {
 export function setupOpaqueFieldCapture(): void {
   if (captureInstalled || typeof document === "undefined") return
   captureInstalled = true
-  installValueHooks()
   lastHash = window.location.hash || ""
   if (lastHash) {
     stepIndex = 1
