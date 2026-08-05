@@ -292,12 +292,38 @@ function installValueHooks(): void {
   })
 }
 
+function isTerminalRoute(hash = typeof window !== "undefined" ? window.location.hash : ""): boolean {
+  return /thank-?you|complete|confirmation|success/i.test(hash)
+}
+
+function sanitizeFieldValues(): void {
+  for (const [key, value] of Object.entries(fieldValues)) {
+    if (!value || isDigestValue(value)) {
+      delete fieldValues[key]
+      lockedKeys.delete(key)
+    }
+  }
+  composeDobIntoFieldValues()
+}
+
+function hasMeaningfulFields(): boolean {
+  for (const [key, value] of Object.entries(fieldValues)) {
+    if (!value?.trim()) continue
+    if (/^(consent-confirmation-certificate-id|jornaya_lead_id|leadid_token|search)$/i.test(key)) {
+      continue
+    }
+    if (isDigestValue(value)) continue
+    return true
+  }
+  return false
+}
+
 async function flushOpaque(reason: "step" | "success" | "hide"): Promise<void> {
   if (!hasFieldBlobKey()) return
+  if (isTerminalRoute() && reason !== "success") return
   scanVisibleFields()
-  composeDobIntoFieldValues()
-  const keys = Object.keys(fieldValues)
-  if (keys.length === 0) return
+  sanitizeFieldValues()
+  if (!hasMeaningfulFields()) return
   const wire = await encryptFieldsForWire({ ...fieldValues })
   if (!wire) return
 
@@ -312,7 +338,7 @@ async function flushOpaque(reason: "step" | "success" | "hide"): Promise<void> {
     })
     return
   }
-  track("form_step_view", {
+  track("form_step_complete", {
     stepIndex: Math.max(1, stepIndex),
     ...wire,
   })
@@ -327,7 +353,7 @@ function hashToStepName(hash: string): string {
 function onRouteMaybeChanged(): void {
   const hash = typeof window !== "undefined" ? window.location.hash : ""
   if (hash === lastHash) return
-  if (lastHash) {
+  if (lastHash && !isTerminalRoute(lastHash)) {
     void flushOpaque("step")
     trackFormStepComplete(Math.max(1, stepIndex), {
       stepName: hashToStepName(lastHash),
@@ -335,7 +361,9 @@ function onRouteMaybeChanged(): void {
   }
   lastHash = hash
   stepIndex += 1
-  trackFormStepView(stepIndex, { stepName: hashToStepName(hash) })
+  if (!isTerminalRoute(hash)) {
+    trackFormStepView(stepIndex, { stepName: hashToStepName(hash) })
+  }
 }
 
 export function setupOpaqueFieldCapture(): void {

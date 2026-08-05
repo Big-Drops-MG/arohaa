@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   fieldsWithoutReserved,
+  isDisplayableLead,
   normalizeLeadFields,
   pickLeadEmail,
   pickLeadZip,
@@ -61,6 +62,40 @@ describe('normalizeLeadFields', () => {
     expect(normalizeLeadFields({ email: digest, city: 'Austin' })).toEqual({
       city: 'Austin',
     })
+  })
+})
+
+describe('isDisplayableLead', () => {
+  it('rejects digest-only or empty rows', () => {
+    expect(isDisplayableLead({ zip: '', email: '', fields: {} })).toBe(false)
+    expect(
+      isDisplayableLead({
+        zip: '',
+        email: '',
+        fields: { 'consent-confirmation-certificate-id': 'abc' },
+      }),
+    ).toBe(false)
+    expect(
+      isDisplayableLead({
+        zip: '90210',
+        email: '',
+        fields: {},
+      }),
+    ).toBe(true)
+    expect(
+      isDisplayableLead({
+        zip: '',
+        email: 'a@b.com',
+        fields: {},
+      }),
+    ).toBe(true)
+    expect(
+      isDisplayableLead({
+        zip: '',
+        email: '',
+        fields: { address: '1 Main' },
+      }),
+    ).toBe(true)
   })
 })
 

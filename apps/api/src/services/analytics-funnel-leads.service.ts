@@ -8,6 +8,7 @@ import {
 } from '../lib/analytics-range.js'
 import {
   fieldsWithoutReserved,
+  isDisplayableLead,
   normalizeLeadFields,
   pickLeadEmail,
   pickLeadZip,
@@ -75,64 +76,49 @@ export async function getFunnelLeads({
     AND event_name IN ('form_success', 'form_step_complete', 'form_step_view')
     AND positionCaseInsensitive(properties, '"fields"') > 0`
 
+  // Over-read then filter empty/digest-only rows so pagination stays correct
+  // for the small internal Data Export surface.
+  const scanLimit = Math.min(500, Math.max(safeLimit + safeOffset + 40, 80))
+
   const p = {
     wid: workspaceId,
     ...rangeQueryParams(window),
-    lim: safeLimit,
-    off: safeOffset,
+    lim: scanLimit,
+    off: 0,
   }
 
-  const [countRes, rowsRes] = await Promise.all([
-    ch.query({
-      format: 'JSON',
-      query_params: p,
-      query: `
-        SELECT count() AS c
-        FROM (
-          SELECT session_id
-          FROM events_raw
-          WHERE ${where}
-          GROUP BY session_id
-        )
-      `,
-    }),
-    ch.query({
-      format: 'JSON',
-      query_params: p,
-      query: `
+  const rowsRes = await ch.query({
+    format: 'JSON',
+    query_params: p,
+    query: `
+      SELECT
+        l.session_id AS session_id,
+        l.last_at AS last_at,
+        l.props AS props,
+        z.zip_val AS zip_val
+      FROM (
         SELECT
-          l.session_id AS session_id,
-          l.last_at AS last_at,
-          l.props AS props,
-          z.zip_val AS zip_val
-        FROM (
-          SELECT
-            session_id,
-            max(created_at) AS last_at,
-            argMax(properties, (length(properties), created_at)) AS props
-          FROM events_raw
-          WHERE ${where}
-          GROUP BY session_id
-        ) AS l
-        LEFT JOIN (
-          SELECT
-            session_id,
-            max(nullIf(zipcode, '')) AS zip_val
-          FROM events_raw
-          WHERE ${rangeFilter()}
-            AND zipcode != ''
-          GROUP BY session_id
-        ) AS z ON z.session_id = l.session_id
-        ORDER BY last_at DESC
-        LIMIT {lim:UInt32} OFFSET {off:UInt32}
-      `,
-    }),
-  ])
+          session_id,
+          max(created_at) AS last_at,
+          argMax(properties, (length(properties), created_at)) AS props
+        FROM events_raw
+        WHERE ${where}
+        GROUP BY session_id
+      ) AS l
+      LEFT JOIN (
+        SELECT
+          session_id,
+          max(nullIf(zipcode, '')) AS zip_val
+        FROM events_raw
+        WHERE ${rangeFilter()}
+          AND zipcode != ''
+        GROUP BY session_id
+      ) AS z ON z.session_id = l.session_id
+      ORDER BY last_at DESC
+      LIMIT {lim:UInt32} OFFSET {off:UInt32}
+    `,
+  })
 
-  const total = Number(
-    ((await countRes.json()) as CHJson<{ c: string | number }>).data?.[0]?.c ??
-      0,
-  )
   const rows =
     (
       (await rowsRes.json()) as CHJson<{
@@ -143,18 +129,23 @@ export async function getFunnelLeads({
       }>
     ).data ?? []
 
-  const leads: FunnelLeadRow[] = rows.map((row) => {
-    const fields = parseFields(row.props || '{}')
-    const email = pickLeadEmail(fields)
-    const zip = row.zip_val || pickLeadZip(fields) || ''
-    return {
-      sessionId: row.session_id,
-      createdAt: row.last_at,
-      zip,
-      email,
-      fields: fieldsWithoutReserved(fields),
-    }
-  })
+  const allLeads: FunnelLeadRow[] = rows
+    .map((row) => {
+      const fields = parseFields(row.props || '{}')
+      const email = pickLeadEmail(fields)
+      const zip = row.zip_val || pickLeadZip(fields) || ''
+      return {
+        sessionId: row.session_id,
+        createdAt: row.last_at,
+        zip,
+        email,
+        fields: fieldsWithoutReserved(fields),
+      }
+    })
+    .filter((lead) => isDisplayableLead(lead))
+
+  const total = allLeads.length
+  const leads = allLeads.slice(safeOffset, safeOffset + safeLimit)
 
   return {
     rangeId: window.rangeId,

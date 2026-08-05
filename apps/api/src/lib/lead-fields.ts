@@ -108,3 +108,24 @@ export function fieldsWithoutReserved(
   }
   return out
 }
+
+const NOISE_FIELD_RE =
+  /^(consent-confirmation-certificate-id|jornaya_lead_id|leadid_token|search)$/i
+
+/** True when the row has something worth showing in Data Export. */
+export function isDisplayableLead(input: {
+  zip?: string
+  email?: string
+  fields?: Record<string, string>
+}): boolean {
+  if (input.email?.trim()) return true
+  if (input.zip?.trim()) return true
+  const fields = input.fields ?? {}
+  for (const [key, value] of Object.entries(fields)) {
+    if (!value?.trim()) continue
+    if (NOISE_FIELD_RE.test(key)) continue
+    if (isDigestValue(value)) continue
+    return true
+  }
+  return false
+}
