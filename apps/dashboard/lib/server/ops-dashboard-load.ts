@@ -213,7 +213,7 @@ const DASHBOARD_ENDPOINTS: EndpointDef[] = [
     path: `/api/landing-pages/${DASH_PROBE_ID}/events`,
   },
   {
-    name: "Segments",
+    name: "Performance",
     method: "GET",
     path: `/api/landing-pages/${DASH_PROBE_ID}/segments`,
   },

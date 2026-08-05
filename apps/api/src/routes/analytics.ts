@@ -696,7 +696,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
             segment_id: { type: 'string', format: 'uuid' },
             split_by: {
               type: 'string',
-              enum: ['utm_source', 'utm_campaign'],
+              enum: ['utm_source', 'utm_campaign', 'utm_id'],
             },
           },
         },

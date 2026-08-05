@@ -5,7 +5,9 @@ import {
 } from "@/lib/server/cohorts-dashboard-load"
 
 function parseSplitBy(raw: string | null): CohortSplitBy | null {
-  if (raw === "utm_source" || raw === "utm_campaign") return raw
+  if (raw === "utm_source" || raw === "utm_campaign" || raw === "utm_id") {
+    return raw
+  }
   return null
 }
 

@@ -7,7 +7,7 @@ import {
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
-export type CohortSplitBy = "utm_source" | "utm_campaign"
+export type CohortSplitBy = "utm_source" | "utm_campaign" | "utm_id"
 
 export async function loadCohortsForApi(
   landingPagePublicId: string,

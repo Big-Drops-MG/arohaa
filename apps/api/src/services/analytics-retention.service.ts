@@ -8,7 +8,7 @@ export type CohortRetentionRow = {
   active_users: number;
 };
 
-export type CohortSplitBy = 'utm_source' | 'utm_campaign';
+export type CohortSplitBy = 'utm_source' | 'utm_campaign' | 'utm_id';
 
 export async function getCohortRetention(
   workspaceId: string,

@@ -1,6 +1,14 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@workspace/ui/components/tabs"
+import { Separator } from "@workspace/ui/components/separator"
+import { cn } from "@workspace/ui/lib/utils"
 import { SegmentsDashboardSkeleton } from "@/features/dashboard/view/dashboard-skeletons"
 import { getSegmentsEmptyDashboardData } from "@/features/segments/controller/segments-empty-data"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
@@ -11,6 +19,7 @@ import { SegmentsSummaryKpiRow } from "@/features/segments/view/SegmentsSummaryK
 import { CohortRetentionSection } from "@/features/retention/view/CohortRetentionSection"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardPreference } from "@/hooks/use-dashboard-preference"
+import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
 import type { AnalyticsFetchMode } from "@/lib/dashboard/analytics-fetch-mode"
@@ -18,15 +27,43 @@ import {
   buildAnalyticsApiPath,
   shouldUseInitialTabData,
 } from "@/lib/dashboard/analytics-query"
-import { cn } from "@workspace/ui/lib/utils"
 
 const SEGMENTS_REFETCH_MS = 60_000
+
+const PERFORMANCE_VIEWS = [
+  { value: "all", label: "All" },
+  { value: "performance", label: "Performance" },
+  { value: "cohort", label: "Retention" },
+  { value: "saved", label: "Saved Segments" },
+] as const
+
+type PerformanceView = (typeof PERFORMANCE_VIEWS)[number]["value"]
+
+function parsePerformanceView(raw: string | null | undefined): PerformanceView {
+  if (
+    raw === "all" ||
+    raw === "performance" ||
+    raw === "cohort" ||
+    raw === "saved"
+  ) {
+    return raw
+  }
+  return "all"
+}
 
 type SegmentsDashboardProps = {
   data: SegmentsDashboardData
   projectId: string
   isActive?: boolean
   isLoading?: boolean
+}
+
+function SectionDivider() {
+  return (
+    <div className="flex items-center gap-3 py-1" role="separator">
+      <Separator className="flex-1" />
+    </div>
+  )
 }
 
 export function SegmentsDashboard({
@@ -47,6 +84,12 @@ export function SegmentsDashboard({
     "kpi:segments",
     (raw) => raw ?? initialData.summaryKpis[0]?.label ?? ""
   )
+  const [view, setView] = useDashboardQueryParam("view", {
+    parse: parsePerformanceView,
+    projectId,
+    omitDefault: true,
+    refreshOnChange: false,
+  })
 
   const fetchSegmentsForRange = useCallback(
     async (
@@ -160,7 +203,7 @@ export function SegmentsDashboard({
   return (
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">
       <OverviewHeader
-        title="Segments"
+        title="Performance"
         projectId={projectId}
         dateRangeOptions={dashboardData.dateRangeOptions}
         dateRangeId={dateRangeId}
@@ -179,17 +222,58 @@ export function SegmentsDashboard({
           )}
           aria-busy={isRefreshing}
         >
-          <SegmentsSummaryKpiRow
-            kpis={dashboardData.summaryKpis}
-            activeKpiId={activeKpiId}
-            onKpiSelect={setActiveKpiId}
-          />
+          <Tabs
+            value={view}
+            onValueChange={(value) => setView(parsePerformanceView(value))}
+            className="flex flex-col gap-4"
+          >
+            <div className="-mx-6 border-b border-neutral-200 bg-transparent px-6 lg:-mx-8 lg:px-8">
+              <TabsList className="h-auto min-h-10 w-full justify-start gap-0 overflow-x-auto rounded-none border-0 bg-transparent p-0">
+                {PERFORMANCE_VIEWS.map((option) => (
+                  <TabsTrigger
+                    key={option.value}
+                    value={option.value}
+                    className="relative -mb-px shrink-0 rounded-none border-0 border-b-2 border-transparent bg-transparent px-3 py-2.5 text-sm font-normal text-neutral-600 shadow-none hover:text-neutral-900 data-[state=active]:border-neutral-950 data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-neutral-950 data-[state=active]:shadow-none"
+                  >
+                    {option.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </div>
 
-          <SavedSegmentsCard projectId={projectId} />
+            <TabsContent value="all" className="mt-0 flex flex-col gap-4">
+              <SegmentsSummaryKpiRow
+                kpis={dashboardData.summaryKpis}
+                activeKpiId={activeKpiId}
+                onKpiSelect={setActiveKpiId}
+              />
+              <SegmentsPerformanceCards data={dashboardData} />
+              <SectionDivider />
+              <CohortRetentionSection projectId={projectId} />
+              <SectionDivider />
+              <SavedSegmentsCard projectId={projectId} />
+            </TabsContent>
 
-          <CohortRetentionSection projectId={projectId} />
+            <TabsContent
+              value="performance"
+              className="mt-0 flex flex-col gap-4"
+            >
+              <SegmentsSummaryKpiRow
+                kpis={dashboardData.summaryKpis}
+                activeKpiId={activeKpiId}
+                onKpiSelect={setActiveKpiId}
+              />
+              <SegmentsPerformanceCards data={dashboardData} />
+            </TabsContent>
 
-          <SegmentsPerformanceCards data={dashboardData} />
+            <TabsContent value="cohort" className="mt-0 flex flex-col gap-4">
+              <CohortRetentionSection projectId={projectId} />
+            </TabsContent>
+
+            <TabsContent value="saved" className="mt-0 flex flex-col gap-4">
+              <SavedSegmentsCard projectId={projectId} />
+            </TabsContent>
+          </Tabs>
         </div>
       )}
     </div>

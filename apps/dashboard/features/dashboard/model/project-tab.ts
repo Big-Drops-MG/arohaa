@@ -4,7 +4,7 @@ export const PROJECT_TABS = [
   { value: "funnel", label: "Funnel" },
   { value: "heatmap", label: "Heatmap" },
   { value: "event-tracking", label: "Event Tracking" },
-  { value: "segments", label: "Segments" },
+  { value: "segments", label: "Performance" },
   { value: "experiments", label: "Experiments" },
   { value: "seo", label: "SEO" },
   { value: "web-vital", label: "Web Vitals" },
