@@ -32,6 +32,10 @@ export const AVAILABLE_COLUMNS = [
   { id: "source", label: "UTM Source" },
   { id: "medium", label: "UTM Medium" },
   { id: "campaign", label: "UTM Campaign" },
+  { id: "term", label: "UTM Term" },
+  { id: "content", label: "UTM Content" },
+  { id: "id", label: "UTM ID" },
+  { id: "s1", label: "UTM S1" },
   { id: "city", label: "City" },
   { id: "country", label: "Country" },
   { id: "device", label: "Device Type" },
@@ -39,7 +43,9 @@ export const AVAILABLE_COLUMNS = [
   { id: "os", label: "Operating System" },
   { id: "event", label: "Event Name" },
   { id: "path", label: "Page URL" },
-]
+] as const
+
+export type SegmentColumnId = (typeof AVAILABLE_COLUMNS)[number]["id"]
 
 export const AVAILABLE_OPERATORS = [
   { id: "equals", label: "Equals" },

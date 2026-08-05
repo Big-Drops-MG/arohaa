@@ -175,22 +175,28 @@ export function SavedSegmentsCard({ projectId }: SavedSegmentsCardProps) {
       </Card>
 
       <Dialog open={isBuilderOpen} onOpenChange={setIsBuilderOpen}>
-        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Create segment</DialogTitle>
-            <DialogDescription>
-              Define conditions to filter your visitors dynamically.
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="flex max-h-[min(90vh,760px)] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+          <div className="shrink-0 border-b border-border px-5 py-4 pr-12 sm:px-6">
+            <DialogHeader className="gap-1">
+              <DialogTitle className="text-base font-semibold text-foreground">
+                Create segment
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                Build a reusable audience filter from visitor properties.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
 
-          <SegmentBuilder
-            projectId={projectId}
-            onCancel={() => setIsBuilderOpen(false)}
-            onSaved={(segment) => {
-              setSegments((prev) => [...prev, segment])
-              setIsBuilderOpen(false)
-            }}
-          />
+          {isBuilderOpen ? (
+            <SegmentBuilder
+              projectId={projectId}
+              onCancel={() => setIsBuilderOpen(false)}
+              onSaved={(segment) => {
+                setSegments((prev) => [...prev, segment])
+                setIsBuilderOpen(false)
+              }}
+            />
+          ) : null}
         </DialogContent>
       </Dialog>
     </>

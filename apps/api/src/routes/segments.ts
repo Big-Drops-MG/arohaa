@@ -2,7 +2,12 @@ import type { FastifyInstance } from 'fastify';
 import { verifyInternalApiRequest } from '../lib/internal-api-secret.js';
 import { CLICKHOUSE_EVENTS_TABLE } from '../lib/clickhouse-events-table.js';
 import { getClickHouseClient } from '../services/clickhouse.service.js';
-import { SegmentCompiler, SegmentGroup } from '../services/segment-compiler.service.js';
+import { getSegmentColumnValues } from '../services/segment-column-values.service.js';
+import {
+  SEGMENT_COLUMN_IDS,
+  SegmentCompiler,
+  type SegmentGroup,
+} from '../services/segment-compiler.service.js';
 import {
   createSegment,
   getSegmentsByLandingPage,
@@ -83,6 +88,30 @@ export async function segmentRoutes(server: FastifyInstance) {
     const result = await deleteSegment(id, landing_page_id);
     if (!result) return reply.code(404).send({ error: 'Not found' });
     return reply.send({ success: true });
+  });
+
+  server.get<{
+    Querystring: { workspace_id: string; column: string }
+  }>('/v1/segments/column-values', async (request, reply) => {
+    const { workspace_id, column } = request.query;
+    if (!workspace_id || !column) {
+      return reply
+        .code(400)
+        .send({ error: 'workspace_id and column are required' });
+    }
+    if (!SEGMENT_COLUMN_IDS.includes(column)) {
+      return reply.code(400).send({ error: `Unsupported segment column: ${column}` });
+    }
+
+    try {
+      const values = await getSegmentColumnValues(workspace_id, column);
+      return reply.send({ column, values });
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to load column values';
+      request.log.error({ err }, 'segment column values failed');
+      return reply.code(400).send({ error: message });
+    }
   });
 
   server.post<{ Body: { workspace_id: string; conditions: SegmentGroup } }>('/v1/segments/preview', async (request, reply) => {

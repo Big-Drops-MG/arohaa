@@ -85,3 +85,22 @@ export async function deleteSegment(
     throw new Error(await readError(res, "Failed to delete segment"))
   }
 }
+
+export async function fetchSegmentColumnValues(
+  projectId: string,
+  column: string,
+  signal?: AbortSignal
+): Promise<string[]> {
+  const qs = new URLSearchParams({ column })
+  const res = await fetch(
+    `${segmentsBasePath(projectId)}/column-values?${qs.toString()}`,
+    { cache: "no-store", signal }
+  )
+
+  if (!res.ok) {
+    throw new Error(await readError(res, "Failed to load value options"))
+  }
+
+  const data = (await res.json()) as { values?: string[] }
+  return Array.isArray(data.values) ? data.values : []
+}

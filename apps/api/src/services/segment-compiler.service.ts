@@ -2,6 +2,10 @@ export const COLUMN_MAP: Record<string, string> = {
   source: 'utm_source',
   medium: 'utm_medium',
   campaign: 'utm_campaign',
+  term: 'utm_term',
+  content: 'utm_content',
+  id: 'utm_id',
+  s1: 'utm_s1',
   city: 'city',
   country: 'country',
   device: 'device',
@@ -10,6 +14,14 @@ export const COLUMN_MAP: Record<string, string> = {
   event: 'event_name',
   path: 'url',
 };
+
+export const SEGMENT_COLUMN_IDS = Object.keys(COLUMN_MAP);
+
+export function resolveSegmentClickHouseColumn(
+  column: string,
+): string | undefined {
+  return COLUMN_MAP[column];
+}
 
 export type SegmentOperator =
   | 'equals'

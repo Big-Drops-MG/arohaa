@@ -160,3 +160,21 @@ export async function previewSegmentDefinition(
     body: { workspace_id: scope.data.landingPageId, conditions },
   })
 }
+
+export async function fetchSegmentColumnValues(
+  publicId: string,
+  column: string
+): Promise<SegmentDefinitionResult<{ column: string; values: string[] }>> {
+  const scope = await resolveScope(publicId)
+  if (!scope.ok) return scope
+
+  const qs = new URLSearchParams({
+    workspace_id: scope.data.landingPageId,
+    column,
+  })
+
+  return callSegmentsApi<{ column: string; values: string[] }>(
+    `/v1/segments/column-values?${qs.toString()}`,
+    { method: "GET" }
+  )
+}

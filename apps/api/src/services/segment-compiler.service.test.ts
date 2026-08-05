@@ -95,4 +95,28 @@ describe('SegmentCompiler', () => {
     };
     expect(() => compiler.compile(group)).toThrowError(/Unsupported segment column: unsupported_col/);
   });
+
+  it('compiles all UTM param columns', () => {
+    const compiler = new SegmentCompiler();
+    const group: SegmentGroup = {
+      operator: 'and',
+      rules: [
+        { column: 'source', operator: 'equals', value: 'google' },
+        { column: 'medium', operator: 'equals', value: 'cpc' },
+        { column: 'campaign', operator: 'equals', value: 'spring' },
+        { column: 'term', operator: 'equals', value: 'shoes' },
+        { column: 'content', operator: 'equals', value: 'banner' },
+        { column: 'id', operator: 'equals', value: 'abc' },
+        { column: 's1', operator: 'equals', value: 'partner' },
+      ],
+    };
+    const result = compiler.compile(group);
+    expect(result.sql).toContain('lower(utm_source)');
+    expect(result.sql).toContain('lower(utm_medium)');
+    expect(result.sql).toContain('lower(utm_campaign)');
+    expect(result.sql).toContain('lower(utm_term)');
+    expect(result.sql).toContain('lower(utm_content)');
+    expect(result.sql).toContain('lower(utm_id)');
+    expect(result.sql).toContain('lower(utm_s1)');
+  });
 });
