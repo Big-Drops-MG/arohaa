@@ -1,6 +1,6 @@
 import { isPhoneFieldKey } from './field-blob.js'
 
-const TRUTHY = new Set(['on', 'true', '1', 'yes'])
+const TRUTHY = new Set(['on', 'true', 'yes'])
 
 const PEELABLE_BASE_RE =
   /^(?:car|driver|vehicle)_\d+_(?:year|make|model|gender|married|fault|dui|military|sr22|credit|homeowner|education|occupation|license|age)$/i
@@ -57,7 +57,26 @@ export function normalizeLeadFields(
     out[key] = trimmed.slice(0, 500)
   }
 
+  composeDob(out)
   return out
+}
+
+function pad2(value: string): string {
+  return value.replace(/\D/g, '').padStart(2, '0').slice(-2)
+}
+
+function composeDob(fields: Record<string, string>): void {
+  if (fields.dob) return
+  const month = fields['dob-0-month'] || fields.dob_month
+  const day = fields['dob-0-day'] || fields.dob_day
+  const year = fields['dob-0-year'] || fields.dob_year || fields['birthday-year']
+  if (!month || !day || !year) return
+  const mm = pad2(month)
+  const dd = pad2(day)
+  const yyyy = year.replace(/\D/g, '').slice(0, 4)
+  if (mm.length === 2 && dd.length === 2 && yyyy.length === 4) {
+    fields.dob = `${mm}/${dd}/${yyyy}`
+  }
 }
 
 export function pickLeadEmail(fields: Record<string, string>): string {
@@ -84,6 +103,7 @@ export function fieldsWithoutReserved(
   const out: Record<string, string> = {}
   for (const [key, value] of Object.entries(fields)) {
     if (EMAIL_KEY_RE.test(key) || ZIP_KEY_RE.test(key)) continue
+    if (fields.dob && /^dob-0-(month|day|year)$/i.test(key)) continue
     out[key] = value
   }
   return out

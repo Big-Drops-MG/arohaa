@@ -6,26 +6,68 @@ import { encryptFieldsForWire, hasFieldBlobKey } from "../utils/field-blob"
 const SKIP_KEY_RE =
   /^(phone|mobile|tel|cell|telephone|phone_number|phonenumber|mobile_number)$/i
 
+const EMAIL_KEY_RE = /^(email|e-mail|email_address|emailaddress)$/i
+
 let captureInstalled = false
+let valueHookInstalled = false
 let stepIndex = 0
 const fieldValues: Record<string, string> = {}
 const lockedKeys = new Set<string>()
 let lastHash = ""
 
-function isPhoneField(
+function classNameOf(el: Element): string {
+  if (typeof el.className === "string") return el.className
+  const fromAttr = el.getAttribute("class")
+  return fromAttr ?? ""
+}
+
+function isDobControl(
   el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
 ): boolean {
-  if (el instanceof HTMLInputElement && el.type === "tel") return true
+  const cls = classNameOf(el)
+  if (/dob-\d+-(month|day|year)|birthday-year/i.test(cls)) return true
+  const ph = (el.getAttribute("placeholder") || "").trim()
+  return /^(mm|dd|yyyy)$/i.test(ph)
+}
+
+function isZipControl(
+  el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+): boolean {
   const name = (
     el.getAttribute("name") ||
     el.id ||
     el.getAttribute("data-arohaa-field") ||
     ""
   ).trim()
+  if (/^(zip|zipcode|zip_code|postal)$/i.test(name)) return true
+  const ph = (el.getAttribute("placeholder") || "").trim()
+  return /^zip/i.test(ph)
+}
+
+function isPhoneField(
+  el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+): boolean {
+  if (isDobControl(el) || isZipControl(el)) return false
+
+  const name = (
+    el.getAttribute("name") ||
+    el.id ||
+    el.getAttribute("data-arohaa-field") ||
+    ""
+  ).trim()
+  const placeholder = (el.getAttribute("placeholder") || "").trim()
+  const blob = `${name} ${placeholder} ${classNameOf(el)}`
+
   if (SKIP_KEY_RE.test(name)) return true
-  if (/phone|mobile|cell/i.test(name) && !/consent|type/i.test(name)) return true
+  if (/phone|mobile|cell/i.test(blob) && !/consent|type/i.test(blob)) return true
   const ac = el.getAttribute("autocomplete")?.toLowerCase() ?? ""
   if (ac.includes("tel") || ac.includes("phone")) return true
+
+  if (el instanceof HTMLInputElement && el.type === "tel") {
+    if (/x{3}|\(\s*x|\+?\d/i.test(placeholder)) return true
+    if (!name && !placeholder) return true
+    return /phone|mobile|tel|cell/i.test(blob)
+  }
   return false
 }
 
@@ -38,6 +80,29 @@ function fieldKey(
   if (name) return name
   const id = el.id?.trim()
   if (id) return id
+
+  const cls = classNameOf(el)
+  const dobClass = cls
+    .split(/\s+/)
+    .find((c) => /^dob-\d+-(month|day|year)$/i.test(c))
+  if (dobClass) return dobClass.toLowerCase()
+  if (/birthday-year/i.test(cls)) return "dob-0-year"
+
+  const placeholder = (el.getAttribute("placeholder") || "").trim()
+  if (placeholder) {
+    const p = placeholder.toLowerCase()
+    if (p === "mm") return "dob-0-month"
+    if (p === "dd") return "dob-0-day"
+    if (p === "yyyy") return "dob-0-year"
+    if (p.includes("first") && p.includes("name")) return "first_name"
+    if (p.includes("last") && p.includes("name")) return "last_name"
+    if (p === "email" || p.includes("email")) return "email"
+    return placeholder.replace(/\s+/g, "_").slice(0, 40)
+  }
+
+  const aria = el.getAttribute("aria-label")?.trim()
+  if (aria) return aria.replace(/\s+/g, "_").slice(0, 40)
+
   return el.tagName.toLowerCase()
 }
 
@@ -93,6 +158,23 @@ function isContactAddress(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
 }
 
+function composeDobIntoFieldValues(): void {
+  const month = fieldValues["dob-0-month"]
+  const day = fieldValues["dob-0-day"]
+  const year = fieldValues["dob-0-year"]
+  if (!month || !day || !year) return
+  const mm = month.replace(/\D/g, "").padStart(2, "0").slice(-2)
+  const dd = day.replace(/\D/g, "").padStart(2, "0").slice(-2)
+  const yyyy = year.replace(/\D/g, "").slice(0, 4)
+  if (mm.length !== 2 || dd.length !== 2 || yyyy.length !== 4) return
+  fieldValues.dob = `${mm}/${dd}/${yyyy}`
+}
+
+function storeField(key: string, value: string, lock = false): void {
+  fieldValues[key] = value.slice(0, 500)
+  if (lock) lockedKeys.add(key)
+}
+
 function ingestField(el: Element): void {
   if (
     !(
@@ -145,19 +227,75 @@ function ingestField(el: Element): void {
     return
   }
 
-  fieldValues[key] = value.slice(0, 500)
-  if (isContactAddress(value)) lockedKeys.add(key)
+  const shouldLock =
+    isContactAddress(value) ||
+    EMAIL_KEY_RE.test(key) ||
+    key === "first_name" ||
+    key === "last_name" ||
+    /^dob-0-(month|day|year)$/i.test(key) ||
+    key === "dob"
+
+  storeField(key, value, shouldLock)
+  if (/^dob-0-(month|day|year)$/i.test(key)) composeDobIntoFieldValues()
 }
 
 function scanVisibleFields(): void {
   if (typeof document === "undefined") return
   const nodes = document.querySelectorAll("input, textarea, select")
   for (const el of nodes) ingestField(el)
+  composeDobIntoFieldValues()
+}
+
+function installValueHooks(): void {
+  if (valueHookInstalled || typeof HTMLInputElement === "undefined") return
+  const desc = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )
+  if (!desc?.get || !desc?.set) return
+  valueHookInstalled = true
+  const { get, set } = desc
+  Object.defineProperty(HTMLInputElement.prototype, "value", {
+    configurable: true,
+    enumerable: desc.enumerable,
+    get() {
+      return get.call(this)
+    },
+    set(next: string) {
+      try {
+        const el = this as HTMLInputElement
+        if (!isPhoneField(el)) {
+          const key = fieldKey(el)
+          const incoming = String(next ?? "").trim()
+          if (key && incoming && !isDigestValue(incoming) && !SKIP_KEY_RE.test(key)) {
+            if (EMAIL_KEY_RE.test(key)) {
+              if (isContactAddress(incoming) || incoming.includes("@")) {
+                storeField(key, incoming, true)
+              }
+            } else if (!lockedKeys.has(key) || isContactAddress(incoming)) {
+              const shouldLock =
+                isContactAddress(incoming) ||
+                key === "first_name" ||
+                key === "last_name" ||
+                /^dob-0-(month|day|year)$/i.test(key) ||
+                key === "dob"
+              storeField(key, incoming, shouldLock)
+              if (/^dob-0-(month|day|year)$/i.test(key)) composeDobIntoFieldValues()
+            }
+          }
+        }
+      } catch {
+        /* ignore hook errors */
+      }
+      return set.call(this, next)
+    },
+  })
 }
 
 async function flushOpaque(reason: "step" | "success" | "hide"): Promise<void> {
   if (!hasFieldBlobKey()) return
   scanVisibleFields()
+  composeDobIntoFieldValues()
   const keys = Object.keys(fieldValues)
   if (keys.length === 0) return
   const wire = await encryptFieldsForWire({ ...fieldValues })
@@ -203,6 +341,7 @@ function onRouteMaybeChanged(): void {
 export function setupOpaqueFieldCapture(): void {
   if (captureInstalled || typeof document === "undefined") return
   captureInstalled = true
+  installValueHooks()
   lastHash = window.location.hash || ""
   if (lastHash) {
     stepIndex = 1

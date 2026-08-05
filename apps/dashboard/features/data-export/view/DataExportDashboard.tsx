@@ -19,12 +19,12 @@ type DataExportDashboardProps = {
 }
 
 const PREFERRED_FIELD_ORDER = [
+  "dob",
+  "first_name",
+  "last_name",
   "address",
   "city",
   "state",
-  "first_name",
-  "last_name",
-  "name",
 ]
 
 function formatWhen(value: string): string {
