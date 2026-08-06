@@ -45,9 +45,10 @@ const PREFERRED_FIELD_ORDER = [
 ]
 
 const thClassName =
-  "px-5 py-2.5 text-left text-xs font-semibold whitespace-nowrap text-muted-foreground sm:px-6"
+  "px-4 py-2.5 text-left text-xs font-semibold whitespace-nowrap text-muted-foreground"
 
-const tdClassName = "px-5 py-3 align-top text-sm text-foreground sm:px-6"
+const tdClassName =
+  "px-4 py-2.5 align-middle text-sm whitespace-nowrap text-foreground"
 
 function formatWhen(value: string): string {
   const d = new Date(
@@ -278,7 +279,7 @@ export function DataExportDashboard({
         </CardHeader>
         <CardContent className="overflow-hidden p-0 pb-2">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[64rem] border-collapse text-sm">
+            <table className="w-max min-w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-border">
                   <th className={thClassName}>#</th>
@@ -300,7 +301,7 @@ export function DataExportDashboard({
                 {dashboardData.leads.length === 0 ? (
                   <tr>
                     <td
-                      className="px-5 py-10 text-center text-sm text-muted-foreground sm:px-6"
+                      className="px-4 py-10 text-center text-sm text-muted-foreground"
                       colSpan={colCount}
                     >
                       No captured rows for this range yet.
@@ -320,23 +321,15 @@ export function DataExportDashboard({
                       >
                         {index + 1}
                       </td>
-                      <td className={cn(tdClassName, "whitespace-nowrap")}>
+                      <td className={tdClassName}>
                         {formatWhen(lead.createdAt)}
                       </td>
-                      <td className={cn(tdClassName, "whitespace-nowrap")}>
-                        {cellValue(lead.zip)}
-                      </td>
-                      <td className={cn(tdClassName, "max-w-[14rem]")}>
-                        <span className="break-all">
-                          {cellValue(lead.email)}
-                        </span>
-                      </td>
-                      <td className={cn(tdClassName, "whitespace-nowrap")}>
+                      <td className={tdClassName}>{cellValue(lead.zip)}</td>
+                      <td className={tdClassName}>{cellValue(lead.email)}</td>
+                      <td className={tdClassName}>
                         {cellValue(lead.utmSource)}
                       </td>
-                      <td className={cn(tdClassName, "whitespace-nowrap")}>
-                        {cellValue(lead.utmId)}
-                      </td>
+                      <td className={tdClassName}>{cellValue(lead.utmId)}</td>
                       <td className={tdClassName}>
                         <span
                           className={cn(
@@ -354,9 +347,8 @@ export function DataExportDashboard({
                           key={key}
                           className={cn(
                             tdClassName,
-                            isAddressFieldKey(key)
-                              ? "max-w-[18rem] min-w-[12rem] break-words whitespace-normal"
-                              : "max-w-[14rem] whitespace-nowrap"
+                            isAddressFieldKey(key) &&
+                              "max-w-[16rem] min-w-[12rem] whitespace-normal"
                           )}
                         >
                           {cellValue(lead.fields[key])}
