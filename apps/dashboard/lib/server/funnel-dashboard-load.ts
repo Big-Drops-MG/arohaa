@@ -27,6 +27,7 @@ import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribut
 import {
   appendDashboardCustomRangeParams,
   appendDashboardUtmParams,
+  resolveUtmFilterForActor,
 } from "@/lib/server/analytics-utm-params"
 
 export { parseTrafficRangeId as parseFunnelRangeId } from "@/features/traffic/model/traffic-range"
@@ -190,6 +191,11 @@ export async function loadFunnelDashboardData({
 }): Promise<FunnelDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
+  const scopedUtmFilter = await resolveUtmFilterForActor(
+    actor,
+    landingPagePublicId,
+    utmFilter
+  )
 
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
@@ -200,7 +206,7 @@ export async function loadFunnelDashboardData({
     row.id,
     rangeId,
     formType,
-    utmFilter,
+    scopedUtmFilter,
     customRange
   )
   if (!analytics) {
@@ -225,6 +231,11 @@ export async function loadFunnelDashboardDataForApi(
   if (!actor) {
     return { ok: false, status: 401, error: "Unauthorized" }
   }
+  const scopedUtmFilter = await resolveUtmFilterForActor(
+    actor,
+    landingPagePublicId,
+    utmFilter
+  )
 
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) {
@@ -237,7 +248,7 @@ export async function loadFunnelDashboardDataForApi(
     row.id,
     rangeId,
     formType,
-    utmFilter,
+    scopedUtmFilter,
     customRange
   )
   if (!analytics) {
@@ -263,6 +274,11 @@ export async function loadOverviewFunnelSteps({
 }): Promise<OverviewFunnelStep[] | null> {
   const actor = await requireLandingPageActor()
   if (!actor) return null
+  const scopedUtmFilter = await resolveUtmFilterForActor(
+    actor,
+    landingPagePublicId,
+    utmFilter
+  )
 
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) return null
@@ -273,7 +289,7 @@ export async function loadOverviewFunnelSteps({
     row.id,
     rangeId,
     formType,
-    utmFilter,
+    scopedUtmFilter,
     customRange
   )
   if (!analytics) return null

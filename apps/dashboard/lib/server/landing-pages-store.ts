@@ -1,15 +1,27 @@
 import type { InferSelectModel } from "drizzle-orm"
 import { and, eq, isNull } from "drizzle-orm"
-import { db, landingPages } from "@workspace/database"
+import { db, landingPages, users } from "@workspace/database"
+import { canAccessProject, getActorAccess } from "@/lib/server/external-access"
 
 export type LandingPageRow = InferSelectModel<typeof landingPages>
 
-/** Non-deleted landing page visible to any authenticated dashboard user. */
+/** Non-deleted landing page visible to the actor (privilege-filtered for externals). */
 export async function getActiveLandingPageForActor(
-  _actorId: string,
+  actorId: string,
   publicId: string
 ): Promise<LandingPageRow | null> {
-  return getActiveLandingPageByPublicId(publicId)
+  const row = await getActiveLandingPageByPublicId(publicId)
+  if (!row) return null
+
+  const actor = await db.query.users.findFirst({
+    where: eq(users.id, actorId),
+  })
+  if (!actor) return null
+
+  const access = await getActorAccess(actor)
+  if (!canAccessProject(access, publicId)) return null
+
+  return row
 }
 
 export async function getActiveLandingPageByPublicId(

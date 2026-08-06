@@ -13,12 +13,15 @@ import { parseLandingPageChannelType } from "@/features/settings/model/landing-p
 import { fetchLandingPageCardMetrics } from "@/lib/server/landing-page-metrics-load"
 import { isLandingPageLive } from "@/lib/server/landing-page-live"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { canAccessProject, getActorAccess } from "@/lib/server/external-access"
 
 export async function getLandingPageNavItems(): Promise<LandingPageNavItem[]> {
   const actor = await requireLandingPageActor()
   if (!actor) return []
 
-  return db
+  const access = await getActorAccess(actor)
+
+  const rows = await db
     .select({
       publicId: landingPages.publicId,
       brandName: landingPages.brandName,
@@ -27,11 +30,15 @@ export async function getLandingPageNavItems(): Promise<LandingPageNavItem[]> {
     .from(landingPages)
     .where(isNull(landingPages.deletedAt))
     .orderBy(desc(landingPages.createdAt))
+
+  return rows.filter((row) => canAccessProject(access, row.publicId))
 }
 
 export async function getLandingPageList(): Promise<LandingPageListItem[]> {
   const actor = await requireLandingPageActor()
   if (!actor) return []
+
+  const access = await getActorAccess(actor)
 
   const rows = await db
     .select({
@@ -48,14 +55,20 @@ export async function getLandingPageList(): Promise<LandingPageListItem[]> {
     .where(isNull(landingPages.deletedAt))
     .orderBy(desc(landingPages.createdAt))
 
+  const visibleRows = rows.filter((row) =>
+    canAccessProject(access, row.publicId)
+  )
+
   const [metricsList, variantByLandingPageId] = await Promise.all([
     Promise.all(
-      rows.map((row) => fetchLandingPageCardMetrics(row.id, row.formType))
+      visibleRows.map((row) =>
+        fetchLandingPageCardMetrics(row.id, row.formType)
+      )
     ),
     getVariantMembership(),
   ])
 
-  return rows.map((row, index) => {
+  return visibleRows.map((row, index) => {
     const membership = variantByLandingPageId.get(row.id) ?? null
     return {
       publicId: row.publicId,

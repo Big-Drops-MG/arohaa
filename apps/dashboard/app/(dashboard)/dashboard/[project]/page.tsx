@@ -1,6 +1,6 @@
 import { Suspense } from "react"
 import type { Metadata } from "next"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 import { ProjectDashboardView } from "@/features/dashboard/view/ProjectDashboardView"
 import { parseProjectTab } from "@/features/dashboard/model/project-tab"
 import { parseDashboardUtmFilterFromParams } from "@/features/dashboard/model/utm-attribution-filter"
@@ -28,6 +28,14 @@ import { loadUtmDashboardData } from "@/lib/server/utm-dashboard-load"
 import { loadTrafficDashboardData } from "@/lib/server/traffic-dashboard-load"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import {
+  allowedSectionsForTab,
+  allowedTabsForProject,
+  canAccessProject,
+  canAccessTab,
+  getActorAccess,
+  getForcedUtmSources,
+} from "@/lib/server/external-access"
 import { pageMetadata } from "@/lib/site-metadata"
 
 type ProjectPageProps = {
@@ -98,8 +106,24 @@ export default async function ProjectPage({
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
 
+  const access = await getActorAccess(actor)
+  if (!canAccessProject(access, project)) {
+    redirect("/dashboard")
+  }
+
   const row = await getActiveLandingPageForActor(actor.id, project)
   if (!row) notFound()
+
+  const allowedTabs = allowedTabsForProject(access, project)
+  let effectiveTab = tab
+  if (allowedTabs) {
+    if (allowedTabs.length === 0) {
+      redirect("/dashboard")
+    }
+    if (!canAccessTab(access, project, tab)) {
+      effectiveTab = allowedTabs[0]!
+    }
+  }
 
   const formType = parseOverviewLandingFormType(row.formType)
   const overviewPlaceholder = getOverviewPlaceholderData(project, formType)
@@ -117,7 +141,7 @@ export default async function ProjectPage({
   let alerts = null
   let settings = null
 
-  switch (tab) {
+  switch (effectiveTab) {
     case "overview":
       overview = await loadOverviewDashboardData(
         project,
@@ -205,15 +229,30 @@ export default async function ProjectPage({
       break
   }
 
+  const sectionsByTab = access.isExternal
+    ? Object.fromEntries(
+        (allowedTabs ?? []).map((tabValue) => [
+          tabValue,
+          allowedSectionsForTab(access, project, tabValue) ?? [],
+        ])
+      )
+    : null
+
+  const lockedUtmSources = getForcedUtmSources(access, project)
+
   return (
     <Suspense>
       <ProjectDashboardView
         key={project}
         projectId={project}
         formType={formType}
-        initialTab={tab}
+        initialTab={effectiveTab}
         rangeId={rangeId}
         overviewPlaceholder={overviewPlaceholder}
+        allowedTabs={allowedTabs}
+        sectionsByTab={sectionsByTab}
+        readOnly={access.isExternal}
+        lockedUtmSources={lockedUtmSources}
         initial={{
           overview: overview ?? undefined,
           traffic: traffic ?? undefined,

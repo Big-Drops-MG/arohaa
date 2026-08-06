@@ -31,6 +31,7 @@ type TrafficDashboardProps = {
   projectId: string
   isActive?: boolean
   isLoading?: boolean
+  allowedSections?: string[] | null
 }
 
 export function TrafficDashboard({
@@ -38,7 +39,10 @@ export function TrafficDashboard({
   projectId,
   isActive = true,
   isLoading: isTabLoading = false,
+  allowedSections = null,
 }: TrafficDashboardProps) {
+  const showSection = (id: string) =>
+    !allowedSections || allowedSections.includes(id)
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
@@ -187,42 +191,52 @@ export function TrafficDashboard({
 
           <div className="flex flex-col gap-4">
             <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
-              <TrafficDataTableCard
-                section={dashboardData.trafficByTime}
-                expandable
-                previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
-              />
-              <TrafficDataTableCard
-                section={dashboardData.trafficByLocation}
-                expandable
-                previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
-              />
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
-              <TrafficDataTableCard
-                section={dashboardData.trafficByDevice}
-                expandable
-                previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
-              />
-              <TrafficSourcesCard
-                referrers={dashboardData.referrers}
-                utmByParam={dashboardData.utmByParam}
-                expandable
-                previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
-                projectId={projectId}
-              />
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
-              <div className="lg:col-span-2">
+              {showSection("time") ? (
                 <TrafficDataTableCard
-                  section={dashboardData.topPages}
+                  section={dashboardData.trafficByTime}
                   expandable
                   previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
                 />
-              </div>
+              ) : null}
+              {showSection("location") ? (
+                <TrafficDataTableCard
+                  section={dashboardData.trafficByLocation}
+                  expandable
+                  previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
+                />
+              ) : null}
             </div>
+
+            <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
+              {showSection("device") ? (
+                <TrafficDataTableCard
+                  section={dashboardData.trafficByDevice}
+                  expandable
+                  previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
+                />
+              ) : null}
+              {showSection("sources") ? (
+                <TrafficSourcesCard
+                  referrers={dashboardData.referrers}
+                  utmByParam={dashboardData.utmByParam}
+                  expandable
+                  previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
+                  projectId={projectId}
+                />
+              ) : null}
+            </div>
+
+            {showSection("pages") ? (
+              <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
+                <div className="lg:col-span-2">
+                  <TrafficDataTableCard
+                    section={dashboardData.topPages}
+                    expandable
+                    previewRowLimit={TRAFFIC_PREVIEW_ROW_LIMIT}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       )}

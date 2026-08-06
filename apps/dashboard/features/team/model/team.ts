@@ -1,5 +1,7 @@
 export type TeamMemberStatus = "active" | "inactive"
 
+export type TeamMemberKind = "internal" | "external"
+
 export type TeamMember = {
   id: string
   name: string
@@ -8,6 +10,7 @@ export type TeamMember = {
   initials: string
   isCurrentUser: boolean
   status: TeamMemberStatus
+  kind: TeamMemberKind
   lastSeenAt: string | null
 }
 

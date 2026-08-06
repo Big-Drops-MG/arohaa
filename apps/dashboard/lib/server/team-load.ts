@@ -68,6 +68,7 @@ export async function loadTeamDashboardData(): Promise<TeamDashboardData> {
       ...person,
       isCurrentUser: row.id === actor.id,
       status: active ? "active" : "inactive",
+      kind: row.teamKind === "external" ? "external" : "internal",
       lastSeenAt: row.id === actor.id ? now.toISOString() : lastSeenAt,
     }
   })

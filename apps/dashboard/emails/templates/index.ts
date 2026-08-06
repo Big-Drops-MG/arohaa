@@ -15,3 +15,7 @@ export {
   AccessRequestDecisionEmail,
   accessRequestDecisionPreviewProps,
 } from "./AccessRequestDecisionEmail"
+export {
+  ExternalMemberInviteEmail,
+  externalMemberInvitePreviewProps,
+} from "./ExternalMemberInviteEmail"

@@ -56,6 +56,7 @@ type SegmentsDashboardProps = {
   projectId: string
   isActive?: boolean
   isLoading?: boolean
+  allowedViews?: string[] | null
 }
 
 function SectionDivider() {
@@ -71,7 +72,12 @@ export function SegmentsDashboard({
   projectId,
   isActive = true,
   isLoading: isTabLoading = false,
+  allowedViews = null,
 }: SegmentsDashboardProps) {
+  const visibleViews = allowedViews
+    ? PERFORMANCE_VIEWS.filter((view) => allowedViews.includes(view.value))
+    : PERFORMANCE_VIEWS
+  const defaultView = visibleViews[0]?.value ?? "all"
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
@@ -85,7 +91,13 @@ export function SegmentsDashboard({
     (raw) => raw ?? initialData.summaryKpis[0]?.label ?? ""
   )
   const [view, setView] = useDashboardQueryParam("view", {
-    parse: parsePerformanceView,
+    parse: (raw) => {
+      const parsed = parsePerformanceView(raw)
+      if (allowedViews && !allowedViews.includes(parsed)) {
+        return defaultView as PerformanceView
+      }
+      return parsed
+    },
     projectId,
     omitDefault: true,
     refreshOnChange: false,
@@ -229,7 +241,7 @@ export function SegmentsDashboard({
           >
             <div className="-mx-6 border-b border-neutral-200 bg-transparent px-6 lg:-mx-8 lg:px-8">
               <TabsList className="h-auto min-h-10 w-full justify-start gap-0 overflow-x-auto rounded-none border-0 bg-transparent p-0">
-                {PERFORMANCE_VIEWS.map((option) => (
+                {visibleViews.map((option) => (
                   <TabsTrigger
                     key={option.value}
                     value={option.value}

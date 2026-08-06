@@ -23,6 +23,7 @@ type ExperimentsDashboardProps = {
   projectId: string
   isActive?: boolean
   isLoading?: boolean
+  readOnly?: boolean
 }
 
 export function ExperimentsDashboard({
@@ -30,6 +31,7 @@ export function ExperimentsDashboard({
   projectId,
   isActive = true,
   isLoading: isTabLoading = false,
+  readOnly: _readOnly = false,
 }: ExperimentsDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()

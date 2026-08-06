@@ -6,6 +6,15 @@ import {
   serializeUtmValueList,
 } from "@/features/dashboard/model/utm-attribution-filter"
 import type { DashboardCustomRange } from "@/features/traffic/model/traffic-range"
+import {
+  applyExternalUtmScope,
+  getActorAccess,
+  type ActorAccess,
+} from "@/lib/server/external-access"
+import type { InferSelectModel } from "drizzle-orm"
+import type { users } from "@workspace/database"
+
+type UserRow = InferSelectModel<typeof users>
 
 export function appendDashboardUtmParams(
   url: URL,
@@ -42,6 +51,23 @@ export function parseUtmFilterFromSearchParams(
     utm_value: searchParams.get("utm_value"),
     segment_id: searchParams.get("segment_id"),
   })
+}
+
+export async function resolveUtmFilterForActor(
+  actor: UserRow | null | undefined,
+  publicId: string,
+  requested?: DashboardUtmFilter | null
+): Promise<DashboardUtmFilter | undefined> {
+  const access = await getActorAccess(actor)
+  return applyExternalUtmScope(access, publicId, requested)
+}
+
+export function resolveUtmFilterWithAccess(
+  access: ActorAccess,
+  publicId: string,
+  requested?: DashboardUtmFilter | null
+): DashboardUtmFilter | undefined {
+  return applyExternalUtmScope(access, publicId, requested)
 }
 
 export function appendUtmFilterToQueryString(

@@ -23,6 +23,7 @@ import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribut
 import {
   appendDashboardCustomRangeParams,
   appendDashboardUtmParams,
+  resolveUtmFilterForActor,
 } from "@/lib/server/analytics-utm-params"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
@@ -267,6 +268,11 @@ export async function loadSegmentsDashboardData({
 }): Promise<SegmentsDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
+  const scopedUtmFilter = await resolveUtmFilterForActor(
+    actor,
+    landingPagePublicId,
+    utmFilter
+  )
 
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
@@ -276,7 +282,7 @@ export async function loadSegmentsDashboardData({
   const analytics = await fetchSegmentsAnalytics(
     row.id,
     rangeId,
-    utmFilter,
+    scopedUtmFilter,
     customRange
   )
   if (!analytics) {
@@ -301,6 +307,11 @@ export async function loadSegmentsDashboardDataForApi(
   if (!actor) {
     return { ok: false, status: 401, error: "Unauthorized" }
   }
+  const scopedUtmFilter = await resolveUtmFilterForActor(
+    actor,
+    landingPagePublicId,
+    utmFilter
+  )
 
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) {
@@ -312,7 +323,7 @@ export async function loadSegmentsDashboardDataForApi(
   const analytics = await fetchSegmentsAnalytics(
     row.id,
     rangeId,
-    utmFilter,
+    scopedUtmFilter,
     customRange
   )
   if (!analytics) {

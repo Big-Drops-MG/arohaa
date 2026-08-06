@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { requireWritableLandingPageActor } from "@/lib/server/external-access"
 import {
   createWorkspaceAlertWebhook,
   listWorkspaceAlertWebhooks,
@@ -20,7 +21,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const actor = await requireLandingPageActor()
+  const actor = await requireWritableLandingPageActor()
   if (!actor) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }

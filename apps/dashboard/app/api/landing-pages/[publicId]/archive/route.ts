@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import { db, landingPages } from "@workspace/database"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { requireWritableLandingPageActor } from "@/lib/server/external-access"
 import { writeLandingPageAuditLog } from "@/lib/server/landing-audit-log"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
@@ -15,7 +16,7 @@ export async function POST(
   request: NextRequest,
   context: { params: Promise<{ publicId: string }> }
 ) {
-  const actor = await requireLandingPageActor()
+  const actor = await requireWritableLandingPageActor()
   if (!actor) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }

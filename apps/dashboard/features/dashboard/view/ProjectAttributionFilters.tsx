@@ -23,6 +23,7 @@ import {
 } from "@/features/dashboard/model/utm-attribution-filter"
 import { overviewSelectTriggerClassName } from "@/features/overview/view/overview-select-styles"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import { useDashboardAccess } from "@/features/dashboard/view/dashboard-access-context"
 
 type ProjectAttributionFiltersProps = {
   projectId: string
@@ -51,6 +52,7 @@ function filtersEqual(
 export function ProjectAttributionFilters({
   projectId,
 }: ProjectAttributionFiltersProps) {
+  const { lockedUtmSources } = useDashboardAccess()
   const { utmFilter, setUtmFilter } = useDashboardUtmFilter()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
@@ -59,19 +61,23 @@ export function ProjectAttributionFilters({
     useState<ValuesByDimension>(EMPTY_VALUES)
   const [isLoadingValues, setIsLoadingValues] = useState(false)
 
-  const applied = normalizeDashboardUtmFilter(utmFilter)
+  const applied = normalizeDashboardUtmFilter(
+    lockedUtmSources && lockedUtmSources.length > 0
+      ? { utm_source: lockedUtmSources }
+      : utmFilter
+  )
   const draftNormalized = normalizeDashboardUtmFilter(draft)
   const triggerLabel = formatDashboardUtmFilterLabel(applied)
   const isDirty = !filtersEqual(draftNormalized, applied)
   const draftHasFilter = hasDashboardUtmFilter(draftNormalized)
 
   useEffect(() => {
-    if (!open) return
+    if (!open || lockedUtmSources) return
     setDraft(normalizeDashboardUtmFilter(utmFilter))
-  }, [open, utmFilter])
+  }, [open, utmFilter, lockedUtmSources])
 
   useEffect(() => {
-    if (!open) return
+    if (!open || lockedUtmSources) return
 
     let cancelled = false
     setIsLoadingValues(true)
@@ -117,7 +123,7 @@ export function ProjectAttributionFilters({
     return () => {
       cancelled = true
     }
-  }, [open, projectId])
+  }, [open, projectId, lockedUtmSources])
 
   useEffect(() => {
     if (!open) setSearch("")
@@ -146,6 +152,26 @@ export function ProjectAttributionFilters({
 
   function clearDraft() {
     setDraft(undefined)
+  }
+
+  if (lockedUtmSources && lockedUtmSources.length > 0) {
+    return (
+      <button
+        type="button"
+        disabled
+        className={cn(
+          overviewSelectTriggerClassName,
+          "inline-flex w-full max-w-full cursor-default items-center justify-between opacity-90 sm:w-auto sm:max-w-80 sm:min-w-44"
+        )}
+        aria-label="Traffic attribution filter (locked)"
+        title="Your access is limited to these UTM Sources"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <Filter className="size-3.5 shrink-0 text-neutral-500" />
+          <span className="truncate">{triggerLabel}</span>
+        </span>
+      </button>
+    )
   }
 
   return (

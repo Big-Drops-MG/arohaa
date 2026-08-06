@@ -75,18 +75,20 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
 type SettingsNavProps = {
   activeSection: SettingsSectionId
   onSectionChange: (section: SettingsSectionId) => void
+  items?: SettingsNavItem[]
 }
 
 export function SettingsNav({
   activeSection,
   onSectionChange,
+  items = SETTINGS_NAV_ITEMS,
 }: SettingsNavProps) {
   return (
     <nav
       aria-label="Settings sections"
       className="flex flex-col gap-1 lg:sticky lg:top-4"
     >
-      {SETTINGS_NAV_ITEMS.map((item) => {
+      {items.map((item) => {
         const Icon = item.icon
         const isActive = activeSection === item.id
 

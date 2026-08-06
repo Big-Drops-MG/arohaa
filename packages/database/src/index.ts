@@ -14,6 +14,7 @@ import * as workspaceAlertWebhooksSchema from './schema/workspace-alert-webhooks
 import * as landingPageUtmParamsSchema from './schema/landing-page-utm-params.js';
 import * as rolesSchema from './schema/roles.js';
 import * as segmentsSchema from './schema/segments.js';
+import * as externalMemberPrivilegesSchema from './schema/external-member-privileges.js';
 
 const schema = {
   ...authSchema,
@@ -28,6 +29,7 @@ const schema = {
   ...landingPageUtmParamsSchema,
   ...rolesSchema,
   ...segmentsSchema,
+  ...externalMemberPrivilegesSchema,
 };
 
 bootstrapDatabaseEnv(import.meta.url);
@@ -60,6 +62,7 @@ export * from './schema/workspace-alert-webhooks.js';
 export * from './schema/landing-page-utm-params.js';
 export * from './schema/roles.js';
 export * from './schema/segments.js';
+export * from './schema/external-member-privileges.js';
 export * from './email.js';
 export * from './notifications/create-notification.js';
 export * from './landing/normalizeLandingPageUrl.js';

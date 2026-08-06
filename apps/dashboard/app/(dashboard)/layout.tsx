@@ -1,10 +1,13 @@
 import { auth } from "@/auth"
 import { Navbar } from "@/features/dashboard/view/Navbar"
+import { DashboardNavigationShell } from "@/features/dashboard/view/DashboardNavigationShell"
 import { getLandingPageNavItems } from "@/features/dashboard/controller/landing-pages"
 import { isApprovedAccess } from "@/lib/server/access-status"
+import { isExternalTeamKind } from "@/features/team/model/external-privileges"
 import { db, normalizeUserEmail, whereUserEmail } from "@workspace/database"
 import { redirect } from "next/navigation"
 import { cookies } from "next/headers"
+import { Suspense } from "react"
 import { touchUserLastSeen } from "@/lib/server/user-last-seen"
 
 export default async function DashboardGroupLayout({
@@ -46,6 +49,7 @@ export default async function DashboardGroupLayout({
   const firstName = user.firstName?.trim() || "Dashboard"
   const lastName = user.lastName?.trim() || "User"
   const role = user.role?.trim() || "Profile"
+  const showTeamAndOps = !isExternalTeamKind(user.teamKind)
 
   void touchUserLastSeen(user.id)
 
@@ -58,8 +62,13 @@ export default async function DashboardGroupLayout({
         lastName={lastName}
         role={role}
         landingPageNavItems={landingPageNavItems}
+        showTeamAndOps={showTeamAndOps}
       />
-      <main className="flex flex-1 flex-col">{children}</main>
+      <main className="flex flex-1 flex-col">
+        <Suspense fallback={null}>
+          <DashboardNavigationShell>{children}</DashboardNavigationShell>
+        </Suspense>
+      </main>
     </div>
   )
 }

@@ -21,6 +21,7 @@ type NavbarProps = {
   lastName: string
   role: string
   landingPageNavItems: LandingPageNavItem[]
+  showTeamAndOps?: boolean
 }
 
 function buildInitials(firstName: string, lastName: string): string {
@@ -34,6 +35,7 @@ export function Navbar({
   lastName,
   role,
   landingPageNavItems,
+  showTeamAndOps = true,
 }: NavbarProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const fullName = `${firstName} ${lastName}`.trim()
@@ -90,28 +92,32 @@ export function Navbar({
             </PopoverTrigger>
             <PopoverContent align="end" className="w-48 p-2">
               <div className="flex flex-col gap-0.5">
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="sm"
-                  className="justify-start px-2.5"
-                >
-                  <Link href="/dashboard/ops" onClick={closeMenu}>
-                    <Server className="size-4" aria-hidden />
-                    Ops
-                  </Link>
-                </Button>
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="sm"
-                  className="justify-start px-2.5"
-                >
-                  <Link href="/dashboard/team" onClick={closeMenu}>
-                    <Users className="size-4" aria-hidden />
-                    Team
-                  </Link>
-                </Button>
+                {showTeamAndOps ? (
+                  <>
+                    <Button
+                      asChild
+                      variant="ghost"
+                      size="sm"
+                      className="justify-start px-2.5"
+                    >
+                      <Link href="/dashboard/ops" onClick={closeMenu}>
+                        <Server className="size-4" aria-hidden />
+                        Ops
+                      </Link>
+                    </Button>
+                    <Button
+                      asChild
+                      variant="ghost"
+                      size="sm"
+                      className="justify-start px-2.5"
+                    >
+                      <Link href="/dashboard/team" onClick={closeMenu}>
+                        <Users className="size-4" aria-hidden />
+                        Team
+                      </Link>
+                    </Button>
+                  </>
+                ) : null}
                 <Button
                   asChild
                   variant="ghost"

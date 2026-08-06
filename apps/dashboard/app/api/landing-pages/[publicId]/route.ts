@@ -9,6 +9,7 @@ import {
   normalizedBrandName,
 } from "@workspace/database"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { requireWritableLandingPageActor } from "@/lib/server/external-access"
 import { toLandingPageRecord } from "@/lib/server/landing-page-json"
 import {
   parseLandingPageFormType,
@@ -74,7 +75,7 @@ export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ publicId: string }> }
 ) {
-  const actor = await requireLandingPageActor()
+  const actor = await requireWritableLandingPageActor()
   if (!actor) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
@@ -355,7 +356,7 @@ export async function DELETE(
   request: NextRequest,
   context: { params: Promise<{ publicId: string }> }
 ) {
-  const actor = await requireLandingPageActor()
+  const actor = await requireWritableLandingPageActor()
   if (!actor) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }

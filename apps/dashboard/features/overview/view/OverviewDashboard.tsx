@@ -44,6 +44,7 @@ type OverviewDashboardProps = {
   data: OverviewDashboardData
   projectId: string
   isLoading?: boolean
+  allowedSections?: string[] | null
 }
 
 function valueSuffixForMetric(id: OverviewKpiMetricId): string | undefined {
@@ -75,7 +76,10 @@ export function OverviewDashboard({
   data,
   projectId,
   isLoading: isTabLoading = false,
+  allowedSections = null,
 }: OverviewDashboardProps) {
+  const showSection = (id: string) =>
+    !allowedSections || allowedSections.includes(id)
   const reduceMotion = useReducedMotion()
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
@@ -311,46 +315,68 @@ export function OverviewDashboard({
         <OverviewDashboardSkeleton />
       ) : (
         <>
-          <motion.div variants={overviewStaggerItem}>
-            <OverviewKpiRow
-              kpis={kpis}
-              activeKpiId={activeKpiId}
-              onKpiSelect={setActiveKpiId}
-            />
-          </motion.div>
+          {showSection("kpis") ? (
+            <motion.div variants={overviewStaggerItem}>
+              <OverviewKpiRow
+                kpis={kpis}
+                activeKpiId={activeKpiId}
+                onKpiSelect={setActiveKpiId}
+              />
+            </motion.div>
+          ) : null}
 
-          <motion.div
-            variants={overviewStaggerItem}
-            className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-[3fr_7fr] lg:items-stretch lg:[&>*]:min-h-0"
-          >
-            {isFunnelLoading ? (
-              <DashboardAnalyticCardSkeleton rows={5} />
-            ) : (
-              <OverviewFunnelCard steps={funnelSteps} />
-            )}
-            <OverviewPerformanceChart
-              points={chartPoints}
-              metricId={activeKpiId}
-              metricLabel={activeKpiLabel}
-              valueSuffix={valueSuffixForMetric(activeKpiId)}
-              chartKey={chartKey}
-              stateMetrics={stateMetrics}
-              projectId={projectId}
-              dateRangeId={dateRangeId}
-              customRange={customRange}
-            />
-          </motion.div>
+          {showSection("funnel") || showSection("performance") ? (
+            <motion.div
+              variants={overviewStaggerItem}
+              className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-[3fr_7fr] lg:items-stretch lg:[&>*]:min-h-0"
+            >
+              {showSection("funnel") ? (
+                isFunnelLoading ? (
+                  <DashboardAnalyticCardSkeleton rows={5} />
+                ) : (
+                  <OverviewFunnelCard steps={funnelSteps} />
+                )
+              ) : (
+                <div />
+              )}
+              {showSection("performance") ? (
+                <OverviewPerformanceChart
+                  points={chartPoints}
+                  metricId={activeKpiId}
+                  metricLabel={activeKpiLabel}
+                  valueSuffix={valueSuffixForMetric(activeKpiId)}
+                  chartKey={chartKey}
+                  stateMetrics={stateMetrics}
+                  projectId={projectId}
+                  dateRangeId={dateRangeId}
+                  customRange={customRange}
+                />
+              ) : (
+                <div />
+              )}
+            </motion.div>
+          ) : null}
 
-          <motion.div
-            variants={overviewStaggerItem}
-            className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0"
-          >
-            <div className="flex min-h-0 flex-col gap-4">
-              <OverviewTrafficCard stats={overviewData.traffic} />
-              <OverviewSegmentsCard segments={overviewData.segments} />
-            </div>
-            <OverviewAlertsCard alerts={alerts} />
-          </motion.div>
+          {showSection("traffic") ||
+          showSection("segments") ||
+          showSection("alerts") ? (
+            <motion.div
+              variants={overviewStaggerItem}
+              className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0"
+            >
+              <div className="flex min-h-0 flex-col gap-4">
+                {showSection("traffic") ? (
+                  <OverviewTrafficCard stats={overviewData.traffic} />
+                ) : null}
+                {showSection("segments") ? (
+                  <OverviewSegmentsCard segments={overviewData.segments} />
+                ) : null}
+              </div>
+              {showSection("alerts") ? (
+                <OverviewAlertsCard alerts={alerts} />
+              ) : null}
+            </motion.div>
+          ) : null}
         </>
       )}
     </motion.div>

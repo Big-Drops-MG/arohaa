@@ -12,6 +12,7 @@ type UtmDashboardProps = {
   projectId: string
   isActive?: boolean
   isLoading?: boolean
+  readOnly?: boolean
 }
 
 export function UtmDashboard({
@@ -19,6 +20,7 @@ export function UtmDashboard({
   projectId,
   isActive = true,
   isLoading: isTabLoading = false,
+  readOnly: _readOnly = false,
 }: UtmDashboardProps) {
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isFetching, setIsFetching] = useState(false)

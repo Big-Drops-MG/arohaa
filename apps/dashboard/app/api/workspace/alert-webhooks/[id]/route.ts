@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { requireWritableLandingPageActor } from "@/lib/server/external-access"
 import {
   deleteWorkspaceAlertWebhook,
   setWorkspaceAlertWebhookEnabled,
@@ -12,7 +13,7 @@ type RouteContext = {
 }
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
-  const actor = await requireLandingPageActor()
+  const actor = await requireWritableLandingPageActor()
   if (!actor) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
@@ -47,7 +48,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 }
 
 export async function DELETE(_request: NextRequest, context: RouteContext) {
-  const actor = await requireLandingPageActor()
+  const actor = await requireWritableLandingPageActor()
   if (!actor) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }

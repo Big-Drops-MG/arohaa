@@ -1,5 +1,10 @@
 import { desc, eq } from "drizzle-orm"
-import { db, landingPageAuditLogs, users } from "@workspace/database"
+import {
+  db,
+  landingPageAuditLogs,
+  landingPages,
+  users,
+} from "@workspace/database"
 import { enqueueNotificationFromAuditLog } from "@/lib/server/notifications"
 
 export type LandingPageAuditLogRow = {
@@ -13,6 +18,9 @@ export type LandingPageAuditLogRow = {
   actorEmail: string | null
   actorFirstName: string | null
   actorLastName: string | null
+  landingPageId?: string
+  landingPageBrandName?: string | null
+  landingPagePublicId?: string | null
 }
 
 export async function writeLandingPageAuditLog(input: {
@@ -81,5 +89,52 @@ export async function listLandingPageAuditLogs(
     actorEmail: row.actorEmail,
     actorFirstName: row.actorFirstName,
     actorLastName: row.actorLastName,
+  }))
+}
+
+export async function listAuditLogsByActorUserId(
+  actorUserId: string,
+  limit = 100
+): Promise<LandingPageAuditLogRow[]> {
+  const rows = await db
+    .select({
+      id: landingPageAuditLogs.id,
+      action: landingPageAuditLogs.action,
+      beforePayload: landingPageAuditLogs.beforePayload,
+      afterPayload: landingPageAuditLogs.afterPayload,
+      traceId: landingPageAuditLogs.traceId,
+      createdAt: landingPageAuditLogs.createdAt,
+      actorUserId: landingPageAuditLogs.actorUserId,
+      actorEmail: users.email,
+      actorFirstName: users.firstName,
+      actorLastName: users.lastName,
+      landingPageId: landingPageAuditLogs.landingPageId,
+      landingPageBrandName: landingPages.brandName,
+      landingPagePublicId: landingPages.publicId,
+    })
+    .from(landingPageAuditLogs)
+    .innerJoin(users, eq(landingPageAuditLogs.actorUserId, users.id))
+    .innerJoin(
+      landingPages,
+      eq(landingPageAuditLogs.landingPageId, landingPages.id)
+    )
+    .where(eq(landingPageAuditLogs.actorUserId, actorUserId))
+    .orderBy(desc(landingPageAuditLogs.createdAt))
+    .limit(limit)
+
+  return rows.map((row) => ({
+    id: row.id,
+    action: row.action,
+    beforePayload: row.beforePayload,
+    afterPayload: row.afterPayload,
+    traceId: row.traceId,
+    createdAt: row.createdAt.toISOString(),
+    actorUserId: row.actorUserId,
+    actorEmail: row.actorEmail,
+    actorFirstName: row.actorFirstName,
+    actorLastName: row.actorLastName,
+    landingPageId: row.landingPageId,
+    landingPageBrandName: row.landingPageBrandName,
+    landingPagePublicId: row.landingPagePublicId,
   }))
 }

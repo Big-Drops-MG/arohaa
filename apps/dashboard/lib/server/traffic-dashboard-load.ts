@@ -27,6 +27,7 @@ import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribut
 import {
   appendDashboardCustomRangeParams,
   appendDashboardUtmParams,
+  resolveUtmFilterForActor,
 } from "@/lib/server/analytics-utm-params"
 
 export { parseTrafficRangeId } from "@/features/traffic/model/traffic-range"
@@ -241,6 +242,11 @@ export async function loadTrafficDashboardData({
 }): Promise<TrafficDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
+  const scopedUtmFilter = await resolveUtmFilterForActor(
+    actor,
+    landingPagePublicId,
+    utmFilter
+  )
 
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
@@ -249,7 +255,7 @@ export async function loadTrafficDashboardData({
   const analytics = await fetchTrafficAnalytics(
     row.id,
     rangeId,
-    utmFilter,
+    scopedUtmFilter,
     customRange
   )
   if (!analytics) {
@@ -274,6 +280,11 @@ export async function loadTrafficDashboardDataForApi(
   if (!actor) {
     return { ok: false, status: 401, error: "Unauthorized" }
   }
+  const scopedUtmFilter = await resolveUtmFilterForActor(
+    actor,
+    landingPagePublicId,
+    utmFilter
+  )
 
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) {
@@ -284,7 +295,7 @@ export async function loadTrafficDashboardDataForApi(
   const analytics = await fetchTrafficAnalytics(
     row.id,
     rangeId,
-    utmFilter,
+    scopedUtmFilter,
     customRange
   )
   if (!analytics) {

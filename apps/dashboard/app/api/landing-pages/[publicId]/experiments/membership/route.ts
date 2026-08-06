@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { requireWritableLandingPageActor } from "@/lib/server/external-access"
 import {
   getActiveLandingPageByPublicId,
   getActiveLandingPageForActor,
@@ -15,12 +16,15 @@ import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
 import { writeLandingPageAuditLog } from "@/lib/server/landing-audit-log"
 
 async function resolveActorAndPage(
-  publicId: string
+  publicId: string,
+  opts?: { writable?: boolean }
 ): Promise<
   | { ok: true; actorId: string; landingPage: LandingPageRow }
   | { ok: false; response: NextResponse }
 > {
-  const actor = await requireLandingPageActor()
+  const actor = opts?.writable
+    ? await requireWritableLandingPageActor()
+    : await requireLandingPageActor()
   if (!actor) {
     return {
       ok: false,
@@ -58,7 +62,7 @@ export async function POST(
   props: { params: Promise<{ publicId: string }> }
 ) {
   const { publicId } = await props.params
-  const resolved = await resolveActorAndPage(publicId)
+  const resolved = await resolveActorAndPage(publicId, { writable: true })
   if (!resolved.ok) return resolved.response
   const { actorId, landingPage } = resolved
 
@@ -131,7 +135,7 @@ export async function PATCH(
   props: { params: Promise<{ publicId: string }> }
 ) {
   const { publicId } = await props.params
-  const resolved = await resolveActorAndPage(publicId)
+  const resolved = await resolveActorAndPage(publicId, { writable: true })
   if (!resolved.ok) return resolved.response
 
   let body: unknown
@@ -169,7 +173,7 @@ export async function DELETE(
   props: { params: Promise<{ publicId: string }> }
 ) {
   const { publicId } = await props.params
-  const resolved = await resolveActorAndPage(publicId)
+  const resolved = await resolveActorAndPage(publicId, { writable: true })
   if (!resolved.ok) return resolved.response
   const { actorId, landingPage } = resolved
 

@@ -64,7 +64,7 @@ export function LandingPageCard({ page }: LandingPageCardProps) {
               ) : null}
               {variantLabel ? (
                 <span
-                  className="inline-flex max-w-full items-center gap-1.5 self-start rounded-full bg-indigo-50 py-1 pr-2.5 pl-2 text-[11px] leading-4 ring-1 ring-indigo-200/80"
+                  className="inline-flex h-6 max-w-full items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 text-[11px] leading-4 ring-1 ring-indigo-200/80"
                   title={
                     groupName ? `${variantLabel} · ${groupName}` : variantLabel
                   }

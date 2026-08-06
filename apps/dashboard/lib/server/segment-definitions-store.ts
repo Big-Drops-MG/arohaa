@@ -3,6 +3,7 @@ import {
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { requireWritableLandingPageActor } from "@/lib/server/external-access"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
 export type SegmentDefinition = {
@@ -28,9 +29,12 @@ type SegmentScope = {
 }
 
 async function resolveScope(
-  publicId: string
+  publicId: string,
+  opts?: { writable?: boolean }
 ): Promise<SegmentDefinitionResult<SegmentScope>> {
-  const actor = await requireLandingPageActor()
+  const actor = opts?.writable
+    ? await requireWritableLandingPageActor()
+    : await requireLandingPageActor()
   if (!actor) {
     return { ok: false, status: 401, error: "Unauthorized" }
   }
@@ -120,7 +124,7 @@ export async function createSegmentDefinition(
   publicId: string,
   input: { name: string; description?: string; conditions: unknown }
 ): Promise<SegmentDefinitionResult<SegmentDefinition>> {
-  const scope = await resolveScope(publicId)
+  const scope = await resolveScope(publicId, { writable: true })
   if (!scope.ok) return scope
 
   return callSegmentsApi<SegmentDefinition>("/v1/segments", {
@@ -139,7 +143,7 @@ export async function deleteSegmentDefinition(
   publicId: string,
   segmentId: string
 ): Promise<SegmentDefinitionResult<{ success: boolean }>> {
-  const scope = await resolveScope(publicId)
+  const scope = await resolveScope(publicId, { writable: true })
   if (!scope.ok) return scope
 
   return callSegmentsApi<{ success: boolean }>(

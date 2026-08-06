@@ -41,6 +41,7 @@ type HeatmapDashboardProps = {
   projectId: string
   isActive?: boolean
   isLoading?: boolean
+  allowedModes?: string[] | null
 }
 
 function shortUrl(url: string): string {
@@ -61,12 +62,23 @@ export function HeatmapDashboard({
   projectId,
   isActive = true,
   isLoading: isTabLoading = false,
+  allowedModes = null,
 }: HeatmapDashboardProps) {
+  const visibleModes = allowedModes
+    ? HEATMAP_MODES.filter((mode) => allowedModes.includes(mode.value))
+    : HEATMAP_MODES
+  const defaultMode = visibleModes[0]?.value ?? "click"
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [mode, setMode] = useDashboardQueryParam("mode", {
-    parse: parseHeatmapMode,
+    parse: (raw) => {
+      const parsed = parseHeatmapMode(raw)
+      if (allowedModes && !allowedModes.includes(parsed)) {
+        return defaultMode as HeatmapMode
+      }
+      return parsed
+    },
     projectId,
     omitDefault: true,
   })
@@ -218,7 +230,7 @@ export function HeatmapDashboard({
                 align="end"
                 className={overviewSelectContentClassName}
               >
-                {HEATMAP_MODES.map((option) => (
+                {visibleModes.map((option) => (
                   <SelectItem
                     key={option.value}
                     value={option.value}

@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import type { LandingPageSettingsData } from "@/features/settings/model/landing-page-settings"
 import { SettingsActivityLogSection } from "@/features/settings/view/SettingsActivityLogSection"
 import { SettingsConnectionSection } from "@/features/settings/view/SettingsConnectionSection"
@@ -11,6 +11,7 @@ import { SettingsLiveSection } from "@/features/settings/view/SettingsLiveSectio
 import {
   SETTINGS_NAV_ITEMS,
   SettingsNav,
+  type SettingsNavItem,
   type SettingsSectionId,
 } from "@/features/settings/view/SettingsNav"
 import { SettingsProjectDetailsSection } from "@/features/settings/view/SettingsProjectDetailsSection"
@@ -19,20 +20,36 @@ import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
 type SettingsDashboardProps = {
   initialData: LandingPageSettingsData
   projectId: string
-}
-
-function parseSettingsSection(value: string | null): SettingsSectionId {
-  if (value && SETTINGS_NAV_ITEMS.some((item) => item.id === value)) {
-    return value as SettingsSectionId
-  }
-  return "general"
+  allowedSections?: string[] | null
+  readOnly?: boolean
 }
 
 export function SettingsDashboard({
   initialData,
   projectId,
+  allowedSections = null,
+  readOnly = false,
 }: SettingsDashboardProps) {
   const [settings, setSettings] = useState(initialData)
+
+  const navItems = useMemo((): SettingsNavItem[] => {
+    if (!allowedSections) return SETTINGS_NAV_ITEMS
+    const allowed = new Set(allowedSections)
+    return SETTINGS_NAV_ITEMS.filter(
+      (item) => item.id !== "danger" && allowed.has(item.id)
+    )
+  }, [allowedSections])
+
+  const parseSettingsSection = useCallback(
+    (value: string | null): SettingsSectionId => {
+      if (value && navItems.some((item) => item.id === value)) {
+        return value as SettingsSectionId
+      }
+      return (navItems[0]?.id ?? "general") as SettingsSectionId
+    },
+    [navItems]
+  )
+
   const [activeSection, setActiveSection] = useDashboardQueryParam("section", {
     parse: parseSettingsSection,
     projectId,
@@ -43,6 +60,9 @@ export function SettingsDashboard({
     setSettings(next)
   }, [])
 
+  const canShow = (id: SettingsSectionId) =>
+    !allowedSections || allowedSections.includes(id)
+
   return (
     <div className="flex flex-col gap-6 px-4 pb-6 sm:px-6 lg:px-8">
       <div className="pt-2">
@@ -50,8 +70,9 @@ export function SettingsDashboard({
           Settings
         </h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Manage project details, SDK tracking, publishing status, activity
-          logs, and lifecycle actions for{" "}
+          {readOnly
+            ? "View project settings for "
+            : "Manage project details, SDK tracking, publishing status, activity logs, and lifecycle actions for "}
           <span className="font-medium text-foreground">
             {settings.landingPage.brandName}
           </span>
@@ -63,10 +84,17 @@ export function SettingsDashboard({
         <SettingsNav
           activeSection={activeSection}
           onSectionChange={setActiveSection}
+          items={navItems}
         />
 
-        <div className="min-w-0 space-y-4">
-          {activeSection === "general" ? (
+        <div
+          className={
+            readOnly
+              ? "pointer-events-none min-w-0 space-y-4 opacity-90 select-none"
+              : "min-w-0 space-y-4"
+          }
+        >
+          {activeSection === "general" && canShow("general") ? (
             <SettingsGeneralSection
               key={settings.landingPage.updatedAt}
               landingPage={settings.landingPage}
@@ -74,7 +102,7 @@ export function SettingsDashboard({
             />
           ) : null}
 
-          {activeSection === "publishing" ? (
+          {activeSection === "publishing" && canShow("publishing") ? (
             <SettingsLiveSection
               key={`live-${settings.landingPage.updatedAt}`}
               landingPage={settings.landingPage}
@@ -83,7 +111,7 @@ export function SettingsDashboard({
             />
           ) : null}
 
-          {activeSection === "tracking" ? (
+          {activeSection === "tracking" && canShow("tracking") ? (
             <SettingsConnectionSection
               landingPage={settings.landingPage}
               sdkSnippetHtml={settings.sdkSnippetHtml}
@@ -94,25 +122,25 @@ export function SettingsDashboard({
             />
           ) : null}
 
-          {activeSection === "experiment" ? (
+          {activeSection === "experiment" && canShow("experiment") ? (
             <SettingsExperimentSection
               key={`experiment-${settings.landingPage.publicId}`}
               landingPage={settings.landingPage}
             />
           ) : null}
 
-          {activeSection === "project" ? (
+          {activeSection === "project" && canShow("project") ? (
             <SettingsProjectDetailsSection landingPage={settings.landingPage} />
           ) : null}
 
-          {activeSection === "activity" ? (
+          {activeSection === "activity" && canShow("activity") ? (
             <SettingsActivityLogSection
               publicId={settings.landingPage.publicId}
               isActive={activeSection === "activity"}
             />
           ) : null}
 
-          {activeSection === "danger" ? (
+          {activeSection === "danger" && !allowedSections ? (
             <SettingsDangerZoneSection landingPage={settings.landingPage} />
           ) : null}
         </div>

@@ -14,6 +14,8 @@ import {
   normalizedBrandName,
 } from "@workspace/database"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { requireWritableLandingPageActor } from "@/lib/server/external-access"
+import { canAccessProject, getActorAccess } from "@/lib/server/external-access"
 import { writeLandingPageAuditLog } from "@/lib/server/landing-audit-log"
 import {
   attachLandingPageAsVariant,
@@ -83,17 +85,23 @@ export async function GET() {
   const limited = await enforceLandingApiRateLimit(actor.id)
   if (limited) return limited
 
+  const access = await getActorAccess(actor)
+
   const rows = await db
     .select()
     .from(landingPages)
     .where(isNull(landingPages.deletedAt))
     .orderBy(desc(landingPages.createdAt))
 
-  return NextResponse.json({ landingPages: rows.map(toJson) })
+  return NextResponse.json({
+    landingPages: rows
+      .filter((row) => canAccessProject(access, row.publicId))
+      .map(toJson),
+  })
 }
 
 export async function POST(request: NextRequest) {
-  const actor = await requireLandingPageActor()
+  const actor = await requireWritableLandingPageActor()
   if (!actor) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }

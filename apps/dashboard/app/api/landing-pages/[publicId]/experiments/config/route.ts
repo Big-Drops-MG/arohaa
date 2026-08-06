@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { requireWritableLandingPageActor } from "@/lib/server/external-access"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import {
   createExperimentForLandingPage,
@@ -33,7 +34,7 @@ export async function POST(
   request: Request,
   props: { params: Promise<{ publicId: string }> }
 ) {
-  const actor = await requireLandingPageActor()
+  const actor = await requireWritableLandingPageActor()
   if (!actor) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }

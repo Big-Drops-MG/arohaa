@@ -27,6 +27,8 @@ export const users = pgTable('user', {
   accessStatus: text('accessStatus').notNull().default('pending'),
   accessReviewedAt: timestamp('accessReviewedAt', { mode: 'date' }),
   accessReviewedByUserId: text('accessReviewedByUserId'),
+  /** internal → company roster; external → partner / collaborator */
+  teamKind: text('teamKind').notNull().default('internal'),
 });
 
 export const accounts = pgTable(

@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { requireWritableLandingPageActor } from "@/lib/server/external-access"
 import { revokeWorkspaceApiKey } from "@/lib/server/workspace-api-keys"
 import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
 
@@ -9,7 +10,7 @@ type RouteContext = {
 }
 
 export async function DELETE(_request: NextRequest, context: RouteContext) {
-  const actor = await requireLandingPageActor()
+  const actor = await requireWritableLandingPageActor()
   if (!actor) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }

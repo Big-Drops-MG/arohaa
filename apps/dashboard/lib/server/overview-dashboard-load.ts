@@ -36,6 +36,7 @@ import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribut
 import {
   appendDashboardCustomRangeParams,
   appendDashboardUtmParams,
+  resolveUtmFilterForActor,
 } from "@/lib/server/analytics-utm-params"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
@@ -223,6 +224,11 @@ export async function loadOverviewDashboardData(
 ): Promise<OverviewDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
+  const scopedUtmFilter = await resolveUtmFilterForActor(
+    actor,
+    landingPagePublicId,
+    utmFilter
+  )
 
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
@@ -245,7 +251,7 @@ export async function loadOverviewDashboardData(
     url.searchParams.set("form_type", formType)
     url.searchParams.set("range_id", rangeId)
     appendDashboardCustomRangeParams(url, rangeId, customRange)
-    appendDashboardUtmParams(url, utmFilter)
+    appendDashboardUtmParams(url, scopedUtmFilter)
 
     const overviewResp = await fetch(url.toString(), {
       headers: { "x-arohaa-internal": secret },
@@ -301,6 +307,11 @@ export async function loadOverviewDashboardDataForApi(
   if (!actor) {
     return { ok: false, status: 401, error: "Unauthorized" }
   }
+  const scopedUtmFilter = await resolveUtmFilterForActor(
+    actor,
+    landingPagePublicId,
+    utmFilter
+  )
 
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) {
@@ -310,7 +321,7 @@ export async function loadOverviewDashboardDataForApi(
   const data = await loadOverviewDashboardData(
     landingPagePublicId,
     rangeId,
-    utmFilter,
+    scopedUtmFilter,
     customRange
   )
   return { ok: true, data }
@@ -336,6 +347,11 @@ export async function loadOverviewCityMetricsForApi(
   if (!actor) {
     return { ok: false, status: 401, error: "Unauthorized" }
   }
+  const scopedUtmFilter = await resolveUtmFilterForActor(
+    actor,
+    landingPagePublicId,
+    utmFilter
+  )
 
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) {
@@ -359,7 +375,7 @@ export async function loadOverviewCityMetricsForApi(
     url.searchParams.set("form_type", formType)
     url.searchParams.set("range_id", rangeId)
     appendDashboardCustomRangeParams(url, rangeId, customRange)
-    appendDashboardUtmParams(url, utmFilter)
+    appendDashboardUtmParams(url, scopedUtmFilter)
 
     const resp = await fetch(url.toString(), {
       headers: { "x-arohaa-internal": secret },
