@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation"
 import { getDataExportEmptyDashboardData } from "@/features/data-export/controller/data-export-empty-data"
-import type { DataExportDashboardData } from "@/features/data-export/model/data-export"
+import {
+  DATA_EXPORT_PAGE_SIZE,
+  type DataExportDashboardData,
+} from "@/features/data-export/model/data-export"
 import {
   DEFAULT_TRAFFIC_RANGE_ID,
   TRAFFIC_DATE_RANGE_OPTIONS,
@@ -74,7 +77,7 @@ export async function loadDataExportDashboardData({
   landingPagePublicId,
   rangeId = DEFAULT_TRAFFIC_RANGE_ID,
   customRange,
-  limit = 15,
+  limit = DATA_EXPORT_PAGE_SIZE,
   offset = 0,
 }: {
   landingPagePublicId: string
@@ -92,7 +95,7 @@ export async function loadDataExportDashboardData({
 
   const hasRedirect = Boolean(row.redirectPageUrl?.trim())
   if (!hasRedirect) {
-    return getDataExportEmptyDashboardData(rangeId, false)
+    return getDataExportEmptyDashboardData(rangeId, false, row.brandName)
   }
 
   const analytics = await fetchLeads(
@@ -103,10 +106,11 @@ export async function loadDataExportDashboardData({
     offset
   )
   if (!analytics) {
-    return getDataExportEmptyDashboardData(rangeId, true)
+    return getDataExportEmptyDashboardData(rangeId, true, row.brandName)
   }
 
   return {
+    brandName: row.brandName,
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: (analytics.rangeId ??
       rangeId) as DataExportDashboardData["defaultDateRangeId"],
@@ -147,7 +151,13 @@ export async function loadDataExportDashboardDataForApi(
   }
 
   const rangeId = parseTrafficRangeId(rangeIdRaw)
-  const limit = Math.min(50, Math.max(1, Number(limitRaw ?? 15) || 15))
+  const limit = Math.min(
+    50,
+    Math.max(
+      1,
+      Number(limitRaw ?? DATA_EXPORT_PAGE_SIZE) || DATA_EXPORT_PAGE_SIZE
+    )
+  )
   const offset = Math.max(0, Number(offsetRaw ?? 0) || 0)
 
   const data = await loadDataExportDashboardData({

@@ -15,6 +15,7 @@ export type DataExportLeadRow = {
 }
 
 export type DataExportDashboardData = {
+  brandName: string
   dateRangeOptions: OverviewDateRangeOption[]
   defaultDateRangeId: OverviewDateRangeId
   leads: DataExportLeadRow[]
@@ -24,3 +25,5 @@ export type DataExportDashboardData = {
   hasMore: boolean
   hasRedirect: boolean
 }
+
+export const DATA_EXPORT_PAGE_SIZE = 15

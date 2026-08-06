@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import {
   Card,
@@ -10,7 +11,10 @@ import {
 } from "@workspace/ui/components/card"
 import { cn } from "@workspace/ui/lib/utils"
 import { getDataExportEmptyDashboardData } from "@/features/data-export/controller/data-export-empty-data"
-import type { DataExportDashboardData } from "@/features/data-export/model/data-export"
+import {
+  DATA_EXPORT_PAGE_SIZE,
+  type DataExportDashboardData,
+} from "@/features/data-export/model/data-export"
 import {
   overviewAnalyticCardHeaderClassName,
   overviewAnalyticCardShellClassName,
@@ -45,9 +49,10 @@ const PREFERRED_FIELD_ORDER = [
 ]
 
 const thClassName =
-  "px-5 py-2.5 text-left text-xs font-semibold whitespace-nowrap text-muted-foreground sm:px-6"
+  "px-4 py-2.5 text-left text-xs font-semibold whitespace-nowrap text-muted-foreground"
 
-const tdClassName = "px-5 py-3 align-top text-sm text-foreground sm:px-6"
+const tdClassName =
+  "px-4 py-2.5 align-middle text-sm whitespace-nowrap text-foreground"
 
 function formatWhen(value: string): string {
   const d = new Date(
@@ -89,6 +94,10 @@ function cellValue(value: string | undefined): string {
   return trimmed ? trimmed : "—"
 }
 
+function formatEntryCount(total: number): string {
+  return `${total.toLocaleString()} ${total === 1 ? "entry" : "entries"}`
+}
+
 export function DataExportDashboard({
   data: initialData,
   projectId,
@@ -98,8 +107,18 @@ export function DataExportDashboard({
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
   const [dashboardData, setDashboardData] = useState(initialData)
+  const [pageOffset, setPageOffset] = useState(initialData.offset)
   const [isBlockingLoad, setIsBlockingLoad] = useState(false)
-  const [loadingMore, setLoadingMore] = useState(false)
+  const [isPageLoading, setIsPageLoading] = useState(false)
+
+  const pageSize = dashboardData.limit || DATA_EXPORT_PAGE_SIZE
+  const total = dashboardData.total
+  const currentPage = Math.floor(pageOffset / pageSize) + 1
+  const totalPages = Math.max(1, Math.ceil(Math.max(total, 1) / pageSize))
+  const rangeStart = total === 0 ? 0 : pageOffset + 1
+  const rangeEnd = Math.min(pageOffset + dashboardData.leads.length, total)
+  const canGoPrev = pageOffset > 0
+  const canGoNext = dashboardData.hasMore || pageOffset + pageSize < total
 
   const fieldKeys = useMemo(() => {
     const keys = new Set<string>()
@@ -112,19 +131,20 @@ export function DataExportDashboard({
   const fetchPage = useCallback(
     async (
       offset: number,
-      append: boolean,
       signal?: AbortSignal,
-      options?: { quiet?: boolean }
+      options?: { quiet?: boolean; pageOnly?: boolean }
     ) => {
       const quiet = options?.quiet === true
-      if (append) setLoadingMore(true)
+      const pageOnly = options?.pageOnly === true
+      if (pageOnly) setIsPageLoading(true)
       else if (!quiet) setIsBlockingLoad(true)
+
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/data-export`,
         { rangeId: dateRangeId, customRange }
       )
       const withPaging = new URL(url, window.location.origin)
-      withPaging.searchParams.set("limit", "15")
+      withPaging.searchParams.set("limit", String(DATA_EXPORT_PAGE_SIZE))
       withPaging.searchParams.set("offset", String(offset))
       try {
         const res = await fetch(withPaging.pathname + withPaging.search, {
@@ -132,46 +152,47 @@ export function DataExportDashboard({
           signal,
         })
         if (!res.ok) {
-          if (!append && !quiet) {
+          if (!quiet) {
             setDashboardData(
               getDataExportEmptyDashboardData(
                 dateRangeId,
-                dashboardData.hasRedirect
+                dashboardData.hasRedirect,
+                dashboardData.brandName
               )
             )
+            setPageOffset(0)
           }
           return
         }
         const next = (await res.json()) as DataExportDashboardData
-        setDashboardData((prev) =>
-          append
-            ? {
-                ...next,
-                leads: [...prev.leads, ...next.leads],
-                offset: next.offset,
-                hasMore: next.hasMore,
-                total: next.total,
-              }
-            : next
-        )
+        setDashboardData(next)
+        setPageOffset(next.offset)
       } catch {
         if (signal?.aborted) return
-        if (!append && !quiet) {
+        if (!quiet) {
           setDashboardData(
             getDataExportEmptyDashboardData(
               dateRangeId,
-              dashboardData.hasRedirect
+              dashboardData.hasRedirect,
+              dashboardData.brandName
             )
           )
+          setPageOffset(0)
         }
       } finally {
         if (!signal?.aborted) {
           setIsBlockingLoad(false)
-          setLoadingMore(false)
+          setIsPageLoading(false)
         }
       }
     },
-    [customRange, dashboardData.hasRedirect, dateRangeId, projectId]
+    [
+      customRange,
+      dashboardData.brandName,
+      dashboardData.hasRedirect,
+      dateRangeId,
+      projectId,
+    ]
   )
 
   useEffect(() => {
@@ -185,10 +206,11 @@ export function DataExportDashboard({
       )
     ) {
       setDashboardData(initialData)
+      setPageOffset(initialData.offset)
       return
     }
     const controller = new AbortController()
-    void fetchPage(0, false, controller.signal)
+    void fetchPage(0, controller.signal)
     return () => controller.abort()
   }, [customRange, dateRangeId, fetchPage, initialData, isActive])
 
@@ -196,13 +218,19 @@ export function DataExportDashboard({
     if (!isActive || !dashboardData.hasRedirect) return
     const controller = new AbortController()
     const id = setInterval(() => {
-      void fetchPage(0, false, controller.signal, { quiet: true })
+      void fetchPage(pageOffset, controller.signal, { quiet: true })
     }, 15_000)
     return () => {
       clearInterval(id)
       controller.abort()
     }
-  }, [dashboardData.hasRedirect, fetchPage, isActive])
+  }, [dashboardData.hasRedirect, fetchPage, isActive, pageOffset])
+
+  function goToPage(nextOffset: number) {
+    if (isPageLoading || isBlockingLoad) return
+    const clamped = Math.max(0, nextOffset)
+    void fetchPage(clamped, undefined, { pageOnly: true })
+  }
 
   if (isTabLoading || isBlockingLoad) {
     return (
@@ -251,6 +279,7 @@ export function DataExportDashboard({
   }
 
   const colCount = 8 + fieldKeys.length
+  const projectLabel = dashboardData.brandName.trim() || "Project"
 
   return (
     <div className="space-y-4">
@@ -271,14 +300,32 @@ export function DataExportDashboard({
           "pb-2"
         )}
       >
-        <CardHeader className={overviewAnalyticCardHeaderClassName}>
-          <CardTitle className={overviewSectionHeadingClassName}>
-            Captured leads
-          </CardTitle>
+        <CardHeader
+          className={cn(
+            overviewAnalyticCardHeaderClassName,
+            "justify-between gap-3"
+          )}
+        >
+          <div className="min-w-0">
+            <CardTitle className={overviewSectionHeadingClassName}>
+              Captured leads
+            </CardTitle>
+            <p className="mt-0.5 truncate text-sm font-medium text-foreground">
+              {projectLabel}
+            </p>
+          </div>
+          <p className="shrink-0 text-sm text-muted-foreground tabular-nums">
+            {formatEntryCount(total)}
+          </p>
         </CardHeader>
-        <CardContent className="overflow-hidden p-0 pb-2">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[64rem] border-collapse text-sm">
+        <CardContent className="overflow-hidden p-0">
+          <div
+            className={cn(
+              "overflow-x-auto",
+              isPageLoading && "pointer-events-none opacity-60"
+            )}
+          >
+            <table className="w-max min-w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-border">
                   <th className={thClassName}>#</th>
@@ -300,7 +347,7 @@ export function DataExportDashboard({
                 {dashboardData.leads.length === 0 ? (
                   <tr>
                     <td
-                      className="px-5 py-10 text-center text-sm text-muted-foreground sm:px-6"
+                      className="px-4 py-10 text-center text-sm text-muted-foreground"
                       colSpan={colCount}
                     >
                       No captured rows for this range yet.
@@ -318,25 +365,17 @@ export function DataExportDashboard({
                           "text-muted-foreground tabular-nums"
                         )}
                       >
-                        {index + 1}
+                        {pageOffset + index + 1}
                       </td>
-                      <td className={cn(tdClassName, "whitespace-nowrap")}>
+                      <td className={tdClassName}>
                         {formatWhen(lead.createdAt)}
                       </td>
-                      <td className={cn(tdClassName, "whitespace-nowrap")}>
-                        {cellValue(lead.zip)}
-                      </td>
-                      <td className={cn(tdClassName, "max-w-[14rem]")}>
-                        <span className="break-all">
-                          {cellValue(lead.email)}
-                        </span>
-                      </td>
-                      <td className={cn(tdClassName, "whitespace-nowrap")}>
+                      <td className={tdClassName}>{cellValue(lead.zip)}</td>
+                      <td className={tdClassName}>{cellValue(lead.email)}</td>
+                      <td className={tdClassName}>
                         {cellValue(lead.utmSource)}
                       </td>
-                      <td className={cn(tdClassName, "whitespace-nowrap")}>
-                        {cellValue(lead.utmId)}
-                      </td>
+                      <td className={tdClassName}>{cellValue(lead.utmId)}</td>
                       <td className={tdClassName}>
                         <span
                           className={cn(
@@ -354,9 +393,8 @@ export function DataExportDashboard({
                           key={key}
                           className={cn(
                             tdClassName,
-                            isAddressFieldKey(key)
-                              ? "max-w-[18rem] min-w-[12rem] break-words whitespace-normal"
-                              : "max-w-[14rem] whitespace-nowrap"
+                            isAddressFieldKey(key) &&
+                              "max-w-[16rem] min-w-[12rem] whitespace-normal"
                           )}
                         >
                           {cellValue(lead.fields[key])}
@@ -376,21 +414,45 @@ export function DataExportDashboard({
               </tbody>
             </table>
           </div>
+
+          <div className="flex flex-col gap-3 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              {total === 0
+                ? "No entries"
+                : `Showing ${rangeStart.toLocaleString()}–${rangeEnd.toLocaleString()} of ${total.toLocaleString()}`}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-lg border-neutral-200 bg-white px-2.5 shadow-xs"
+                disabled={!canGoPrev || isPageLoading}
+                onClick={() => goToPage(pageOffset - pageSize)}
+                aria-label="Previous page"
+              >
+                <ChevronLeft className="size-4" />
+                Previous
+              </Button>
+              <span className="min-w-20 text-center text-sm text-muted-foreground tabular-nums">
+                {currentPage} / {totalPages}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-lg border-neutral-200 bg-white px-2.5 shadow-xs"
+                disabled={!canGoNext || isPageLoading}
+                onClick={() => goToPage(pageOffset + pageSize)}
+                aria-label="Next page"
+              >
+                Next
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
-
-      {dashboardData.hasMore ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="rounded-lg border-neutral-200 bg-white shadow-xs"
-          disabled={loadingMore}
-          onClick={() => void fetchPage(dashboardData.leads.length, true)}
-        >
-          {loadingMore ? "Loading..." : "Show 15 more"}
-        </Button>
-      ) : null}
     </div>
   )
 }
