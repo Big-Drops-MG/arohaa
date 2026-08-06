@@ -21,6 +21,9 @@ export type FunnelLeadRow = {
   createdAt: string
   zip: string
   email: string
+  utmSource: string
+  utmId: string
+  formSubmitted: boolean
   fields: Record<string, string>
 }
 
@@ -95,12 +98,16 @@ export async function getFunnelLeads({
         l.session_id AS session_id,
         l.last_at AS last_at,
         l.props AS props,
-        z.zip_val AS zip_val
+        l.form_submitted AS form_submitted,
+        z.zip_val AS zip_val,
+        u.utm_source AS utm_source,
+        u.utm_id AS utm_id
       FROM (
         SELECT
           session_id,
           max(created_at) AS last_at,
-          argMax(properties, (length(properties), created_at)) AS props
+          argMax(properties, (length(properties), created_at)) AS props,
+          max(event_name = 'form_success') AS form_submitted
         FROM events_raw
         WHERE ${where}
         GROUP BY session_id
@@ -114,6 +121,15 @@ export async function getFunnelLeads({
           AND zipcode != ''
         GROUP BY session_id
       ) AS z ON z.session_id = l.session_id
+      LEFT JOIN (
+        SELECT
+          session_id,
+          anyIf(utm_source, utm_source != '') AS utm_source,
+          anyIf(utm_id, utm_id != '') AS utm_id
+        FROM events_raw
+        WHERE ${rangeFilter()}
+        GROUP BY session_id
+      ) AS u ON u.session_id = l.session_id
       ORDER BY last_at DESC
       LIMIT {lim:UInt32} OFFSET {off:UInt32}
     `,
@@ -125,7 +141,10 @@ export async function getFunnelLeads({
         session_id: string
         last_at: string
         props: string
+        form_submitted: number | boolean | string
         zip_val: string
+        utm_source: string
+        utm_id: string
       }>
     ).data ?? []
 
@@ -139,6 +158,12 @@ export async function getFunnelLeads({
         createdAt: row.last_at,
         zip,
         email,
+        utmSource: (row.utm_source || '').trim(),
+        utmId: (row.utm_id || '').trim(),
+        formSubmitted:
+          row.form_submitted === true ||
+          row.form_submitted === 1 ||
+          row.form_submitted === '1',
         fields: fieldsWithoutReserved(fields),
       }
     })

@@ -24,6 +24,9 @@ type LeadsApiResponse = {
     createdAt: string
     zip: string
     email?: string
+    utmSource?: string
+    utmId?: string
+    formSubmitted?: boolean
     fields: Record<string, string>
   }>
   total?: number
@@ -112,6 +115,9 @@ export async function loadDataExportDashboardData({
       createdAt: lead.createdAt,
       zip: lead.zip,
       email: lead.email ?? "",
+      utmSource: lead.utmSource ?? "",
+      utmId: lead.utmId ?? "",
+      formSubmitted: Boolean(lead.formSubmitted),
       fields: lead.fields ?? {},
     })),
     total: analytics.total ?? 0,

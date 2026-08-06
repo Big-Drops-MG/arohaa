@@ -8,6 +8,9 @@ export type DataExportLeadRow = {
   createdAt: string
   zip: string
   email: string
+  utmSource: string
+  utmId: string
+  formSubmitted: boolean
   fields: Record<string, string>
 }
 

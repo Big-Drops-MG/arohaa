@@ -2,8 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@workspace/ui/components/button"
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@workspace/ui/components/card"
+import { cn } from "@workspace/ui/lib/utils"
 import { getDataExportEmptyDashboardData } from "@/features/data-export/controller/data-export-empty-data"
 import type { DataExportDashboardData } from "@/features/data-export/model/data-export"
+import {
+  overviewAnalyticCardHeaderClassName,
+  overviewAnalyticCardShellClassName,
+  overviewSectionHeadingClassName,
+} from "@/features/overview/view/overview-card-density"
+import { overviewCardPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import {
@@ -30,6 +43,11 @@ const PREFERRED_FIELD_ORDER = [
   "city",
   "state",
 ]
+
+const thClassName =
+  "px-5 py-2.5 text-left text-xs font-semibold whitespace-nowrap text-muted-foreground sm:px-6"
+
+const tdClassName = "px-5 py-3 align-top text-sm text-foreground sm:px-6"
 
 function formatWhen(value: string): string {
   const d = new Date(
@@ -60,6 +78,15 @@ function sortFieldKeys(keys: string[]): string[] {
     if (bi != null) return 1
     return a.localeCompare(b)
   })
+}
+
+function isAddressFieldKey(key: string): boolean {
+  return /^address(_line_?[12])?$/i.test(key.trim())
+}
+
+function cellValue(value: string | undefined): string {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : "—"
 }
 
 export function DataExportDashboard({
@@ -189,7 +216,7 @@ export function DataExportDashboard({
           onCustomRangeChange={setCustomRange}
           dateRangeOptions={dashboardData.dateRangeOptions}
         />
-        <div className="h-40 animate-pulse rounded-lg bg-muted" />
+        <div className="h-40 animate-pulse rounded-xl border border-border bg-muted/40" />
       </div>
     )
   }
@@ -206,15 +233,24 @@ export function DataExportDashboard({
           onCustomRangeChange={setCustomRange}
           dateRangeOptions={dashboardData.dateRangeOptions}
         />
-        <p className="text-sm text-muted-foreground">
-          Set an Offer / redirect page URL in Settings (Zip form type) to start
-          capturing offer-form details.
-        </p>
+        <Card
+          className={cn(
+            overviewCardPointerFocusResetClassName,
+            overviewAnalyticCardShellClassName
+          )}
+        >
+          <CardContent className="px-5 py-8 sm:px-6">
+            <p className="text-sm text-muted-foreground">
+              Set an Offer / redirect page URL in Settings (Zip form type) to
+              start capturing offer-form details.
+            </p>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
-  const colCount = 5 + fieldKeys.length
+  const colCount = 8 + fieldKeys.length
 
   return (
     <div className="space-y-4">
@@ -228,69 +264,127 @@ export function DataExportDashboard({
         dateRangeOptions={dashboardData.dateRangeOptions}
       />
 
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full min-w-180 text-left text-sm">
-          <thead className="border-b bg-muted/40">
-            <tr>
-              <th className="px-3 py-2 font-medium">#</th>
-              <th className="px-3 py-2 font-medium">When</th>
-              <th className="px-3 py-2 font-medium">Zip</th>
-              <th className="px-3 py-2 font-medium">Email</th>
-              {fieldKeys.map((key) => (
-                <th
-                  key={key}
-                  className="px-3 py-2 font-medium whitespace-nowrap"
-                >
-                  {key}
-                </th>
-              ))}
-              <th className="px-3 py-2 font-medium">Session</th>
-            </tr>
-          </thead>
-          <tbody>
-            {dashboardData.leads.length === 0 ? (
-              <tr>
-                <td
-                  className="px-3 py-6 text-muted-foreground"
-                  colSpan={colCount}
-                >
-                  No captured rows for this range yet.
-                </td>
-              </tr>
-            ) : (
-              dashboardData.leads.map((lead, index) => (
-                <tr
-                  key={`${lead.sessionId}-${lead.createdAt}`}
-                  className="border-b"
-                >
-                  <td className="px-3 py-2 text-muted-foreground">
-                    {index + 1}
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    {formatWhen(lead.createdAt)}
-                  </td>
-                  <td className="px-3 py-2">{lead.zip || "—"}</td>
-                  <td className="px-3 py-2">{lead.email || "—"}</td>
+      <Card
+        className={cn(
+          overviewCardPointerFocusResetClassName,
+          overviewAnalyticCardShellClassName,
+          "pb-2"
+        )}
+      >
+        <CardHeader className={overviewAnalyticCardHeaderClassName}>
+          <CardTitle className={overviewSectionHeadingClassName}>
+            Captured leads
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="overflow-hidden p-0 pb-2">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[64rem] border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className={thClassName}>#</th>
+                  <th className={thClassName}>When</th>
+                  <th className={thClassName}>Zip</th>
+                  <th className={thClassName}>Email</th>
+                  <th className={thClassName}>utm_source</th>
+                  <th className={thClassName}>utm_id</th>
+                  <th className={thClassName}>Form Submitted</th>
                   {fieldKeys.map((key) => (
-                    <td key={key} className="max-w-[16rem] truncate px-3 py-2">
-                      {lead.fields[key] || "—"}
-                    </td>
+                    <th key={key} className={thClassName}>
+                      {key}
+                    </th>
                   ))}
-                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
-                    {lead.sessionId.slice(0, 8)}
-                  </td>
+                  <th className={thClassName}>Session</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {dashboardData.leads.length === 0 ? (
+                  <tr>
+                    <td
+                      className="px-5 py-10 text-center text-sm text-muted-foreground sm:px-6"
+                      colSpan={colCount}
+                    >
+                      No captured rows for this range yet.
+                    </td>
+                  </tr>
+                ) : (
+                  dashboardData.leads.map((lead, index) => (
+                    <tr
+                      key={`${lead.sessionId}-${lead.createdAt}`}
+                      className="border-b border-border last:border-b-0"
+                    >
+                      <td
+                        className={cn(
+                          tdClassName,
+                          "text-muted-foreground tabular-nums"
+                        )}
+                      >
+                        {index + 1}
+                      </td>
+                      <td className={cn(tdClassName, "whitespace-nowrap")}>
+                        {formatWhen(lead.createdAt)}
+                      </td>
+                      <td className={cn(tdClassName, "whitespace-nowrap")}>
+                        {cellValue(lead.zip)}
+                      </td>
+                      <td className={cn(tdClassName, "max-w-[14rem]")}>
+                        <span className="break-all">
+                          {cellValue(lead.email)}
+                        </span>
+                      </td>
+                      <td className={cn(tdClassName, "whitespace-nowrap")}>
+                        {cellValue(lead.utmSource)}
+                      </td>
+                      <td className={cn(tdClassName, "whitespace-nowrap")}>
+                        {cellValue(lead.utmId)}
+                      </td>
+                      <td className={tdClassName}>
+                        <span
+                          className={cn(
+                            "inline-flex rounded-md px-2 py-0.5 text-xs font-medium",
+                            lead.formSubmitted
+                              ? "bg-emerald-50 text-emerald-700"
+                              : "bg-neutral-100 text-neutral-600"
+                          )}
+                        >
+                          {lead.formSubmitted ? "Yes" : "No"}
+                        </span>
+                      </td>
+                      {fieldKeys.map((key) => (
+                        <td
+                          key={key}
+                          className={cn(
+                            tdClassName,
+                            isAddressFieldKey(key)
+                              ? "max-w-[18rem] min-w-[12rem] break-words whitespace-normal"
+                              : "max-w-[14rem] whitespace-nowrap"
+                          )}
+                        >
+                          {cellValue(lead.fields[key])}
+                        </td>
+                      ))}
+                      <td
+                        className={cn(
+                          tdClassName,
+                          "font-mono text-xs text-muted-foreground"
+                        )}
+                      >
+                        {lead.sessionId.slice(0, 8)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
       {dashboardData.hasMore ? (
         <Button
           type="button"
           variant="outline"
           size="sm"
+          className="rounded-lg border-neutral-200 bg-white shadow-xs"
           disabled={loadingMore}
           onClick={() => void fetchPage(dashboardData.leads.length, true)}
         >
