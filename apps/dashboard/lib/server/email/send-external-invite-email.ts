@@ -1,6 +1,11 @@
 import "server-only"
 import { createElement } from "react"
-import { ExternalMemberInviteEmail } from "@/emails/templates"
+import { generateURI } from "otplib"
+import {
+  ExternalMemberAccessEmail,
+  ExternalMemberInviteEmail,
+  type ExternalMemberAccessProject,
+} from "@/emails/templates"
 import { sendEmail } from "@/lib/server/email/send-email"
 
 function resolveAppBaseUrl(): string {
@@ -16,28 +21,65 @@ function resolveAppBaseUrl(): string {
 type SendExternalMemberInviteEmailInput = {
   to: string
   recipientFirstName?: string
+  recipientLastName?: string
   password: string
   twoFactorSecret: string
+  roleLabel?: string
 }
 
 export async function sendExternalMemberInviteEmail(
   input: SendExternalMemberInviteEmailInput
 ): Promise<{ messageId?: string } | null> {
   const base = resolveAppBaseUrl()
+  const otpauthUrl = generateURI({
+    issuer: "Arohaa Dashboard",
+    label: input.to,
+    secret: input.twoFactorSecret,
+  })
+
   try {
     return await sendEmail({
       to: input.to,
-      subject: "Your Arohaa collaborator account",
+      subject: "Your Arohaa collaborator account details",
       react: createElement(ExternalMemberInviteEmail, {
         recipientFirstName: input.recipientFirstName,
+        recipientLastName: input.recipientLastName,
         email: input.to,
         password: input.password,
         twoFactorSecret: input.twoFactorSecret,
+        otpauthUrl,
+        roleLabel: input.roleLabel ?? "External Collaborator",
         loginUrl: `${base}/login`,
       }),
     })
   } catch (err) {
     console.error("[external-invite-email] failed to send", err)
+    return null
+  }
+}
+
+type SendExternalMemberAccessEmailInput = {
+  to: string
+  recipientFirstName?: string
+  projects: ExternalMemberAccessProject[]
+}
+
+export async function sendExternalMemberAccessEmail(
+  input: SendExternalMemberAccessEmailInput
+): Promise<{ messageId?: string } | null> {
+  const base = resolveAppBaseUrl()
+  try {
+    return await sendEmail({
+      to: input.to,
+      subject: "Your Arohaa project access",
+      react: createElement(ExternalMemberAccessEmail, {
+        recipientFirstName: input.recipientFirstName,
+        projects: input.projects,
+        dashboardUrl: `${base}/dashboard`,
+      }),
+    })
+  } catch (err) {
+    console.error("[external-access-email] failed to send", err)
     return null
   }
 }

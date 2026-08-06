@@ -19,3 +19,8 @@ export {
   ExternalMemberInviteEmail,
   externalMemberInvitePreviewProps,
 } from "./ExternalMemberInviteEmail"
+export {
+  ExternalMemberAccessEmail,
+  externalMemberAccessPreviewProps,
+  type ExternalMemberAccessProject,
+} from "./ExternalMemberAccessEmail"

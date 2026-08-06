@@ -207,10 +207,10 @@ export function AddExternalMemberDialog({
     mode.kind === "edit"
       ? "Choose projects, a UTM Source per project, then tabs and sections."
       : step === "details"
-        ? "Create the account, then assign read-only project access."
+        ? "Create the account — login details are emailed to the collaborator automatically."
         : emailSent === false
-          ? "Account created, but the credentials email failed to send. Share the password manually, then assign privileges."
-          : "Credentials were emailed. Choose projects, a UTM Source per project, then tabs and sections."
+          ? "Account created, but the credentials email failed to send. Share the password manually, or resend from Details later, then assign privileges."
+          : "Credentials were emailed with name, email, password, and 2FA setup. Choose projects, UTM Sources, then tabs and sections."
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -251,7 +251,7 @@ export function AddExternalMemberDialog({
           ) : null}
         </div>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5 sm:px-6">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6">
           {step === "details" ? (
             <>
               <div className="grid gap-4 sm:grid-cols-2">

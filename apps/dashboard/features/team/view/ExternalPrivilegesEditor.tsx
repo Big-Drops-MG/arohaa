@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Check, ChevronDown, ChevronRight, Search, X } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
+import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import {
   EXTERNAL_PRIVILEGE_TABS,
@@ -62,6 +63,7 @@ function ProjectUtmSourceMultiSelect({
   const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
+  const [draft, setDraft] = useState<string[]>(values)
   const [options, setOptions] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -112,6 +114,11 @@ function ProjectUtmSourceMultiSelect({
 
   useEffect(() => {
     if (!open) return
+    setDraft(values)
+  }, [open, values])
+
+  useEffect(() => {
+    if (!open) return
     function onPointerDown(event: MouseEvent) {
       if (!rootRef.current?.contains(event.target as Node)) {
         setOpen(false)
@@ -132,7 +139,7 @@ function ProjectUtmSourceMultiSelect({
     if (!open) setSearch("")
   }, [open])
 
-  const selected = useMemo(() => new Set(values), [values])
+  const selected = useMemo(() => new Set(draft), [draft])
 
   const filteredOptions = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -140,16 +147,30 @@ function ProjectUtmSourceMultiSelect({
     return options.filter((option) => option.toLowerCase().includes(q))
   }, [options, search])
 
+  const isDirty = useMemo(() => {
+    if (draft.length !== values.length) return true
+    const applied = new Set(values)
+    return draft.some((value) => !applied.has(value))
+  }, [draft, values])
+
   function toggleValue(value: string) {
-    if (selected.has(value)) {
-      onChange(values.filter((item) => item !== value))
-      return
-    }
-    onChange(
-      [...values, value].sort((a, b) =>
+    setDraft((prev) => {
+      if (prev.includes(value)) {
+        return prev.filter((item) => item !== value)
+      }
+      return [...prev, value].sort((a, b) =>
         a.localeCompare(b, undefined, { sensitivity: "base" })
       )
-    )
+    })
+  }
+
+  function applyDraft() {
+    onChange(draft)
+    setOpen(false)
+  }
+
+  function clearDraft() {
+    setDraft([])
   }
 
   const triggerLabel =
@@ -267,20 +288,30 @@ function ProjectUtmSourceMultiSelect({
               )}
             </div>
 
-            {values.length > 0 ? (
-              <div className="flex items-center justify-between gap-2 border-t border-neutral-200 bg-neutral-50 px-3 py-2">
-                <span className="text-xs text-muted-foreground">
-                  {values.length} selected
-                </span>
-                <button
-                  type="button"
-                  className="text-xs font-medium text-neutral-700 hover:text-neutral-950"
-                  onClick={() => onChange([])}
-                >
-                  Clear
-                </button>
-              </div>
-            ) : null}
+            <div className="flex items-center justify-between gap-2 border-t border-neutral-200 bg-neutral-50 px-3 py-2">
+              <button
+                type="button"
+                className={cn(
+                  "text-xs font-medium",
+                  draft.length > 0
+                    ? "text-neutral-700 hover:text-neutral-950"
+                    : "cursor-default text-neutral-400"
+                )}
+                disabled={draft.length === 0}
+                onClick={clearDraft}
+              >
+                Clear
+              </button>
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 px-3"
+                disabled={!isDirty}
+                onClick={applyDraft}
+              >
+                Apply
+              </Button>
+            </div>
           </div>
         ) : null}
       </div>
@@ -528,7 +559,7 @@ export function ExternalPrivilegesEditor({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 p-0.5">
       <p className="text-xs text-muted-foreground">
         Access is read-only. Choose a project, pick one or more UTM Sources,
         then enable tabs and sections. Team and Ops are never available to
@@ -553,14 +584,14 @@ export function ExternalPrivilegesEditor({
           No projects match &ldquo;{searchQuery.trim()}&rdquo;.
         </p>
       ) : (
-        <ul className="divide-y divide-border rounded-lg border border-border">
+        <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-white">
           {filteredProjects.map((project) => {
             const projectOn = selectedProjects.has(project.publicId)
             const expanded = expandedProjects.has(project.publicId)
             const utmSources = utmByProject.get(project.publicId) ?? []
             const tabsEnabled = utmSources.length > 0
             return (
-              <li key={project.publicId} className="bg-white">
+              <li key={project.publicId}>
                 <div className="flex items-center gap-2 px-3 py-2.5">
                   <input
                     type="checkbox"

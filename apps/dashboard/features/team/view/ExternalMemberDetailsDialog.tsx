@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, Trash2 } from "lucide-react"
+import { Loader2, Mail, Trash2 } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import {
   Dialog,
@@ -15,6 +15,7 @@ import {
   getExternalMemberPrivileges,
   listProjectsForPrivileges,
   removeExternalTeamMember,
+  resendExternalMemberInvite,
 } from "@/actions/team-member.actions"
 import {
   EXTERNAL_PRIVILEGE_TABS,
@@ -109,6 +110,8 @@ export function ExternalMemberDetailsDialog({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmRemove, setConfirmRemove] = useState(false)
+  const [resendMessage, setResendMessage] = useState<string | null>(null)
+  const [isResending, setIsResending] = useState(false)
   const [grants, setGrants] = useState<ExternalPrivilegeGrant[]>([])
   const [scopes, setScopes] = useState<ExternalProjectScope[]>([])
   const [projects, setProjects] = useState<
@@ -121,6 +124,7 @@ export function ExternalMemberDetailsDialog({
     setLoading(true)
     setError(null)
     setConfirmRemove(false)
+    setResendMessage(null)
 
     startTransition(async () => {
       const [privilegesResult, projectsResult] = await Promise.all([
@@ -156,8 +160,27 @@ export function ExternalMemberDetailsDialog({
     if (!next) {
       setConfirmRemove(false)
       setError(null)
+      setResendMessage(null)
     }
     onOpenChange(next)
+  }
+
+  function handleResendInvite() {
+    if (!member) return
+    setError(null)
+    setResendMessage(null)
+    setIsResending(true)
+    startTransition(async () => {
+      const result = await resendExternalMemberInvite(member.id)
+      setIsResending(false)
+      if (result.error) {
+        setError(result.error)
+        return
+      }
+      setResendMessage(
+        `New credentials were emailed to ${member.email || "the member"}.`
+      )
+    })
   }
 
   function handleRemove() {
@@ -334,6 +357,12 @@ export function ExternalMemberDetailsDialog({
             </div>
           ) : null}
 
+          {resendMessage ? (
+            <p className="text-sm text-emerald-700" role="status">
+              {resendMessage}
+            </p>
+          ) : null}
+
           {error ? (
             <p className="text-sm text-destructive" role="alert">
               {error}
@@ -341,7 +370,7 @@ export function ExternalMemberDetailsDialog({
           ) : null}
         </div>
 
-        <div className="flex shrink-0 justify-between gap-2 border-t border-neutral-200 bg-white px-5 py-4 sm:px-6">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-neutral-200 bg-white px-5 py-4 sm:px-6">
           <Button
             type="button"
             variant="outline"
@@ -352,15 +381,33 @@ export function ExternalMemberDetailsDialog({
             <Trash2 className="size-3.5" />
             Remove user
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-9 rounded-lg border-neutral-200 bg-white shadow-xs"
-            disabled={isPending}
-            onClick={() => handleOpenChange(false)}
-          >
-            Close
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 rounded-lg border-neutral-200 bg-white shadow-xs"
+              disabled={
+                isPending || isResending || confirmRemove || !member.email
+              }
+              onClick={handleResendInvite}
+            >
+              {isResending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Mail className="size-3.5" />
+              )}
+              Resend credentials
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 rounded-lg border-neutral-200 bg-white shadow-xs"
+              disabled={isPending}
+              onClick={() => handleOpenChange(false)}
+            >
+              Close
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

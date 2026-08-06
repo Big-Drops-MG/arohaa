@@ -25,9 +25,13 @@ import {
   loadExternalProjectScopes,
   replaceExternalPrivileges,
 } from "@/lib/server/external-access"
-import { sendExternalMemberInviteEmail } from "@/lib/server/email/send-external-invite-email"
+import {
+  sendExternalMemberAccessEmail,
+  sendExternalMemberInviteEmail,
+} from "@/lib/server/email/send-external-invite-email"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { ensureRoleExists } from "@/lib/server/roles"
+import type { ExternalMemberAccessProject } from "@/emails/templates"
 
 const MIN_PASSWORD_LENGTH = 12
 
@@ -160,8 +164,10 @@ export async function createExternalTeamMember(input: {
   const emailResult = await sendExternalMemberInviteEmail({
     to: email,
     recipientFirstName: firstName,
+    recipientLastName: lastName,
     password,
     twoFactorSecret,
+    roleLabel: savedRole,
   })
 
   revalidatePath("/dashboard/team")
@@ -176,7 +182,7 @@ export async function saveExternalMemberPrivileges(input: {
   userId: string
   grants: ExternalPrivilegeGrant[]
   scopes?: ExternalProjectScope[]
-}): Promise<{ error?: string; success?: true }> {
+}): Promise<{ error?: string; success?: true; accessEmailSent?: boolean }> {
   const actor = await requireLandingPageActor()
   if (
     !actor ||
@@ -233,8 +239,121 @@ export async function saveExternalMemberPrivileges(input: {
   )
 
   await replaceExternalPrivileges(input.userId, grants, scopesForGrants)
+
+  const projects = await db
+    .select({
+      publicId: landingPages.publicId,
+      brandName: landingPages.brandName,
+    })
+    .from(landingPages)
+    .where(isNull(landingPages.deletedAt))
+
+  const brandById = new Map(projects.map((p) => [p.publicId, p.brandName]))
+  const utmByProject = new Map<string, string[]>()
+  for (const scope of scopesForGrants) {
+    const list = utmByProject.get(scope.landingPagePublicId) ?? []
+    if (!list.includes(scope.utmSource)) list.push(scope.utmSource)
+    utmByProject.set(scope.landingPagePublicId, list)
+  }
+
+  const accessProjects: ExternalMemberAccessProject[] = []
+  for (const publicId of projectIds) {
+    const tabLabels = new Set<string>()
+    for (const grant of grants) {
+      if (grant.landingPagePublicId !== publicId) continue
+      const tabDef = EXTERNAL_PRIVILEGE_TABS.find((t) => t.value === grant.tab)
+      if (tabDef) tabLabels.add(tabDef.label)
+    }
+    accessProjects.push({
+      brandName: brandById.get(publicId) ?? publicId,
+      utmSources: (utmByProject.get(publicId) ?? []).sort((a, b) =>
+        a.localeCompare(b)
+      ),
+      tabs: [...tabLabels],
+    })
+  }
+  accessProjects.sort((a, b) => a.brandName.localeCompare(b.brandName))
+
+  let accessEmailSent = false
+  if (target.email) {
+    const accessEmailResult = await sendExternalMemberAccessEmail({
+      to: target.email,
+      recipientFirstName: target.firstName ?? undefined,
+      projects: accessProjects,
+    })
+    accessEmailSent = Boolean(accessEmailResult)
+  }
+
   revalidatePath("/dashboard/team")
-  return { success: true }
+  return {
+    success: true,
+    accessEmailSent,
+  }
+}
+
+function generateInvitePassword(length = 20): string {
+  const alphabet =
+    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*"
+  const bytes = new Uint8Array(length)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]!).join("")
+}
+
+/**
+ * Reset credentials for an external member and email the new details.
+ */
+export async function resendExternalMemberInvite(
+  userId: string
+): Promise<{ error?: string; success?: true; emailSent?: boolean }> {
+  const actor = await requireLandingPageActor()
+  if (
+    !actor ||
+    !isApprovedAccess(actor.accessStatus) ||
+    isExternalTeamKind(actor.teamKind)
+  ) {
+    return { error: "Unauthorized." }
+  }
+
+  const target = await assertExternalTarget(userId)
+  if (!target || !isApprovedAccess(target.accessStatus)) {
+    return { error: "External member not found." }
+  }
+  if (!target.email) {
+    return { error: "This member has no email address." }
+  }
+
+  const password = generateInvitePassword()
+  const passwordHash = await bcrypt.hash(password, 12)
+  const twoFactorSecret = generateSecret()
+
+  await db
+    .update(users)
+    .set({
+      password: passwordHash,
+      isTwoFactorEnabled: true,
+      twoFactorSecret,
+      pendingTwoFactorSecret: null,
+    })
+    .where(eq(users.id, userId))
+
+  const emailResult = await sendExternalMemberInviteEmail({
+    to: target.email,
+    recipientFirstName: target.firstName ?? undefined,
+    recipientLastName: target.lastName ?? undefined,
+    password,
+    twoFactorSecret,
+    roleLabel: target.role?.trim() || EXTERNAL_MEMBER_ROLE,
+  })
+
+  if (!emailResult) {
+    return {
+      error:
+        "Credentials were reset, but the email failed to send. Try again in a moment.",
+    }
+  }
+
+  revalidatePath("/dashboard/team")
+  return { success: true, emailSent: true }
 }
 
 export async function getExternalMemberPrivileges(userId: string): Promise<{
