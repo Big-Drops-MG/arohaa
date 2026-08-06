@@ -323,9 +323,9 @@ export function ExternalMemberDetailsDialog({
           {confirmRemove ? (
             <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-3">
               <p className="text-sm text-foreground">
-                Remove <span className="font-medium">{member.name}</span>? They
-                will lose dashboard access immediately and cannot sign in with
-                their current credentials.
+                Remove <span className="font-medium">{member.name}</span>? Their
+                account will be permanently deleted and they will lose dashboard
+                access immediately.
               </p>
               <div className="flex flex-wrap justify-end gap-2">
                 <Button

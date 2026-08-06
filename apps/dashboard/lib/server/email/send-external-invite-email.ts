@@ -1,6 +1,5 @@
 import "server-only"
 import { createElement } from "react"
-import { generateURI } from "otplib"
 import {
   ExternalMemberAccessEmail,
   ExternalMemberInviteEmail,
@@ -23,32 +22,22 @@ type SendExternalMemberInviteEmailInput = {
   recipientFirstName?: string
   recipientLastName?: string
   password: string
-  twoFactorSecret: string
-  roleLabel?: string
 }
 
 export async function sendExternalMemberInviteEmail(
   input: SendExternalMemberInviteEmailInput
 ): Promise<{ messageId?: string } | null> {
   const base = resolveAppBaseUrl()
-  const otpauthUrl = generateURI({
-    issuer: "Arohaa Dashboard",
-    label: input.to,
-    secret: input.twoFactorSecret,
-  })
 
   try {
     return await sendEmail({
       to: input.to,
-      subject: "Your Arohaa collaborator account details",
+      subject: "Your Arohaa partner account details",
       react: createElement(ExternalMemberInviteEmail, {
         recipientFirstName: input.recipientFirstName,
         recipientLastName: input.recipientLastName,
         email: input.to,
         password: input.password,
-        twoFactorSecret: input.twoFactorSecret,
-        otpauthUrl,
-        roleLabel: input.roleLabel ?? "External Collaborator",
         loginUrl: `${base}/login`,
       }),
     })

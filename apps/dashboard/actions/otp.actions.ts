@@ -47,7 +47,9 @@ export async function generateOTPSetup() {
   return { qrCodeDataUrl, enrolledEmail }
 }
 
-export type VerifyOTPResult = { success: true } | { error: string }
+export type VerifyOTPResult =
+  | { success: true; redirectTo: string }
+  | { error: string }
 
 export async function verifyAndEnableOTP(
   token: string
@@ -101,5 +103,6 @@ export async function verifyAndEnableOTP(
     path: "/",
   })
 
-  return { success: true }
+  const { resolvePostAuthPath } = await import("@/lib/server/access-status")
+  return { success: true, redirectTo: resolvePostAuthPath(row) }
 }

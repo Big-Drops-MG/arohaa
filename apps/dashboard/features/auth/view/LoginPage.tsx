@@ -99,6 +99,15 @@ export function LoginPage() {
       if (result && "requiresTwoFactor" in result && result.requiresTwoFactor) {
         setShowTwoFactor(true)
         resetOtp()
+        return
+      }
+      if (
+        result &&
+        "redirectTo" in result &&
+        typeof result.redirectTo === "string"
+      ) {
+        router.push(result.redirectTo)
+        router.refresh()
       }
     } finally {
       setIsProcessing(false)

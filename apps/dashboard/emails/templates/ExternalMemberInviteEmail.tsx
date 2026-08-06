@@ -6,6 +6,7 @@ import {
   Heading,
   Hr,
   Html,
+  Img,
   Preview,
   Section,
   Text,
@@ -16,9 +17,6 @@ type ExternalMemberInviteEmailProps = {
   recipientLastName?: string
   email: string
   password: string
-  twoFactorSecret: string
-  otpauthUrl?: string
-  roleLabel?: string
   loginUrl: string
 }
 
@@ -27,9 +25,6 @@ export function ExternalMemberInviteEmail({
   recipientLastName,
   email,
   password,
-  twoFactorSecret,
-  otpauthUrl,
-  roleLabel = "External Collaborator",
   loginUrl,
 }: ExternalMemberInviteEmailProps) {
   const fullName = [recipientFirstName?.trim(), recipientLastName?.trim()]
@@ -42,14 +37,25 @@ export function ExternalMemberInviteEmail({
   return (
     <Html>
       <Head />
-      <Preview>Your Arohaa account details</Preview>
+      <Preview>Your Arohaa partner account details</Preview>
       <Body style={main}>
         <Container style={container}>
+          <Section style={logoRow}>
+            <Img
+              src="https://www.arohaa.net/auth-logo.svg"
+              width="140"
+              alt="Arohaa Logo"
+              style={logo}
+            />
+          </Section>
+
+          <Hr style={hr} />
+
           <Heading style={heading}>Your Arohaa account</Heading>
           <Text style={text}>{greeting}</Text>
           <Text style={text}>
-            An Arohaa administrator created an external collaborator account for
-            you. Your account details are below — keep this email private.
+            An Arohaa administrator created a partner account for you. Your
+            sign-in details are below — keep this email private.
           </Text>
           <Section style={credBox}>
             {fullName ? (
@@ -58,25 +64,15 @@ export function ExternalMemberInviteEmail({
                 <Text style={credValue}>{fullName}</Text>
               </>
             ) : null}
-            <Text style={credLabel}>Role</Text>
-            <Text style={credValue}>{roleLabel}</Text>
             <Text style={credLabel}>Email</Text>
             <Text style={credValue}>{email}</Text>
             <Text style={credLabel}>Password</Text>
-            <Text style={credValue}>{password}</Text>
-            <Text style={credLabel}>Authenticator secret (2FA)</Text>
-            <Text style={credValue}>{twoFactorSecret}</Text>
-            {otpauthUrl ? (
-              <>
-                <Text style={credLabel}>Authenticator setup link</Text>
-                <Text style={credValue}>{otpauthUrl}</Text>
-              </>
-            ) : null}
+            <Text style={credValueLast}>{password}</Text>
           </Section>
           <Text style={text}>
-            Add the authenticator secret (or open the setup link) in Google
-            Authenticator, 1Password, or a similar app. Then sign in with your
-            email, password, and a 6-digit code from the app.
+            Sign in with your email and password. On first login you will scan a
+            QR code with Google Authenticator, 1Password, or a similar app, then
+            enter the 6-digit code to finish setup.
           </Text>
           <Section style={buttonRow}>
             <Button href={loginUrl} style={button}>
@@ -100,10 +96,6 @@ export const externalMemberInvitePreviewProps: ExternalMemberInviteEmailProps =
     recipientLastName: "Partner",
     email: "alex@partner.com",
     password: "ExamplePass-9xK2!",
-    twoFactorSecret: "JBSWY3DPEHPK3PXP",
-    otpauthUrl:
-      "otpauth://totp/Arohaa%20Dashboard:alex%40partner.com?secret=JBSWY3DPEHPK3PXP&issuer=Arohaa%20Dashboard",
-    roleLabel: "External Collaborator",
     loginUrl: "https://dashboard.arohaa.com/login",
   }
 
@@ -120,6 +112,18 @@ const container = {
   padding: "32px 28px",
   maxWidth: "520px",
   border: "1px solid #e6ebf2",
+}
+
+const logoRow = {
+  textAlign: "center" as const,
+  marginBottom: "8px",
+}
+
+const logo = {
+  height: "auto",
+  maxWidth: "100%",
+  display: "block",
+  margin: "0 auto",
 }
 
 const heading = {
@@ -159,6 +163,11 @@ const credValue = {
   fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
   margin: "0 0 12px",
   wordBreak: "break-all" as const,
+}
+
+const credValueLast = {
+  ...credValue,
+  margin: "0",
 }
 
 const buttonRow = {

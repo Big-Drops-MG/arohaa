@@ -525,7 +525,7 @@ export function TeamDashboard({ data }: TeamDashboardProps) {
             <DialogTitle>Remove external member</DialogTitle>
             <DialogDescription>
               {removeConfirmMember
-                ? `Remove ${removeConfirmMember.name}? They will lose dashboard access immediately and cannot sign in with their current credentials.`
+                ? `Remove ${removeConfirmMember.name}? Their account will be permanently deleted and they will lose dashboard access immediately.`
                 : "This member will lose dashboard access."}
             </DialogDescription>
           </DialogHeader>

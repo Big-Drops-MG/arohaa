@@ -18,7 +18,6 @@ import {
   type ExternalProjectScope,
 } from "@/features/team/model/external-privileges"
 import { isApprovedAccess } from "@/lib/server/access-status"
-import { setUserAccessStatus } from "@/lib/server/access-requests"
 import {
   assertExternalTarget,
   loadExternalPrivileges,
@@ -77,7 +76,7 @@ function sanitizeGrants(
   return cleaned
 }
 
-const EXTERNAL_MEMBER_ROLE = "External Collaborator"
+const EXTERNAL_MEMBER_ROLE = "Partner"
 
 export async function createExternalTeamMember(input: {
   firstName: string
@@ -124,7 +123,14 @@ export async function createExternalTeamMember(input: {
     where: whereUserEmail(email),
   })
   if (existing) {
-    return { error: "A team member with this email already exists." }
+    const canReplaceRejectedExternal =
+      isExternalTeamKind(existing.teamKind) &&
+      existing.accessStatus === "rejected"
+    if (!canReplaceRejectedExternal) {
+      return { error: "A team member with this email already exists." }
+    }
+    await replaceExternalPrivileges(existing.id, [], [])
+    await db.delete(users).where(eq(users.id, existing.id))
   }
 
   let savedRole: string
@@ -150,9 +156,9 @@ export async function createExternalTeamMember(input: {
       accessReviewedAt: now,
       accessReviewedByUserId: actor.id,
       teamKind: "external",
-      isTwoFactorEnabled: true,
-      twoFactorSecret,
-      pendingTwoFactorSecret: null,
+      isTwoFactorEnabled: false,
+      twoFactorSecret: null,
+      pendingTwoFactorSecret: twoFactorSecret,
     })
     .returning({ id: users.id })
 
@@ -166,8 +172,6 @@ export async function createExternalTeamMember(input: {
     recipientFirstName: firstName,
     recipientLastName: lastName,
     password,
-    twoFactorSecret,
-    roleLabel: savedRole,
   })
 
   revalidatePath("/dashboard/team")
@@ -330,9 +334,9 @@ export async function resendExternalMemberInvite(
     .update(users)
     .set({
       password: passwordHash,
-      isTwoFactorEnabled: true,
-      twoFactorSecret,
-      pendingTwoFactorSecret: null,
+      isTwoFactorEnabled: false,
+      twoFactorSecret: null,
+      pendingTwoFactorSecret: twoFactorSecret,
     })
     .where(eq(users.id, userId))
 
@@ -341,8 +345,6 @@ export async function resendExternalMemberInvite(
     recipientFirstName: target.firstName ?? undefined,
     recipientLastName: target.lastName ?? undefined,
     password,
-    twoFactorSecret,
-    roleLabel: target.role?.trim() || EXTERNAL_MEMBER_ROLE,
   })
 
   if (!emailResult) {
@@ -408,8 +410,8 @@ export async function listProjectsForPrivileges(): Promise<{
 }
 
 /**
- * Soft-remove an external collaborator: revoke dashboard access, clear
- * privileges/scopes, and wipe credentials so they cannot sign in again.
+ * Permanently remove an external partner: delete privileges/scopes and the
+ * user row so they cannot sign in and the email can be invited again.
  */
 export async function removeExternalTeamMember(
   userId: string
@@ -432,20 +434,8 @@ export async function removeExternalTeamMember(
     return { error: "External member not found." }
   }
 
-  await setUserAccessStatus({
-    userId,
-    status: "rejected",
-    reviewedByUserId: actor.id,
-  })
   await replaceExternalPrivileges(userId, [], [])
-  await db
-    .update(users)
-    .set({
-      password: null,
-      isTwoFactorEnabled: false,
-      twoFactorSecret: null,
-    })
-    .where(eq(users.id, userId))
+  await db.delete(users).where(eq(users.id, userId))
 
   revalidatePath("/dashboard/team")
   return { success: true }

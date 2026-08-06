@@ -210,7 +210,7 @@ export function AddExternalMemberDialog({
         ? "Create the account — login details are emailed to the collaborator automatically."
         : emailSent === false
           ? "Account created, but the credentials email failed to send. Share the password manually, or resend from Details later, then assign privileges."
-          : "Credentials were emailed with name, email, password, and 2FA setup. Choose projects, UTM Sources, then tabs and sections."
+          : "Credentials were emailed with name, email, and password. On first sign-in they scan an authenticator QR. Choose projects, UTM Sources, then tabs and sections."
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>

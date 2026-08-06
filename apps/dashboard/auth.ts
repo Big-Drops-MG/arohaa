@@ -13,6 +13,7 @@ import {
   normalizeUserEmail,
 } from "@workspace/database"
 import bcrypt from "bcryptjs"
+import { eq } from "drizzle-orm"
 import { authConfig } from "./auth.config"
 
 const googleProviderConfigured =
@@ -165,6 +166,15 @@ const nextAuth = NextAuth({
           const { touchUserLastSeen } =
             await import("@/lib/server/user-last-seen")
           void touchUserLastSeen(dbUser.id)
+        }
+      } else if (token.sub && token.isTwoFactorEnabled !== true) {
+        // Pick up 2FA after /authenticate enrollment without forcing a re-login.
+        const dbUser = await db.query.users.findFirst({
+          where: eq(users.id, token.sub as string),
+          columns: { isTwoFactorEnabled: true },
+        })
+        if (dbUser?.isTwoFactorEnabled) {
+          token.isTwoFactorEnabled = true
         }
       }
       return token
