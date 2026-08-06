@@ -10,6 +10,11 @@ import {
   getAnalyticsFunnel,
 } from '../services/analytics-funnel.service.js'
 import {
+  emptyFunnelLeads,
+  getFunnelLeads,
+} from '../services/analytics-funnel-leads.service.js'
+import { landingPageHasRedirect } from '../lib/landing-redirect.js'
+import {
   emptyAnalyticsTraffic,
   getAnalyticsTraffic,
 } from '../services/analytics-traffic.service.js'
@@ -523,6 +528,11 @@ export async function analyticsRoutes(server: FastifyInstance) {
           ? form_type
           : 'single'
 
+      const hasRedirect =
+        formType === 'zip'
+          ? await landingPageHasRedirect(workspace_id)
+          : false
+
       await sendAnalyticsQuery({
         request,
         reply,
@@ -533,11 +543,67 @@ export async function analyticsRoutes(server: FastifyInstance) {
             workspaceId: workspace_id,
             rangeId: parsed.rangeId,
             formType,
+            hasRedirect,
             utmFilter,
             custom: parsed.custom,
           }),
         logLabel: 'analytics funnel query ok',
         logContext: { range_id: parsed.rangeId, form_type: formType },
+      })
+    },
+  )
+
+  server.get<{
+    Querystring: {
+      workspace_id: string
+      range_id?: string
+      from?: string
+      to?: string
+      limit?: string
+      offset?: string
+    }
+  }>(
+    '/v1/analytics/funnel/leads',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['workspace_id'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            range_id: rangeIdSchema,
+            ...customRangeSchemaProps,
+            limit: { type: 'string', maxLength: 4 },
+            offset: { type: 'string', maxLength: 8 },
+          },
+        },
+      },
+      config: ANALYTICS_RATE_LIMIT,
+    },
+    async (request, reply) => {
+      const { workspace_id } = request.query
+      const parsed = parseRangeQuery(request.query)
+      if (!parsed.ok) {
+        return reply.code(400).send({ error: parsed.error })
+      }
+      const limit = Number(request.query.limit ?? 15)
+      const offset = Number(request.query.offset ?? 0)
+
+      await sendAnalyticsQuery({
+        request,
+        reply,
+        workspaceId: workspace_id,
+        emptyValue: emptyFunnelLeads(parsed.rangeId, limit, offset),
+        run: () =>
+          getFunnelLeads({
+            workspaceId: workspace_id,
+            rangeId: parsed.rangeId,
+            custom: parsed.custom,
+            limit,
+            offset,
+          }),
+        logLabel: 'analytics funnel leads query ok',
+        logContext: { range_id: parsed.rangeId },
       })
     },
   )

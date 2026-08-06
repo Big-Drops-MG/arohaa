@@ -49,6 +49,9 @@ export function SettingsGeneralSection({
   )
   const [candidates, setCandidates] = useState<ServiceCandidate[]>([])
   const [notes, setNotes] = useState(landingPage.notes ?? "")
+  const [redirectPageUrl, setRedirectPageUrl] = useState(
+    landingPage.redirectPageUrl ?? ""
+  )
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -61,6 +64,7 @@ export function SettingsGeneralSection({
     setServices(landingPage.services ?? [])
     setChannelType(landingPage.channelType ?? null)
     setNotes(landingPage.notes ?? "")
+    setRedirectPageUrl(landingPage.redirectPageUrl ?? "")
   }, [landingPage])
 
   useEffect(() => {
@@ -99,6 +103,7 @@ export function SettingsGeneralSection({
         faviconUrl,
         notes,
         channelType,
+        redirectPageUrl: formType === "zip" ? redirectPageUrl : "",
       }
       if (formType === "none") {
         body.services = services
@@ -176,6 +181,7 @@ export function SettingsGeneralSection({
     landingPageUrl,
     notes,
     onSaved,
+    redirectPageUrl,
     services,
   ])
 
@@ -239,6 +245,27 @@ export function SettingsGeneralSection({
           onChange={setChannelType}
           disabled={isSaving}
         />
+
+        {formType === "zip" ? (
+          <div className="space-y-2">
+            <Label htmlFor="settings-redirect-page-url">
+              Offer / redirect page URL
+            </Label>
+            <Input
+              id="settings-redirect-page-url"
+              type="url"
+              value={redirectPageUrl}
+              onChange={(e) => setRedirectPageUrl(e.target.value)}
+              className="h-11"
+              placeholder="https://auto-quote.example.com/"
+              autoComplete="off"
+            />
+            <p className="text-xs text-muted-foreground">
+              After zip submit, users continue on this host. Leave empty to keep
+              the classic Zip Started / Zip Submitted funnel only.
+            </p>
+          </div>
+        ) : null}
 
         {formType === "none" ? (
           <ServicesFieldset

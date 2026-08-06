@@ -86,13 +86,56 @@ export function normalizedBrandName(
 export function ingestHostnameMatchesLanding(
   eventUrlRaw: string | undefined,
   expectedHostnameLower: string,
+  alternateHostnameLower?: string | null,
 ): boolean {
   if (!eventUrlRaw || !expectedHostnameLower) return false;
   try {
     const u = new URL(eventUrlRaw);
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
-    return u.hostname.toLowerCase() === expectedHostnameLower.toLowerCase();
+    const host = u.hostname.toLowerCase();
+    if (host === expectedHostnameLower.toLowerCase()) return true;
+    if (
+      alternateHostnameLower &&
+      host === alternateHostnameLower.toLowerCase()
+    ) {
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
+}
+
+export function normalizeOptionalRedirectUrl(
+  rawInput: string | null | undefined,
+):
+  | { ok: true; redirectPageUrl: string | null; redirectHostname: string | null; redirectOrigin: string | null }
+  | { ok: false; error: string } {
+  if (rawInput == null) {
+    return {
+      ok: true,
+      redirectPageUrl: null,
+      redirectHostname: null,
+      redirectOrigin: null,
+    };
+  }
+  const raw = String(rawInput).trim();
+  if (!raw) {
+    return {
+      ok: true,
+      redirectPageUrl: null,
+      redirectHostname: null,
+      redirectOrigin: null,
+    };
+  }
+  const normalized = normalizeLandingPageUrl(raw);
+  if (!normalized.ok) {
+    return { ok: false, error: normalized.error.replace(/^Landing page/, 'Redirect') };
+  }
+  return {
+    ok: true,
+    redirectPageUrl: normalized.landingPageUrl,
+    redirectHostname: normalized.hostname,
+    redirectOrigin: normalized.origin,
+  };
 }

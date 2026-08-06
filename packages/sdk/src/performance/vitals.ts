@@ -42,9 +42,40 @@ function reportVital(
   trackMetric(VITALS_EVENT, name, value, { metric: name })
 }
 
+function readPaintTiming(name: string): number {
+  try {
+    const named = performance.getEntriesByName(name)
+    const fromNamed = named[named.length - 1]
+    if (fromNamed && Number.isFinite(fromNamed.startTime)) {
+      return fromNamed.startTime
+    }
+    for (const entry of performance.getEntriesByType("paint")) {
+      if (entry.name === name && Number.isFinite(entry.startTime)) {
+        return entry.startTime
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return 0
+}
+
+function readLatestLcp(): number {
+  try {
+    const entries = performance.getEntriesByType("largest-contentful-paint")
+    const last = entries[entries.length - 1]
+    if (last && Number.isFinite(last.startTime)) return last.startTime
+  } catch {
+    /* ignore */
+  }
+  return 0
+}
+
 function flushAll(): void {
   if (reported) return
   reported = true
+  if (!fcpValue) fcpValue = readPaintTiming("first-contentful-paint")
+  if (!lcpValue) lcpValue = readLatestLcp()
   reportVital("FCP", fcpValue)
   reportVital("LCP", lcpValue)
   reportVital("CLS", clsValue, true)
@@ -58,6 +89,9 @@ export function monitorWebVitals(): void {
   ) {
     return
   }
+
+  fcpValue = readPaintTiming("first-contentful-paint")
+  lcpValue = readLatestLcp()
 
   safeObserve("paint", (entryList) => {
     for (const entry of entryList.getEntries()) {

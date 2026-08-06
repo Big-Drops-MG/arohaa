@@ -13,6 +13,13 @@ const FLUSH_INTERVAL_MS = 5000
 const FLUSH_SIZE_THRESHOLD = 1000
 const MAX_BUFFER_SIZE = 10_000
 
+const PRIORITY_EVENT_NAMES = new Set([
+  'form_success',
+  'form_step_complete',
+  'form_submit',
+  'zip_submit',
+])
+
 const HEATMAP_FLUSH_INTERVAL_MS = 2000
 const HEATMAP_FLUSH_SIZE_THRESHOLD = 5000
 const MAX_HEATMAP_BUFFER_SIZE = 20_000
@@ -72,10 +79,39 @@ function pushHeatmap(row: EventRow): void {
   }
 }
 
+function pushPriorityEvent(row: EventRow): void {
+  void redis
+    .lpush('analytics_queue', JSON.stringify(row))
+    .then(() => {
+      logger?.info(
+        { event_name: row.event_name, traceId: row.trace_id },
+        'priority event pushed to redis',
+      )
+    })
+    .catch((err) => {
+      logger?.error(
+        { err, event_name: row.event_name, traceId: row.trace_id },
+        'priority redis push failed; falling back to buffer',
+      )
+      Sentry.captureException(err, {
+        tags: { component: 'event-buffer', reason: 'priority_push' },
+      })
+      buffer.push(row)
+      if (buffer.length >= flushSizeThreshold) {
+        void scheduleFlush('priority_fallback')
+      }
+    })
+}
+
 export function pushEvent(row: EventRow): void {
   if (shouldRouteToHeatmapQueue(row)) {
     pushHeatmap(row)
     if (isHeatmapOnlyEvent(row)) return
+  }
+
+  if (PRIORITY_EVENT_NAMES.has(row.event_name)) {
+    pushPriorityEvent(row)
+    return
   }
 
   if (buffer.length >= MAX_BUFFER_SIZE) {

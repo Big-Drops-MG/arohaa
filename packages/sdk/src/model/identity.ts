@@ -49,6 +49,7 @@ function readSessionId(now: number): string {
 }
 
 export function initIdentity(): Identity {
+  seedIdentityFromQuery()
   const now = Date.now()
   const uid = readUserId()
   const sid = readSessionId(now)
@@ -56,6 +57,25 @@ export function initIdentity(): Identity {
 
   cachedIdentity = { uid, sid, fp }
   return cachedIdentity
+}
+
+function seedIdentityFromQuery(): void {
+  if (typeof window === "undefined") return
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const uid = params.get("aro_uid")?.trim()
+    const sid = params.get("aro_sid")?.trim()
+    if (uid && uid.length >= 8 && uid.length <= 64) {
+      setStorage(UID_KEY, uid)
+      setCookie(UID_KEY, uid)
+    }
+    if (sid && sid.length >= 8 && sid.length <= 64) {
+      setStorage(SID_KEY, sid)
+      setStorage(SID_TS_KEY, String(Date.now()))
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 export function getIdentity(): Identity {
