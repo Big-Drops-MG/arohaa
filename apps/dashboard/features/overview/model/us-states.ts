@@ -218,8 +218,8 @@ export function overviewMapAbsoluteThresholds(
     case "sessions":
     case "page-views":
     case "form-submitted":
-      // Absolute count bands; final open-ended slab is 2000+
-      return [50, 100, 250, 500, 750, 1000, 1500, 2000]
+      // Absolute count bands; final open-ended slab is 5000+
+      return [100, 250, 500, 1000, 2000, 3000, 4000, 5000]
   }
 }
 
@@ -236,7 +236,7 @@ export function overviewMapBubbleTier(metricId: OverviewKpiMetricId): {
     formatOverviewMapSlabLabel(0, isPercent),
     ...thresholds.map((t) => formatOverviewMapSlabLabel(t, isPercent)),
   ]
-  // Final label is open-ended (“2000+”) so the scale reads as absolute slabs.
+  // Final label is open-ended (“5000+”) so the scale reads as absolute slabs.
   legendLabels[legendLabels.length - 1] =
     `${formatOverviewMapSlabLabel(last, isPercent)}+`
 
