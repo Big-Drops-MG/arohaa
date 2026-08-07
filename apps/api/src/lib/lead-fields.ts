@@ -141,17 +141,24 @@ export function isDisplayableLead(input: {
   return false
 }
 
-const NAME_KEY_RE = /^(first_?name|last_?name|full_?name|name)$/i
-
-export function hasLeadIdentity(input: {
-  email?: string
-  fields?: Record<string, string>
-}): boolean {
-  if (input.email?.trim()) return true
-  const fields = input.fields ?? {}
-  for (const [key, value] of Object.entries(fields)) {
-    if (!NAME_KEY_RE.test(key)) continue
-    if (value?.trim()) return true
+export function pickTrustedFormUrl(raw: Record<string, string>): string {
+  const preferred = [
+    raw.TrustedFormCertUrl,
+    raw.trustedFormCertUrl,
+    raw.xxTrustedFormToken,
+  ]
+  for (const candidate of preferred) {
+    const value = String(candidate ?? '').trim()
+    if (/^https:\/\/cert\.trustedform\.com\//i.test(value)) {
+      return value.slice(0, 500)
+    }
   }
-  return false
+  for (const [key, value] of Object.entries(raw)) {
+    if (!/trustedformcerturl|xxtrustedformtoken/i.test(key)) continue
+    const trimmed = String(value ?? '').trim()
+    if (/^https:\/\/cert\.trustedform\.com\//i.test(trimmed)) {
+      return trimmed.slice(0, 500)
+    }
+  }
+  return ''
 }

@@ -9,10 +9,10 @@ import {
 import {
   fieldsWithoutReserved,
   isDisplayableLead,
-  hasLeadIdentity,
   normalizeLeadFields,
   pickLeadEmail,
   pickLeadZip,
+  pickTrustedFormUrl,
 } from '../lib/lead-fields.js'
 
 type CHJson<T> = { data: T[] }
@@ -24,6 +24,7 @@ export type FunnelLeadRow = {
   email: string
   utmSource: string
   utmId: string
+  trustedFormUrl: string
   formSubmitted: boolean
   fields: Record<string, string>
 }
@@ -37,7 +38,7 @@ export type FunnelLeadsResponse = {
   hasMore: boolean
 }
 
-function parseFields(raw: string): Record<string, string> {
+function extractRawFieldMap(raw: string): Record<string, string> {
   try {
     const parsed = JSON.parse(raw) as unknown
     if (!parsed || typeof parsed !== 'object') return {}
@@ -53,7 +54,7 @@ function parseFields(raw: string): Record<string, string> {
         out[k] = String(v)
       }
     }
-    return normalizeLeadFields(out)
+    return out
   } catch {
     return {}
   }
@@ -187,7 +188,8 @@ export async function getFunnelLeads({
 
   const allLeads: FunnelLeadRow[] = rows
     .map((row) => {
-      const fields = parseFields(row.props || '{}')
+      const rawFields = extractRawFieldMap(row.props || '{}')
+      const fields = normalizeLeadFields(rawFields)
       const email = pickLeadEmail(fields)
       const zip = row.zip_val || pickLeadZip(fields) || ''
       const utm = resolveLeadUtm({
@@ -202,6 +204,7 @@ export async function getFunnelLeads({
         email,
         utmSource: utm.utmSource,
         utmId: utm.utmId,
+        trustedFormUrl: pickTrustedFormUrl(rawFields),
         formSubmitted:
           row.form_submitted === true ||
           row.form_submitted === 1 ||
@@ -209,7 +212,7 @@ export async function getFunnelLeads({
         fields: fieldsWithoutReserved(fields),
       }
     })
-    .filter((lead) => isDisplayableLead(lead) && hasLeadIdentity(lead))
+    .filter((lead) => isDisplayableLead(lead))
 
   const total = allLeads.length
   const leads = allLeads.slice(safeOffset, safeOffset + safeLimit)

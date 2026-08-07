@@ -10,7 +10,7 @@ const SKIP_KEY_RE =
 const EMAIL_KEY_RE = RE.emailKey
 
 const NOISE_KEY_RE =
-  /^(input|select|textarea|search|xxtrustedform\w*|trustedform\w*|jornaya_lead_id|leadid_token|universal_leadid|consent-confirmation-certificate-id)$/i
+  /^(input|select|textarea|search|xxtrustedformpingurl|jornaya_lead_id|leadid_token|universal_leadid|consent-confirmation-certificate-id)$/i
 
 let captureInstalled = false
 let stepIndex = 0

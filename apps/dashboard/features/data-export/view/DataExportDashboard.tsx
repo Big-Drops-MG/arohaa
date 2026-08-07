@@ -321,7 +321,7 @@ export function DataExportDashboard({
     )
   }
 
-  const colCount = 8 + fieldKeys.length
+  const colCount = 9 + fieldKeys.length
   const projectLabel = dashboardData.brandName.trim() || "Project"
 
   return (
@@ -377,6 +377,7 @@ export function DataExportDashboard({
                   <th className={thClassName}>Email</th>
                   <th className={thClassName}>utm_source</th>
                   <th className={thClassName}>utm_id</th>
+                  <th className={thClassName}>TrustedForm</th>
                   <th className={thClassName}>Form Submitted</th>
                   {fieldKeys.map((key) => (
                     <th key={key} className={thClassName}>
@@ -419,6 +420,25 @@ export function DataExportDashboard({
                         {cellValue(lead.utmSource)}
                       </td>
                       <td className={tdClassName}>{cellValue(lead.utmId)}</td>
+                      <td
+                        className={cn(
+                          tdClassName,
+                          "max-w-[14rem] min-w-[10rem] whitespace-normal"
+                        )}
+                      >
+                        {lead.trustedFormUrl ? (
+                          <a
+                            href={lead.trustedFormUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm font-medium break-all text-sky-700 underline-offset-2 hover:underline"
+                          >
+                            View certificate
+                          </a>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                       <td className={tdClassName}>
                         <span
                           className={cn(

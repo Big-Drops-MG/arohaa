@@ -10,6 +10,7 @@ export type DataExportLeadRow = {
   email: string
   utmSource: string
   utmId: string
+  trustedFormUrl: string
   formSubmitted: boolean
   fields: Record<string, string>
 }

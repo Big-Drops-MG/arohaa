@@ -29,6 +29,7 @@ type LeadsApiResponse = {
     email?: string
     utmSource?: string
     utmId?: string
+    trustedFormUrl?: string
     formSubmitted?: boolean
     fields: Record<string, string>
   }>
@@ -121,6 +122,7 @@ export async function loadDataExportDashboardData({
       email: lead.email ?? "",
       utmSource: lead.utmSource ?? "",
       utmId: lead.utmId ?? "",
+      trustedFormUrl: lead.trustedFormUrl ?? "",
       formSubmitted: Boolean(lead.formSubmitted),
       fields: lead.fields ?? {},
     })),

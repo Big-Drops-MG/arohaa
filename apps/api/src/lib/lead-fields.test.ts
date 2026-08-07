@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   fieldsWithoutReserved,
-  hasLeadIdentity,
   isDisplayableLead,
   normalizeLeadFields,
   pickLeadEmail,
   pickLeadZip,
+  pickTrustedFormUrl,
 } from './lead-fields.js'
 
 describe('normalizeLeadFields', () => {
@@ -122,18 +122,17 @@ describe('isDisplayableLead', () => {
   })
 })
 
-describe('hasLeadIdentity', () => {
-  it('requires email or a name field', () => {
-    expect(hasLeadIdentity({ email: '', fields: { city: 'Austin' } })).toBe(
-      false,
+describe('pickTrustedFormUrl', () => {
+  it('prefers the certificate URL', () => {
+    expect(
+      pickTrustedFormUrl({
+        TrustedFormCertUrl:
+          'https://cert.trustedform.com/b1ca89aa43369be1f60b58d779b13b19a5b06b67',
+        xxTrustedFormPingUrl: 'https://ping.trustedform.com/abc',
+      }),
+    ).toBe(
+      'https://cert.trustedform.com/b1ca89aa43369be1f60b58d779b13b19a5b06b67',
     )
-    expect(hasLeadIdentity({ email: 'a@b.com', fields: {} })).toBe(true)
-    expect(
-      hasLeadIdentity({ email: '', fields: { first_name: 'Sam' } }),
-    ).toBe(true)
-    expect(
-      hasLeadIdentity({ email: '', fields: { last_name: 'Carter' } }),
-    ).toBe(true)
   })
 })
 
