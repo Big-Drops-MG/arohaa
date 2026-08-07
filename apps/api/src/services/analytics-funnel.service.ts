@@ -92,7 +92,27 @@ type DropOffAggRow = {
   reached: string
 }
 
-function dropOffQuery(whereClause: string): string {
+function dropOffQuery(whereClause: string, mode: 'standard' | 'zipRedirect' = 'standard'): string {
+  const fieldExclude =
+    mode === 'zipRedirect'
+      ? `AND ${FIELD_NAME_EXPR} NOT IN ('zip', 'zipcode', 'zip_code', 'postal')`
+      : ''
+  const completedSessions =
+    mode === 'zipRedirect'
+      ? `
+        SELECT DISTINCT session_id
+        FROM events_raw
+        WHERE ${whereClause}
+          AND event_name = 'form_success'
+          AND JSONHas(properties, '_k')
+      `
+      : `
+        SELECT DISTINCT session_id
+        FROM events_raw
+        WHERE ${whereClause}
+          AND event_name = 'form_success'
+      `
+
   return `
     SELECT
       reaches.field_name AS field_name,
@@ -110,6 +130,7 @@ function dropOffQuery(whereClause: string): string {
         WHERE ${whereClause}
           AND event_name = 'form_field_focus'
           AND ${FIELD_NAME_EXPR} != ''
+          ${fieldExclude}
       )
       GROUP BY field_name
     ) AS reaches
@@ -129,12 +150,10 @@ function dropOffQuery(whereClause: string): string {
           WHERE ${whereClause}
             AND event_name = 'form_field_focus'
             AND ${FIELD_NAME_EXPR} != ''
+            ${fieldExclude}
         ) AS focused
         LEFT ANTI JOIN (
-          SELECT DISTINCT session_id
-          FROM events_raw
-          WHERE ${whereClause}
-            AND event_name = 'form_success'
+          ${completedSessions}
         ) AS submitted ON focused.session_id = submitted.session_id
       )
       GROUP BY field_name
@@ -325,7 +344,13 @@ export async function getAnalyticsFunnel({
   const window = resolveAnalyticsWindow(rangeId, now, custom)
   const utmKey = utmFilterCacheKey(utmFilter)
   const showOfferSteps = formType === 'multiple' || (formType === 'zip' && hasRedirect)
-  const cacheKey = `analytics:funnel:v9:${workspaceId}:${rangeCacheKey(window, utmKey)}:${formType}:${showOfferSteps ? 'r1' : 'r0'}`
+  const showDropOff =
+    formType === 'single' ||
+    formType === 'multiple' ||
+    (formType === 'zip' && hasRedirect)
+  const dropOffMode =
+    formType === 'zip' && hasRedirect ? 'zipRedirect' : 'standard'
+  const cacheKey = `analytics:funnel:v10:${workspaceId}:${rangeCacheKey(window, utmKey)}:${formType}:${showOfferSteps ? 'r1' : 'r0'}:${showDropOff ? 'd1' : 'd0'}`
   try {
     const cachedStr = await redis.get(cacheKey)
     if (cachedStr) {
@@ -358,7 +383,9 @@ export async function getAnalyticsFunnel({
     q(coreFunnelQuery(previousWhere)),
     q(multiStepQuery(currentWhere)),
     q(multiStepQuery(previousWhere)),
-    q(dropOffQuery(currentWhere)),
+    showDropOff
+      ? q(dropOffQuery(currentWhere, dropOffMode))
+      : Promise.resolve(null),
   ])
 
   const currentCore = parseCoreFunnel(
@@ -371,8 +398,9 @@ export async function getAnalyticsFunnel({
     ((await currentStepsRes.json()) as CHJson<StepAggRow>).data ?? []
   const previousSteps =
     ((await previousStepsRes.json()) as CHJson<StepAggRow>).data ?? []
-  const dropOffRows =
-    ((await dropOffRes.json()) as CHJson<DropOffAggRow>).data ?? []
+  const dropOffRows = dropOffRes
+    ? (((await dropOffRes.json()) as CHJson<DropOffAggRow>).data ?? [])
+    : []
 
   const response: FunnelDashboardResponse = {
     rangeId: window.rangeId,
@@ -385,10 +413,7 @@ export async function getAnalyticsFunnel({
           previousCore,
         )
       : [],
-    dropOffRows:
-      formType === 'single' || formType === 'multiple'
-        ? buildDropOffRows(dropOffRows)
-        : [],
+    dropOffRows: showDropOff ? buildDropOffRows(dropOffRows) : [],
   }
 
   try {

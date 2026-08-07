@@ -251,13 +251,17 @@ export function setupFormDomTracking(): void {
   )
 }
 
-export function setupFormTracking(): void {
+export function setupFormTracking(options?: {
+  trackFieldFocus?: boolean
+}): void {
   if (getConfig().formtype === "none") return
 
   installFormFetchTracking()
   setupFormSubmitTracking()
   setupZipSubmitClickTracking()
   setupFormDomTracking()
-  setupFormFieldTracking()
+  if (options?.trackFieldFocus !== false) {
+    setupFormFieldTracking()
+  }
   setupFormStepTracking()
 }

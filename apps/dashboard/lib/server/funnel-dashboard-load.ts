@@ -76,7 +76,8 @@ function relabelMetrics(
 
 export function buildFunnelDashboardData(
   data: AnalyticsFunnel,
-  formType: OverviewLandingFormType
+  formType: OverviewLandingFormType,
+  hasRedirect = false
 ): FunnelDashboardData {
   const metrics = relabelMetrics(data.metrics, formType)
 
@@ -87,6 +88,7 @@ export function buildFunnelDashboardData(
 
   return {
     formType,
+    hasRedirect,
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: data.rangeId,
     defaultKpiMetricId: "landing-page-visits",
@@ -201,6 +203,7 @@ export async function loadFunnelDashboardData({
   if (!row) notFound()
 
   const formType = parseOverviewLandingFormType(row.formType)
+  const hasRedirect = Boolean(row.redirectPageUrl?.trim())
 
   const analytics = await fetchFunnelAnalytics(
     row.id,
@@ -210,10 +213,15 @@ export async function loadFunnelDashboardData({
     customRange
   )
   if (!analytics) {
-    return getFunnelEmptyDashboardData(landingPagePublicId, rangeId, formType)
+    return getFunnelEmptyDashboardData(
+      landingPagePublicId,
+      rangeId,
+      formType,
+      hasRedirect
+    )
   }
 
-  return buildFunnelDashboardData(analytics, formType)
+  return buildFunnelDashboardData(analytics, formType, hasRedirect)
 }
 
 export async function loadFunnelDashboardDataForApi(
@@ -243,6 +251,7 @@ export async function loadFunnelDashboardDataForApi(
   }
 
   const formType = parseOverviewLandingFormType(row.formType)
+  const hasRedirect = Boolean(row.redirectPageUrl?.trim())
 
   const analytics = await fetchFunnelAnalytics(
     row.id,
@@ -254,11 +263,19 @@ export async function loadFunnelDashboardDataForApi(
   if (!analytics) {
     return {
       ok: true,
-      data: getFunnelEmptyDashboardData(landingPagePublicId, rangeId, formType),
+      data: getFunnelEmptyDashboardData(
+        landingPagePublicId,
+        rangeId,
+        formType,
+        hasRedirect
+      ),
     }
   }
 
-  return { ok: true, data: buildFunnelDashboardData(analytics, formType) }
+  return {
+    ok: true,
+    data: buildFunnelDashboardData(analytics, formType, hasRedirect),
+  }
 }
 
 export async function loadOverviewFunnelSteps({

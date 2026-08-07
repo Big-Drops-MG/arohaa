@@ -12,12 +12,14 @@ import {
 export function getFunnelEmptyDashboardData(
   _landingPagePublicId: string,
   rangeId: OverviewDateRangeId = "7d",
-  formType: OverviewLandingFormType = "single"
+  formType: OverviewLandingFormType = "single",
+  hasRedirect = false
 ): FunnelDashboardData {
   void _landingPagePublicId
 
   return {
     formType,
+    hasRedirect,
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: rangeId,
     defaultKpiMetricId: "landing-page-visits",

@@ -188,6 +188,7 @@ export function FunnelDashboard({
 
           <FunnelDetailCards
             formType={dashboardData.formType}
+            hasRedirect={dashboardData.hasRedirect}
             multiStepSteps={dashboardData.multiStepSteps}
             dropOffRows={dashboardData.dropOffRows}
           />

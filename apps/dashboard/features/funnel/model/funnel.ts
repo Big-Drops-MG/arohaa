@@ -57,6 +57,7 @@ export type FunnelDropOffRow = {
 
 export type FunnelDashboardData = {
   formType: OverviewLandingFormType
+  hasRedirect: boolean
   dateRangeOptions: OverviewDateRangeOption[]
   defaultDateRangeId: OverviewDateRangeId
   defaultKpiMetricId: FunnelKpiMetricId

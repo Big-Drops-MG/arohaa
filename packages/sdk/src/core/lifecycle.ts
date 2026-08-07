@@ -25,13 +25,17 @@ export function setupLifecycle(): void {
   setupScrollTracking()
   setupClickTracking()
   setupAttentionTracking()
-  setupFormTracking()
+  const host = typeof window !== "undefined" ? window.location.hostname : ""
+  const redirectHost = getRemoteRedirectHostname()
+  const onRedirectHost = Boolean(
+    redirectHost && host.toLowerCase() === redirectHost.toLowerCase(),
+  )
+
+  setupFormTracking({ trackFieldFocus: !onRedirectHost })
   setupServiceClickTracking()
   setupRedirectLinkStamping()
 
-  const host = typeof window !== "undefined" ? window.location.hostname : ""
-  const redirectHost = getRemoteRedirectHostname()
-  if (redirectHost && host.toLowerCase() === redirectHost.toLowerCase()) {
+  if (onRedirectHost) {
     setupOpaqueFieldCapture()
   } else if (getConfig().formtype === "zip") {
     // zip page only stamps links; no full-field capture

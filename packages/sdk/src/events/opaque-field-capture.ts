@@ -1,6 +1,7 @@
 import { track } from "../core/tracker"
 import { trackFormStepComplete, trackFormStepView } from "./form-step.events"
 import { trackFormSuccess } from "./form.events"
+import { markFormSessionSucceeded } from "./form-field-tracking"
 import { encryptFieldsForWire, hasFieldBlobKey } from "../utils/field-blob"
 import { KEYS, RE, TOKENS } from "./field-tokens"
 
@@ -196,6 +197,36 @@ function storeField(key: string, value: string, lock = false): void {
   if (lock) lockedKeys.add(key)
 }
 
+const focusedKeys = new Set<string>()
+
+function trackOpaqueFieldFocus(el: Element): void {
+  if (
+    !(
+      el instanceof HTMLInputElement ||
+      el instanceof HTMLTextAreaElement ||
+      el instanceof HTMLSelectElement
+    )
+  ) {
+    return
+  }
+  if (el instanceof HTMLInputElement && isSkippedInputType(el)) return
+  if (isTrustedFormFieldKey(fieldKey(el))) return
+  if (isPhoneField(el)) {
+    const phoneKey = fieldKey(el) || "phone"
+    if (!phoneKey || NOISE_KEY_RE.test(phoneKey) || focusedKeys.has(phoneKey)) {
+      return
+    }
+    focusedKeys.add(phoneKey)
+    track("form_field_focus", { fieldName: phoneKey })
+    return
+  }
+  const key = fieldKey(el)
+  if (!key || SKIP_KEY_RE.test(key) || NOISE_KEY_RE.test(key)) return
+  if (focusedKeys.has(key)) return
+  focusedKeys.add(key)
+  track("form_field_focus", { fieldName: key })
+}
+
 function ingestField(el: Element): void {
   if (
     !(
@@ -285,6 +316,7 @@ async function flushOpaque(reason: "step" | "success" | "hide"): Promise<void> {
 
   if (reason === "success") {
     track("form_success", wire)
+    markFormSessionSucceeded()
     return
   }
   if (reason === "step") {
@@ -331,6 +363,13 @@ export function setupOpaqueFieldCapture(): void {
     trackFormStepView(1, { stepName: hashToStepName(lastHash) })
   }
 
+  document.addEventListener(
+    "focusin",
+    (e) => {
+      if (e.target instanceof Element) trackOpaqueFieldFocus(e.target)
+    },
+    true,
+  )
   document.addEventListener(
     "input",
     (e) => {

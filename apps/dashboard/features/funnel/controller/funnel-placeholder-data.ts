@@ -8,6 +8,7 @@ export function getFunnelPlaceholderData(
 
   return {
     formType: "single",
+    hasRedirect: false,
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: "7d",
     defaultKpiMetricId: "landing-page-visits",

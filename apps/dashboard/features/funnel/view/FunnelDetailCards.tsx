@@ -9,6 +9,7 @@ import { FunnelMultiStepTrackingCard } from "@/features/funnel/view/FunnelMultiS
 
 type FunnelDetailCardsProps = {
   formType: OverviewLandingFormType
+  hasRedirect?: boolean
   multiStepSteps: FunnelStep[]
   dropOffRows: FunnelDropOffRow[]
 }
@@ -23,6 +24,7 @@ function dropOffRowsToFields(rows: FunnelDropOffRow[]): FunnelFieldDropOff[] {
 
 export function FunnelDetailCards({
   formType,
+  hasRedirect = false,
   multiStepSteps,
   dropOffRows,
 }: FunnelDetailCardsProps) {
@@ -30,7 +32,10 @@ export function FunnelDetailCards({
 
   const showMultiStep =
     formType === "multiple" || (formType === "zip" && multiStepSteps.length > 0)
-  const showDropOff = formType === "single" || formType === "multiple"
+  const showDropOff =
+    formType === "single" ||
+    formType === "multiple" ||
+    (formType === "zip" && hasRedirect)
 
   if (!showMultiStep && !showDropOff) return null
 
