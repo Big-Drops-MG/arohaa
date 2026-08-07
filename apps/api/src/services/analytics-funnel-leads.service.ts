@@ -38,6 +38,20 @@ export type FunnelLeadsResponse = {
   hasMore: boolean
 }
 
+type RawLeadSessionRow = {
+  session_id: string
+  last_at: string
+  props: string
+  form_submitted: number | boolean | string
+  sample_url: string
+  zip_val: string
+  utm_source: string
+  utm_id: string
+}
+
+/** Max raw sessions scanned per request (safety ceiling for a date window). */
+const MAX_RAW_SESSIONS = 20_000
+
 function extractRawFieldMap(raw: string): Record<string, string> {
   try {
     const parsed = JSON.parse(raw) as unknown
@@ -59,7 +73,6 @@ function extractRawFieldMap(raw: string): Record<string, string> {
     return {}
   }
 }
-
 
 function pickQueryParam(url: string, keys: string[]): string {
   if (!url) return ''
@@ -91,6 +104,64 @@ function resolveLeadUtm(input: {
   }
 }
 
+function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
+  const rawFields = extractRawFieldMap(row.props || '{}')
+  const fields = normalizeLeadFields(rawFields)
+  const email = pickLeadEmail(fields)
+  const zip = row.zip_val || pickLeadZip(fields) || ''
+  const utm = resolveLeadUtm({
+    utmSource: row.utm_source,
+    utmId: row.utm_id,
+    url: row.sample_url,
+  })
+  return {
+    sessionId: row.session_id,
+    createdAt: row.last_at,
+    zip,
+    email,
+    utmSource: utm.utmSource,
+    utmId: utm.utmId,
+    trustedFormUrl: pickTrustedFormUrl(rawFields),
+    formSubmitted:
+      row.form_submitted === true ||
+      row.form_submitted === 1 ||
+      row.form_submitted === '1',
+    fields: fieldsWithoutReserved(fields),
+  }
+}
+
+export function paginateDisplayableLeads(
+  leads: FunnelLeadRow[],
+  limit: number,
+  offset: number,
+): Pick<FunnelLeadsResponse, 'leads' | 'total' | 'limit' | 'offset' | 'hasMore'> {
+  const safeLimit = Math.min(50, Math.max(1, Math.floor(limit) || 15))
+  let safeOffset = Math.max(0, Math.floor(offset) || 0)
+  const total = leads.length
+
+  if (total === 0) {
+    return {
+      leads: [],
+      total: 0,
+      limit: safeLimit,
+      offset: 0,
+      hasMore: false,
+    }
+  }
+
+  const maxOffset = Math.floor((total - 1) / safeLimit) * safeLimit
+  if (safeOffset > maxOffset) safeOffset = maxOffset
+
+  const page = leads.slice(safeOffset, safeOffset + safeLimit)
+  return {
+    leads: page,
+    total,
+    limit: safeLimit,
+    offset: safeOffset,
+    hasMore: safeOffset + page.length < total,
+  }
+}
+
 export async function getFunnelLeads({
   workspaceId,
   rangeId,
@@ -104,24 +175,16 @@ export async function getFunnelLeads({
   limit?: number
   offset?: number
 }): Promise<FunnelLeadsResponse> {
-  const safeLimit = Math.min(50, Math.max(1, Math.floor(limit) || 15))
-  const safeOffset = Math.max(0, Math.floor(offset) || 0)
   const window = resolveAnalyticsWindow(rangeId, new Date(), custom)
   const ch = getClickHouseClient()
   const where = `${rangeFilter()}
     AND event_name IN ('form_success', 'form_step_complete', 'form_step_view')
     AND positionCaseInsensitive(properties, '"fields"') > 0`
 
-
-  const scanLimit = Math.min(
-    800,
-    Math.max((safeLimit + safeOffset) * 3 + 60, 120),
-  )
-
   const p = {
     wid: workspaceId,
     ...rangeQueryParams(window),
-    lim: scanLimit,
+    lim: MAX_RAW_SESSIONS,
     off: 0,
   }
 
@@ -173,57 +236,17 @@ export async function getFunnelLeads({
   })
 
   const rows =
-    (
-      (await rowsRes.json()) as CHJson<{
-        session_id: string
-        last_at: string
-        props: string
-        form_submitted: number | boolean | string
-        sample_url: string
-        zip_val: string
-        utm_source: string
-        utm_id: string
-      }>
-    ).data ?? []
+    ((await rowsRes.json()) as CHJson<RawLeadSessionRow>).data ?? []
 
-  const allLeads: FunnelLeadRow[] = rows
-    .map((row) => {
-      const rawFields = extractRawFieldMap(row.props || '{}')
-      const fields = normalizeLeadFields(rawFields)
-      const email = pickLeadEmail(fields)
-      const zip = row.zip_val || pickLeadZip(fields) || ''
-      const utm = resolveLeadUtm({
-        utmSource: row.utm_source,
-        utmId: row.utm_id,
-        url: row.sample_url,
-      })
-      return {
-        sessionId: row.session_id,
-        createdAt: row.last_at,
-        zip,
-        email,
-        utmSource: utm.utmSource,
-        utmId: utm.utmId,
-        trustedFormUrl: pickTrustedFormUrl(rawFields),
-        formSubmitted:
-          row.form_submitted === true ||
-          row.form_submitted === 1 ||
-          row.form_submitted === '1',
-        fields: fieldsWithoutReserved(fields),
-      }
-    })
+  const displayable = rows
+    .map((row) => toFunnelLead(row))
     .filter((lead) => isDisplayableLead(lead))
 
-  const total = allLeads.length
-  const leads = allLeads.slice(safeOffset, safeOffset + safeLimit)
+  const page = paginateDisplayableLeads(displayable, limit, offset)
 
   return {
     rangeId: window.rangeId,
-    leads,
-    total,
-    limit: safeLimit,
-    offset: safeOffset,
-    hasMore: safeOffset + leads.length < total,
+    ...page,
   }
 }
 

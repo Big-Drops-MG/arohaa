@@ -99,10 +99,12 @@ function pad2(value: string): string {
   return value.replace(/\D/g, "").padStart(2, "0").slice(-2)
 }
 
-function formatDobWithAge(raw: string): string {
+function parseDobParts(
+  raw: string
+): { month: number; day: number; year: number } | null {
   const trimmed = raw.trim()
   const match = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
-  if (!match) return cellValue(trimmed)
+  if (!match) return null
 
   const month = Number(match[1])
   const day = Number(match[2])
@@ -117,24 +119,57 @@ function formatDobWithAge(raw: string): string {
     day > 31 ||
     year < 1900
   ) {
-    return cellValue(trimmed)
+    return null
   }
+
+  return { month, day, year }
+}
+
+function formatDob(raw: string): string {
+  const parts = parseDobParts(raw)
+  if (!parts) return cellValue(raw)
+  return `${pad2(String(parts.month))}/${pad2(String(parts.day))}/${parts.year}`
+}
+
+function ageFromDob(raw: string | undefined): string {
+  if (!raw?.trim()) return "—"
+  const parts = parseDobParts(raw)
+  if (!parts) return "—"
 
   const now = getDashboardZonedParts(new Date())
-  let age = now.year - year
-  if (now.month < month || (now.month === month && now.day < day)) age -= 1
-  if (age < 0 || age > 120) {
-    return `${pad2(String(month))}/${pad2(String(day))}/${year}`
+  let age = now.year - parts.year
+  if (
+    now.month < parts.month ||
+    (now.month === parts.month && now.day < parts.day)
+  ) {
+    age -= 1
   }
-
-  return `${pad2(String(month))}/${pad2(String(day))}/${year} (Age: ${age})`
+  if (age < 0 || age > 120) return "—"
+  return String(age)
 }
 
 function formatFieldCell(key: string, value: string | undefined): string {
   if (/^dob$/i.test(key.trim()) && value?.trim()) {
-    return formatDobWithAge(value)
+    return formatDob(value)
   }
   return cellValue(value)
+}
+
+function isDobFieldKey(key: string): boolean {
+  return /^dob$/i.test(key.trim())
+}
+
+type DataExportFieldColumn =
+  | { kind: "field"; key: string }
+  | { kind: "age"; dobKey: string }
+
+function buildFieldColumns(fieldKeys: string[]): DataExportFieldColumn[] {
+  const columns: DataExportFieldColumn[] = []
+  for (const key of fieldKeys) {
+    columns.push({ kind: "field", key })
+    if (isDobFieldKey(key)) columns.push({ kind: "age", dobKey: key })
+  }
+  return columns
 }
 
 function formatEntryCount(total: number): string {
@@ -156,12 +191,12 @@ export function DataExportDashboard({
 
   const pageSize = dashboardData.limit || DATA_EXPORT_PAGE_SIZE
   const total = dashboardData.total
-  const currentPage = Math.floor(pageOffset / pageSize) + 1
-  const totalPages = Math.max(1, Math.ceil(Math.max(total, 1) / pageSize))
+  const currentPage = total === 0 ? 1 : Math.floor(pageOffset / pageSize) + 1
+  const totalPages = Math.max(1, Math.ceil(total / pageSize) || 1)
   const rangeStart = total === 0 ? 0 : pageOffset + 1
   const rangeEnd = Math.min(pageOffset + dashboardData.leads.length, total)
-  const canGoPrev = pageOffset > 0
-  const canGoNext = dashboardData.hasMore || pageOffset + pageSize < total
+  const canGoPrev = pageOffset > 0 && total > 0
+  const canGoNext = pageOffset + pageSize < total
 
   const fieldKeys = useMemo(() => {
     const keys = new Set<string>()
@@ -170,6 +205,8 @@ export function DataExportDashboard({
     }
     return sortFieldKeys([...keys])
   }, [dashboardData.leads])
+
+  const fieldColumns = useMemo(() => buildFieldColumns(fieldKeys), [fieldKeys])
 
   const fetchPage = useCallback(
     async (
@@ -271,7 +308,10 @@ export function DataExportDashboard({
 
   function goToPage(nextOffset: number) {
     if (isPageLoading || isBlockingLoad) return
-    const clamped = Math.max(0, nextOffset)
+    const lastPageOffset =
+      total === 0 ? 0 : Math.floor((total - 1) / pageSize) * pageSize
+    const clamped = Math.min(Math.max(0, nextOffset), lastPageOffset)
+    if (clamped === pageOffset) return
     void fetchPage(clamped, undefined, { pageOnly: true })
   }
 
@@ -321,7 +361,7 @@ export function DataExportDashboard({
     )
   }
 
-  const colCount = 9 + fieldKeys.length
+  const colCount = 9 + fieldColumns.length
   const projectLabel = dashboardData.brandName.trim() || "Project"
 
   return (
@@ -379,11 +419,17 @@ export function DataExportDashboard({
                   <th className={thClassName}>utm_id</th>
                   <th className={thClassName}>TrustedForm</th>
                   <th className={thClassName}>Form Submitted</th>
-                  {fieldKeys.map((key) => (
-                    <th key={key} className={thClassName}>
-                      {key}
-                    </th>
-                  ))}
+                  {fieldColumns.map((column) =>
+                    column.kind === "age" ? (
+                      <th key={`age-${column.dobKey}`} className={thClassName}>
+                        Age
+                      </th>
+                    ) : (
+                      <th key={column.key} className={thClassName}>
+                        {column.key}
+                      </th>
+                    )
+                  )}
                   <th className={thClassName}>Session</th>
                 </tr>
               </thead>
@@ -451,18 +497,33 @@ export function DataExportDashboard({
                           {lead.formSubmitted ? "Yes" : "No"}
                         </span>
                       </td>
-                      {fieldKeys.map((key) => (
-                        <td
-                          key={key}
-                          className={cn(
-                            tdClassName,
-                            isAddressFieldKey(key) &&
-                              "max-w-[16rem] min-w-[12rem] whitespace-normal"
-                          )}
-                        >
-                          {formatFieldCell(key, lead.fields[key])}
-                        </td>
-                      ))}
+                      {fieldColumns.map((column) =>
+                        column.kind === "age" ? (
+                          <td
+                            key={`age-${column.dobKey}`}
+                            className={cn(
+                              tdClassName,
+                              "text-muted-foreground tabular-nums"
+                            )}
+                          >
+                            {ageFromDob(lead.fields[column.dobKey])}
+                          </td>
+                        ) : (
+                          <td
+                            key={column.key}
+                            className={cn(
+                              tdClassName,
+                              isAddressFieldKey(column.key) &&
+                                "max-w-[16rem] min-w-[12rem] whitespace-normal"
+                            )}
+                          >
+                            {formatFieldCell(
+                              column.key,
+                              lead.fields[column.key]
+                            )}
+                          </td>
+                        )
+                      )}
                       <td
                         className={cn(
                           tdClassName,
