@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   fieldsWithoutReserved,
+  hasLeadIdentity,
   isDisplayableLead,
   normalizeLeadFields,
   pickLeadEmail,
@@ -117,6 +118,21 @@ describe('isDisplayableLead', () => {
         email: '',
         fields: { address: '1 Main' },
       }),
+    ).toBe(true)
+  })
+})
+
+describe('hasLeadIdentity', () => {
+  it('requires email or a name field', () => {
+    expect(hasLeadIdentity({ email: '', fields: { city: 'Austin' } })).toBe(
+      false,
+    )
+    expect(hasLeadIdentity({ email: 'a@b.com', fields: {} })).toBe(true)
+    expect(
+      hasLeadIdentity({ email: '', fields: { first_name: 'Sam' } }),
+    ).toBe(true)
+    expect(
+      hasLeadIdentity({ email: '', fields: { last_name: 'Carter' } }),
     ).toBe(true)
   })
 })

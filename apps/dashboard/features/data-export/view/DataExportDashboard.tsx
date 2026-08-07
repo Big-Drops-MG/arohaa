@@ -30,6 +30,7 @@ import {
 import {
   formatInDashboardTimezone,
   getDashboardTimezoneAbbreviation,
+  getDashboardZonedParts,
 } from "@/lib/datetime"
 
 type DataExportDashboardProps = {
@@ -92,6 +93,48 @@ function isAddressFieldKey(key: string): boolean {
 function cellValue(value: string | undefined): string {
   const trimmed = value?.trim()
   return trimmed ? trimmed : "—"
+}
+
+function pad2(value: string): string {
+  return value.replace(/\D/g, "").padStart(2, "0").slice(-2)
+}
+
+function formatDobWithAge(raw: string): string {
+  const trimmed = raw.trim()
+  const match = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
+  if (!match) return cellValue(trimmed)
+
+  const month = Number(match[1])
+  const day = Number(match[2])
+  const year = Number(match[3])
+  if (
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(year) ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    year < 1900
+  ) {
+    return cellValue(trimmed)
+  }
+
+  const now = getDashboardZonedParts(new Date())
+  let age = now.year - year
+  if (now.month < month || (now.month === month && now.day < day)) age -= 1
+  if (age < 0 || age > 120) {
+    return `${pad2(String(month))}/${pad2(String(day))}/${year}`
+  }
+
+  return `${pad2(String(month))}/${pad2(String(day))}/${year} (Age: ${age})`
+}
+
+function formatFieldCell(key: string, value: string | undefined): string {
+  if (/^dob$/i.test(key.trim()) && value?.trim()) {
+    return formatDobWithAge(value)
+  }
+  return cellValue(value)
 }
 
 function formatEntryCount(total: number): string {
@@ -397,7 +440,7 @@ export function DataExportDashboard({
                               "max-w-[16rem] min-w-[12rem] whitespace-normal"
                           )}
                         >
-                          {cellValue(lead.fields[key])}
+                          {formatFieldCell(key, lead.fields[key])}
                         </td>
                       ))}
                       <td

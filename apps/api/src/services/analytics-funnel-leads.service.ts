@@ -9,6 +9,7 @@ import {
 import {
   fieldsWithoutReserved,
   isDisplayableLead,
+  hasLeadIdentity,
   normalizeLeadFields,
   pickLeadEmail,
   pickLeadZip,
@@ -58,6 +59,37 @@ function parseFields(raw: string): Record<string, string> {
   }
 }
 
+
+function pickQueryParam(url: string, keys: string[]): string {
+  if (!url) return ''
+  try {
+    const parsed = new URL(url)
+    for (const key of keys) {
+      const value = (parsed.searchParams.get(key) || '').trim()
+      if (value) return value.slice(0, 200)
+    }
+  } catch {
+    /* ignore malformed urls */
+  }
+  return ''
+}
+
+function resolveLeadUtm(input: {
+  utmSource?: string
+  utmId?: string
+  url?: string
+}): { utmSource: string; utmId: string } {
+  const url = input.url || ''
+  return {
+    utmSource:
+      (input.utmSource || '').trim() ||
+      pickQueryParam(url, ['utm_source', 'sid']),
+    utmId:
+      (input.utmId || '').trim() ||
+      pickQueryParam(url, ['utm_id', 'tid', 'uid']),
+  }
+}
+
 export async function getFunnelLeads({
   workspaceId,
   rangeId,
@@ -79,9 +111,11 @@ export async function getFunnelLeads({
     AND event_name IN ('form_success', 'form_step_complete', 'form_step_view')
     AND positionCaseInsensitive(properties, '"fields"') > 0`
 
-  // Over-read then filter empty/digest-only rows so pagination stays correct
-  // for the small internal Data Export surface.
-  const scanLimit = Math.min(500, Math.max(safeLimit + safeOffset + 40, 80))
+
+  const scanLimit = Math.min(
+    800,
+    Math.max((safeLimit + safeOffset) * 3 + 60, 120),
+  )
 
   const p = {
     wid: workspaceId,
@@ -99,6 +133,7 @@ export async function getFunnelLeads({
         l.last_at AS last_at,
         l.props AS props,
         l.form_submitted AS form_submitted,
+        l.sample_url AS sample_url,
         z.zip_val AS zip_val,
         u.utm_source AS utm_source,
         u.utm_id AS utm_id
@@ -107,6 +142,7 @@ export async function getFunnelLeads({
           session_id,
           max(created_at) AS last_at,
           argMax(properties, (length(properties), created_at)) AS props,
+          argMax(url, (length(properties), created_at)) AS sample_url,
           max(event_name = 'form_success') AS form_submitted
         FROM events_raw
         WHERE ${where}
@@ -142,6 +178,7 @@ export async function getFunnelLeads({
         last_at: string
         props: string
         form_submitted: number | boolean | string
+        sample_url: string
         zip_val: string
         utm_source: string
         utm_id: string
@@ -153,13 +190,18 @@ export async function getFunnelLeads({
       const fields = parseFields(row.props || '{}')
       const email = pickLeadEmail(fields)
       const zip = row.zip_val || pickLeadZip(fields) || ''
+      const utm = resolveLeadUtm({
+        utmSource: row.utm_source,
+        utmId: row.utm_id,
+        url: row.sample_url,
+      })
       return {
         sessionId: row.session_id,
         createdAt: row.last_at,
         zip,
         email,
-        utmSource: (row.utm_source || '').trim(),
-        utmId: (row.utm_id || '').trim(),
+        utmSource: utm.utmSource,
+        utmId: utm.utmId,
         formSubmitted:
           row.form_submitted === true ||
           row.form_submitted === 1 ||
@@ -167,7 +209,7 @@ export async function getFunnelLeads({
         fields: fieldsWithoutReserved(fields),
       }
     })
-    .filter((lead) => isDisplayableLead(lead))
+    .filter((lead) => isDisplayableLead(lead) && hasLeadIdentity(lead))
 
   const total = allLeads.length
   const leads = allLeads.slice(safeOffset, safeOffset + safeLimit)

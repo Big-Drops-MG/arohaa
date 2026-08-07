@@ -140,3 +140,18 @@ export function isDisplayableLead(input: {
   }
   return false
 }
+
+const NAME_KEY_RE = /^(first_?name|last_?name|full_?name|name)$/i
+
+export function hasLeadIdentity(input: {
+  email?: string
+  fields?: Record<string, string>
+}): boolean {
+  if (input.email?.trim()) return true
+  const fields = input.fields ?? {}
+  for (const [key, value] of Object.entries(fields)) {
+    if (!NAME_KEY_RE.test(key)) continue
+    if (value?.trim()) return true
+  }
+  return false
+}
