@@ -12,6 +12,9 @@ const EMAIL_KEY_RE = RE.emailKey
 const NOISE_KEY_RE =
   /^(input|select|textarea|search|xxtrustedformpingurl|jornaya_lead_id|leadid_token|universal_leadid|consent-confirmation-certificate-id)$/i
 
+const TRUSTEDFORM_KEY_RE =
+  /^(xxTrustedFormCertUrl|xxTrustedFormToken|TrustedFormCertUrl)$/i
+
 let captureInstalled = false
 let stepIndex = 0
 const fieldValues: Record<string, string> = {}
@@ -22,6 +25,10 @@ function classNameOf(el: Element): string {
   if (typeof el.className === "string") return el.className
   const fromAttr = el.getAttribute("class")
   return fromAttr ?? ""
+}
+
+function isTrustedFormFieldKey(key: string): boolean {
+  return TRUSTEDFORM_KEY_RE.test(key)
 }
 
 function isDobControl(
@@ -109,9 +116,11 @@ function fieldKey(
 
 function isSkippedInputType(el: HTMLInputElement): boolean {
   const t = el.type.toLowerCase()
+  if (t === "hidden") {
+    return !isTrustedFormFieldKey(fieldKey(el))
+  }
   return (
     t === "password" ||
-    t === "hidden" ||
     t === "submit" ||
     t === "button" ||
     t === "file"

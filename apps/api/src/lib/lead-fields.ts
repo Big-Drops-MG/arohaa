@@ -141,24 +141,33 @@ export function isDisplayableLead(input: {
   return false
 }
 
+function asTrustedFormCertUrl(value: string): string {
+  const trimmed = value.trim()
+  if (/^https:\/\/cert\.trustedform\.com\//i.test(trimmed)) {
+    return trimmed.slice(0, 500)
+  }
+  if (/^[a-f0-9]{40}$/i.test(trimmed)) {
+    return `https://cert.trustedform.com/${trimmed.toLowerCase()}`
+  }
+  return ''
+}
+
 export function pickTrustedFormUrl(raw: Record<string, string>): string {
   const preferred = [
+    raw.xxTrustedFormCertUrl,
     raw.TrustedFormCertUrl,
     raw.trustedFormCertUrl,
     raw.xxTrustedFormToken,
   ]
   for (const candidate of preferred) {
-    const value = String(candidate ?? '').trim()
-    if (/^https:\/\/cert\.trustedform\.com\//i.test(value)) {
-      return value.slice(0, 500)
-    }
+    const url = asTrustedFormCertUrl(String(candidate ?? ''))
+    if (url) return url
   }
   for (const [key, value] of Object.entries(raw)) {
     if (!/trustedformcerturl|xxtrustedformtoken/i.test(key)) continue
-    const trimmed = String(value ?? '').trim()
-    if (/^https:\/\/cert\.trustedform\.com\//i.test(trimmed)) {
-      return trimmed.slice(0, 500)
-    }
+    if (/ping/i.test(key)) continue
+    const url = asTrustedFormCertUrl(String(value ?? ''))
+    if (url) return url
   }
   return ''
 }

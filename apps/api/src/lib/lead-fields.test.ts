@@ -123,12 +123,22 @@ describe('isDisplayableLead', () => {
 })
 
 describe('pickTrustedFormUrl', () => {
-  it('prefers the certificate URL', () => {
+  it('prefers xxTrustedFormCertUrl certificate URL', () => {
     expect(
       pickTrustedFormUrl({
-        TrustedFormCertUrl:
+        xxTrustedFormCertUrl:
           'https://cert.trustedform.com/b1ca89aa43369be1f60b58d779b13b19a5b06b67',
         xxTrustedFormPingUrl: 'https://ping.trustedform.com/abc',
+      }),
+    ).toBe(
+      'https://cert.trustedform.com/b1ca89aa43369be1f60b58d779b13b19a5b06b67',
+    )
+  })
+
+  it('builds cert URL from a 40-char token hash', () => {
+    expect(
+      pickTrustedFormUrl({
+        xxTrustedFormToken: 'b1ca89aa43369be1f60b58d779b13b19a5b06b67',
       }),
     ).toBe(
       'https://cert.trustedform.com/b1ca89aa43369be1f60b58d779b13b19a5b06b67',
