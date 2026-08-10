@@ -27,3 +27,19 @@ export function isHeatmapPreview(): boolean {
 
   return cachedPreview
 }
+
+// Previews reveal a step by answering the questions it derives from. Those
+// answers are persisted by the funnel, so without a reset the next preview boots
+// a partly filled funnel and can land past its steps entirely.
+export function clearPreviewSiteState(): void {
+  try {
+    window.localStorage.clear()
+  } catch {
+    /* storage can be unavailable in sandboxed frames */
+  }
+  try {
+    window.sessionStorage.clear()
+  } catch {
+    /* storage can be unavailable in sandboxed frames */
+  }
+}

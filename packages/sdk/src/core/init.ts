@@ -5,7 +5,10 @@ import { setupLifecycle } from "./lifecycle"
 import { setupFrameSizeReporter } from "./frame-size"
 import { loadSdkRemoteConfig } from "./sdk-config"
 import { enforceUtmBlockGate } from "./utm-gate"
-import { isHeatmapPreview } from "../heatmap/preview-mode"
+import {
+  clearPreviewSiteState,
+  isHeatmapPreview,
+} from "../heatmap/preview-mode"
 
 let isSDKInitialized = false
 
@@ -15,6 +18,11 @@ export function isSDKInitializedState(): boolean {
 
 export async function initSDK(): Promise<void> {
   if (isSDKInitialized) return
+
+  // Runs before the host page boots so a preview always starts from a clean
+  // funnel rather than the answers a previous preview left behind.
+  const isPreview = isHeatmapPreview()
+  if (isPreview) clearPreviewSiteState()
 
   const config = initializeConfig()
 
@@ -30,7 +38,7 @@ export async function initSDK(): Promise<void> {
 
   setupFrameSizeReporter()
 
-  if (isHeatmapPreview()) {
+  if (isPreview) {
     isSDKInitialized = true
     return
   }
