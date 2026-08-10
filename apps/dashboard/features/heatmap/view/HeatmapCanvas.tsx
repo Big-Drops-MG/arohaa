@@ -116,6 +116,19 @@ function toPaintPoints(points: HeatmapPoint[]) {
   }))
 }
 
+function previewStepSlugFromSrc(src: string | null | undefined): string | null {
+  if (!src) return null
+  try {
+    const u = new URL(src)
+    const hm = u.searchParams.get("_hm")?.trim()
+    if (hm && hm !== "start") return hm
+    const hash = u.hash.replace(/^#\/?/, "").trim()
+    return hash || null
+  } catch {
+    return null
+  }
+}
+
 export function HeatmapCanvas({
   mode,
   device,
@@ -274,11 +287,23 @@ export function HeatmapCanvas({
     if (!hasLivePage || !pageLoaded) return
     const win = iframeRef.current?.contentWindow
     if (!win) return
-    win.postMessage({ source: MESSAGE_SOURCE, type: "ping" }, "*")
-    const timers = [500, 1400, 2100].map((ms) =>
-      window.setTimeout(() => {
-        win.postMessage({ source: MESSAGE_SOURCE, type: "ping" }, "*")
-      }, ms)
+    const slug = previewStepSlugFromSrc(iframeSrc)
+    const ping = () => {
+      win.postMessage({ source: MESSAGE_SOURCE, type: "ping" }, "*")
+      if (slug) {
+        win.postMessage(
+          {
+            source: MESSAGE_SOURCE,
+            type: "heatmap-show-step",
+            slug,
+          },
+          "*"
+        )
+      }
+    }
+    ping()
+    const timers = [400, 900, 1600, 2400].map((ms) =>
+      window.setTimeout(ping, ms)
     )
     return () => timers.forEach((id) => window.clearTimeout(id))
   }, [hasLivePage, pageLoaded, device, iframeSrc, measuring])

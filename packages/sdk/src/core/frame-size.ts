@@ -5,6 +5,10 @@ import {
   setupHeatmapOverlayAutoRepaint,
   type HeatmapPaintPayload,
 } from "../heatmap/overlay"
+import {
+  clearHeatmapPreviewStep,
+  startHeatmapPreviewStep,
+} from "../heatmap/preview-step"
 
 const MESSAGE_SOURCE = "arohaa-heatmap"
 
@@ -26,7 +30,7 @@ function postDocSize(): void {
       type: "doc-size",
       width,
       height,
-      features: ["scroll-to", "heatmap-paint"],
+      features: ["scroll-to", "heatmap-paint", "heatmap-show-step"],
     },
     "*"
   )
@@ -61,6 +65,8 @@ function onParentMessage(event: MessageEvent): void {
         type?: string
         x?: number
         y?: number
+        slug?: string
+        hash?: string
         requestId?: string | number
         points?: HeatmapPaintPayload["points"]
         maxValue?: number
@@ -83,6 +89,18 @@ function onParentMessage(event: MessageEvent): void {
       top: Number.isFinite(y) ? y : 0,
       behavior: "auto",
     })
+    return
+  }
+
+  if (data.type === "heatmap-show-step") {
+    const slug =
+      typeof data.slug === "string" && data.slug.trim()
+        ? data.slug.trim()
+        : typeof data.hash === "string"
+          ? data.hash
+          : ""
+    startHeatmapPreviewStep(slug)
+    postDocSize()
     return
   }
 
@@ -125,6 +143,9 @@ export function setupFrameSizeReporter(): void {
   window.addEventListener("load", schedule)
   window.addEventListener("resize", schedule)
   window.addEventListener("message", onParentMessage)
+  window.addEventListener("pagehide", () => {
+    clearHeatmapPreviewStep()
+  })
 
   if (typeof ResizeObserver !== "undefined" && document.documentElement) {
     const ro = new ResizeObserver(schedule)

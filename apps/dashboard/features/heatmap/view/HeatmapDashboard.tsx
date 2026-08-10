@@ -421,13 +421,13 @@ export function HeatmapDashboard({
                 }}
               >
                 <SelectTrigger
-                  aria-label="Heatmap form page"
+                  aria-label="Heatmap page"
                   className={cn(
                     overviewSelectTriggerClassName,
                     "w-full sm:w-auto sm:max-w-64 sm:min-w-44"
                   )}
                 >
-                  <SelectValue placeholder="Form page" />
+                  <SelectValue placeholder="Page" />
                 </SelectTrigger>
                 <SelectContent
                   align="end"
