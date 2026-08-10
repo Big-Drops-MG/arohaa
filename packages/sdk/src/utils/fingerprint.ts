@@ -31,11 +31,19 @@ export function generateFingerprint(): string {
     .map((s) => (s === undefined || s === null ? "" : String(s)))
     .join("|")
 
-  let hash = 0
+  let hash = 2166136261
   for (let i = 0; i < raw.length; i++) {
-    hash = (hash << 5) - hash + raw.charCodeAt(i)
-    hash |= 0
+    hash ^= raw.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
   }
 
-  return Math.abs(hash).toString(16)
+  let hash2 = 0x811c9dc5
+  for (let i = raw.length - 1; i >= 0; i--) {
+    hash2 ^= raw.charCodeAt(i)
+    hash2 = Math.imul(hash2, 16777619)
+  }
+
+  const a = (hash >>> 0).toString(16).padStart(8, "0")
+  const b = (hash2 >>> 0).toString(16).padStart(8, "0")
+  return `${a}${b}`.slice(0, 12)
 }
