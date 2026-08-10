@@ -2,6 +2,9 @@ const PREVIEW_STEP_INTERVAL_MS = 400
 const PREREQUISITE_MAX_ANSWERS = 4
 const PREREQUISITE_WAIT_MS = 3000
 const PREREQUISITE_POLL_MS = 120
+// Choices of earlier steps can render well after the step shell exists, so keep
+// looking for them instead of giving up on the first pass.
+const PREREQUISITE_DEADLINE_MS = 15000
 
 let previewStepSlug: string | null = null
 let previewStepTimer: number | null = null
@@ -66,16 +69,26 @@ function isAwaitingPrerequisites(slug: string): boolean {
 function nextPrerequisiteChoice(slug: string): HTMLElement | null {
   const nodes = stepNodes()
   const targetIndex = nodes.findIndex((el) => slugOf(el) === slug)
-  if (targetIndex <= 0) return null
+  if (targetIndex <= 0) {
+    prefillState = { ...prefillState, targetIndex }
+    return null
+  }
 
+  const scan: string[] = []
   for (let i = 0; i < targetIndex; i += 1) {
     const panel = nodes[i]
     if (!panel) continue
     const radios = Array.from(
       panel.querySelectorAll<HTMLInputElement>('input[type="radio"]')
     )
-    if (radios.length === 0) continue
-    if (radios.some((radio) => radio.checked)) continue
+    if (radios.length === 0) {
+      scan.push(`${slugOf(panel)}:no-radios`)
+      continue
+    }
+    if (radios.some((radio) => radio.checked)) {
+      scan.push(`${slugOf(panel)}:answered`)
+      continue
+    }
 
     const first = radios[0]
     if (!first) continue
@@ -88,6 +101,7 @@ function nextPrerequisiteChoice(slug: string): HTMLElement | null {
     return first
   }
 
+  prefillState = { ...prefillState, targetIndex, scan }
   return null
 }
 
@@ -102,6 +116,10 @@ function waitForStepContent(slug: string): Promise<void> {
       }
     }, PREREQUISITE_POLL_MS)
   })
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
 function releaseForcedDisplay(): void {
@@ -127,19 +145,30 @@ async function answerPrerequisites(slug: string): Promise<boolean> {
     return false
   }
 
-  forcingPaused = true
-  releaseForcedDisplay()
-
+  const deadline = Date.now() + PREREQUISITE_DEADLINE_MS
   let answered = 0
-  while (answered < PREREQUISITE_MAX_ANSWERS && isAwaitingPrerequisites(slug)) {
+
+  while (
+    answered < PREREQUISITE_MAX_ANSWERS &&
+    Date.now() < deadline &&
+    isAwaitingPrerequisites(slug)
+  ) {
     const choice = nextPrerequisiteChoice(slug)
     if (!choice) {
-      prefillState = { ...prefillState, stage: "no-choice", answered }
-      break
+      prefillState = { ...prefillState, stage: "waiting-for-choices", answered }
+      await delay(PREREQUISITE_POLL_MS)
+      continue
     }
+
+    // Answering has to happen with the funnel's own step visible, otherwise the
+    // forced display fights its navigation.
+    forcingPaused = true
+    releaseForcedDisplay()
     choice.click()
     answered += 1
     await waitForStepContent(slug)
+    forcingPaused = false
+
     const now = findStepNode(slug)
     prefillState = {
       ...prefillState,
@@ -150,7 +179,10 @@ async function answerPrerequisites(slug: string): Promise<boolean> {
   }
 
   forcingPaused = false
-  if (answered === 0) return false
+  if (answered === 0) {
+    prefillState = { ...prefillState, stage: "gave-up", answered }
+    return false
+  }
 
   applyHeatmapPreviewStep(slug)
   return true
