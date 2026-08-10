@@ -16,6 +16,7 @@ type HeatmapDeviceFrameProps = {
   className?: string
   screenHeight: number
   screenWidth: number
+  scrollResetKey?: string
 }
 
 function frameKind(device: HeatmapDevice): "laptop" | "tablet" | "mobile" {
@@ -36,6 +37,7 @@ export function HeatmapDeviceFrame({
   className,
   screenHeight,
   screenWidth,
+  scrollResetKey = "",
 }: HeatmapDeviceFrameProps) {
   const kind = frameKind(device)
   const lidWidth = screenWidth + LAPTOP_PAD_X * 2
@@ -50,6 +52,7 @@ export function HeatmapDeviceFrame({
 
   const containerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
   const [naturalHeight, setNaturalHeight] = useState(screenHeight + 80)
 
@@ -73,9 +76,12 @@ export function HeatmapDeviceFrame({
     setNaturalHeight(el.offsetHeight)
   }, [device, screenHeight, screenWidth, scale])
 
-  // Screen is exactly screenWidth × screenHeight so the page fills the bezel
-  // edge-to-edge. The inner scroller moves the tall page+overlay together so
-  // heat cannot drift relative to the iframe content.
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTop = 0
+  }, [scrollResetKey, device])
+
   const screenRadius =
     kind === "mobile"
       ? "1.7rem"
@@ -96,6 +102,7 @@ export function HeatmapDeviceFrame({
       }}
     >
       <div
+        ref={scrollRef}
         className={cn(
           "h-full w-full overflow-x-hidden overflow-y-auto overscroll-contain",
           "[-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"

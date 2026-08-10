@@ -29,19 +29,25 @@ import {
   type HeatmapMode,
 } from "@/features/heatmap/model/heatmap"
 import {
+  buildHeatmapStepUrl,
   canonicalizeHeatmapPageUrl,
+  findHeatmapStepIndex,
   groupHeatmapFormSteps,
   heatmapFormKey,
+  heatmapPreviewSrc,
   heatmapStepLabel,
+  heatmapStepSlug,
 } from "@/features/heatmap/utils/heatmap-page-steps"
 import { HeatmapCanvas } from "@/features/heatmap/view/HeatmapCanvas"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import { useDashboardNavigation } from "@/hooks/use-dashboard-navigation"
 import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
 import type { AnalyticsFetchMode } from "@/lib/dashboard/analytics-fetch-mode"
 import {
   buildAnalyticsApiPath,
   shouldUseInitialTabData,
 } from "@/lib/dashboard/analytics-query"
+import { writeDashboardPreference } from "@/lib/dashboard/dashboard-preferences"
 
 type HeatmapDashboardProps = {
   data: HeatmapDashboardData
@@ -68,6 +74,7 @@ export function HeatmapDashboard({
   const defaultMode = visibleModes[0]?.value ?? "click"
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
+  const { replaceSearch } = useDashboardNavigation()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [mode, setMode] = useDashboardQueryParam("mode", {
     parse: (raw) => {
@@ -85,13 +92,62 @@ export function HeatmapDashboard({
     projectId,
     omitDefault: true,
   })
-  const [pageUrl, setPageUrl] = useDashboardQueryParam("page_url", {
-    parse: (raw) => (raw?.trim() ? canonicalizeHeatmapPageUrl(raw.trim()) : ""),
+  const [formKey] = useDashboardQueryParam("hm_form", {
+    parse: (raw) => (raw?.trim() ? raw.trim() : ""),
     projectId,
     omitDefault: true,
+    refreshOnChange: false,
   })
+  const [stepSlug] = useDashboardQueryParam("hm_step", {
+    parse: (raw) => (raw?.trim() ? raw.trim() : ""),
+    projectId,
+    omitDefault: true,
+    refreshOnChange: false,
+  })
+  const [stepNav, setStepNav] = useState<{
+    formKey: string
+    stepSlug: string
+  } | null>(null)
   const [isBlockingLoad, setIsBlockingLoad] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const activeFormKey = stepNav?.formKey ?? formKey
+  const activeStepSlug = stepNav?.stepSlug ?? stepSlug
+
+  useEffect(() => {
+    if (!stepNav) return
+    if (formKey === stepNav.formKey && stepSlug === stepNav.stepSlug) {
+      setStepNav(null)
+    }
+  }, [formKey, stepNav, stepSlug])
+
+  const selectedPageUrl = useMemo(() => {
+    if (activeFormKey && activeStepSlug) {
+      return buildHeatmapStepUrl(activeFormKey, activeStepSlug)
+    }
+    if (activeFormKey) return buildHeatmapStepUrl(activeFormKey, "start")
+    return ""
+  }, [activeFormKey, activeStepSlug])
+
+  const goToStep = useCallback(
+    (url: string) => {
+      const nextForm = heatmapFormKey(url)
+      const nextSlug = heatmapStepSlug(url)
+      setStepNav({ formKey: nextForm, stepSlug: nextSlug })
+      writeDashboardPreference(projectId, "hm_form", nextForm)
+      writeDashboardPreference(projectId, "hm_step", nextSlug)
+      replaceSearch(
+        (params) => {
+          if (nextForm) params.set("hm_form", nextForm)
+          else params.delete("hm_form")
+          if (nextSlug) params.set("hm_step", nextSlug)
+          else params.delete("hm_step")
+        },
+        { refresh: false }
+      )
+    },
+    [projectId, replaceSearch]
+  )
 
   const fetchHeatmap = useCallback(
     async (
@@ -160,31 +216,36 @@ export function HeatmapDashboard({
       ) &&
       mode === initialData.mode &&
       device === initialDevice &&
-      (!pageUrl || pageUrl === initialPage)
+      (!selectedPageUrl || selectedPageUrl === initialPage)
 
     if (canUseInitial) {
       setDashboardData(initialData)
       setIsBlockingLoad(false)
+      if (!activeFormKey && initialPage) {
+        goToStep(initialPage)
+      }
       return
     }
 
     const controller = new AbortController()
     void fetchHeatmap(
       dateRangeId,
-      { mode, device, pageUrl: pageUrl || undefined },
+      { mode, device, pageUrl: selectedPageUrl || undefined },
       controller.signal,
       "background"
     )
     return () => controller.abort()
   }, [
     isActive,
+    activeFormKey,
     customRange,
     dateRangeId,
     device,
     fetchHeatmap,
+    goToStep,
     initialData,
     mode,
-    pageUrl,
+    selectedPageUrl,
   ])
 
   const pageOptions = useMemo(() => {
@@ -202,39 +263,58 @@ export function HeatmapDashboard({
     [pageOptions]
   )
 
-  const selectedPageUrl =
-    canonicalizeHeatmapPageUrl(
-      pageUrl || dashboardData.pageUrl || pageOptions[0] || ""
-    ) || ""
-
-  const activeFormKey = selectedPageUrl
-    ? heatmapFormKey(selectedPageUrl)
-    : (formGroups[0]?.formKey ?? "")
-
   const activeForm =
     formGroups.find((group) => group.formKey === activeFormKey) ??
     formGroups[0] ??
     null
 
+  useEffect(() => {
+    if (!activeForm) return
+    if (!activeFormKey) {
+      const first = activeForm.steps[0]
+      if (first) goToStep(first)
+      return
+    }
+    if (!activeStepSlug && activeForm.steps[0]) {
+      goToStep(activeForm.steps[0])
+    }
+  }, [activeForm, activeFormKey, activeStepSlug, goToStep])
+
   const stepIndex = activeForm
-    ? Math.max(0, activeForm.steps.indexOf(selectedPageUrl))
+    ? findHeatmapStepIndex(
+        activeForm.steps,
+        selectedPageUrl || activeForm.steps[0] || ""
+      )
     : 0
   const stepCount = activeForm?.steps.length ?? 0
-  const currentStepUrl = activeForm?.steps[stepIndex] ?? selectedPageUrl
+  const currentStepUrl =
+    (activeForm?.steps[stepIndex] ?? selectedPageUrl) ||
+    dashboardData.pageUrl ||
+    ""
   const canGoPrev = stepIndex > 0
   const canGoNext = stepIndex >= 0 && stepIndex < stepCount - 1
 
-  const hasData =
+  const heatMatchesStep =
+    !currentStepUrl ||
+    !dashboardData.pageUrl ||
+    canonicalizeHeatmapPageUrl(dashboardData.pageUrl) ===
+      canonicalizeHeatmapPageUrl(currentStepUrl)
+
+  const hasEvents =
     dashboardData.totalEvents > 0 ||
     dashboardData.cells.length > 0 ||
     dashboardData.points.length > 0 ||
     dashboardData.scrollBuckets.length > 0 ||
     dashboardData.fields.length > 0
 
+  const hasData = heatMatchesStep && hasEvents
+
   const emptyMessage =
     mode === "form"
       ? "No form field heat for this range yet. Focus and clicks on form fields appear after the SDK update collects traffic on the redirect page."
       : "No heatmap data for this range yet. Clicks, scroll depth, and attention will appear here after the SDK starts collecting."
+
+  const showEmptyOverlay = heatMatchesStep && !isRefreshing && !hasEvents
 
   return (
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">
@@ -332,10 +412,12 @@ export function HeatmapDashboard({
             {formGroups.length > 0 ? (
               <Select
                 value={activeForm?.formKey ?? ""}
-                onValueChange={(formKey) => {
-                  const group = formGroups.find((g) => g.formKey === formKey)
+                onValueChange={(nextFormKey) => {
+                  const group = formGroups.find(
+                    (g) => g.formKey === nextFormKey
+                  )
                   const first = group?.steps[0]
-                  if (first) setPageUrl(first)
+                  if (first) goToStep(first)
                 }}
               >
                 <SelectTrigger
@@ -374,7 +456,7 @@ export function HeatmapDashboard({
                   disabled={!canGoPrev}
                   onClick={() => {
                     const prev = activeForm.steps[stepIndex - 1]
-                    if (prev) setPageUrl(prev)
+                    if (prev) goToStep(prev)
                   }}
                 >
                   Previous
@@ -393,7 +475,7 @@ export function HeatmapDashboard({
                   disabled={!canGoNext}
                   onClick={() => {
                     const next = activeForm.steps[stepIndex + 1]
-                    if (next) setPageUrl(next)
+                    if (next) goToStep(next)
                   }}
                 >
                   Next
@@ -437,13 +519,16 @@ export function HeatmapDashboard({
             <HeatmapCanvas
               mode={dashboardData.mode}
               device={device}
-              cells={dashboardData.cells}
-              points={dashboardData.points}
-              scrollBuckets={dashboardData.scrollBuckets}
+              cells={heatMatchesStep ? dashboardData.cells : []}
+              points={heatMatchesStep ? dashboardData.points : []}
+              scrollBuckets={heatMatchesStep ? dashboardData.scrollBuckets : []}
               maxValue={dashboardData.maxValue}
               opacity={HEATMAP_DEFAULT_OPACITY}
-              backgroundUrl={dashboardData.pageUrl}
-              emptyState={!hasData}
+              backgroundUrl={currentStepUrl || dashboardData.pageUrl}
+              previewSrc={
+                currentStepUrl ? heatmapPreviewSrc(currentStepUrl) : null
+              }
+              emptyState={showEmptyOverlay}
               emptyMessage={emptyMessage}
             />
           </div>
