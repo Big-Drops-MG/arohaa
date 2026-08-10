@@ -361,7 +361,7 @@ export function DataExportDashboard({
     )
   }
 
-  const colCount = 9 + fieldColumns.length
+  const colCount = 10 + fieldColumns.length
   const projectLabel = dashboardData.brandName.trim() || "Project"
 
   return (
@@ -430,6 +430,7 @@ export function DataExportDashboard({
                       </th>
                     )
                   )}
+                  <th className={thClassName}>MAC id</th>
                   <th className={thClassName}>Session</th>
                 </tr>
               </thead>
@@ -524,6 +525,14 @@ export function DataExportDashboard({
                           </td>
                         )
                       )}
+                      <td
+                        className={cn(
+                          tdClassName,
+                          "font-mono text-xs text-muted-foreground"
+                        )}
+                      >
+                        {cellValue(lead.macId)}
+                      </td>
                       <td
                         className={cn(
                           tdClassName,

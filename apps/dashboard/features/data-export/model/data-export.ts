@@ -5,6 +5,7 @@ import type {
 
 export type DataExportLeadRow = {
   sessionId: string
+  macId: string
   createdAt: string
   zip: string
   email: string

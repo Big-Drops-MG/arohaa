@@ -19,6 +19,7 @@ type CHJson<T> = { data: T[] }
 
 export type FunnelLeadRow = {
   sessionId: string
+  macId: string
   createdAt: string
   zip: string
   email: string
@@ -40,6 +41,7 @@ export type FunnelLeadsResponse = {
 
 type RawLeadSessionRow = {
   session_id: string
+  fingerprint: string
   last_at: string
   props: string
   form_submitted: number | boolean | string
@@ -116,6 +118,7 @@ function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
   })
   return {
     sessionId: row.session_id,
+    macId: (row.fingerprint || '').trim(),
     createdAt: row.last_at,
     zip,
     email,
@@ -194,6 +197,7 @@ export async function getFunnelLeads({
     query: `
       SELECT
         l.session_id AS session_id,
+        f.fingerprint AS fingerprint,
         l.last_at AS last_at,
         l.props AS props,
         l.form_submitted AS form_submitted,
@@ -212,6 +216,14 @@ export async function getFunnelLeads({
         WHERE ${where}
         GROUP BY session_id
       ) AS l
+      LEFT JOIN (
+        SELECT
+          session_id,
+          anyIf(fingerprint, fingerprint != '') AS fingerprint
+        FROM events_raw
+        WHERE ${rangeFilter()}
+        GROUP BY session_id
+      ) AS f ON f.session_id = l.session_id
       LEFT JOIN (
         SELECT
           session_id,

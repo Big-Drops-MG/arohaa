@@ -24,6 +24,7 @@ type LeadsApiResponse = {
   rangeId?: RangeId
   leads?: Array<{
     sessionId: string
+    macId?: string
     createdAt: string
     zip: string
     email?: string
@@ -117,6 +118,7 @@ export async function loadDataExportDashboardData({
       rangeId) as DataExportDashboardData["defaultDateRangeId"],
     leads: (analytics.leads ?? []).map((lead) => ({
       sessionId: lead.sessionId,
+      macId: lead.macId ?? "",
       createdAt: lead.createdAt,
       zip: lead.zip,
       email: lead.email ?? "",

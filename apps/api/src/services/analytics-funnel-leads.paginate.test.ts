@@ -7,6 +7,7 @@ import {
 function lead(sessionId: string): FunnelLeadRow {
   return {
     sessionId,
+    macId: '',
     createdAt: '2026-01-01T00:00:00Z',
     zip: '90210',
     email: `${sessionId}@example.com`,
