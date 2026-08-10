@@ -1,8 +1,13 @@
 const PREVIEW_STEP_INTERVAL_MS = 400
+const PREREQUISITE_MAX_ANSWERS = 4
+const PREREQUISITE_WAIT_MS = 3000
+const PREREQUISITE_POLL_MS = 120
 
 let previewStepSlug: string | null = null
 let previewStepTimer: number | null = null
 let previewStepOnChange: (() => void) | null = null
+let prerequisiteSlug: string | null = null
+let forcingPaused = false
 
 function normalizeStepSlug(raw: string): string {
   return raw.replace(/^#\/?/, "").trim().toLowerCase()
@@ -16,12 +21,121 @@ function stepNodes(): HTMLElement[] {
   return Array.from(document.querySelectorAll<HTMLElement>("[data-step]"))
 }
 
+function slugOf(el: HTMLElement): string {
+  return (el.getAttribute("data-step") || "").trim().toLowerCase()
+}
+
+function findStepNode(slug: string): HTMLElement | null {
+  return stepNodes().find((el) => slugOf(el) === slug) ?? null
+}
+
+function isSearchField(el: HTMLInputElement): boolean {
+  const hint = `${el.name} ${el.id} ${el.placeholder}`.toLowerCase()
+  return el.type === "search" || /search|filter/.test(hint)
+}
+
+// A step whose choices are fetched from earlier answers renders as an empty
+// shell until those answers exist, so control count is what tells the two apart.
+function answerableControlCount(panel: HTMLElement): number {
+  let count = 0
+  for (const el of panel.querySelectorAll<HTMLElement>(
+    "input, select, textarea, button"
+  )) {
+    if (el instanceof HTMLInputElement) {
+      if (el.type === "hidden") continue
+      if (isSearchField(el)) continue
+    }
+    count += 1
+  }
+  return count
+}
+
+function isAwaitingPrerequisites(slug: string): boolean {
+  const panel = findStepNode(slug)
+  if (!panel) return false
+  return answerableControlCount(panel) === 0
+}
+
+// Only radio choices are ever answered automatically: they carry no typed data
+// and never submit the funnel.
+function nextPrerequisiteChoice(slug: string): HTMLElement | null {
+  const nodes = stepNodes()
+  const targetIndex = nodes.findIndex((el) => slugOf(el) === slug)
+  if (targetIndex <= 0) return null
+
+  for (let i = 0; i < targetIndex; i += 1) {
+    const panel = nodes[i]
+    if (!panel) continue
+    const radios = Array.from(
+      panel.querySelectorAll<HTMLInputElement>('input[type="radio"]')
+    )
+    if (radios.length === 0) continue
+    if (radios.some((radio) => radio.checked)) continue
+
+    const first = radios[0]
+    if (!first) continue
+    if (first.id) {
+      const label = panel.querySelector<HTMLElement>(
+        `label[for="${CSS.escape(first.id)}"]`
+      )
+      if (label) return label
+    }
+    return first
+  }
+
+  return null
+}
+
+function waitForStepContent(slug: string): Promise<void> {
+  return new Promise((resolve) => {
+    const startedAt = Date.now()
+    const poll = window.setInterval(() => {
+      const ready = !isAwaitingPrerequisites(slug)
+      if (ready || Date.now() - startedAt > PREREQUISITE_WAIT_MS) {
+        window.clearInterval(poll)
+        resolve()
+      }
+    }, PREREQUISITE_POLL_MS)
+  })
+}
+
+function releaseForcedDisplay(): void {
+  for (const el of stepNodes()) {
+    el.style.removeProperty("display")
+  }
+}
+
+async function answerPrerequisites(slug: string): Promise<boolean> {
+  if (prerequisiteSlug === slug) return false
+  prerequisiteSlug = slug
+  if (!isAwaitingPrerequisites(slug)) return false
+
+  forcingPaused = true
+  releaseForcedDisplay()
+
+  let answered = 0
+  while (answered < PREREQUISITE_MAX_ANSWERS && isAwaitingPrerequisites(slug)) {
+    const choice = nextPrerequisiteChoice(slug)
+    if (!choice) break
+    choice.click()
+    answered += 1
+    await waitForStepContent(slug)
+  }
+
+  forcingPaused = false
+  if (answered === 0) return false
+
+  applyHeatmapPreviewStep(slug)
+  return true
+}
+
 export function applyHeatmapPreviewStep(slugRaw: string): {
   matched: boolean
   changed: boolean
 } {
   const slug = normalizeStepSlug(slugRaw)
   if (!slug || slug === "start") return { matched: false, changed: false }
+  if (forcingPaused) return { matched: false, changed: false }
 
   const nodes = stepNodes()
   if (nodes.length === 0) return { matched: false, changed: false }
@@ -30,8 +144,7 @@ export function applyHeatmapPreviewStep(slugRaw: string): {
   let changed = false
 
   for (const el of nodes) {
-    const step = (el.getAttribute("data-step") || "").trim().toLowerCase()
-    const on = step === slug
+    const on = slugOf(el) === slug
     if (on) matched = true
 
     const desired = on ? "block" : "none"
@@ -71,10 +184,19 @@ export function startHeatmapPreviewStep(
     return false
   }
 
-  previewStepSlug = slug
+  if (previewStepSlug !== slug) {
+    previewStepSlug = slug
+    prerequisiteSlug = null
+  }
   if (onChange) previewStepOnChange = onChange
 
-  const { changed } = applyHeatmapPreviewStep(slug)
+  const { matched, changed } = applyHeatmapPreviewStep(slug)
+
+  if (matched && prerequisiteSlug !== slug) {
+    void answerPrerequisites(slug).then((filled) => {
+      if (filled) previewStepOnChange?.()
+    })
+  }
 
   if (previewStepTimer == null) {
     previewStepTimer = window.setInterval(() => {
@@ -90,12 +212,12 @@ export function startHeatmapPreviewStep(
 export function clearHeatmapPreviewStep(): void {
   previewStepSlug = null
   previewStepOnChange = null
+  prerequisiteSlug = null
+  forcingPaused = false
   if (previewStepTimer != null) {
     window.clearInterval(previewStepTimer)
     previewStepTimer = null
   }
 
-  for (const el of stepNodes()) {
-    el.style.removeProperty("display")
-  }
+  releaseForcedDisplay()
 }

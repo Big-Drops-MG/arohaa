@@ -124,11 +124,10 @@ export function heatmapPreviewSrc(url: string): string {
   try {
     const u = new URL(canonicalizeHeatmapPageUrl(url))
     const slug = heatmapStepSlug(u.href)
-    // Load the host document only — Quotifii-style SPAs ignore/reset hash deep
-    // links. The dashboard asks the framed SDK to reveal the step via postMessage.
     u.search = ""
     u.hash = ""
     u.searchParams.set("_hm", slug)
+    u.searchParams.set("_arohaa_preview", "1")
     return u.toString()
   } catch {
     return url

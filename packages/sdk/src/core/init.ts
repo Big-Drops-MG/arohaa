@@ -5,6 +5,7 @@ import { setupLifecycle } from "./lifecycle"
 import { setupFrameSizeReporter } from "./frame-size"
 import { loadSdkRemoteConfig } from "./sdk-config"
 import { enforceUtmBlockGate } from "./utm-gate"
+import { isHeatmapPreview } from "../heatmap/preview-mode"
 
 let isSDKInitialized = false
 
@@ -28,6 +29,11 @@ export async function initSDK(): Promise<void> {
 
 
   setupFrameSizeReporter()
+
+  if (isHeatmapPreview()) {
+    isSDKInitialized = true
+    return
+  }
 
   const blocked = await enforceUtmBlockGate(config)
   if (blocked) return
