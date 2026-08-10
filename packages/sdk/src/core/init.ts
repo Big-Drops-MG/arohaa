@@ -18,9 +18,6 @@ export function isSDKInitializedState(): boolean {
 
 export async function initSDK(): Promise<void> {
   if (isSDKInitialized) return
-
-  // Runs before the host page boots so a preview always starts from a clean
-  // funnel rather than the answers a previous preview left behind.
   const isPreview = isHeatmapPreview()
   if (isPreview) clearPreviewSiteState()
 

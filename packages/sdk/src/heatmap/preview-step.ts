@@ -49,17 +49,12 @@ function answerableControlCount(panel: HTMLElement): number {
   return count
 }
 
-// A step is only previewable once the funnel holds the answers it derives from:
-// until then it is either absent from the DOM or rendered as an empty shell.
 function needsPrefill(slug: string): boolean {
   const panel = findStepNode(slug)
   if (!panel) return true
   return answerableControlCount(panel) === 0
 }
 
-// Only radio choices are ever answered automatically: they carry no typed data
-// and never submit the funnel. Nothing at or beyond the step itself is answered,
-// so the funnel is never walked further than the preview needs.
 function nextUnansweredChoice(slug: string): HTMLElement | null {
   const nodes = stepNodes()
   const targetIndex = nodes.findIndex((el) => slugOf(el) === slug)
