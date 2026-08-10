@@ -125,26 +125,22 @@ export function InsightsChartRenderer({
       return <EmptyChart message={chart.emptyMessage} />
     }
 
-    const cellPx = Math.min(
-      36,
-      Math.max(20, Math.floor(280 / Math.max(colLabels.length, 1)))
-    )
+    const cellH = 36
 
     return (
-      <div className="max-h-[320px] overflow-auto">
+      <div className="max-h-[320px] w-full overflow-auto">
         <div
-          className="inline-grid gap-0.5"
+          className="grid w-full gap-1"
           style={{
-            gridTemplateColumns: `minmax(72px,max-content) repeat(${colLabels.length}, ${cellPx}px)`,
+            gridTemplateColumns: `minmax(88px,max-content) repeat(${colLabels.length}, minmax(64px, 1fr))`,
           }}
         >
           <div />
           {colLabels.map((c) => (
             <div
               key={c}
-              className="truncate px-0.5 text-center text-[10px] text-muted-foreground"
+              className="px-1 text-center text-[10px] leading-tight break-words text-muted-foreground"
               title={c}
-              style={{ width: cellPx }}
             >
               {c}
             </div>
@@ -161,10 +157,9 @@ export function InsightsChartRenderer({
                   <div
                     key={`${r}-${c}`}
                     title={`${r} / ${c}: ${v}`}
-                    className="rounded-sm"
+                    className="w-full rounded-sm"
                     style={{
-                      width: cellPx,
-                      height: cellPx,
+                      height: cellH,
                       backgroundColor: `rgba(23,23,23,${0.08 + t * 0.85})`,
                     }}
                   />
