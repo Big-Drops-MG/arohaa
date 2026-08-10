@@ -101,43 +101,70 @@ export function InsightsChartRenderer({
   }
 
   if (chart.type === "heatmap") {
-    const rows = chart.rowKeys ?? []
-    const cols = chart.colKeys ?? []
+    const normalizeCol = (c: unknown) => {
+      if (c == null || String(c).trim() === "" || String(c) === "null") {
+        return "(unknown)"
+      }
+      return String(c)
+    }
+    const rows = (chart.rowKeys ?? []).filter(Boolean)
+    const colLabels = [
+      ...new Set([
+        ...(chart.colKeys ?? []).map(normalizeCol),
+        ...chart.points.map((p) => normalizeCol(p.col)),
+      ]),
+    ]
     const lookup = new Map(
-      chart.points.map((p) => [`${p.row}:${p.col}`, Number(p.value ?? 0) || 0])
+      chart.points.map((p) => [
+        `${p.row}:${normalizeCol(p.col)}`,
+        Number(p.value ?? 0) || 0,
+      ])
     )
+
+    if (rows.length === 0 || colLabels.length === 0) {
+      return <EmptyChart message={chart.emptyMessage} />
+    }
+
+    const cellPx = Math.min(
+      36,
+      Math.max(20, Math.floor(280 / Math.max(colLabels.length, 1)))
+    )
+
     return (
-      <div className="overflow-x-auto">
+      <div className="max-h-[320px] overflow-auto">
         <div
-          className="inline-grid min-w-full gap-0.5"
+          className="inline-grid gap-0.5"
           style={{
-            gridTemplateColumns: `minmax(72px,auto) repeat(${cols.length}, minmax(28px,1fr))`,
+            gridTemplateColumns: `minmax(72px,max-content) repeat(${colLabels.length}, ${cellPx}px)`,
           }}
         >
           <div />
-          {cols.map((c) => (
+          {colLabels.map((c) => (
             <div
               key={c}
               className="truncate px-0.5 text-center text-[10px] text-muted-foreground"
               title={c}
+              style={{ width: cellPx }}
             >
               {c}
             </div>
           ))}
           {rows.map((r) => (
             <div key={r} className="contents">
-              <div className="truncate pr-2 text-xs text-muted-foreground">
+              <div className="self-center truncate pr-2 text-xs text-muted-foreground">
                 {r}
               </div>
-              {cols.map((c) => {
+              {colLabels.map((c) => {
                 const v = lookup.get(`${r}:${c}`) ?? 0
                 const t = v / heatmapMax
                 return (
                   <div
                     key={`${r}-${c}`}
                     title={`${r} / ${c}: ${v}`}
-                    className="aspect-square rounded-sm"
+                    className="rounded-sm"
                     style={{
+                      width: cellPx,
+                      height: cellPx,
                       backgroundColor: `rgba(23,23,23,${0.08 + t * 0.85})`,
                     }}
                   />

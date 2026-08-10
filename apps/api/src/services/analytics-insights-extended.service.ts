@@ -1627,7 +1627,13 @@ async function vehicleInsights(ctx: Ctx): Promise<AnalyticsInsights> {
             toYear(today()) - toInt32OrZero(${FIELD('car_0_year')}) <= 10, '6-10 yrs',
             '11+ yrs'
           ) AS age_bucket,
-          if(${FIELD('continuous_coverage')} = '', '(unknown)', ${FIELD('continuous_coverage')}) AS coverage,
+          multiIf(
+            ${FIELD('continuous_coverage')} IS NULL
+              OR ${FIELD('continuous_coverage')} = ''
+              OR ${FIELD('continuous_coverage')} = 'null',
+            '(unknown)',
+            ${FIELD('continuous_coverage')}
+          ) AS coverage,
           count() AS leads
         FROM events_raw
         WHERE ${ctx.where} AND ${LEAD_EVENT}
@@ -1668,7 +1674,12 @@ async function vehicleInsights(ctx: Ctx): Promise<AnalyticsInsights> {
   )
 
   const coverageKeys = [
-    ...new Set(ageVsCoverage.map((r) => r.coverage)),
+    ...new Set(
+      ageVsCoverage.map((r) => {
+        const c = String(r.coverage ?? '').trim()
+        return !c || c === 'null' ? '(unknown)' : c
+      }),
+    ),
   ].slice(0, 8)
 
   return {
@@ -1730,11 +1741,14 @@ async function vehicleInsights(ctx: Ctx): Promise<AnalyticsInsights> {
         fullWidth: true,
         rowKeys: ageBuckets,
         colKeys: coverageKeys,
-        points: ageVsCoverage.map((r) => ({
-          row: r.age_bucket,
-          col: r.coverage,
-          value: n(r.leads),
-        })),
+        points: ageVsCoverage.map((r) => {
+          const c = String(r.coverage ?? '').trim()
+          return {
+            row: r.age_bucket,
+            col: !c || c === 'null' ? '(unknown)' : c,
+            value: n(r.leads),
+          }
+        }),
       },
     ],
   }
