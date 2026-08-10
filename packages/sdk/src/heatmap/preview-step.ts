@@ -1,21 +1,14 @@
 const PREVIEW_STEP_INTERVAL_MS = 400
-const PREREQUISITE_MAX_ANSWERS = 4
-const PREREQUISITE_WAIT_MS = 3000
-const PREREQUISITE_POLL_MS = 120
-// Choices of earlier steps can render well after the step shell exists, so keep
-// looking for them instead of giving up on the first pass.
-const PREREQUISITE_DEADLINE_MS = 15000
+const PREFILL_MAX_ANSWERS = 12
+const PREFILL_DEADLINE_MS = 25000
+const PREFILL_PROGRESS_MS = 1400
+const PREFILL_POLL_MS = 120
 
 let previewStepSlug: string | null = null
 let previewStepTimer: number | null = null
 let previewStepOnChange: (() => void) | null = null
-let prerequisiteSlug: string | null = null
+let prefilledSlug: string | null = null
 let forcingPaused = false
-let prefillState: Record<string, unknown> = { stage: "idle" }
-
-export function heatmapPrefillState(): Record<string, unknown> {
-  return prefillState
-}
 
 function normalizeStepSlug(raw: string): string {
   return raw.replace(/^#\/?/, "").trim().toLowerCase()
@@ -42,8 +35,6 @@ function isSearchField(el: HTMLInputElement): boolean {
   return el.type === "search" || /search|filter/.test(hint)
 }
 
-// A step whose choices are fetched from earlier answers renders as an empty
-// shell until those answers exist, so control count is what tells the two apart.
 function answerableControlCount(panel: HTMLElement): number {
   let count = 0
   for (const el of panel.querySelectorAll<HTMLElement>(
@@ -58,37 +49,21 @@ function answerableControlCount(panel: HTMLElement): number {
   return count
 }
 
-function isAwaitingPrerequisites(slug: string): boolean {
+
+function needsPrefill(slug: string): boolean {
   const panel = findStepNode(slug)
-  if (!panel) return false
+  if (!panel) return true
   return answerableControlCount(panel) === 0
 }
 
-// Only radio choices are ever answered automatically: they carry no typed data
-// and never submit the funnel.
-function nextPrerequisiteChoice(slug: string): HTMLElement | null {
-  const nodes = stepNodes()
-  const targetIndex = nodes.findIndex((el) => slugOf(el) === slug)
-  if (targetIndex <= 0) {
-    prefillState = { ...prefillState, targetIndex }
-    return null
-  }
 
-  const scan: string[] = []
-  for (let i = 0; i < targetIndex; i += 1) {
-    const panel = nodes[i]
-    if (!panel) continue
+function nextUnansweredChoice(): HTMLElement | null {
+  for (const panel of stepNodes()) {
     const radios = Array.from(
       panel.querySelectorAll<HTMLInputElement>('input[type="radio"]')
     )
-    if (radios.length === 0) {
-      scan.push(`${slugOf(panel)}:no-radios`)
-      continue
-    }
-    if (radios.some((radio) => radio.checked)) {
-      scan.push(`${slugOf(panel)}:answered`)
-      continue
-    }
+    if (radios.length === 0) continue
+    if (radios.some((radio) => radio.checked)) continue
 
     const first = radios[0]
     if (!first) continue
@@ -101,25 +76,42 @@ function nextPrerequisiteChoice(slug: string): HTMLElement | null {
     return first
   }
 
-  prefillState = { ...prefillState, targetIndex, scan }
   return null
 }
 
-function waitForStepContent(slug: string): Promise<void> {
-  return new Promise((resolve) => {
-    const startedAt = Date.now()
-    const poll = window.setInterval(() => {
-      const ready = !isAwaitingPrerequisites(slug)
-      if (ready || Date.now() - startedAt > PREREQUISITE_WAIT_MS) {
-        window.clearInterval(poll)
-        resolve()
-      }
-    }, PREREQUISITE_POLL_MS)
-  })
+function funnelSignature(): string {
+  const nodes = stepNodes()
+  let radios = 0
+  let checked = 0
+  for (const el of nodes) {
+    const found = el.querySelectorAll<HTMLInputElement>('input[type="radio"]')
+    radios += found.length
+    for (const radio of found) {
+      if (radio.checked) checked += 1
+    }
+  }
+  return `${nodes.length}:${radios}:${checked}`
 }
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+
+function waitForProgress(slug: string, since: string): Promise<void> {
+  return new Promise((resolve) => {
+    const startedAt = Date.now()
+    const poll = window.setInterval(() => {
+      const done =
+        !needsPrefill(slug) ||
+        funnelSignature() !== since ||
+        Date.now() - startedAt > PREFILL_PROGRESS_MS
+      if (done) {
+        window.clearInterval(poll)
+        resolve()
+      }
+    }, PREFILL_POLL_MS)
+  })
 }
 
 function releaseForcedDisplay(): void {
@@ -128,61 +120,36 @@ function releaseForcedDisplay(): void {
   }
 }
 
-async function answerPrerequisites(slug: string): Promise<boolean> {
-  if (prerequisiteSlug === slug) return false
-  prerequisiteSlug = slug
+async function prefillForStep(slug: string): Promise<boolean> {
+  if (prefilledSlug === slug) return false
+  prefilledSlug = slug
+  if (!needsPrefill(slug)) return false
 
-  const panel = findStepNode(slug)
-  prefillState = {
-    stage: "checked",
-    slug,
-    steps: stepNodes().length,
-    controls: panel ? answerableControlCount(panel) : -1,
-  }
-
-  if (!isAwaitingPrerequisites(slug)) {
-    prefillState = { ...prefillState, stage: "not-awaiting" }
-    return false
-  }
-
-  const deadline = Date.now() + PREREQUISITE_DEADLINE_MS
+  const deadline = Date.now() + PREFILL_DEADLINE_MS
   let answered = 0
 
   while (
-    answered < PREREQUISITE_MAX_ANSWERS &&
+    answered < PREFILL_MAX_ANSWERS &&
     Date.now() < deadline &&
-    isAwaitingPrerequisites(slug)
+    needsPrefill(slug)
   ) {
-    const choice = nextPrerequisiteChoice(slug)
+    const choice = nextUnansweredChoice()
     if (!choice) {
-      prefillState = { ...prefillState, stage: "waiting-for-choices", answered }
-      await delay(PREREQUISITE_POLL_MS)
+      await delay(PREFILL_POLL_MS)
       continue
     }
 
-    // Answering has to happen with the funnel's own step visible, otherwise the
-    // forced display fights its navigation.
+
     forcingPaused = true
     releaseForcedDisplay()
     choice.click()
     answered += 1
-    await waitForStepContent(slug)
+    await waitForProgress(slug, funnelSignature())
     forcingPaused = false
-
-    const now = findStepNode(slug)
-    prefillState = {
-      ...prefillState,
-      stage: "answered",
-      answered,
-      controlsNow: now ? answerableControlCount(now) : -1,
-    }
   }
 
   forcingPaused = false
-  if (answered === 0) {
-    prefillState = { ...prefillState, stage: "gave-up", answered }
-    return false
-  }
+  if (answered === 0) return false
 
   applyHeatmapPreviewStep(slug)
   return true
@@ -199,12 +166,15 @@ export function applyHeatmapPreviewStep(slugRaw: string): {
   const nodes = stepNodes()
   if (nodes.length === 0) return { matched: false, changed: false }
 
-  let matched = false
+  if (!nodes.some((el) => slugOf(el) === slug)) {
+    releaseForcedDisplay()
+    return { matched: false, changed: false }
+  }
+
   let changed = false
 
   for (const el of nodes) {
     const on = slugOf(el) === slug
-    if (on) matched = true
 
     const desired = on ? "block" : "none"
     if (el.style.display !== desired) {
@@ -217,8 +187,6 @@ export function applyHeatmapPreviewStep(slugRaw: string): {
     }
   }
 
-  if (!matched) return { matched: false, changed }
-
   if (changed) {
     try {
       const nextHash = `#/${slug}`
@@ -230,7 +198,7 @@ export function applyHeatmapPreviewStep(slugRaw: string): {
     }
   }
 
-  return { matched, changed }
+  return { matched: true, changed }
 }
 
 export function startHeatmapPreviewStep(
@@ -245,14 +213,14 @@ export function startHeatmapPreviewStep(
 
   if (previewStepSlug !== slug) {
     previewStepSlug = slug
-    prerequisiteSlug = null
+    prefilledSlug = null
   }
   if (onChange) previewStepOnChange = onChange
 
-  const { matched, changed } = applyHeatmapPreviewStep(slug)
+  const { changed } = applyHeatmapPreviewStep(slug)
 
-  if (matched && prerequisiteSlug !== slug) {
-    void answerPrerequisites(slug).then((filled) => {
+  if (stepNodes().length > 0 && prefilledSlug !== slug) {
+    void prefillForStep(slug).then((filled) => {
       if (filled) previewStepOnChange?.()
     })
   }
@@ -271,7 +239,7 @@ export function startHeatmapPreviewStep(
 export function clearHeatmapPreviewStep(): void {
   previewStepSlug = null
   previewStepOnChange = null
-  prerequisiteSlug = null
+  prefilledSlug = null
   forcingPaused = false
   if (previewStepTimer != null) {
     window.clearInterval(previewStepTimer)

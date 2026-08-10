@@ -7,7 +7,6 @@ import {
 } from "../heatmap/overlay"
 import {
   clearHeatmapPreviewStep,
-  heatmapPrefillState,
   startHeatmapPreviewStep,
 } from "../heatmap/preview-step"
 
@@ -37,7 +36,6 @@ function postDocSize(): void {
         "heatmap-show-step",
         "heatmap-prefill",
       ],
-      prefill: heatmapPrefillState(),
     },
     "*"
   )
