@@ -50,6 +50,11 @@ import {
   emptyAnalyticsWebVitals,
   getAnalyticsWebVitals,
 } from '../services/analytics-web-vitals.service.js'
+import {
+  emptyAnalyticsInsights,
+  getAnalyticsInsights,
+} from '../services/analytics-insights.service.js'
+import { isInsightSectionId } from '../types/analytics-insights.js'
 import { getDiscoveredUtmParams, getUtmDimensionValues } from '../services/analytics-utm-discover.service.js'
 import {
   emptyAnalyticsHeatmap,
@@ -1127,6 +1132,89 @@ export async function analyticsRoutes(server: FastifyInstance) {
           }),
         logLabel: 'analytics web-vitals query ok',
         logContext: { range_id: parsed.rangeId },
+      })
+    },
+  )
+
+  server.get<{
+    Querystring: {
+      workspace_id: string
+      section?: string
+      range_id?: string
+      from?: string
+      to?: string
+      utm_source?: string
+      utm_s1?: string
+      segment_id?: string
+    }
+  }>(
+    '/v1/analytics/insights',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['workspace_id'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            section: {
+              type: 'string',
+              enum: [
+                'volume',
+                'source',
+                'time',
+                'age',
+                'dropoff',
+                'device',
+                'geo',
+                'risk',
+                'vehicle',
+                'quality',
+                'experiment',
+              ],
+            },
+            range_id: rangeIdSchema,
+            ...customRangeSchemaProps,
+            ...utmFilterSchemaProps,
+            segment_id: { type: 'string', format: 'uuid' },
+          },
+        },
+      },
+      config: ANALYTICS_RATE_LIMIT,
+    },
+    async (request, reply) => {
+      const { workspace_id, section: sectionRaw } = request.query
+      const parsed = parseRangeQuery(request.query)
+      if (!parsed.ok) {
+        return reply.code(400).send({ error: parsed.error })
+      }
+      const section =
+        sectionRaw && isInsightSectionId(sectionRaw) ? sectionRaw : 'volume'
+      const parsedUtm = parseAnalyticsUtmFilter(request.query)
+      const segmentFilter = await resolveSegmentFilter(
+        request.query.segment_id,
+        request.query.workspace_id,
+      )
+      const utmFilter = parsedUtm || {}
+      if (segmentFilter) {
+        utmFilter.segmentSql = segmentFilter.sql
+        utmFilter.segmentParams = segmentFilter.params
+      }
+
+      await sendAnalyticsQuery({
+        request,
+        reply,
+        workspaceId: workspace_id,
+        emptyValue: emptyAnalyticsInsights(section),
+        run: () =>
+          getAnalyticsInsights({
+            workspaceId: workspace_id,
+            section,
+            rangeId: parsed.rangeId,
+            utmFilter,
+            custom: parsed.custom,
+          }),
+        logLabel: 'analytics insights query ok',
+        logContext: { range_id: parsed.rangeId, section },
       })
     },
   )

@@ -13,6 +13,7 @@ import { EventTrackingDashboard } from "@/features/event-tracking/view/EventTrac
 import { ExperimentsDashboard } from "@/features/experiments/view/ExperimentsDashboard"
 import { FunnelDashboard } from "@/features/funnel/view/FunnelDashboard"
 import { HeatmapDashboard } from "@/features/heatmap/view/HeatmapDashboard"
+import { InsightsDashboard } from "@/features/insights/view/InsightsDashboard"
 import type {
   OverviewDashboardData,
   OverviewDateRangeId,
@@ -205,6 +206,8 @@ function ProjectDashboardViewInner({
                     isActive
                     isLoading={isTabLoading("funnel")}
                   />
+                ) : tab.value === "insights" ? (
+                  <InsightsDashboard projectId={projectId} isActive />
                 ) : tab.value === "heatmap" ? (
                   <HeatmapDashboard
                     data={heatmap}

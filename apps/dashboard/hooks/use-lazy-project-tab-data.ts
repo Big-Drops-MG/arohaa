@@ -55,7 +55,7 @@ type InitialTabData = Partial<ProjectTabData>
 
 function tabApiPath(
   projectId: string,
-  tab: ProjectTabValue,
+  tab: Exclude<ProjectTabValue, "insights">,
   rangeId: OverviewDateRangeId,
   utmFilter?: DashboardUtmFilter,
   customRange?: DashboardCustomRange,
@@ -76,7 +76,7 @@ function tabApiPath(
 }
 
 function emptyTabData(
-  tab: Exclude<ProjectTabValue, "overview" | "settings">,
+  tab: Exclude<ProjectTabValue, "overview" | "settings" | "insights">,
   projectId: string,
   rangeId: OverviewDateRangeId,
   formType: OverviewLandingFormType
@@ -109,9 +109,10 @@ function emptyTabData(
 
 function seedSettledEpochs(
   initial: InitialTabData
-): Partial<Record<ProjectTabValue, number>> {
-  const seeded: Partial<Record<ProjectTabValue, number>> = {}
-  for (const tab of Object.keys(initial) as ProjectTabValue[]) {
+): Partial<Record<Exclude<ProjectTabValue, "insights">, number>> {
+  const seeded: Partial<Record<Exclude<ProjectTabValue, "insights">, number>> =
+    {}
+  for (const tab of Object.keys(initial) as Array<keyof ProjectTabData>) {
     if (initial[tab]) seeded[tab] = 0
   }
   return seeded
@@ -153,14 +154,14 @@ export function useLazyProjectTabData({
     segmentCacheKey,
   })
   const [filterEpoch, setFilterEpoch] = useState(0)
-  const settledEpochRef = useRef<Partial<Record<ProjectTabValue, number>>>(
-    seedSettledEpochs(initial)
-  )
+  const settledEpochRef = useRef<
+    Partial<Record<Exclude<ProjectTabValue, "insights">, number>>
+  >(seedSettledEpochs(initial))
   const cacheRef = useRef(cache)
   cacheRef.current = cache
 
   const fetchTab = useCallback(
-    async (tab: ProjectTabValue, signal?: AbortSignal) => {
+    async (tab: Exclude<ProjectTabValue, "insights">, signal?: AbortSignal) => {
       const res = await fetch(
         tabApiPath(projectId, tab, rangeId, utmFilter, customRange, segmentId),
         {
@@ -204,6 +205,7 @@ export function useLazyProjectTabData({
   }, [rangeId, utmCacheKey, customRangeCacheKey, segmentCacheKey])
 
   useEffect(() => {
+    if (activeTab === "insights") return
     if (settledEpochRef.current[activeTab] === filterEpoch) return
     if (inFlightRef.current === activeTab) return
 
