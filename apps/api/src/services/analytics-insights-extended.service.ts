@@ -626,7 +626,7 @@ async function geoInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       WHERE ${ctx.where}
       GROUP BY state
       ORDER BY leads DESC
-      LIMIT 30
+      LIMIT 60
       `,
       ctx.p,
     ),
@@ -799,36 +799,18 @@ async function geoInsights(ctx: Ctx): Promise<AnalyticsInsights> {
         points: zipTable,
       },
       {
-        id: 'insured-by-state',
-        title: 'Insured rate by state',
-        type: 'horizontal-bar',
-        seriesKeys: ['value'],
-        yKey: 'label',
+        id: 'profile-rates-map',
+        title: 'Profile rates by state',
+        helper: 'Insured, DUI, and multi-vehicle rates on the map',
+        type: 'us-map',
+        fullWidth: true,
+        seriesKeys: ['Insured', 'DUI', 'Multi-vehicle'],
         points: rates.map((r) => ({
-          label: r.state,
-          value: pct(n(r.insured), n(r.leads)),
-        })),
-      },
-      {
-        id: 'dui-by-state',
-        title: 'DUI rate by state',
-        type: 'horizontal-bar',
-        seriesKeys: ['value'],
-        yKey: 'label',
-        points: rates.map((r) => ({
-          label: r.state,
-          value: pct(n(r.dui), n(r.leads)),
-        })),
-      },
-      {
-        id: 'multi-by-state',
-        title: 'Multi-vehicle rate by state',
-        type: 'horizontal-bar',
-        seriesKeys: ['value'],
-        yKey: 'label',
-        points: rates.map((r) => ({
-          label: r.state,
-          value: pct(n(r.multi), n(r.leads)),
+          state: r.state,
+          Insured: pct(n(r.insured), n(r.leads)),
+          DUI: pct(n(r.dui), n(r.leads)),
+          'Multi-vehicle': pct(n(r.multi), n(r.leads)),
+          leads: n(r.leads),
         })),
       },
       {

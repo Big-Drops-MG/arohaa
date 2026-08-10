@@ -20,6 +20,7 @@ import {
 import type { InsightChart } from "@/features/insights/model/insights"
 import { INSIGHTS_CHART_ANIMATION_MS } from "@/features/insights/model/insights-motion"
 import { insightsSeriesColor } from "@/features/insights/view/charts/insights-colors"
+import { InsightsUsaMap } from "@/features/insights/view/charts/InsightsUsaMap"
 
 const CHART_H = 280
 
@@ -34,6 +35,7 @@ function EmptyChart({ message }: { message?: string }) {
 function chartHasData(chart: InsightChart): boolean {
   if (chart.type === "table") return (chart.points?.length ?? 0) > 0
   if (chart.type === "heatmap") return (chart.points?.length ?? 0) > 0
+  if (chart.type === "us-map") return (chart.points?.length ?? 0) > 0
   return (chart.points?.length ?? 0) > 0
 }
 
@@ -59,6 +61,10 @@ export function InsightsChartRenderer({
 
   if (!chartHasData(chart)) {
     return <EmptyChart message={chart.emptyMessage} />
+  }
+
+  if (chart.type === "us-map") {
+    return <InsightsUsaMap points={chart.points} seriesKeys={seriesKeys} />
   }
 
   if (chart.type === "table") {

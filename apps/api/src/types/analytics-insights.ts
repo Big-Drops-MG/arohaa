@@ -38,6 +38,7 @@ export type InsightChartType =
   | 'heatmap'
   | 'horizontal-bar'
   | 'table'
+  | 'us-map'
 
 export type InsightKpi = {
   id: string

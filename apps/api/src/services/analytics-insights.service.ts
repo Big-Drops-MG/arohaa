@@ -834,7 +834,7 @@ export async function getAnalyticsInsights({
   const now = new Date()
   const window = resolveAnalyticsWindow(rangeId, now, custom)
   const utmKey = utmFilterCacheKey(utmFilter)
-  const cacheKey = `analytics:insights:v1:${section}:${workspaceId}:${rangeCacheKey(window, utmKey)}`
+  const cacheKey = `analytics:insights:v2:${section}:${workspaceId}:${rangeCacheKey(window, utmKey)}`
   const cached = await readAnalyticsCache<AnalyticsInsights>(cacheKey)
   if (cached) return cached
 
