@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { cn } from "@workspace/ui/lib/utils"
 import type {
   HeatmapCell,
@@ -148,9 +148,11 @@ export function HeatmapCanvas({
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const requestIdRef = useRef(0)
   const paintTargetRef = useRef<PaintTarget>("unknown")
-  const maxContentHeightRef = useRef(0)
+  const latestHeightRef = useRef(0)
   const measuringRef = useRef(true)
   const settledHeightRef = useRef<number | null>(null)
+  const settleTimerRef = useRef(0)
+  const stepAppliedRef = useRef(false)
 
   const frameWidth = DEVICE_WIDTH[device]
   const viewportHeight = Math.round(
@@ -158,6 +160,7 @@ export function HeatmapCanvas({
   )
 
   const iframeSrc = previewSrc || backgroundUrl || null
+  const targetStepSlug = previewStepSlugFromSrc(iframeSrc)
   const [pageLoaded, setPageLoaded] = useState(false)
   const [pageFailed, setPageFailed] = useState(false)
   const [paintTarget, setPaintTarget] = useState<PaintTarget>("unknown")
@@ -173,7 +176,8 @@ export function HeatmapCanvas({
     setContentHeight(null)
     setPaintTarget("unknown")
     settledHeightRef.current = null
-    maxContentHeightRef.current = 0
+    latestHeightRef.current = 0
+    stepAppliedRef.current = !targetStepSlug
   }
 
   const hasLivePage = Boolean(iframeSrc && !backgroundImage)
@@ -209,21 +213,41 @@ export function HeatmapCanvas({
 
   useEffect(() => {
     paintTargetRef.current = "unknown"
-    maxContentHeightRef.current = 0
+    latestHeightRef.current = 0
     measuringRef.current = true
     settledHeightRef.current = null
-  }, [viewKey])
+    stepAppliedRef.current = !targetStepSlug
+  }, [targetStepSlug, viewKey])
+
+  const clampHeight = useCallback(
+    (raw: number) =>
+      Math.max(
+        Math.round(frameWidth * 0.5),
+        Math.min(Math.round(frameWidth * 30), Math.round(raw))
+      ),
+    [frameWidth]
+  )
+
+  const armSettle = useCallback((delay: number) => {
+    window.clearTimeout(settleTimerRef.current)
+    settleTimerRef.current = window.setTimeout(() => {
+      settledHeightRef.current = latestHeightRef.current || null
+      measuringRef.current = false
+      setMeasuring(false)
+    }, delay)
+  }, [])
 
   useEffect(() => {
     if (!hasLivePage || !pageLoaded) return
-    const timer = window.setTimeout(() => {
-      settledHeightRef.current =
-        maxContentHeightRef.current || settledHeightRef.current
-      setContentHeight((prev) => settledHeightRef.current ?? prev)
-      setMeasuring(false)
-    }, 2200)
-    return () => window.clearTimeout(timer)
-  }, [hasLivePage, pageLoaded, viewKey])
+    armSettle(2600)
+    const grace = window.setTimeout(() => {
+      stepAppliedRef.current = true
+    }, 1500)
+    return () => {
+      window.clearTimeout(grace)
+      window.clearTimeout(settleTimerRef.current)
+    }
+  }, [armSettle, hasLivePage, pageLoaded, viewKey])
 
   useEffect(() => {
     if (!hasLivePage) return
@@ -234,43 +258,46 @@ export function HeatmapCanvas({
             source?: string
             type?: string
             height?: number
+            slug?: string
             features?: string[]
             requestId?: number
           }
         | undefined
       if (!data || data.source !== MESSAGE_SOURCE) return
 
-      if (data.type === "doc-size") {
+      if (data.type === "heatmap-step-shown") {
+        if (targetStepSlug && data.slug && data.slug !== targetStepSlug) return
+        stepAppliedRef.current = true
+        latestHeightRef.current = 0
+        settledHeightRef.current = null
+        measuringRef.current = true
+        setMeasuring(true)
         const height = Number(data.height)
         if (Number.isFinite(height) && height > 0) {
-          const clamped = Math.max(
-            Math.round(frameWidth * 0.5),
-            Math.min(Math.round(frameWidth * 30), Math.round(height))
-          )
-          if (measuringRef.current) {
-            maxContentHeightRef.current = Math.max(
-              maxContentHeightRef.current,
-              clamped
-            )
-            setContentHeight(maxContentHeightRef.current)
-          } else {
-            const settled = settledHeightRef.current
-            if (settled != null) {
-              setContentHeight(settled)
-              return
-            }
-            setContentHeight((prev) => {
-              if (prev == null) return clamped
-              if (clamped > prev && clamped <= prev * 1.08) return clamped
-              if (clamped < prev * 0.9) return clamped
-              return prev
-            })
-          }
+          const clamped = clampHeight(height)
+          latestHeightRef.current = clamped
+          setContentHeight(clamped)
         }
+        armSettle(700)
+        return
+      }
+
+      if (data.type === "doc-size") {
         const features = Array.isArray(data.features) ? data.features : []
         if (features.includes("heatmap-paint")) {
           setPaintTarget((prev) => (prev === "parent" ? prev : "inpage"))
         }
+
+        if (!measuringRef.current) return
+        if (targetStepSlug && !stepAppliedRef.current) return
+
+        const height = Number(data.height)
+        if (!Number.isFinite(height) || height <= 0) return
+        const clamped = clampHeight(height)
+        if (clamped === latestHeightRef.current) return
+        latestHeightRef.current = clamped
+        setContentHeight(clamped)
+        armSettle(700)
         return
       }
 
@@ -281,32 +308,29 @@ export function HeatmapCanvas({
     }
     window.addEventListener("message", onMessage)
     return () => window.removeEventListener("message", onMessage)
-  }, [frameWidth, hasLivePage, iframeSrc])
+  }, [armSettle, clampHeight, hasLivePage, targetStepSlug])
 
   useEffect(() => {
-    if (!hasLivePage || !pageLoaded) return
+    if (!hasLivePage || !pageLoaded || !measuring) return
     const win = iframeRef.current?.contentWindow
     if (!win) return
-    const slug = previewStepSlugFromSrc(iframeSrc)
     const ping = () => {
-      win.postMessage({ source: MESSAGE_SOURCE, type: "ping" }, "*")
-      if (slug) {
+      if (targetStepSlug) {
         win.postMessage(
           {
             source: MESSAGE_SOURCE,
             type: "heatmap-show-step",
-            slug,
+            slug: targetStepSlug,
           },
           "*"
         )
       }
+      win.postMessage({ source: MESSAGE_SOURCE, type: "ping" }, "*")
     }
     ping()
-    const timers = [400, 900, 1600, 2400].map((ms) =>
-      window.setTimeout(ping, ms)
-    )
-    return () => timers.forEach((id) => window.clearTimeout(id))
-  }, [hasLivePage, pageLoaded, device, iframeSrc, measuring])
+    const interval = window.setInterval(ping, 300)
+    return () => window.clearInterval(interval)
+  }, [hasLivePage, measuring, pageLoaded, device, targetStepSlug])
 
   useEffect(() => {
     if (!hasLivePage) return

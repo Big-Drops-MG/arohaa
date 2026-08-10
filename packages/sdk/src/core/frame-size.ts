@@ -36,6 +36,22 @@ function postDocSize(): void {
   )
 }
 
+function postStepShown(slug: string): void {
+  const target = window.parent
+  if (!target) return
+  const { width, height } = getDocumentSize()
+  target.postMessage(
+    {
+      source: MESSAGE_SOURCE,
+      type: "heatmap-step-shown",
+      slug,
+      width,
+      height,
+    },
+    "*"
+  )
+}
+
 function ackPaint(
   requestId: string | number | undefined,
   result: {
@@ -99,7 +115,12 @@ function onParentMessage(event: MessageEvent): void {
         : typeof data.hash === "string"
           ? data.hash
           : ""
-    startHeatmapPreviewStep(slug)
+    const changed = startHeatmapPreviewStep(slug, () => {
+      requestAnimationFrame(() => postStepShown(slug))
+    })
+    if (changed) {
+      requestAnimationFrame(() => postStepShown(slug))
+    }
     postDocSize()
     return
   }
