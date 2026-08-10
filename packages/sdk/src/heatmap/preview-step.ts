@@ -8,6 +8,11 @@ let previewStepTimer: number | null = null
 let previewStepOnChange: (() => void) | null = null
 let prerequisiteSlug: string | null = null
 let forcingPaused = false
+let prefillState: Record<string, unknown> = { stage: "idle" }
+
+export function heatmapPrefillState(): Record<string, unknown> {
+  return prefillState
+}
 
 function normalizeStepSlug(raw: string): string {
   return raw.replace(/^#\/?/, "").trim().toLowerCase()
@@ -108,7 +113,19 @@ function releaseForcedDisplay(): void {
 async function answerPrerequisites(slug: string): Promise<boolean> {
   if (prerequisiteSlug === slug) return false
   prerequisiteSlug = slug
-  if (!isAwaitingPrerequisites(slug)) return false
+
+  const panel = findStepNode(slug)
+  prefillState = {
+    stage: "checked",
+    slug,
+    steps: stepNodes().length,
+    controls: panel ? answerableControlCount(panel) : -1,
+  }
+
+  if (!isAwaitingPrerequisites(slug)) {
+    prefillState = { ...prefillState, stage: "not-awaiting" }
+    return false
+  }
 
   forcingPaused = true
   releaseForcedDisplay()
@@ -116,10 +133,20 @@ async function answerPrerequisites(slug: string): Promise<boolean> {
   let answered = 0
   while (answered < PREREQUISITE_MAX_ANSWERS && isAwaitingPrerequisites(slug)) {
     const choice = nextPrerequisiteChoice(slug)
-    if (!choice) break
+    if (!choice) {
+      prefillState = { ...prefillState, stage: "no-choice", answered }
+      break
+    }
     choice.click()
     answered += 1
     await waitForStepContent(slug)
+    const now = findStepNode(slug)
+    prefillState = {
+      ...prefillState,
+      stage: "answered",
+      answered,
+      controlsNow: now ? answerableControlCount(now) : -1,
+    }
   }
 
   forcingPaused = false
