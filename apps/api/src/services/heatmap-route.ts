@@ -57,6 +57,21 @@ function str(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback
 }
 
+export function canonicalizeHeatmapPageUrl(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed) return ''
+  try {
+    const u = new URL(trimmed)
+    const hash = u.hash || ''
+    u.search = ''
+    u.hash = ''
+    const base = u.toString().replace(/\?$/, '')
+    return `${base}${hash}`
+  } catch {
+    return trimmed.replace(/\?[^#]*/, '')
+  }
+}
+
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0
   if (value < 0) return 0
@@ -125,7 +140,7 @@ export function eventRowToHeatmapRow(row: EventRow): HeatmapRow | null {
   const workspaceId = row.workspace_id?.trim()
   if (!workspaceId) return null
 
-  const pageUrl = (row.url || '').trim()
+  const pageUrl = canonicalizeHeatmapPageUrl(row.url || '')
   if (!pageUrl) return null
 
   const timestamp = toHeatmapTimestamp(row.created_at)

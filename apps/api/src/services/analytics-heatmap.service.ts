@@ -5,6 +5,7 @@ import {
   type AnalyticsCustomRange,
   type AnalyticsRangeId,
 } from '../lib/analytics-range.js'
+import { canonicalizeHeatmapPageUrl } from './heatmap-route.js'
 import type {
   AnalyticsHeatmapResponse,
   HeatmapCell,
@@ -78,12 +79,13 @@ function deviceMatchSql(device: HeatmapDevice): string {
   return ` AND (${RESOLVED_DEVICE_SQL}) = {device:String}`
 }
 
+const PAGE_KEY_SQL = `replaceRegexpOne(page_url, '\\\\?[^#]*', '')`
+
 function pageUrlSql(pageUrl: string | null): string {
   if (!pageUrl) return ''
-  return ' AND page_url = {page_url:String}'
+  return ` AND ${PAGE_KEY_SQL} = {page_url:String}`
 }
 
-/** Discover pages from raw events so every time range sees real traffic. */
 async function listPageUrls(
   workspaceId: string,
   rangeParams: { range_from: string; range_to: string },
@@ -93,17 +95,21 @@ async function listPageUrls(
     format: 'JSON',
     query_params: { wid: workspaceId, ...rangeParams },
     query: `
-      SELECT page_url, count() AS c
+      SELECT
+        ${PAGE_KEY_SQL} AS page_key,
+        count() AS c,
+        min(timestamp) AS first_at
       FROM heatmap_events
       WHERE ${RAW_TIME_FILTER}
         AND page_url != ''
-      GROUP BY page_url
-      ORDER BY c DESC
-      LIMIT 100
+      GROUP BY page_key
+      HAVING page_key != ''
+      ORDER BY first_at ASC, c DESC
+      LIMIT 200
     `,
   })
-  const json = (await res.json()) as CHJson<{ page_url: string }>
-  return json.data.map((row) => row.page_url)
+  const json = (await res.json()) as CHJson<{ page_key: string }>
+  return json.data.map((row) => row.page_key)
 }
 
 async function queryEventCount(
@@ -454,7 +460,7 @@ export async function getAnalyticsHeatmap({
   const rangeParams = rangeQueryParams(window)
   const pageUrls = await listPageUrls(workspaceId, rangeParams)
 
-  const requested = pageUrlInput?.trim() || null
+  const requested = canonicalizeHeatmapPageUrl(pageUrlInput ?? '') || null
   const pageUrl = requested || pageUrls[0] || null
   const urls =
     pageUrl && !pageUrls.includes(pageUrl)

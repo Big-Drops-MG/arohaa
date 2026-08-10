@@ -1,7 +1,8 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { cn } from "@workspace/ui/lib/utils"
+import { Button } from "@workspace/ui/components/button"
 import {
   Select,
   SelectContent,
@@ -27,6 +28,12 @@ import {
   type HeatmapDevice,
   type HeatmapMode,
 } from "@/features/heatmap/model/heatmap"
+import {
+  canonicalizeHeatmapPageUrl,
+  groupHeatmapFormSteps,
+  heatmapFormKey,
+  heatmapStepLabel,
+} from "@/features/heatmap/utils/heatmap-page-steps"
 import { HeatmapCanvas } from "@/features/heatmap/view/HeatmapCanvas"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
@@ -42,17 +49,6 @@ type HeatmapDashboardProps = {
   isActive?: boolean
   isLoading?: boolean
   allowedModes?: string[] | null
-}
-
-function shortUrl(url: string): string {
-  try {
-    const parsed = new URL(url)
-    const path = `${parsed.host}${parsed.pathname}`.replace(/\/$/, "") || url
-    const hash = parsed.hash ? parsed.hash.slice(0, 24) : ""
-    return hash ? `${path}${hash}` : path
-  } catch {
-    return url.length > 64 ? `${url.slice(0, 61)}…` : url
-  }
 }
 
 function normalizeDevice(device: HeatmapDevice): HeatmapDevice {
@@ -90,7 +86,7 @@ export function HeatmapDashboard({
     omitDefault: true,
   })
   const [pageUrl, setPageUrl] = useDashboardQueryParam("page_url", {
-    parse: (raw) => (raw?.trim() ? raw.trim() : ""),
+    parse: (raw) => (raw?.trim() ? canonicalizeHeatmapPageUrl(raw.trim()) : ""),
     projectId,
     omitDefault: true,
   })
@@ -110,6 +106,9 @@ export function HeatmapDashboard({
     ) => {
       if (fetchMode === "blocking") setIsBlockingLoad(true)
       else setIsRefreshing(true)
+      const canonicalPage = next.pageUrl
+        ? canonicalizeHeatmapPageUrl(next.pageUrl)
+        : ""
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/heatmap`,
         {
@@ -118,7 +117,7 @@ export function HeatmapDashboard({
           extra: {
             mode: next.mode,
             device: next.device,
-            ...(next.pageUrl ? { page_url: next.pageUrl } : {}),
+            ...(canonicalPage ? { page_url: canonicalPage } : {}),
           },
         }
       )
@@ -151,7 +150,7 @@ export function HeatmapDashboard({
     if (!isActive) return
 
     const initialDevice = normalizeDevice(initialData.device)
-    const initialPage = initialData.pageUrl ?? ""
+    const initialPage = canonicalizeHeatmapPageUrl(initialData.pageUrl ?? "")
     const canUseInitial =
       shouldUseInitialTabData(
         dateRangeId,
@@ -188,14 +187,42 @@ export function HeatmapDashboard({
     pageUrl,
   ])
 
-  const pageOptions =
-    dashboardData.pageUrls.length > 0
-      ? dashboardData.pageUrls
-      : dashboardData.pageUrl
-        ? [dashboardData.pageUrl]
-        : []
+  const pageOptions = useMemo(() => {
+    const raw =
+      dashboardData.pageUrls.length > 0
+        ? dashboardData.pageUrls
+        : dashboardData.pageUrl
+          ? [dashboardData.pageUrl]
+          : []
+    return raw.map(canonicalizeHeatmapPageUrl).filter(Boolean)
+  }, [dashboardData.pageUrl, dashboardData.pageUrls])
+
+  const formGroups = useMemo(
+    () => groupHeatmapFormSteps(pageOptions),
+    [pageOptions]
+  )
+
   const selectedPageUrl =
-    pageUrl || dashboardData.pageUrl || pageOptions[0] || ""
+    canonicalizeHeatmapPageUrl(
+      pageUrl || dashboardData.pageUrl || pageOptions[0] || ""
+    ) || ""
+
+  const activeFormKey = selectedPageUrl
+    ? heatmapFormKey(selectedPageUrl)
+    : (formGroups[0]?.formKey ?? "")
+
+  const activeForm =
+    formGroups.find((group) => group.formKey === activeFormKey) ??
+    formGroups[0] ??
+    null
+
+  const stepIndex = activeForm
+    ? Math.max(0, activeForm.steps.indexOf(selectedPageUrl))
+    : 0
+  const stepCount = activeForm?.steps.length ?? 0
+  const currentStepUrl = activeForm?.steps[stepIndex] ?? selectedPageUrl
+  const canGoPrev = stepIndex > 0
+  const canGoNext = stepIndex >= 0 && stepIndex < stepCount - 1
 
   const hasData =
     dashboardData.totalEvents > 0 ||
@@ -235,9 +262,9 @@ export function HeatmapDashboard({
                 the screen you are viewing the dashboard on.
               </li>
               <li>
-                Form mode shows field focus and clicks on the redirect offer
-                form. Pick the redirect page URL when it differs from the zip
-                landing.
+                Pick a form page, then use Next / Previous to walk offer steps.
+                Query params are ignored so heat for the same step stays
+                together.
               </li>
             </ul>
           </div>
@@ -302,35 +329,76 @@ export function HeatmapDashboard({
               </SelectContent>
             </Select>
 
-            {pageOptions.length > 0 ? (
+            {formGroups.length > 0 ? (
               <Select
-                value={selectedPageUrl}
-                onValueChange={(value) => setPageUrl(value)}
+                value={activeForm?.formKey ?? ""}
+                onValueChange={(formKey) => {
+                  const group = formGroups.find((g) => g.formKey === formKey)
+                  const first = group?.steps[0]
+                  if (first) setPageUrl(first)
+                }}
               >
                 <SelectTrigger
-                  aria-label="Heatmap page"
+                  aria-label="Heatmap form page"
                   className={cn(
                     overviewSelectTriggerClassName,
-                    "w-full sm:w-auto sm:max-w-72 sm:min-w-44"
+                    "w-full sm:w-auto sm:max-w-64 sm:min-w-44"
                   )}
                 >
-                  <SelectValue placeholder="Page" />
+                  <SelectValue placeholder="Form page" />
                 </SelectTrigger>
                 <SelectContent
                   align="end"
                   className={overviewSelectContentClassName}
                 >
-                  {pageOptions.map((url) => (
+                  {formGroups.map((group) => (
                     <SelectItem
-                      key={url}
-                      value={url}
+                      key={group.formKey}
+                      value={group.formKey}
                       className={overviewSelectItemClassName}
                     >
-                      {shortUrl(url)}
+                      {group.formLabel}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+            ) : null}
+
+            {activeForm && stepCount > 0 ? (
+              <div className="flex h-9 items-center gap-1 rounded-lg border border-neutral-200 bg-white px-1 shadow-xs">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={!canGoPrev}
+                  onClick={() => {
+                    const prev = activeForm.steps[stepIndex - 1]
+                    if (prev) setPageUrl(prev)
+                  }}
+                >
+                  Previous
+                </Button>
+                <span className="max-w-36 truncate px-1 text-xs font-medium text-neutral-700">
+                  {heatmapStepLabel(currentStepUrl)}
+                  <span className="ml-1 text-neutral-400">
+                    {stepIndex + 1}/{stepCount}
+                  </span>
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={!canGoNext}
+                  onClick={() => {
+                    const next = activeForm.steps[stepIndex + 1]
+                    if (next) setPageUrl(next)
+                  }}
+                >
+                  Next
+                </Button>
+              </div>
             ) : null}
 
             <div
@@ -376,7 +444,7 @@ export function HeatmapDashboard({
               opacity={HEATMAP_DEFAULT_OPACITY}
               backgroundUrl={dashboardData.pageUrl}
               emptyState={!hasData}
-              emptyMessage="No heatmap data for this range yet. Clicks, scroll depth, and attention will appear here after the SDK starts collecting."
+              emptyMessage={emptyMessage}
             />
           </div>
 
@@ -431,9 +499,7 @@ export function HeatmapDashboard({
             <p className="text-xs text-neutral-500">
               {dashboardData.totalEvents.toLocaleString()} events in selected
               range
-              {dashboardData.pageUrl
-                ? ` · ${shortUrl(dashboardData.pageUrl)}`
-                : ""}
+              {currentStepUrl ? ` · ${heatmapStepLabel(currentStepUrl)}` : ""}
             </p>
           ) : null}
         </div>
