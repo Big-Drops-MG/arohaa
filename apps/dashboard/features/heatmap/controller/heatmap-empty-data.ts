@@ -25,6 +25,7 @@ export function getHeatmapEmptyDashboardData(
     points: [],
     scrollBuckets: [],
     sections: [],
+    fields: [],
     maxValue: 0,
     totalEvents: 0,
     opacity: 0.65,

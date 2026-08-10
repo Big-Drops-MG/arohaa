@@ -32,6 +32,7 @@ type AnalyticsHeatmapResponse = {
   points: HeatmapDashboardData["points"]
   scrollBuckets: HeatmapDashboardData["scrollBuckets"]
   sections: HeatmapDashboardData["sections"]
+  fields?: HeatmapDashboardData["fields"]
   maxValue: number
   totalEvents: number
 }
@@ -51,6 +52,7 @@ export function buildHeatmapDashboardData(
     points: data.points ?? [],
     scrollBuckets: data.scrollBuckets,
     sections: data.sections,
+    fields: data.fields ?? [],
     maxValue: data.maxValue,
     totalEvents: data.totalEvents,
     opacity: 0.65,

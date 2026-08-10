@@ -1,6 +1,7 @@
 import { track } from "../core/tracker"
 import { getDocumentSize, getPageNorm } from "../utils/helpers"
 import { getStableSelector } from "../utils/selector"
+import { resolveHeatmapFieldName } from "./form-field-key"
 
 type DeviceType = "mobile" | "tablet" | "desktop"
 
@@ -16,6 +17,8 @@ const RAGE_RADIUS_PX = 30
 const RAGE_COUNT = 3
 
 const recentClicks: ClickSample[] = []
+const focusedFieldKeys = new Set<string>()
+let fieldFocusInstalled = false
 
 function resolveClickTarget(target: EventTarget | null): HTMLElement | null {
   if (!(target instanceof HTMLElement)) return null
@@ -75,6 +78,7 @@ function trackHeatmapClick(e: MouseEvent, target: HTMLElement): void {
   const { px, py } = getPageNorm(e.clientX, e.clientY)
   const { width: dw, height: dh } = getDocumentSize()
   const selector = getStableSelector(target)
+  const fieldName = resolveHeatmapFieldName(target)
   const sample: ClickSample = {
     selector,
     x: e.clientX,
@@ -97,10 +101,56 @@ function trackHeatmapClick(e: MouseEvent, target: HTMLElement): void {
     vh: window.innerHeight,
     device: resolveDevice(),
     rage,
+    ...(fieldName ? { fieldName } : {}),
   })
 }
 
+function trackHeatmapFieldFocus(target: EventTarget | null): void {
+  if (!(target instanceof HTMLElement)) return
+  const fieldName = resolveHeatmapFieldName(target)
+  if (!fieldName) return
+  const key = `${fieldName}:${getStableSelector(target)}`
+  if (focusedFieldKeys.has(key)) return
+  focusedFieldKeys.add(key)
+
+  const vw = window.innerWidth || 1
+  const vh = window.innerHeight || 1
+  const rect = target.getBoundingClientRect()
+  const cx = rect.left + rect.width / 2
+  const cy = rect.top + rect.height / 2
+  const { px, py } = getPageNorm(cx, cy)
+  const { width: dw, height: dh } = getDocumentSize()
+
+  track("heatmap_field_focus", {
+    fieldName,
+    selector: getStableSelector(target),
+    px,
+    py,
+    vx: clamp01(cx / vw),
+    vy: clamp01(cy / vh),
+    dw,
+    dh,
+    vw: window.innerWidth,
+    vh: window.innerHeight,
+    device: resolveDevice(),
+  })
+}
+
+function setupHeatmapFieldFocusTracking(): void {
+  if (fieldFocusInstalled || typeof document === "undefined") return
+  fieldFocusInstalled = true
+  document.addEventListener(
+    "focusin",
+    (e) => {
+      trackHeatmapFieldFocus(e.target)
+    },
+    true,
+  )
+}
+
 export function setupClickTracking(): void {
+  setupHeatmapFieldFocusTracking()
+
   document.addEventListener(
     "click",
     (e) => {

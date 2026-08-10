@@ -1,4 +1,4 @@
-export type HeatmapMode = 'click' | 'scroll' | 'attention'
+export type HeatmapMode = 'click' | 'scroll' | 'attention' | 'form'
 export type HeatmapDevice = 'all' | 'mobile' | 'tablet' | 'desktop'
 
 export type HeatmapCell = {
@@ -35,6 +35,12 @@ export type HeatmapSection = {
   views: number
 }
 
+export type HeatmapField = {
+  fieldName: string
+  count: number
+  selector: string
+}
+
 export type AnalyticsHeatmapResponse = {
   rangeId: string
   mode: HeatmapMode
@@ -45,6 +51,7 @@ export type AnalyticsHeatmapResponse = {
   points: HeatmapPoint[]
   scrollBuckets: HeatmapScrollBucket[]
   sections: HeatmapSection[]
+  fields: HeatmapField[]
   maxValue: number
   totalEvents: number
 }

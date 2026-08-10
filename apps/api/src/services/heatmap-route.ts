@@ -1,6 +1,11 @@
 import type { EventRow } from '../types/event.js'
 
-export type HeatmapEventType = 'click' | 'mousemove' | 'scroll' | 'section'
+export type HeatmapEventType =
+  | 'click'
+  | 'mousemove'
+  | 'scroll'
+  | 'section'
+  | 'field_focus'
 
 export type HeatmapRow = {
   workspace_id: string
@@ -20,6 +25,7 @@ const HEATMAP_SDK_EVENTS = new Set([
   'heatmap_click',
   'heatmap_move',
   'heatmap_section',
+  'heatmap_field_focus',
 ])
 
 const CH_TS_RE =
@@ -169,6 +175,22 @@ export function eventRowToHeatmapRow(row: EventRow): HeatmapRow | null {
       timestamp,
       x: 0,
       y: 0,
+      viewport_width: Math.round(num(props.vw)),
+      viewport_height: Math.round(num(props.vh)),
+      device,
+      element_selector: str(props.selector).slice(0, 500),
+      properties: row.properties || '{}',
+    }
+  }
+
+  if (row.event_name === 'heatmap_field_focus') {
+    return {
+      workspace_id: workspaceId,
+      page_url: pageUrl,
+      event_type: 'field_focus',
+      timestamp,
+      x: clamp01(num(props.px, num(props.vx))),
+      y: clamp01(num(props.py, num(props.vy))),
       viewport_width: Math.round(num(props.vw)),
       viewport_height: Math.round(num(props.vh)),
       device,

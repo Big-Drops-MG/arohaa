@@ -4,6 +4,7 @@ export const HEATMAP_EVENT_NAMES = new Set([
   'heatmap_click',
   'heatmap_move',
   'heatmap_section',
+  'heatmap_field_focus',
 ])
 
 export function isHeatmapEvent(ev: string): boolean {
@@ -95,7 +96,35 @@ export function validateHeatmapProps(
     if (typeof p.rage !== 'boolean') {
       return 'props.rage must be a boolean'
     }
+    if (
+      'fieldName' in p &&
+      (typeof p.fieldName !== 'string' || p.fieldName.length > 120)
+    ) {
+      return 'props.fieldName must be a string of at most 120 characters'
+    }
     return null
+  }
+
+  if (ev === 'heatmap_field_focus') {
+    if (typeof p.fieldName !== 'string' || !p.fieldName.trim()) {
+      return 'props.fieldName must be a non-empty string'
+    }
+    if (p.fieldName.length > 120) {
+      return 'props.fieldName must be at most 120 characters'
+    }
+    const sel = requireSelector(p)
+    if (sel) return sel
+    for (const key of ['px', 'py', 'vx', 'vy'] as const) {
+      if (key in p) {
+        const err = requireUnit(p, key)
+        if (err) return err
+      }
+    }
+    for (const key of ['vw', 'vh'] as const) {
+      const err = requirePositive(p, key)
+      if (err) return err
+    }
+    return requireDevice(p)
   }
 
   if (ev === 'heatmap_move') {

@@ -33,6 +33,7 @@ export const EXTERNAL_PRIVILEGE_TABS: PrivilegeTabDef[] = PROJECT_TABS.map(
             { id: "click", label: "Click" },
             { id: "scroll", label: "Scroll" },
             { id: "attention", label: "Attention" },
+            { id: "form", label: "Form" },
           ]
         case "segments":
           return [

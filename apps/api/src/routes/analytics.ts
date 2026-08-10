@@ -160,7 +160,7 @@ const heatmapSchema = {
       ...customRangeSchemaProps,
       mode: {
         type: 'string',
-        enum: ['click', 'scroll', 'attention'],
+        enum: ['click', 'scroll', 'attention', 'form'],
       },
       device: {
         type: 'string',
@@ -172,7 +172,12 @@ const heatmapSchema = {
 } as const
 
 function parseHeatmapMode(value: string | undefined): HeatmapMode {
-  if (value === 'scroll' || value === 'attention' || value === 'click') {
+  if (
+    value === 'scroll' ||
+    value === 'attention' ||
+    value === 'click' ||
+    value === 'form'
+  ) {
     return value
   }
   return 'click'

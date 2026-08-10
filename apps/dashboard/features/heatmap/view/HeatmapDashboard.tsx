@@ -47,7 +47,9 @@ type HeatmapDashboardProps = {
 function shortUrl(url: string): string {
   try {
     const parsed = new URL(url)
-    return `${parsed.host}${parsed.pathname}`.replace(/\/$/, "") || url
+    const path = `${parsed.host}${parsed.pathname}`.replace(/\/$/, "") || url
+    const hash = parsed.hash ? parsed.hash.slice(0, 24) : ""
+    return hash ? `${path}${hash}` : path
   } catch {
     return url.length > 64 ? `${url.slice(0, 61)}…` : url
   }
@@ -87,6 +89,11 @@ export function HeatmapDashboard({
     projectId,
     omitDefault: true,
   })
+  const [pageUrl, setPageUrl] = useDashboardQueryParam("page_url", {
+    parse: (raw) => (raw?.trim() ? raw.trim() : ""),
+    projectId,
+    omitDefault: true,
+  })
   const [isBlockingLoad, setIsBlockingLoad] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
@@ -96,11 +103,12 @@ export function HeatmapDashboard({
       next: {
         mode: HeatmapMode
         device: HeatmapDevice
+        pageUrl?: string
       },
       signal?: AbortSignal,
-      mode: AnalyticsFetchMode = "blocking"
+      fetchMode: AnalyticsFetchMode = "blocking"
     ) => {
-      if (mode === "blocking") setIsBlockingLoad(true)
+      if (fetchMode === "blocking") setIsBlockingLoad(true)
       else setIsRefreshing(true)
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/heatmap`,
@@ -110,6 +118,7 @@ export function HeatmapDashboard({
           extra: {
             mode: next.mode,
             device: next.device,
+            ...(next.pageUrl ? { page_url: next.pageUrl } : {}),
           },
         }
       )
@@ -119,7 +128,6 @@ export function HeatmapDashboard({
           if (process.env.NODE_ENV === "development") {
             console.error(`[heatmap] client fetch ${res.status}`, url)
           }
-          // Keep the previous range's data visible instead of flashing empty.
           return
         }
         const payload = (await res.json()) as HeatmapDashboardData
@@ -131,7 +139,7 @@ export function HeatmapDashboard({
         }
       } finally {
         if (!signal?.aborted) {
-          if (mode === "blocking") setIsBlockingLoad(false)
+          if (fetchMode === "blocking") setIsBlockingLoad(false)
           else setIsRefreshing(false)
         }
       }
@@ -143,6 +151,7 @@ export function HeatmapDashboard({
     if (!isActive) return
 
     const initialDevice = normalizeDevice(initialData.device)
+    const initialPage = initialData.pageUrl ?? ""
     const canUseInitial =
       shouldUseInitialTabData(
         dateRangeId,
@@ -151,7 +160,8 @@ export function HeatmapDashboard({
         customRange
       ) &&
       mode === initialData.mode &&
-      device === initialDevice
+      device === initialDevice &&
+      (!pageUrl || pageUrl === initialPage)
 
     if (canUseInitial) {
       setDashboardData(initialData)
@@ -162,7 +172,7 @@ export function HeatmapDashboard({
     const controller = new AbortController()
     void fetchHeatmap(
       dateRangeId,
-      { mode, device },
+      { mode, device, pageUrl: pageUrl || undefined },
       controller.signal,
       "background"
     )
@@ -175,13 +185,29 @@ export function HeatmapDashboard({
     fetchHeatmap,
     initialData,
     mode,
+    pageUrl,
   ])
+
+  const pageOptions =
+    dashboardData.pageUrls.length > 0
+      ? dashboardData.pageUrls
+      : dashboardData.pageUrl
+        ? [dashboardData.pageUrl]
+        : []
+  const selectedPageUrl =
+    pageUrl || dashboardData.pageUrl || pageOptions[0] || ""
 
   const hasData =
     dashboardData.totalEvents > 0 ||
     dashboardData.cells.length > 0 ||
     dashboardData.points.length > 0 ||
-    dashboardData.scrollBuckets.length > 0
+    dashboardData.scrollBuckets.length > 0 ||
+    dashboardData.fields.length > 0
+
+  const emptyMessage =
+    mode === "form"
+      ? "No form field heat for this range yet. Focus and clicks on form fields appear after the SDK update collects traffic on the redirect page."
+      : "No heatmap data for this range yet. Clicks, scroll depth, and attention will appear here after the SDK starts collecting."
 
   return (
     <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">
@@ -207,6 +233,11 @@ export function HeatmapDashboard({
                 Desktop / Tablet / Mobile each show every click, scroll, and
                 attention event captured on that device type — independent of
                 the screen you are viewing the dashboard on.
+              </li>
+              <li>
+                Form mode shows field focus and clicks on the redirect offer
+                form. Pick the redirect page URL when it differs from the zip
+                landing.
               </li>
             </ul>
           </div>
@@ -270,6 +301,37 @@ export function HeatmapDashboard({
                 ))}
               </SelectContent>
             </Select>
+
+            {pageOptions.length > 0 ? (
+              <Select
+                value={selectedPageUrl}
+                onValueChange={(value) => setPageUrl(value)}
+              >
+                <SelectTrigger
+                  aria-label="Heatmap page"
+                  className={cn(
+                    overviewSelectTriggerClassName,
+                    "w-full sm:w-auto sm:max-w-72 sm:min-w-44"
+                  )}
+                >
+                  <SelectValue placeholder="Page" />
+                </SelectTrigger>
+                <SelectContent
+                  align="end"
+                  className={overviewSelectContentClassName}
+                >
+                  {pageOptions.map((url) => (
+                    <SelectItem
+                      key={url}
+                      value={url}
+                      className={overviewSelectItemClassName}
+                    >
+                      {shortUrl(url)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
 
             <div
               className="flex h-9 items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 shadow-xs"
@@ -335,6 +397,29 @@ export function HeatmapDashboard({
                     <span className="shrink-0 text-neutral-500">
                       {Math.round(section.dwellMs / 1000)}s · {section.views}{" "}
                       views
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {mode === "form" && dashboardData.fields.length > 0 ? (
+            <div className="rounded-lg border border-neutral-200 bg-white p-4">
+              <h3 className="mb-2 text-sm font-semibold text-neutral-900">
+                Field focus
+              </h3>
+              <ul className="divide-y divide-neutral-100 text-sm">
+                {dashboardData.fields.slice(0, 12).map((field) => (
+                  <li
+                    key={field.fieldName}
+                    className="flex items-center justify-between gap-4 py-2"
+                  >
+                    <code className="truncate text-xs text-neutral-700">
+                      {field.fieldName}
+                    </code>
+                    <span className="shrink-0 text-neutral-500">
+                      {field.count.toLocaleString()} events
                     </span>
                   </li>
                 ))}

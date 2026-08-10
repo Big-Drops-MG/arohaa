@@ -3,7 +3,7 @@ import type {
   OverviewDateRangeOption,
 } from "@/features/overview/model/overview"
 
-export type HeatmapMode = "click" | "scroll" | "attention"
+export type HeatmapMode = "click" | "scroll" | "attention" | "form"
 export type HeatmapDevice = "all" | "mobile" | "tablet" | "desktop"
 
 export const HEATMAP_DEFAULT_OPACITY = 0.65
@@ -38,6 +38,12 @@ export type HeatmapSection = {
   views: number
 }
 
+export type HeatmapField = {
+  fieldName: string
+  count: number
+  selector: string
+}
+
 export type HeatmapDashboardData = {
   dateRangeOptions: OverviewDateRangeOption[]
   defaultDateRangeId: OverviewDateRangeId
@@ -49,6 +55,7 @@ export type HeatmapDashboardData = {
   points: HeatmapPoint[]
   scrollBuckets: HeatmapScrollBucket[]
   sections: HeatmapSection[]
+  fields: HeatmapField[]
   maxValue: number
   totalEvents: number
   opacity: number
@@ -61,6 +68,7 @@ export const HEATMAP_MODES: ReadonlyArray<{
   { value: "click", label: "Click" },
   { value: "scroll", label: "Scroll" },
   { value: "attention", label: "Attention" },
+  { value: "form", label: "Form" },
 ]
 
 export const HEATMAP_DEVICES: ReadonlyArray<{
@@ -75,7 +83,12 @@ export const HEATMAP_DEVICES: ReadonlyArray<{
 export function parseHeatmapMode(
   value: string | null | undefined
 ): HeatmapMode {
-  if (value === "scroll" || value === "attention" || value === "click") {
+  if (
+    value === "scroll" ||
+    value === "attention" ||
+    value === "click" ||
+    value === "form"
+  ) {
     return value
   }
   return "click"

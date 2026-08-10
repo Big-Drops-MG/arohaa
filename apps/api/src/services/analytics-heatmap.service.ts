@@ -9,6 +9,7 @@ import type {
   AnalyticsHeatmapResponse,
   HeatmapCell,
   HeatmapDevice,
+  HeatmapField,
   HeatmapMode,
   HeatmapPoint,
   HeatmapScrollBucket,
@@ -52,6 +53,7 @@ export function emptyAnalyticsHeatmap(
     points: [],
     scrollBuckets: [],
     sections: [],
+    fields: [],
     maxValue: 0,
     totalEvents: 0,
   }
@@ -329,6 +331,110 @@ async function querySections(
   }))
 }
 
+const FIELD_NAME_EXPR = `nullIf(JSONExtractString(properties, 'fieldName'), '')`
+
+async function queryFormFields(
+  workspaceId: string,
+  pageUrl: string,
+  device: HeatmapDevice,
+  rangeParams: { range_from: string; range_to: string },
+): Promise<HeatmapField[]> {
+  const ch = getClickHouseClient()
+  const res = await ch.query({
+    format: 'JSON',
+    query_params: {
+      wid: workspaceId,
+      page_url: pageUrl,
+      device,
+      ...rangeParams,
+    },
+    query: `
+      SELECT
+        ${FIELD_NAME_EXPR} AS field_name,
+        anyHeavy(element_selector) AS selector,
+        count() AS value
+      FROM heatmap_events
+      WHERE ${RAW_TIME_FILTER}
+        AND event_type IN ('field_focus', 'click')
+        AND ${FIELD_NAME_EXPR} != ''${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
+      GROUP BY field_name
+      HAVING value > 0
+      ORDER BY value DESC
+      LIMIT 40
+    `,
+  })
+  const json = (await res.json()) as CHJson<{
+    field_name: string
+    selector: string
+    value: string | number
+  }>
+  return json.data.map((row) => ({
+    fieldName: row.field_name,
+    count: n(row.value),
+    selector: row.selector || '',
+  }))
+}
+
+async function queryFormPoints(
+  workspaceId: string,
+  pageUrl: string,
+  device: HeatmapDevice,
+  rangeParams: { range_from: string; range_to: string },
+): Promise<HeatmapPoint[]> {
+  const ch = getClickHouseClient()
+  const res = await ch.query({
+    format: 'JSON',
+    query_params: {
+      wid: workspaceId,
+      page_url: pageUrl,
+      device,
+      ...rangeParams,
+    },
+    query: `
+      SELECT
+        element_selector AS selector,
+        if(
+          element_selector = '',
+          round(x, 2),
+          round(if(JSONHas(properties, 'x'), JSONExtractFloat(properties, 'x'), x), 1)
+        ) AS gx,
+        if(
+          element_selector = '',
+          round(y, 2),
+          round(if(JSONHas(properties, 'y'), JSONExtractFloat(properties, 'y'), y), 1)
+        ) AS gy,
+        avg(x) AS px,
+        avg(y) AS py,
+        avg(if(JSONHas(properties, 'x'), JSONExtractFloat(properties, 'x'), x)) AS ex,
+        avg(if(JSONHas(properties, 'y'), JSONExtractFloat(properties, 'y'), y)) AS ey,
+        count() AS value
+      FROM heatmap_events
+      WHERE ${RAW_TIME_FILTER}
+        AND event_type IN ('field_focus', 'click')
+        AND ${FIELD_NAME_EXPR} != ''${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
+      GROUP BY selector, gx, gy
+      ORDER BY value DESC
+      LIMIT ${POINTS_LIMIT}
+    `,
+  })
+  const json = (await res.json()) as CHJson<{
+    selector: string
+    px: string | number
+    py: string | number
+    ex: string | number
+    ey: string | number
+    value: string | number
+  }>
+  return json.data.map((row) => ({
+    x: n(row.px),
+    y: n(row.py),
+    value: n(row.value),
+    selector: row.selector || null,
+    ex: row.selector ? n(row.ex) : null,
+    ey: row.selector ? n(row.ey) : null,
+  }))
+}
+
 export async function getAnalyticsHeatmap({
   workspaceId,
   mode,
@@ -363,6 +469,7 @@ export async function getAnalyticsHeatmap({
   let points: HeatmapPoint[] = []
   let scrollBuckets: HeatmapScrollBucket[] = []
   let sections: HeatmapSection[] = []
+  let fields: HeatmapField[] = []
   let totalEvents = 0
 
   if (mode === 'click') {
@@ -381,6 +488,15 @@ export async function getAnalyticsHeatmap({
       rangeParams,
     )
     totalEvents = scrollBuckets.reduce((s, b) => s + b.value, 0)
+  } else if (mode === 'form') {
+    const [formPoints, formFields] = await Promise.all([
+      queryFormPoints(workspaceId, pageUrl, device, rangeParams),
+      queryFormFields(workspaceId, pageUrl, device, rangeParams),
+    ])
+    points = formPoints
+    cells = cellsFromPoints(formPoints)
+    fields = formFields
+    totalEvents = formFields.reduce((s, f) => s + f.count, 0)
   } else {
     const [movePoints, count, sectionRows] = await Promise.all([
       queryMovePoints(workspaceId, pageUrl, device, rangeParams),
@@ -411,6 +527,7 @@ export async function getAnalyticsHeatmap({
     points,
     scrollBuckets,
     sections,
+    fields,
     maxValue,
     totalEvents,
   }

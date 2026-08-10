@@ -75,7 +75,13 @@ export function validateEvent(event) {
   return true;
 }
 
-const HEATMAP_EVENT_TYPES = ['click', 'mousemove', 'scroll', 'section'];
+const HEATMAP_EVENT_TYPES = [
+  'click',
+  'mousemove',
+  'scroll',
+  'section',
+  'field_focus',
+];
 
 export function validateHeatmapEvent(event) {
   if (!event || typeof event !== 'object') {
