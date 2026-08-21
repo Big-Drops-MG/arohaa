@@ -15,6 +15,7 @@ import * as landingPageUtmParamsSchema from './schema/landing-page-utm-params.js
 import * as rolesSchema from './schema/roles.js';
 import * as segmentsSchema from './schema/segments.js';
 import * as externalMemberPrivilegesSchema from './schema/external-member-privileges.js';
+import * as userActivityLogSchema from './schema/user-activity-log.js';
 
 const schema = {
   ...authSchema,
@@ -30,6 +31,7 @@ const schema = {
   ...rolesSchema,
   ...segmentsSchema,
   ...externalMemberPrivilegesSchema,
+  ...userActivityLogSchema,
 };
 
 bootstrapDatabaseEnv(import.meta.url);
@@ -63,6 +65,7 @@ export * from './schema/landing-page-utm-params.js';
 export * from './schema/roles.js';
 export * from './schema/segments.js';
 export * from './schema/external-member-privileges.js';
+export * from './schema/user-activity-log.js';
 export * from './email.js';
 export * from './notifications/create-notification.js';
 export * from './landing/normalizeLandingPageUrl.js';

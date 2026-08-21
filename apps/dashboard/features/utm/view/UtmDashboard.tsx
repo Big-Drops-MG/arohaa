@@ -52,7 +52,7 @@ export function UtmDashboard({
   const showSkeleton = isTabLoading || isFetching
 
   return (
-    <div className="flex flex-col gap-6 px-6 pb-6 lg:px-8">
+    <div className="flex flex-col gap-6 pb-6">
       <div className="flex flex-col gap-1 border-b border-border pb-4">
         <h1 className="text-xl font-semibold text-foreground">UTM Control</h1>
         <p className="text-sm text-muted-foreground">

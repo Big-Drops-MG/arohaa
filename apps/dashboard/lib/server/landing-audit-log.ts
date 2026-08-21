@@ -6,6 +6,13 @@ import {
   users,
 } from "@workspace/database"
 import { enqueueNotificationFromAuditLog } from "@/lib/server/notifications"
+import {
+  clientIpFromNextHeaders,
+  userAgentFromHeaders,
+} from "@/lib/server/request-client-meta"
+import { writeUserActivityLog } from "@/lib/server/user-activity-log"
+import { headers } from "next/headers"
+import { formatAuditLogAction } from "@/features/settings/utils/audit-log-format"
 
 export type LandingPageAuditLogRow = {
   id: string
@@ -51,6 +58,33 @@ export async function writeLandingPageAuditLog(input: {
     beforePayload: input.beforePayload ?? null,
     afterPayload: input.afterPayload ?? null,
   })
+
+  try {
+    const headerStore = await headers()
+    const page = await db.query.landingPages.findFirst({
+      where: eq(landingPages.id, input.landingPageId),
+      columns: { publicId: true, brandName: true },
+    })
+    await writeUserActivityLog({
+      actorUserId: input.actorUserId,
+      eventType: "action",
+      summary: formatAuditLogAction(input.action),
+      path: page?.publicId ? `/dashboard/${page.publicId}` : null,
+      tab: "settings",
+      projectPublicId: page?.publicId ?? null,
+      ipAddress: await clientIpFromNextHeaders(),
+      userAgent: userAgentFromHeaders(headerStore),
+      metadata: {
+        auditLogId: id,
+        landingPageId: input.landingPageId,
+        brandName: page?.brandName ?? null,
+        beforePayload: input.beforePayload ?? null,
+        afterPayload: input.afterPayload ?? null,
+      },
+    })
+  } catch {
+    // Never fail the primary audit write because of activity enrichment.
+  }
 
   return id
 }

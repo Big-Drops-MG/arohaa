@@ -332,7 +332,7 @@ export function NewLandingPage({
     : "/dashboard"
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 py-10">
+    <div className="mx-auto w-full max-w-3xl py-10">
       <section className="mb-8">
         <h2 className="mb-1 text-xl font-semibold text-foreground">
           {isVariantMode ? "Step 1: Add Variant" : "Step 1: Add Landing Page"}

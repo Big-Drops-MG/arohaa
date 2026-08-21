@@ -274,7 +274,7 @@ export function SeoDashboardSkeleton() {
 
 export function DataExportDashboardSkeleton() {
   return (
-    <div className="flex flex-col gap-6 px-4 pt-6 sm:px-6">
+    <div className="flex flex-col gap-6 pt-6">
       <DashboardKpiRowSkeleton count={2} />
       <DashboardAnalyticCardSkeleton rows={8} className="w-full" />
     </div>
@@ -327,7 +327,7 @@ export function HeatmapDashboardSkeleton() {
 
 export function SettingsDashboardSkeleton() {
   return (
-    <div className="flex flex-col gap-6 px-4 pb-6 sm:px-6 lg:px-8" aria-busy>
+    <div className="flex flex-col gap-6 pb-6" aria-busy>
       <div className="pt-2">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
           Settings

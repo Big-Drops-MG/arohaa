@@ -1,6 +1,11 @@
 import { notFound } from "next/navigation"
 import { asc, db, eq, users } from "@workspace/database"
 import { isCeoRole } from "@/features/auth/model/role-options"
+import {
+  isFullAccessLevel,
+  parseInternalAccessLevel,
+} from "@/features/team/model/access-level"
+import { isExternalTeamKind } from "@/features/team/model/external-privileges"
 import type {
   AccessRequestItem,
   TeamDashboardData,
@@ -8,6 +13,7 @@ import type {
 } from "@/features/team/model/team"
 import { listPendingAccessRequests } from "@/lib/server/access-requests"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { isTeamPrivilegeActor } from "@/lib/server/team-privilege-acl"
 import { isUserActive, touchUserLastSeen } from "@/lib/server/user-last-seen"
 
 function buildInitials(
@@ -69,6 +75,7 @@ export async function loadTeamDashboardData(): Promise<TeamDashboardData> {
       isCurrentUser: row.id === actor.id,
       status: active ? "active" : "inactive",
       kind: row.teamKind === "external" ? "external" : "internal",
+      accessLevel: parseInternalAccessLevel(row.accessLevel),
       lastSeenAt: row.id === actor.id ? now.toISOString() : lastSeenAt,
     }
   })
@@ -77,9 +84,16 @@ export async function loadTeamDashboardData(): Promise<TeamDashboardData> {
     toPersonFields(row)
   )
 
+  const isInternalFullAccess =
+    !isExternalTeamKind(actor.teamKind) && isFullAccessLevel(actor.accessLevel)
+  const isPrivilegeActor = isTeamPrivilegeActor(actor)
+
   return {
     members,
     accessRequests,
     canReviewAccessRequests: isCeoRole(actor.role),
+    canManageAccessLevels: isPrivilegeActor && isInternalFullAccess,
+    canViewMemberLogs: isPrivilegeActor,
+    canManageExternalMembers: isInternalFullAccess,
   }
 }

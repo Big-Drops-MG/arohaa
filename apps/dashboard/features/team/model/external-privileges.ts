@@ -59,19 +59,15 @@ export const EXTERNAL_PRIVILEGE_TABS: PrivilegeTabDef[] = PROJECT_TABS.map(
             { id: "segments", label: "Segments" },
             { id: "alerts", label: "Alerts" },
           ]
-        case "insights":
+        case "data-lab":
           return [
-            { id: "volume", label: "Volume" },
-            { id: "source", label: "Source" },
-            { id: "time", label: "Time" },
-            { id: "age", label: "Age" },
-            { id: "dropoff", label: "Drop-off" },
-            { id: "device", label: "Device" },
-            { id: "geo", label: "Geographic" },
-            { id: "risk", label: "Risk" },
-            { id: "vehicle", label: "Vehicle" },
-            { id: "quality", label: "Quality" },
-            { id: "experiment", label: "Experiment" },
+            { id: "intelligence", label: "Intelligence Center" },
+            { id: "glance", label: "At a glance" },
+            { id: "leads", label: "Leads table" },
+            { id: "sources", label: "Where leads come from" },
+            { id: "journey", label: "Form journey" },
+            { id: "quality", label: "Lead quality" },
+            { id: "tests", label: "Tests and changes" },
           ]
         default:
           return []

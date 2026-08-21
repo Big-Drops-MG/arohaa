@@ -7,15 +7,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react"
-import {
-  geoAlbers,
-  geoAlbersUsa,
-  geoBounds,
-  geoCentroid,
-  geoContains,
-  geoDistance,
-  geoPath,
-} from "d3-geo"
+import { geoAlbers, geoAlbersUsa, geoPath } from "d3-geo"
 import { feature } from "topojson-client"
 import type { Feature, FeatureCollection, Geometry } from "geojson"
 import type { GeometryCollection, Topology } from "topojson-specification"
@@ -36,11 +28,15 @@ import {
   US_STATE_NAME_TO_FIPS,
   US_STATES_TOPOJSON_URL,
   normalizeUsStateName,
-  overviewCityPointInBbox,
   overviewMapBubbleTier,
   overviewMapBubbleTierForValue,
   type OverviewMapBubbleTier,
+  type OverviewMapDrillLevel,
 } from "@/features/overview/model/us-states"
+import {
+  buildCountyRegions,
+  type OverviewMapRegion,
+} from "@/features/overview/utils/overview-map-drill"
 import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
@@ -65,18 +61,18 @@ type OverviewUsaMapProps = {
   className?: string
 }
 
-type MapRegion = {
-  key: string
-  label: string
-  value: number
-  tier: OverviewMapBubbleTier | null
-  pathD: string
-}
-
 type MapTransform = {
   k: number
   x: number
   y: number
+}
+
+function drillLevel(selectedState: string | null): OverviewMapDrillLevel {
+  return selectedState ? "state" : "usa"
+}
+
+function legendScopeLabel(level: OverviewMapDrillLevel): string {
+  return level === "state" ? " · Counties" : ""
 }
 
 const MAP_WIDTH = 720
@@ -87,7 +83,7 @@ const ZOOM_STEP = 1.4
 const PAN_THRESHOLD_PX = 6
 const EMPTY_FILL = "#f8fafc"
 const BOUNDARY_STROKE = "#334155"
-const COUNTY_BOUNDARY_STROKE = "#64748b"
+const INNER_BOUNDARY_STROKE = "#64748b"
 const IDENTITY_TRANSFORM: MapTransform = { k: 1, x: 0, y: 0 }
 
 function metricValue(
@@ -120,34 +116,6 @@ function formatMetricValue(
   return value.toLocaleString("en-US")
 }
 
-function aggregateRegionValues(
-  values: number[],
-  metricId: OverviewKpiMetricId
-): number {
-  if (values.length === 0) return 0
-  if (metricId === "fsr" || metricId === "bounce-rate") {
-    return values.reduce((sum, value) => sum + value, 0) / values.length
-  }
-  return values.reduce((sum, value) => sum + value, 0)
-}
-
-function nearestCountyFeature(
-  point: [number, number],
-  features: Feature[]
-): Feature | null {
-  let best: Feature | null = null
-  let bestDistance = Number.POSITIVE_INFINITY
-  for (const feat of features) {
-    const centroid = geoCentroid(feat as Feature<Geometry>)
-    const distance = geoDistance(point, centroid)
-    if (distance < bestDistance) {
-      bestDistance = distance
-      best = feat
-    }
-  }
-  return best
-}
-
 function clampZoom(k: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, k))
 }
@@ -174,9 +142,10 @@ function clientPointInSvg(
   clientY: number
 ): { x: number; y: number } {
   const rect = svg.getBoundingClientRect()
-  const x = ((clientX - rect.left) / rect.width) * MAP_WIDTH
-  const y = ((clientY - rect.top) / rect.height) * MAP_HEIGHT
-  return { x, y }
+  return {
+    x: ((clientX - rect.left) / rect.width) * MAP_WIDTH,
+    y: ((clientY - rect.top) / rect.height) * MAP_HEIGHT,
+  }
 }
 
 export function OverviewUsaMap({
@@ -214,6 +183,8 @@ export function OverviewUsaMap({
     moved: boolean
   } | null>(null)
 
+  const level = drillLevel(selectedState)
+
   useEffect(() => {
     transformRef.current = transform
   }, [transform])
@@ -227,8 +198,7 @@ export function OverviewUsaMap({
       })
       .then((topo) => {
         if (cancelled) return
-        const fc = feature(topo, topo.objects.states) as FeatureCollection
-        setCollection(fc)
+        setCollection(feature(topo, topo.objects.states) as FeatureCollection)
       })
       .catch(() => {
         if (!cancelled) setLoadError(true)
@@ -258,13 +228,12 @@ export function OverviewUsaMap({
       .then((topo) => {
         if (cancelled) return
         const fc = feature(topo, topo.objects.counties) as FeatureCollection
-        const filtered: FeatureCollection = {
+        setCounties({
           type: "FeatureCollection",
           features: fc.features.filter((feat) =>
             String(feat.id ?? "").startsWith(stateFips)
           ),
-        }
-        setCounties(filtered)
+        })
       })
       .catch(() => {
         if (!cancelled) setCounties(null)
@@ -356,17 +325,7 @@ export function OverviewUsaMap({
     return map
   }, [metricId, states])
 
-  const valueByCity = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const row of cities) {
-      const name = row.city.trim()
-      if (!name) continue
-      map.set(name, (map.get(name) ?? 0) + metricValue(row, metricId))
-    }
-    return map
-  }, [cities, metricId])
-
-  const selectedFeature = useMemo(() => {
+  const selectedStateFeature = useMemo(() => {
     if (!collection || !selectedState) return null
     const fips = US_STATE_NAME_TO_FIPS[selectedState]
     if (!fips) return null
@@ -375,32 +334,52 @@ export function OverviewUsaMap({
     )
   }, [collection, selectedState])
 
-  const { thresholds, legendLabels, minLabel, maxLabel } = useMemo(
+  const focusFeature = useMemo((): Feature | FeatureCollection | null => {
+    if (level === "state") {
+      return selectedStateFeature
+    }
+    return collection
+  }, [collection, level, selectedStateFeature])
+
+  const { thresholds, legendLabels } = useMemo(
     () => overviewMapBubbleTier(metricId),
     [metricId]
   )
 
   const projection = useMemo(() => {
-    if (selectedFeature) {
-      return geoAlbers().fitExtent(
-        [
-          [28, 28],
-          [MAP_WIDTH - 28, MAP_HEIGHT - 28],
-        ],
-        selectedFeature as Feature<Geometry>
-      )
+    const padding = level === "usa" ? 0 : 28
+    const extent: [[number, number], [number, number]] =
+      level === "usa"
+        ? [
+            [0, 0],
+            [MAP_WIDTH, MAP_HEIGHT],
+          ]
+        : [
+            [padding, padding],
+            [MAP_WIDTH - padding, MAP_HEIGHT - padding],
+          ]
+
+    if (level === "usa") {
+      const proj = geoAlbersUsa()
+      if (!collection || collection.features.length === 0) {
+        return proj.translate([MAP_WIDTH / 2, MAP_HEIGHT / 2]).scale(900)
+      }
+      return proj.fitSize([MAP_WIDTH, MAP_HEIGHT], collection)
     }
-    const proj = geoAlbersUsa()
-    if (!collection || collection.features.length === 0) {
-      return proj.translate([MAP_WIDTH / 2, MAP_HEIGHT / 2]).scale(900)
+
+    if (!focusFeature) {
+      return geoAlbers()
+        .translate([MAP_WIDTH / 2, MAP_HEIGHT / 2])
+        .scale(900)
     }
-    return proj.fitSize([MAP_WIDTH, MAP_HEIGHT], collection)
-  }, [collection, selectedFeature])
+
+    return geoAlbers().fitExtent(extent, focusFeature as Feature<Geometry>)
+  }, [collection, focusFeature, level])
 
   const path = useMemo(() => geoPath(projection), [projection])
 
-  const stateRegions = useMemo((): MapRegion[] => {
-    if (!collection || selectedState) return []
+  const stateRegions = useMemo((): OverviewMapRegion[] => {
+    if (!collection || level !== "usa") return []
     return collection.features.flatMap((feat) => {
       const fips = String(feat.id ?? "")
       const name = US_STATE_FIPS_TO_NAME[fips]
@@ -419,92 +398,25 @@ export function OverviewUsaMap({
         },
       ]
     })
-  }, [collection, path, selectedState, thresholds, valueByState])
+  }, [collection, level, path, thresholds, valueByState])
 
-  const cityRegions = useMemo((): MapRegion[] => {
-    if (!selectedState || !selectedFeature || !counties) return []
+  const countyRegions = useMemo((): OverviewMapRegion[] => {
+    if (level !== "state" || !counties) return []
+    return buildCountyRegions({
+      counties,
+      cities,
+      metricId,
+      thresholds,
+      path,
+    })
+  }, [cities, counties, level, metricId, path, thresholds])
 
-    const bbox = geoBounds(selectedFeature as Feature<Geometry>)
-    const countyBuckets = new Map<
-      string,
-      { labels: string[]; values: number[] }
-    >()
+  const regions = level === "usa" ? stateRegions : countyRegions
 
-    for (const row of cities) {
-      const label = row.city.trim()
-      if (!label) continue
-      const value = valueByCity.get(label) ?? 0
-      if (value <= 0) continue
-      const point = overviewCityPointInBbox(label, bbox)
-      const contained =
-        counties.features.find((feat) =>
-          geoContains(feat as Feature<Geometry>, point)
-        ) ?? null
-      const matched =
-        contained ?? nearestCountyFeature(point, counties.features)
-      if (!matched) continue
-      const countyId = String(matched.id ?? label)
-      const bucket = countyBuckets.get(countyId)
-      if (bucket) {
-        bucket.labels.push(label)
-        bucket.values.push(value)
-      } else {
-        countyBuckets.set(countyId, {
-          labels: [label],
-          values: [value],
-        })
-      }
-    }
-
-    const regions: MapRegion[] = []
-    for (const feat of counties.features) {
-      const d = path(feat as Feature<Geometry>)
-      if (!d) continue
-      const countyId = String(feat.id ?? "")
-      const bucket = countyBuckets.get(countyId)
-      if (!bucket) {
-        regions.push({
-          key: countyId,
-          label: "",
-          value: 0,
-          tier: null,
-          pathD: d,
-        })
-        continue
-      }
-
-      const value = aggregateRegionValues(bucket.values, metricId)
-      const topLabel =
-        bucket.labels[bucket.values.indexOf(Math.max(...bucket.values))] ??
-        bucket.labels[0] ??
-        ""
-
-      regions.push({
-        key: countyId,
-        label: topLabel,
-        value,
-        tier:
-          value > 0 ? overviewMapBubbleTierForValue(value, thresholds) : null,
-        pathD: d,
-      })
-    }
-
-    return regions
-  }, [
-    cities,
-    counties,
-    metricId,
-    path,
-    selectedFeature,
-    selectedState,
-    thresholds,
-    valueByCity,
-  ])
-
-  const regions = selectedState ? cityRegions : stateRegions
   const hasMetricRegions = regions.some((region) => region.tier !== null)
-  const selectedStateOutline = selectedFeature
-    ? path(selectedFeature as Feature<Geometry>)
+  const outlineFeature = level === "state" ? selectedStateFeature : null
+  const outlinePath = outlineFeature
+    ? path(outlineFeature as Feature<Geometry>)
     : null
 
   function wasPanned(): boolean {
@@ -512,7 +424,7 @@ export function OverviewUsaMap({
   }
 
   function drillIntoState(stateName: string) {
-    if (wasPanned() || selectedState) return
+    if (wasPanned() || level !== "usa") return
     const normalized = normalizeUsStateName(stateName)
     if (!normalized) return
     setHovered(null)
@@ -520,10 +432,8 @@ export function OverviewUsaMap({
   }
 
   function backToUsa() {
-    setSelectedState(null)
     setHovered(null)
-    setCities([])
-    setCitiesError(false)
+    setSelectedState(null)
   }
 
   function zoomBy(factor: number) {
@@ -580,11 +490,20 @@ export function OverviewUsaMap({
     if (svg?.hasPointerCapture(event.pointerId)) {
       svg.releasePointerCapture(event.pointerId)
     }
-    // Keep moved flag until after the click event so handlers can ignore drags.
     window.setTimeout(() => {
       if (panRef.current === pan) panRef.current = null
     }, 0)
     setIsPanning(false)
+  }
+
+  function handleRegionClick(region: OverviewMapRegion) {
+    if (level === "usa") {
+      drillIntoState(region.label)
+    }
+  }
+
+  function canDrillFromLevel(): boolean {
+    return level === "usa"
   }
 
   if (loadError) {
@@ -620,23 +539,37 @@ export function OverviewUsaMap({
   const canZoomIn = transform.k < MAX_ZOOM - 0.001
   const canZoomOut = transform.k > MIN_ZOOM + 0.001
   const canReset = transform.k !== 1 || transform.x !== 0 || transform.y !== 0
-  const boundaryWidth = selectedState ? 1.15 : 1.35
+  const boundaryWidth = level === "usa" ? 1.35 : 1.15
+  const isLoading = level === "state" && citiesLoading
+  const showEmptyOverlay =
+    !isLoading &&
+    ((level === "usa" && !hasMetricRegions) ||
+      (level === "state" && (citiesError || !hasMetricRegions)))
+
+  const emptyMessage =
+    level === "usa"
+      ? "No US state location data for this range yet. Regions fill once GeoIP state is present on events."
+      : citiesError
+        ? `Could not load city data for ${selectedState}.`
+        : `No county-level data for ${selectedState} in this range yet.`
 
   return (
     <div className={cn("relative h-full min-h-0 w-full", className)}>
-      {selectedState ? (
-        <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
+      {level !== "usa" ? (
+        <div className="absolute top-3 left-3 z-10 flex max-w-[min(100%,20rem)] flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={backToUsa}
             className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white/95 px-2.5 py-1.5 text-xs font-medium text-neutral-800 shadow-sm transition-colors hover:bg-neutral-50"
           >
             <ArrowLeft className="size-3.5" aria-hidden />
-            USA map
+            Back
           </button>
-          <span className="rounded-lg border border-neutral-200 bg-white/95 px-2.5 py-1.5 text-xs font-semibold text-neutral-800 shadow-sm">
-            {selectedState}
-          </span>
+          {selectedState ? (
+            <span className="rounded-lg border border-neutral-200 bg-white/95 px-2.5 py-1.5 text-xs font-semibold text-neutral-800 shadow-sm">
+              {selectedState}
+            </span>
+          ) : null}
         </div>
       ) : null}
 
@@ -682,11 +615,7 @@ export function OverviewUsaMap({
             isPanning ? "cursor-grabbing" : "cursor-grab"
           )}
           role="img"
-          aria-label={
-            selectedState
-              ? `${metricLabel} by city in ${selectedState}`
-              : `${metricLabel} by US state`
-          }
+          aria-label={`${metricLabel} by US ${level === "usa" ? "state" : level}`}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endPan}
@@ -706,50 +635,48 @@ export function OverviewUsaMap({
                   ? OVERVIEW_MAP_TIER_STROKES[
                       (region.tier ?? 3) as OverviewMapBubbleTier
                     ]
-                  : selectedState
-                    ? COUNTY_BOUNDARY_STROKE
-                    : BOUNDARY_STROKE
+                  : level === "usa"
+                    ? BOUNDARY_STROKE
+                    : INNER_BOUNDARY_STROKE
                 return (
-                  <g key={region.key}>
-                    <path
-                      d={region.pathD}
-                      fill={fill}
-                      stroke={stroke}
-                      strokeWidth={isHovered ? 2 : boundaryWidth}
-                      vectorEffect="non-scaling-stroke"
-                      className="cursor-pointer"
-                      onMouseEnter={() => {
-                        if (!wasPanned() && (region.label || !selectedState)) {
-                          setHovered(region.key)
-                        }
-                      }}
-                      onMouseLeave={() => setHovered(null)}
-                      onClick={(event) => {
-                        if (selectedState) return
-                        event.stopPropagation()
-                        drillIntoState(region.label)
-                      }}
-                    >
-                      {region.label ? (
-                        <title>
-                          {region.label}:{" "}
-                          {formatMetricValue(region.value, metricId)}
-                          {valueSuffix &&
-                          metricId !== "fsr" &&
-                          metricId !== "bounce-rate"
-                            ? valueSuffix
-                            : ""}
-                        </title>
-                      ) : null}
-                    </path>
-                  </g>
+                  <path
+                    key={region.key}
+                    d={region.pathD}
+                    fill={fill}
+                    stroke={stroke}
+                    strokeWidth={isHovered ? 2 : boundaryWidth}
+                    vectorEffect="non-scaling-stroke"
+                    className={cn(canDrillFromLevel() && "cursor-pointer")}
+                    onMouseEnter={() => {
+                      if (!wasPanned() && region.label) {
+                        setHovered(region.key)
+                      }
+                    }}
+                    onMouseLeave={() => setHovered(null)}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      handleRegionClick(region)
+                    }}
+                  >
+                    {region.label ? (
+                      <title>
+                        {region.label}:{" "}
+                        {formatMetricValue(region.value, metricId)}
+                        {valueSuffix &&
+                        metricId !== "fsr" &&
+                        metricId !== "bounce-rate"
+                          ? valueSuffix
+                          : ""}
+                      </title>
+                    ) : null}
+                  </path>
                 )
               })}
             </g>
 
-            {selectedStateOutline ? (
+            {outlinePath ? (
               <path
-                d={selectedStateOutline}
+                d={outlinePath}
                 fill="none"
                 stroke={BOUNDARY_STROKE}
                 strokeWidth={2.25}
@@ -761,29 +688,18 @@ export function OverviewUsaMap({
         </svg>
       </div>
 
-      {selectedState && citiesLoading ? (
+      {isLoading ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/40">
           <p className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-600 shadow-sm">
-            Loading cities…
+            Loading map data…
           </p>
         </div>
       ) : null}
 
-      {!citiesLoading && selectedState && (citiesError || !hasMetricRegions) ? (
+      {showEmptyOverlay ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6">
           <p className="max-w-sm text-center text-sm text-neutral-500">
-            {citiesError
-              ? "Could not load city data for this state."
-              : `No city location data for ${selectedState} in this range yet.`}
-          </p>
-        </div>
-      ) : null}
-
-      {!selectedState && !hasMetricRegions ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6">
-          <p className="max-w-sm text-center text-sm text-neutral-500">
-            No US state location data for this range yet. Regions fill once
-            GeoIP state is present on events.
+            {emptyMessage}
           </p>
         </div>
       ) : null}
@@ -792,7 +708,7 @@ export function OverviewUsaMap({
         <div
           className={cn(
             "pointer-events-none absolute top-3 left-3 rounded-lg border border-neutral-200 bg-white/95 px-3 py-2 text-xs shadow-sm",
-            selectedState && "mt-12"
+            level !== "usa" && "mt-12"
           )}
         >
           <p className="font-semibold text-neutral-900">
@@ -801,7 +717,7 @@ export function OverviewUsaMap({
           <p className="mt-0.5 text-neutral-600">
             {metricLabel}: {formatMetricValue(hoveredRegion.value, metricId)}
           </p>
-          {!selectedState ? (
+          {canDrillFromLevel() ? (
             <p className="mt-1 text-[10px] text-neutral-400">Click to expand</p>
           ) : null}
         </div>
@@ -810,7 +726,7 @@ export function OverviewUsaMap({
       <div className="absolute right-3 bottom-3 w-48 rounded-lg border border-neutral-200 bg-white/95 px-3 py-2 text-[11px] shadow-sm">
         <p className="mb-1.5 font-semibold tracking-wide text-neutral-700 uppercase">
           {metricLabel}
-          {selectedState ? " · Cities" : ""}
+          {legendScopeLabel(level)}
         </p>
         <div className="flex h-2.5 overflow-hidden rounded-sm border border-neutral-200/80">
           {OVERVIEW_MAP_TIER_IDS.map((tier) => (
@@ -820,9 +736,9 @@ export function OverviewUsaMap({
               style={{ backgroundColor: OVERVIEW_MAP_TIER_COLORS[tier] }}
               title={
                 tier === 0
-                  ? `≤ ${legendLabels[1] ?? minLabel}`
+                  ? `≤ ${legendLabels[1] ?? "0"}`
                   : tier === 8
-                    ? (legendLabels[8] ?? maxLabel)
+                    ? (legendLabels[8] ?? "0")
                     : `${legendLabels[tier]} – ${String(legendLabels[tier + 1] ?? "").replace(/\+$/, "")}`
               }
             />
@@ -830,7 +746,6 @@ export function OverviewUsaMap({
         </div>
         <div className="relative mt-1 h-3.5">
           {legendLabels.map((label, index) => {
-            // Show endpoints + every other cut to keep the bar readable.
             const isEndpoint = index === 0 || index === legendLabels.length - 1
             const isMidTick = index % 2 === 0
             if (!isEndpoint && !isMidTick) return null

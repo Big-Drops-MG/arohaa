@@ -29,6 +29,8 @@ export const users = pgTable('user', {
   accessReviewedByUserId: text('accessReviewedByUserId'),
   /** internal → company roster; external → partner / collaborator */
   teamKind: text('teamKind').notNull().default('internal'),
+  /** full → all actions; read_only → view data only (no create/edit/download) */
+  accessLevel: text('accessLevel').notNull().default('full'),
 });
 
 export const accounts = pgTable(

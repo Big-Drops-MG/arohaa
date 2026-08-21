@@ -106,7 +106,7 @@ export function InsightsDashboard({
 
   return (
     <motion.div
-      className="flex flex-col gap-5 px-4 pt-5 sm:px-6"
+      className="flex flex-col gap-5 pt-5"
       variants={insightsShellEnter}
       initial={reduceMotion ? false : "hidden"}
       animate="visible"
@@ -128,42 +128,46 @@ export function InsightsDashboard({
         className="w-full"
       >
         <TabsList className="flex h-auto min-h-10 w-full flex-wrap justify-start gap-1 rounded-lg border border-neutral-200 bg-neutral-50 p-1">
-          {INSIGHT_SECTIONS.map((tab) => (
-            <TabsTrigger
-              key={tab.id}
-              value={tab.id}
-              className="rounded-md px-2.5 py-1.5 text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm sm:text-sm"
-            >
-              {tab.label}
-            </TabsTrigger>
-          ))}
+          {INSIGHT_SECTIONS.filter((tab) => tab.id !== "intelligence").map(
+            (tab) => (
+              <TabsTrigger
+                key={tab.id}
+                value={tab.id}
+                className="rounded-md px-2.5 py-1.5 text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm sm:text-sm"
+              >
+                {tab.label}
+              </TabsTrigger>
+            )
+          )}
         </TabsList>
 
-        {INSIGHT_SECTIONS.map((tab) => (
-          <TabsContent
-            key={tab.id}
-            value={tab.id}
-            className="mt-5 outline-none"
-          >
-            {section === tab.id ? (
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={tab.id}
-                  variants={insightsPanelSwap}
-                  initial={reduceMotion ? false : "initial"}
-                  animate="animate"
-                  exit={reduceMotion ? undefined : "exit"}
-                >
-                  <InsightsSectionPanel
-                    data={payload?.section === tab.id ? payload : null}
-                    isLoading={loading}
-                    animateKey={fetchKey}
-                  />
-                </motion.div>
-              </AnimatePresence>
-            ) : null}
-          </TabsContent>
-        ))}
+        {INSIGHT_SECTIONS.filter((tab) => tab.id !== "intelligence").map(
+          (tab) => (
+            <TabsContent
+              key={tab.id}
+              value={tab.id}
+              className="mt-5 outline-none"
+            >
+              {section === tab.id ? (
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={tab.id}
+                    variants={insightsPanelSwap}
+                    initial={reduceMotion ? false : "initial"}
+                    animate="animate"
+                    exit={reduceMotion ? undefined : "exit"}
+                  >
+                    <InsightsSectionPanel
+                      data={payload?.section === tab.id ? payload : null}
+                      isLoading={loading}
+                      animateKey={fetchKey}
+                    />
+                  </motion.div>
+                </AnimatePresence>
+              ) : null}
+            </TabsContent>
+          )
+        )}
       </Tabs>
     </motion.div>
   )

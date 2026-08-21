@@ -17,6 +17,7 @@ import {
   type ExternalPrivilegeGrant,
   type ExternalProjectScope,
 } from "@/features/team/model/external-privileges"
+import { isFullAccessLevel } from "@/features/team/model/access-level"
 import { isApprovedAccess } from "@/lib/server/access-status"
 import {
   assertExternalTarget,
@@ -78,6 +79,18 @@ function sanitizeGrants(
 
 const EXTERNAL_MEMBER_ROLE = "Partner"
 
+function canManageTeam(actor: {
+  accessStatus: string | null
+  teamKind: string | null
+  accessLevel: string | null
+}): boolean {
+  return (
+    isApprovedAccess(actor.accessStatus) &&
+    !isExternalTeamKind(actor.teamKind) &&
+    isFullAccessLevel(actor.accessLevel)
+  )
+}
+
 export async function createExternalTeamMember(input: {
   firstName: string
   lastName: string
@@ -90,11 +103,7 @@ export async function createExternalTeamMember(input: {
   emailSent?: boolean
 }> {
   const actor = await requireLandingPageActor()
-  if (
-    !actor ||
-    !isApprovedAccess(actor.accessStatus) ||
-    isExternalTeamKind(actor.teamKind)
-  ) {
+  if (!actor || !canManageTeam(actor)) {
     return { error: "Unauthorized." }
   }
 
@@ -188,11 +197,7 @@ export async function saveExternalMemberPrivileges(input: {
   scopes?: ExternalProjectScope[]
 }): Promise<{ error?: string; success?: true; accessEmailSent?: boolean }> {
   const actor = await requireLandingPageActor()
-  if (
-    !actor ||
-    !isApprovedAccess(actor.accessStatus) ||
-    isExternalTeamKind(actor.teamKind)
-  ) {
+  if (!actor || !canManageTeam(actor)) {
     return { error: "Unauthorized." }
   }
 
@@ -310,11 +315,7 @@ export async function resendExternalMemberInvite(
   userId: string
 ): Promise<{ error?: string; success?: true; emailSent?: boolean }> {
   const actor = await requireLandingPageActor()
-  if (
-    !actor ||
-    !isApprovedAccess(actor.accessStatus) ||
-    isExternalTeamKind(actor.teamKind)
-  ) {
+  if (!actor || !canManageTeam(actor)) {
     return { error: "Unauthorized." }
   }
 
@@ -364,11 +365,7 @@ export async function getExternalMemberPrivileges(userId: string): Promise<{
   scopes?: ExternalProjectScope[]
 }> {
   const actor = await requireLandingPageActor()
-  if (
-    !actor ||
-    !isApprovedAccess(actor.accessStatus) ||
-    isExternalTeamKind(actor.teamKind)
-  ) {
+  if (!actor || !canManageTeam(actor)) {
     return { error: "Unauthorized." }
   }
 
@@ -389,11 +386,7 @@ export async function listProjectsForPrivileges(): Promise<{
   projects?: { publicId: string; brandName: string }[]
 }> {
   const actor = await requireLandingPageActor()
-  if (
-    !actor ||
-    !isApprovedAccess(actor.accessStatus) ||
-    isExternalTeamKind(actor.teamKind)
-  ) {
+  if (!actor || !canManageTeam(actor)) {
     return { error: "Unauthorized." }
   }
 
@@ -417,11 +410,7 @@ export async function removeExternalTeamMember(
   userId: string
 ): Promise<{ error?: string; success?: true }> {
   const actor = await requireLandingPageActor()
-  if (
-    !actor ||
-    !isApprovedAccess(actor.accessStatus) ||
-    isExternalTeamKind(actor.teamKind)
-  ) {
+  if (!actor || !canManageTeam(actor)) {
     return { error: "Unauthorized." }
   }
 

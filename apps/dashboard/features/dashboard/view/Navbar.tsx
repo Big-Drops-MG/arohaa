@@ -46,7 +46,7 @@ export function Navbar({
   }
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-border bg-background px-4 sm:px-6 lg:px-8">
+    <header className="flex h-16 items-center justify-between border-b border-border bg-background">
       <div className="mx-auto flex w-full max-w-[1440px] items-center justify-between">
         <div className="flex min-w-0 items-center gap-6">
           <Link

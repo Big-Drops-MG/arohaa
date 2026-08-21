@@ -8,15 +8,29 @@ const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../..",
 )
-config({ path: path.resolve(root, ".env") })
-config({ path: path.resolve(root, "apps/dashboard/.env.local") })
-config({ path: path.resolve(root, "apps/dashboard/.env.development") })
-config({ path: path.resolve(root, "apps/api/.env") })
-config({ path: path.resolve(root, "apps/api/.env.local") })
+const envFiles = [
+  path.resolve(root, ".env"),
+  path.resolve(root, "apps/dashboard/.env"),
+  path.resolve(root, "apps/dashboard/.env.local"),
+  path.resolve(root, "apps/dashboard/.env.development"),
+  path.resolve(root, "apps/api/.env"),
+  path.resolve(root, "apps/api/.env.local"),
+]
+for (const envFile of envFiles) {
+  config({ path: envFile })
+}
 
-const databaseUrl = process.env.DATABASE_URL?.trim()
+const databaseUrl = (
+  process.env.DATABASE_URL ??
+  process.env.POSTGRES_PRISMA_URL ??
+  process.env.POSTGRES_URL ??
+  process.env.DATABASE_URL_UNPOOLED ??
+  process.env.POSTGRES_URL_NON_POOLING
+)?.trim()
 if (!databaseUrl) {
-  console.error("DATABASE_URL is required")
+  console.error(
+    "DATABASE_URL is required (checked root/.env and apps/dashboard/.env)",
+  )
   process.exit(1)
 }
 

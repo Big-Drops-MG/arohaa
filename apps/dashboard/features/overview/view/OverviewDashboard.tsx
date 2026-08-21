@@ -293,7 +293,7 @@ export function OverviewDashboard({
       initial={reduceMotion ? false : "hidden"}
       animate="visible"
       className={cn(
-        "flex flex-col gap-5 px-6 pb-6 lg:px-8",
+        "flex flex-col gap-5 pb-6",
         overviewRechartsPointerFocusResetClassName,
         isRefreshing && "opacity-80"
       )}

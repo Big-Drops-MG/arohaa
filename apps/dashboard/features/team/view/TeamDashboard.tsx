@@ -12,11 +12,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@workspace/ui/components/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/ui/components/select"
 import type {
   AccessRequestItem,
   TeamDashboardData,
   TeamMember,
 } from "@/features/team/model/team"
+import {
+  INTERNAL_ACCESS_LEVELS,
+  type InternalAccessLevel,
+} from "@/features/team/model/access-level"
 import {
   TEAM_NAV_ITEMS,
   TeamNav,
@@ -31,8 +42,10 @@ import {
   acceptAccessRequest,
   rejectAccessRequest,
 } from "@/actions/access-request.actions"
+import { updateInternalMemberAccessLevel } from "@/actions/internal-access.actions"
 import { removeExternalTeamMember } from "@/actions/team-member.actions"
 import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
+import { overviewSelectTriggerClassName } from "@/features/overview/view/overview-select-styles"
 
 type TeamDashboardProps = {
   data: TeamDashboardData
@@ -58,6 +71,13 @@ type MemberListProps = {
   onViewDetails?: (member: TeamMember) => void
   onRemoveMember?: (member: TeamMember) => void
   removingMemberId?: string | null
+  canManageAccessLevels?: boolean
+  canViewMemberLogs?: boolean
+  accessLevelUpdatingId?: string | null
+  onAccessLevelChange?: (
+    member: TeamMember,
+    accessLevel: InternalAccessLevel
+  ) => void
 }
 
 function MemberList({
@@ -68,6 +88,10 @@ function MemberList({
   onViewDetails,
   onRemoveMember,
   removingMemberId,
+  canManageAccessLevels = false,
+  canViewMemberLogs = false,
+  accessLevelUpdatingId = null,
+  onAccessLevelChange,
 }: MemberListProps) {
   if (members.length === 0) {
     return <p className="text-sm text-muted-foreground">No users found.</p>
@@ -79,6 +103,11 @@ function MemberList({
         const isActive = member.status === "active"
         const isSelected = selectedMemberId === member.id
         const isRemoving = removingMemberId === member.id
+        const isUpdatingAccess = accessLevelUpdatingId === member.id
+        const showAccessDropdown =
+          member.kind === "internal" &&
+          canManageAccessLevels &&
+          Boolean(onAccessLevelChange)
         return (
           <li key={member.id}>
             {index > 0 ? (
@@ -127,17 +156,47 @@ function MemberList({
                   Last seen {formatExactLastSeen(member.lastSeenAt)}
                 </p>
               </div>
-              <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+              <div className="flex shrink-0 items-center justify-end gap-1">
+                {showAccessDropdown ? (
+                  <Select
+                    value={member.accessLevel}
+                    disabled={
+                      isRemoving || isUpdatingAccess || member.isCurrentUser
+                    }
+                    onValueChange={(value) => {
+                      if (value === "full" || value === "read_only") {
+                        onAccessLevelChange?.(member, value)
+                      }
+                    }}
+                  >
+                    <SelectTrigger
+                      aria-label={`Access level for ${member.name}`}
+                      className={cn(
+                        overviewSelectTriggerClassName,
+                        "h-8 w-[10.5rem] shrink-0 text-xs"
+                      )}
+                    >
+                      <SelectValue placeholder="Access level" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {INTERNAL_ACCESS_LEVELS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : null}
                 {onViewDetails ? (
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-8 shrink-0 gap-1.5 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+                    className="h-8 w-[5.75rem] shrink-0 justify-center gap-1.5 px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
                     disabled={isRemoving}
                     onClick={() => onViewDetails(member)}
                   >
-                    <Eye className="size-3.5" aria-hidden />
+                    <Eye className="size-3.5 shrink-0" aria-hidden />
                     <span className="hidden md:inline">Details</span>
                   </Button>
                 ) : null}
@@ -146,41 +205,43 @@ function MemberList({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-8 shrink-0 gap-1.5 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+                    className="h-8 w-[6.5rem] shrink-0 justify-center gap-1.5 px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
                     disabled={isRemoving}
                     onClick={() => onEditPrivileges(member)}
                   >
-                    <Shield className="size-3.5" aria-hidden />
+                    <Shield className="size-3.5 shrink-0" aria-hidden />
                     <span className="hidden md:inline">Privileges</span>
                   </Button>
                 ) : null}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "h-8 shrink-0 gap-1.5 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground",
-                    isSelected && "bg-background text-foreground shadow-xs"
-                  )}
-                  aria-pressed={isSelected}
-                  disabled={isRemoving}
-                  onClick={() => onViewLogs(member)}
-                >
-                  <ScrollText className="size-3.5" aria-hidden />
-                  <span className="hidden md:inline">
-                    {isSelected ? "Viewing" : "View logs"}
-                  </span>
-                </Button>
+                {canViewMemberLogs ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      "h-8 w-[6.75rem] shrink-0 justify-center gap-1.5 px-2 text-xs font-medium text-muted-foreground hover:text-foreground",
+                      isSelected && "bg-background text-foreground shadow-xs"
+                    )}
+                    aria-pressed={isSelected}
+                    disabled={isRemoving}
+                    onClick={() => onViewLogs(member)}
+                  >
+                    <ScrollText className="size-3.5 shrink-0" aria-hidden />
+                    <span className="hidden w-[3.75rem] truncate text-left md:inline">
+                      {isSelected ? "Viewing" : "View logs"}
+                    </span>
+                  </Button>
+                ) : null}
                 {onRemoveMember ? (
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-8 shrink-0 gap-1.5 px-2.5 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    className="h-8 w-[5.75rem] shrink-0 justify-center gap-1.5 px-2 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
                     disabled={isRemoving}
                     onClick={() => onRemoveMember(member)}
                   >
-                    <Trash2 className="size-3.5" aria-hidden />
+                    <Trash2 className="size-3.5 shrink-0" aria-hidden />
                     <span className="hidden md:inline">
                       {isRemoving ? "Removing…" : "Remove"}
                     </span>
@@ -303,12 +364,19 @@ export function TeamDashboard({ data }: TeamDashboardProps) {
     useState<TeamMember | null>(null)
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null)
   const [removeError, setRemoveError] = useState<string | null>(null)
+  const [accessLevelUpdatingId, setAccessLevelUpdatingId] = useState<
+    string | null
+  >(null)
+  const [accessLevelError, setAccessLevelError] = useState<string | null>(null)
   const [activeSection, setActiveSection] = useDashboardQueryParam("section", {
     parse: parseTeamSection,
     omitDefault: true,
   })
 
   const canReview = data.canReviewAccessRequests
+  const canManageAccessLevels = data.canManageAccessLevels
+  const canViewMemberLogs = data.canViewMemberLogs
+  const canManageExternal = data.canManageExternalMembers
 
   const internalMembers = useMemo(
     () => data.members.filter((member) => member.kind === "internal"),
@@ -347,7 +415,30 @@ export function TeamDashboard({ data }: TeamDashboardProps) {
   }
 
   function handleViewLogs(member: TeamMember) {
+    if (!canViewMemberLogs) return
     setSelectedMemberId((current) => (current === member.id ? null : member.id))
+  }
+
+  function handleAccessLevelChange(
+    member: TeamMember,
+    accessLevel: InternalAccessLevel
+  ) {
+    if (!canManageAccessLevels || member.isCurrentUser) return
+    if (member.accessLevel === accessLevel) return
+    setAccessLevelError(null)
+    setAccessLevelUpdatingId(member.id)
+    startTransition(async () => {
+      const result = await updateInternalMemberAccessLevel({
+        userId: member.id,
+        accessLevel,
+      })
+      setAccessLevelUpdatingId(null)
+      if (result.error) {
+        setAccessLevelError(result.error)
+        return
+      }
+      router.refresh()
+    })
   }
 
   function handleConfirmRemove() {
@@ -370,10 +461,10 @@ export function TeamDashboard({ data }: TeamDashboardProps) {
     })
   }
 
-  const logsOpen = Boolean(selectedMember)
+  const logsOpen = Boolean(selectedMember) && canViewMemberLogs
 
   return (
-    <div className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col gap-6 px-4 pb-6 sm:px-6 lg:px-8">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col gap-6 pb-6">
       <div className="pt-2">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
           Team
@@ -408,10 +499,19 @@ export function TeamDashboard({ data }: TeamDashboardProps) {
               title="Internal Team"
               description={`${internalMembers.length} approved ${internalMembers.length === 1 ? "member" : "members"}.`}
             >
+              {accessLevelError ? (
+                <p className="mb-3 text-sm text-destructive" role="alert">
+                  {accessLevelError}
+                </p>
+              ) : null}
               <MemberList
                 members={internalMembers}
                 selectedMemberId={selectedMemberId}
                 onViewLogs={handleViewLogs}
+                canManageAccessLevels={canManageAccessLevels}
+                canViewMemberLogs={canViewMemberLogs}
+                accessLevelUpdatingId={accessLevelUpdatingId}
+                onAccessLevelChange={handleAccessLevelChange}
               />
             </SettingsSectionCard>
           ) : null}
@@ -425,16 +525,18 @@ export function TeamDashboard({ data }: TeamDashboardProps) {
                   : `${externalMembers.length} external ${externalMembers.length === 1 ? "member" : "members"}.`
               }
               actions={
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8 rounded-lg border-neutral-200 bg-white shadow-xs"
-                  onClick={() => setIsAddExternalOpen(true)}
-                >
-                  <Plus className="size-3.5" />
-                  Add member
-                </Button>
+                canManageExternal ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 rounded-lg border-neutral-200 bg-white shadow-xs"
+                    onClick={() => setIsAddExternalOpen(true)}
+                  >
+                    <Plus className="size-3.5" />
+                    Add member
+                  </Button>
+                ) : null
               }
             >
               {externalMembers.length === 0 ? (
@@ -447,9 +549,14 @@ export function TeamDashboard({ data }: TeamDashboardProps) {
                   members={externalMembers}
                   selectedMemberId={selectedMemberId}
                   onViewLogs={handleViewLogs}
-                  onEditPrivileges={setEditPrivilegesMember}
+                  canViewMemberLogs={canViewMemberLogs}
+                  onEditPrivileges={
+                    canManageExternal ? setEditPrivilegesMember : undefined
+                  }
                   onViewDetails={setDetailsMember}
-                  onRemoveMember={setRemoveConfirmMember}
+                  onRemoveMember={
+                    canManageExternal ? setRemoveConfirmMember : undefined
+                  }
                   removingMemberId={removingMemberId}
                 />
               )}
@@ -468,7 +575,7 @@ export function TeamDashboard({ data }: TeamDashboardProps) {
           ) : null}
         </div>
 
-        {selectedMember ? (
+        {selectedMember && canViewMemberLogs ? (
           <div className="min-w-0">
             <TeamMemberLogsPanel
               key={selectedMember.id}

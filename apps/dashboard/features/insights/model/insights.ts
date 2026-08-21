@@ -1,4 +1,8 @@
 import type { InsightSectionId } from "@/features/insights/model/insights-section"
+import type {
+  IntelligenceBoard,
+  IntelligenceWinner,
+} from "@/features/data-lab/model/intelligence"
 
 export type InsightChartType =
   | "line"
@@ -45,10 +49,23 @@ export type InsightsSectionPayload = {
   section: InsightSectionId
   kpis: InsightKpi[]
   charts: InsightChart[]
+  winners?: IntelligenceWinner[]
+  boards?: IntelligenceBoard[]
+  actions?: string[]
 }
 
 export function emptyInsightsSection(
   section: InsightSectionId
 ): InsightsSectionPayload {
+  if (section === "intelligence") {
+    return {
+      section,
+      kpis: [],
+      charts: [],
+      winners: [],
+      boards: [],
+      actions: [],
+    }
+  }
   return { section, kpis: [], charts: [] }
 }

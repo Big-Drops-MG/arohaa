@@ -1,5 +1,6 @@
 export const DEFAULT_ROLE_OPTIONS = [
   "CEO",
+  "CFO",
   "Web Developer",
   "UI/UX Designer",
   "Content Creater",

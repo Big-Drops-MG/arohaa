@@ -159,7 +159,7 @@ export function ExperimentsDashboard({
   ])
 
   return (
-    <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">
+    <div className="flex flex-col gap-4 pb-6">
       <OverviewHeader
         title="Experiments"
         projectId={projectId}
