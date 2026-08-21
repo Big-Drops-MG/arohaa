@@ -12,9 +12,13 @@ import { LandingPageCard } from "@/features/dashboard/view/LandingPageCard"
 
 type LandingPagesDashboardProps = {
   pages: LandingPageListItem[]
+  canCreateProjects?: boolean
 }
 
-export function LandingPagesDashboard({ pages }: LandingPagesDashboardProps) {
+export function LandingPagesDashboard({
+  pages,
+  canCreateProjects = true,
+}: LandingPagesDashboardProps) {
   const [query, setQuery] = useState("")
 
   const filteredPages = useMemo(() => {
@@ -47,19 +51,26 @@ export function LandingPagesDashboard({ pages }: LandingPagesDashboardProps) {
 
   if (pages.length === 0) {
     return (
-      <div className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col items-center justify-center px-4 py-10">
-        <Button type="button" size="lg" className="gap-2" asChild>
-          <Link href={NEW_LANDING_PATH}>
-            <Plus className="size-5" aria-hidden />
-            Add a Landing Page
-          </Link>
-        </Button>
+      <div className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col items-center justify-center py-10">
+        {canCreateProjects ? (
+          <Button type="button" size="lg" className="gap-2" asChild>
+            <Link href={NEW_LANDING_PATH}>
+              <Plus className="size-5" aria-hidden />
+              Add a Landing Page
+            </Link>
+          </Button>
+        ) : (
+          <p className="max-w-md text-center text-sm text-muted-foreground">
+            No landing pages yet. Your account is read-only, so you cannot
+            create projects.
+          </p>
+        )}
       </div>
     )
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col px-6 py-9">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col py-9">
       <div className="mb-6 grid gap-4 lg:grid-cols-[180px_minmax(280px,1fr)_140px] lg:items-center">
         <h1 className="text-xl font-semibold text-foreground">Landing Pages</h1>
 
@@ -77,7 +88,11 @@ export function LandingPagesDashboard({ pages }: LandingPagesDashboardProps) {
           />
         </div>
 
-        <AddNewProjectMenu className="h-11 rounded-md px-5" />
+        {canCreateProjects ? (
+          <AddNewProjectMenu className="h-11 rounded-md px-5" />
+        ) : (
+          <div className="hidden lg:block" aria-hidden />
+        )}
       </div>
 
       {filteredPages.length > 0 ? (

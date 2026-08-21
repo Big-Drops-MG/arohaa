@@ -1,33 +1,60 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Loader2, RefreshCw, ScrollText, X } from "lucide-react"
-import { Button } from "@workspace/ui/components/button"
-import type { LandingPageAuditLogEntry } from "@/features/settings/model/landing-page-audit-log"
 import {
-  formatAuditLogAction,
-  formatAuditLogDetail,
-  formatAuditLogTimestamp,
-  groupAuditLogsByDate,
-} from "@/features/settings/utils/audit-log-format"
+  Globe2,
+  Loader2,
+  MapPin,
+  Monitor,
+  RefreshCw,
+  ScrollText,
+  X,
+} from "lucide-react"
+import { Button } from "@workspace/ui/components/button"
+import { cn } from "@workspace/ui/lib/utils"
+import type { TeamActivityLogEntry } from "@/features/team/model/activity-log"
+import {
+  formatActivityEventType,
+  formatActivityTabLabel,
+  formatActivityTimestamp,
+  groupActivityLogsByDate,
+  shortenUserAgent,
+} from "@/features/team/model/activity-log"
 import { SettingsSectionCard } from "@/features/settings/view/SettingsSectionCard"
 import type { TeamMember } from "@/features/team/model/team"
-
-type TeamMemberLogEntry = LandingPageAuditLogEntry & {
-  landingPageBrandName?: string | null
-  landingPagePublicId?: string | null
-}
 
 type TeamMemberLogsPanelProps = {
   member: TeamMember
   onClose: () => void
 }
 
+function eventTone(eventType: string): string {
+  switch (eventType) {
+    case "tab_view":
+    case "page_view":
+      return "bg-sky-50 text-sky-800 border-sky-200"
+    case "button_click":
+    case "nav_click":
+      return "bg-violet-50 text-violet-800 border-violet-200"
+    case "create":
+    case "update":
+    case "live_toggle":
+    case "variant_link":
+      return "bg-emerald-50 text-emerald-800 border-emerald-200"
+    case "delete":
+    case "archive":
+    case "variant_unlink":
+      return "bg-rose-50 text-rose-800 border-rose-200"
+    default:
+      return "bg-neutral-50 text-neutral-700 border-neutral-200"
+  }
+}
+
 export function TeamMemberLogsPanel({
   member,
   onClose,
 }: TeamMemberLogsPanelProps) {
-  const [items, setItems] = useState<TeamMemberLogEntry[]>([])
+  const [items, setItems] = useState<TeamActivityLogEntry[]>([])
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
@@ -42,7 +69,7 @@ export function TeamMemberLogsPanel({
       )
       const data = (await res.json().catch(() => ({}))) as {
         error?: string
-        items?: TeamMemberLogEntry[]
+        items?: TeamActivityLogEntry[]
       }
 
       if (!res.ok || !Array.isArray(data.items)) {
@@ -61,7 +88,7 @@ export function TeamMemberLogsPanel({
     void fetchLogs()
   }, [fetchLogs])
 
-  const grouped = groupAuditLogsByDate(items)
+  const grouped = groupActivityLogsByDate(items)
 
   return (
     <SettingsSectionCard title="Activity logs" className="lg:sticky lg:top-4">
@@ -76,7 +103,7 @@ export function TeamMemberLogsPanel({
                 {member.name}
               </p>
               <p className="truncate text-xs text-muted-foreground">
-                {member.email || "—"}
+                Pages, tabs, clicks, and project actions
               </p>
             </div>
           </div>
@@ -89,6 +116,7 @@ export function TeamMemberLogsPanel({
               onClick={() => void fetchLogs()}
               disabled={isLoading}
               aria-label="Refresh logs"
+              data-activity-ignore="true"
             >
               {isLoading ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -103,6 +131,7 @@ export function TeamMemberLogsPanel({
               className="size-8 text-muted-foreground"
               onClick={onClose}
               aria-label="Close logs"
+              data-activity-ignore="true"
             >
               <X className="size-4" />
             </Button>
@@ -142,11 +171,15 @@ export function TeamMemberLogsPanel({
             <p className="text-sm text-muted-foreground">
               No activity recorded for this member yet.
             </p>
+            <p className="max-w-[16rem] text-xs text-muted-foreground">
+              Tab visits, button clicks, navigation, and project changes will
+              appear here.
+            </p>
           </div>
         ) : null}
 
         {grouped.length > 0 ? (
-          <div className="max-h-[min(70vh,720px)] space-y-5 overflow-y-auto pr-1">
+          <div className="scrollbar-minimal max-h-[min(70vh,720px)] space-y-5 overflow-y-auto pr-1">
             {grouped.map((group) => (
               <div key={group.dateLabel} className="space-y-2.5">
                 <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
@@ -154,35 +187,86 @@ export function TeamMemberLogsPanel({
                 </h3>
                 <ol className="space-y-2">
                   {group.items.map((entry) => {
-                    const projectName =
-                      "landingPageBrandName" in entry &&
-                      typeof entry.landingPageBrandName === "string"
-                        ? entry.landingPageBrandName
-                        : null
+                    const tabLabel = formatActivityTabLabel(entry.tab)
+                    const browser = shortenUserAgent(entry.userAgent)
                     return (
                       <li
                         key={entry.id}
                         className="rounded-lg border border-border px-3 py-2.5"
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-medium text-foreground">
-                            {formatAuditLogAction(entry.action)}
-                          </p>
+                          <div className="min-w-0 space-y-1.5">
+                            <span
+                              className={cn(
+                                "inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase",
+                                eventTone(entry.eventType)
+                              )}
+                            >
+                              {formatActivityEventType(entry.eventType)}
+                            </span>
+                            <p className="text-sm font-medium text-foreground">
+                              {entry.summary}
+                            </p>
+                          </div>
                           <time
                             dateTime={entry.createdAt}
                             className="shrink-0 text-[11px] text-muted-foreground tabular-nums"
                           >
-                            {formatAuditLogTimestamp(entry.createdAt)}
+                            {formatActivityTimestamp(entry.createdAt)}
                           </time>
                         </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {formatAuditLogDetail(entry)}
-                        </p>
-                        {projectName ? (
-                          <p className="mt-1 truncate text-[11px] text-muted-foreground">
-                            Project: {projectName}
+
+                        {entry.detail && entry.detail !== "—" ? (
+                          <p className="mt-1.5 text-xs text-muted-foreground">
+                            {entry.detail}
                           </p>
                         ) : null}
+
+                        <div className="mt-2 flex flex-col gap-1 text-[11px] text-muted-foreground">
+                          {entry.projectName || entry.projectPublicId ? (
+                            <p className="flex items-center gap-1.5 truncate">
+                              <MapPin className="size-3 shrink-0" aria-hidden />
+                              <span className="truncate">
+                                Project:{" "}
+                                {entry.projectName || entry.projectPublicId}
+                              </span>
+                            </p>
+                          ) : null}
+                          {tabLabel ? (
+                            <p className="truncate">Tab: {tabLabel}</p>
+                          ) : null}
+                          {entry.path ? (
+                            <p className="flex items-start gap-1.5">
+                              <Globe2
+                                className="mt-0.5 size-3 shrink-0"
+                                aria-hidden
+                              />
+                              <span className="break-all">{entry.path}</span>
+                            </p>
+                          ) : null}
+                          {entry.targetLabel ? (
+                            <p className="truncate">
+                              Control: {entry.targetLabel}
+                              {entry.targetHref ? ` → ${entry.targetHref}` : ""}
+                            </p>
+                          ) : null}
+                          <p className="inline-flex items-center gap-1.5 font-medium text-neutral-700">
+                            <Monitor className="size-3 shrink-0" aria-hidden />
+                            <span>
+                              IP:{" "}
+                              {entry.ipAddress
+                                ? entry.ipAddress === "127.0.0.1"
+                                  ? "127.0.0.1 (local)"
+                                  : entry.ipAddress
+                                : "Not recorded"}
+                            </span>
+                            {browser ? (
+                              <span className="font-normal text-muted-foreground">
+                                · {browser}
+                              </span>
+                            ) : null}
+                          </p>
+                        </div>
                       </li>
                     )
                   })}

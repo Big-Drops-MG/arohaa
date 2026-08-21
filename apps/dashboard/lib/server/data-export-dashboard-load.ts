@@ -16,6 +16,7 @@ import {
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
 import { canAccessDataExport } from "@/lib/server/data-export-acl"
+import { isReadOnlyAccessLevel } from "@/features/team/model/access-level"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import { appendDashboardCustomRangeParams } from "@/lib/server/analytics-utm-params"
@@ -90,7 +91,12 @@ export async function loadDataExportDashboardData({
 }): Promise<DataExportDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
-  if (!canAccessDataExport(actor.email)) notFound()
+  if (
+    !canAccessDataExport(actor.email) ||
+    isReadOnlyAccessLevel(actor.accessLevel)
+  ) {
+    notFound()
+  }
 
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
@@ -150,7 +156,10 @@ export async function loadDataExportDashboardDataForApi(
   if (!actor) {
     return { ok: false, status: 401, error: "Unauthorized" }
   }
-  if (!canAccessDataExport(actor.email)) {
+  if (
+    !canAccessDataExport(actor.email) ||
+    isReadOnlyAccessLevel(actor.accessLevel)
+  ) {
     return { ok: false, status: 403, error: "Forbidden" }
   }
 

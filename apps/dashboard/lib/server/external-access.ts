@@ -17,6 +17,8 @@ import {
   type ExternalPrivilegeGrant,
   type ExternalProjectScope,
 } from "@/features/team/model/external-privileges"
+import { mapLegacyInsightSectionToDataLab } from "@/features/data-lab/model/data-lab-sections"
+import { isReadOnlyAccessLevel } from "@/features/team/model/access-level"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 
 type UserRow = InferSelectModel<typeof users>
@@ -36,6 +38,32 @@ function tabKey(publicId: string, tab: string) {
   return `${publicId}::${tab}`
 }
 
+function normalizePrivilegeGrant(row: {
+  landingPagePublicId: string
+  tab: string
+  section: string | null
+}): ExternalPrivilegeGrant | null {
+  let tab = row.tab
+  let section = row.section ?? ""
+
+  if (tab === "insights") {
+    tab = "data-lab"
+    section = section ? mapLegacyInsightSectionToDataLab(section) : ""
+  } else if (tab === "data-export") {
+    tab = "data-lab"
+    section = section || "leads"
+  }
+
+  const allowedTabs = new Set(EXTERNAL_PRIVILEGE_TABS.map((t) => t.value))
+  if (!allowedTabs.has(tab as ProjectTabValue)) return null
+
+  return {
+    landingPagePublicId: row.landingPagePublicId,
+    tab: tab as ProjectTabValue,
+    section,
+  }
+}
+
 export async function loadExternalPrivileges(
   userId: string
 ): Promise<ExternalPrivilegeGrant[]> {
@@ -48,15 +76,9 @@ export async function loadExternalPrivileges(
     .from(externalMemberPrivileges)
     .where(eq(externalMemberPrivileges.userId, userId))
 
-  const allowedTabs = new Set(EXTERNAL_PRIVILEGE_TABS.map((t) => t.value))
-
   return rows
-    .filter((row) => allowedTabs.has(row.tab as ProjectTabValue))
-    .map((row) => ({
-      landingPagePublicId: row.landingPagePublicId,
-      tab: row.tab as ProjectTabValue,
-      section: row.section ?? "",
-    }))
+    .map((row) => normalizePrivilegeGrant(row))
+    .filter((row): row is ExternalPrivilegeGrant => row !== null)
 }
 
 export async function loadExternalProjectScopes(
@@ -236,6 +258,7 @@ export function applyExternalUtmScope(
 export async function requireWritableLandingPageActor(): Promise<UserRow | null> {
   const actor = await requireLandingPageActor()
   if (!actor || isExternalTeamKind(actor.teamKind)) return null
+  if (isReadOnlyAccessLevel(actor.accessLevel)) return null
   return actor
 }
 

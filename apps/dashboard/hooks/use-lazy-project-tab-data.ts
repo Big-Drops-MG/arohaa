@@ -23,7 +23,6 @@ import { getSeoEmptyDashboardData } from "@/features/seo/controller/seo-empty-da
 import type { WebVitalDashboardData } from "@/features/web-vital/model/web-vital"
 import { getWebVitalEmptyDashboardData } from "@/features/web-vital/controller/web-vital-empty-data"
 import type { DataExportDashboardData } from "@/features/data-export/model/data-export"
-import { getDataExportEmptyDashboardData } from "@/features/data-export/controller/data-export-empty-data"
 import type { UtmDashboardData } from "@/features/utm/model/utm"
 import { getUtmEmptyDashboardData } from "@/features/utm/controller/utm-empty-data"
 import type { LandingPageSettingsData } from "@/features/settings/model/landing-page-settings"
@@ -45,17 +44,20 @@ export type ProjectTabData = {
   experiments: ExperimentsDashboardData
   seo: SeoDashboardData
   "web-vital": WebVitalDashboardData
+  /** Seed only for Data Lab leads sub-tab; not a top-level project tab. */
   "data-export": DataExportDashboardData
   utm: UtmDashboardData
   alerts: AlertsDashboardData
   settings: LandingPageSettingsData
 }
 
+type LazyTab = Exclude<ProjectTabValue, "data-lab">
+
 type InitialTabData = Partial<ProjectTabData>
 
 function tabApiPath(
   projectId: string,
-  tab: Exclude<ProjectTabValue, "insights">,
+  tab: LazyTab,
   rangeId: OverviewDateRangeId,
   utmFilter?: DashboardUtmFilter,
   customRange?: DashboardCustomRange,
@@ -76,7 +78,7 @@ function tabApiPath(
 }
 
 function emptyTabData(
-  tab: Exclude<ProjectTabValue, "overview" | "settings" | "insights">,
+  tab: Exclude<LazyTab, "overview" | "settings">,
   projectId: string,
   rangeId: OverviewDateRangeId,
   formType: OverviewLandingFormType
@@ -98,8 +100,6 @@ function emptyTabData(
       return getSeoEmptyDashboardData(projectId, rangeId)
     case "web-vital":
       return getWebVitalEmptyDashboardData(projectId, rangeId)
-    case "data-export":
-      return getDataExportEmptyDashboardData(rangeId)
     case "utm":
       return getUtmEmptyDashboardData(projectId)
     case "alerts":
@@ -109,11 +109,11 @@ function emptyTabData(
 
 function seedSettledEpochs(
   initial: InitialTabData
-): Partial<Record<Exclude<ProjectTabValue, "insights">, number>> {
-  const seeded: Partial<Record<Exclude<ProjectTabValue, "insights">, number>> =
-    {}
+): Partial<Record<LazyTab, number>> {
+  const seeded: Partial<Record<LazyTab, number>> = {}
   for (const tab of Object.keys(initial) as Array<keyof ProjectTabData>) {
-    if (initial[tab]) seeded[tab] = 0
+    if (tab === "data-export") continue
+    if (initial[tab]) seeded[tab as LazyTab] = 0
   }
   return seeded
 }
@@ -154,14 +154,14 @@ export function useLazyProjectTabData({
     segmentCacheKey,
   })
   const [filterEpoch, setFilterEpoch] = useState(0)
-  const settledEpochRef = useRef<
-    Partial<Record<Exclude<ProjectTabValue, "insights">, number>>
-  >(seedSettledEpochs(initial))
+  const settledEpochRef = useRef<Partial<Record<LazyTab, number>>>(
+    seedSettledEpochs(initial)
+  )
   const cacheRef = useRef(cache)
   cacheRef.current = cache
 
   const fetchTab = useCallback(
-    async (tab: Exclude<ProjectTabValue, "insights">, signal?: AbortSignal) => {
+    async (tab: LazyTab, signal?: AbortSignal) => {
       const res = await fetch(
         tabApiPath(projectId, tab, rangeId, utmFilter, customRange, segmentId),
         {
@@ -205,11 +205,12 @@ export function useLazyProjectTabData({
   }, [rangeId, utmCacheKey, customRangeCacheKey, segmentCacheKey])
 
   useEffect(() => {
-    if (activeTab === "insights") return
-    if (settledEpochRef.current[activeTab] === filterEpoch) return
+    if (activeTab === "data-lab") return
+    const lazyTab = activeTab as LazyTab
+    if (settledEpochRef.current[lazyTab] === filterEpoch) return
     if (inFlightRef.current === activeTab) return
 
-    const hasCached = Boolean(cacheRef.current[activeTab])
+    const hasCached = Boolean(cacheRef.current[lazyTab])
     inFlightRef.current = activeTab
     const controller = new AbortController()
     queueMicrotask(() => {
@@ -219,24 +220,24 @@ export function useLazyProjectTabData({
     })
 
     void fetchTabRef
-      .current(activeTab, controller.signal)
+      .current(lazyTab, controller.signal)
       .then((data) => {
-        setCache((prev) => ({ ...prev, [activeTab]: data }))
+        setCache((prev) => ({ ...prev, [lazyTab]: data }))
       })
       .catch((err) => {
         if (controller.signal.aborted) return
         console.error(`[project-tab] ${activeTab} fetch failed`, err)
         if (hasCached) return
-        if (activeTab === "overview" || activeTab === "settings") return
+        if (lazyTab === "overview" || lazyTab === "settings") return
         const { rangeId: r, formType: f } = emptyDataArgsRef.current
         setCache((prev) => ({
           ...prev,
-          [activeTab]: emptyTabData(activeTab, projectId, r, f),
+          [lazyTab]: emptyTabData(lazyTab, projectId, r, f),
         }))
       })
       .finally(() => {
         if (controller.signal.aborted) return
-        settledEpochRef.current[activeTab] = filterEpoch
+        settledEpochRef.current[lazyTab] = filterEpoch
         inFlightRef.current = null
         setLoadingTab((current) => (current === activeTab ? null : current))
       })
@@ -269,8 +270,6 @@ export function useLazyProjectTabData({
     seo: cache.seo ?? getSeoEmptyDashboardData(projectId, rangeId),
     webVital:
       cache["web-vital"] ?? getWebVitalEmptyDashboardData(projectId, rangeId),
-    dataExport:
-      cache["data-export"] ?? getDataExportEmptyDashboardData(rangeId),
     utm: cache.utm ?? getUtmEmptyDashboardData(projectId),
     alerts: cache.alerts ?? getAlertsEmptyDashboardData(projectId, rangeId),
     settings: cache.settings ?? null,

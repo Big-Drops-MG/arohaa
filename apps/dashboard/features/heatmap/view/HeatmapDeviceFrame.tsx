@@ -104,8 +104,7 @@ export function HeatmapDeviceFrame({
       <div
         ref={scrollRef}
         className={cn(
-          "h-full w-full overflow-x-hidden overflow-y-auto overscroll-contain",
-          "[-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          "scrollbar-none h-full w-full overflow-x-hidden overflow-y-auto overscroll-contain"
         )}
       >
         {children}

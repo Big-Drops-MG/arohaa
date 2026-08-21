@@ -23,6 +23,7 @@ import {
   emptyLandingPageCardMetrics,
   getAnalyticsOverview,
   getAnalyticsOverviewCities,
+  getAnalyticsOverviewZipcodes,
   getLandingPageCardMetrics,
 } from '../services/analytics.service.js'
 import {
@@ -449,6 +450,76 @@ export async function analyticsRoutes(server: FastifyInstance) {
           }),
         logLabel: 'analytics overview cities query ok',
         logContext: { range_id: parsed.rangeId, state },
+      })
+    },
+  )
+
+  server.get<{
+    Querystring: {
+      workspace_id: string
+      state: string
+      city: string
+      form_type?: string
+      range_id?: string
+      from?: string
+      to?: string
+      utm_source?: string
+      utm_s1?: string
+      utm_dim?: string
+      utm_value?: string
+      segment_id?: string
+    }
+  }>(
+    '/v1/analytics/overview/zipcodes',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['workspace_id', 'state', 'city'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            state: { type: 'string', minLength: 1, maxLength: 80 },
+            city: { type: 'string', minLength: 1, maxLength: 120 },
+            form_type: { type: 'string', enum: ['zip', 'single', 'multiple', 'none'] },
+            range_id: rangeIdSchema,
+            ...customRangeSchemaProps,
+            ...utmFilterSchemaProps,
+            segment_id: { type: 'string', format: 'uuid' },
+          },
+        },
+      },
+      config: ANALYTICS_RATE_LIMIT,
+    },
+    async (request, reply) => {
+      const { workspace_id, form_type, state, city } = request.query
+      const parsed = parseRangeQuery(request.query)
+      if (!parsed.ok) {
+        return reply.code(400).send({ error: parsed.error })
+      }
+      const parsedUtm = parseAnalyticsUtmFilter(request.query)
+      const segmentFilter = await resolveSegmentFilter(request.query.segment_id, request.query.workspace_id)
+      const utmFilter = parsedUtm || {}
+      if (segmentFilter) {
+        utmFilter.segmentSql = segmentFilter.sql
+        utmFilter.segmentParams = segmentFilter.params
+      }
+      await sendAnalyticsQuery({
+        request,
+        reply,
+        workspaceId: workspace_id,
+        emptyValue: { state: state.trim(), city: city.trim(), zipcodes: [] },
+        run: () =>
+          getAnalyticsOverviewZipcodes({
+            workspaceId: workspace_id,
+            state,
+            city,
+            formTypeRaw: form_type,
+            utmFilter,
+            rangeId: parsed.rangeId,
+            custom: parsed.custom,
+          }),
+        logLabel: 'analytics overview zipcodes query ok',
+        logContext: { range_id: parsed.rangeId, state, city },
       })
     },
   )

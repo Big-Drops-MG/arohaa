@@ -213,7 +213,7 @@ export function SegmentsDashboard({
   const showSkeleton = isTabLoading || isBlockingLoad
 
   return (
-    <div className="flex flex-col gap-4 px-6 pb-6 lg:px-8">
+    <div className="flex flex-col gap-4 pb-6">
       <OverviewHeader
         title="Performance"
         projectId={projectId}
@@ -239,13 +239,13 @@ export function SegmentsDashboard({
             onValueChange={(value) => setView(parsePerformanceView(value))}
             className="flex flex-col gap-4"
           >
-            <div className="-mx-6 border-b border-neutral-200 bg-transparent px-6 lg:-mx-8 lg:px-8">
-              <TabsList className="h-auto min-h-10 w-full justify-start gap-0 overflow-x-auto rounded-none border-0 bg-transparent p-0">
+            <div className="border-b border-neutral-200 bg-transparent">
+              <TabsList className="h-auto min-h-10 w-full justify-start gap-5 overflow-x-auto rounded-none border-0 bg-transparent p-0">
                 {visibleViews.map((option) => (
                   <TabsTrigger
                     key={option.value}
                     value={option.value}
-                    className="relative -mb-px shrink-0 rounded-none border-0 border-b-2 border-transparent bg-transparent px-3 py-2.5 text-sm font-normal text-neutral-600 shadow-none hover:text-neutral-900 data-[state=active]:border-neutral-950 data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-neutral-950 data-[state=active]:shadow-none"
+                    className="relative -mb-px shrink-0 rounded-none border-0 border-b-2 border-transparent bg-transparent px-0 py-2.5 text-sm font-normal text-neutral-600 shadow-none hover:text-neutral-900 data-[state=active]:border-neutral-950 data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-neutral-950 data-[state=active]:shadow-none"
                   >
                     {option.label}
                   </TabsTrigger>

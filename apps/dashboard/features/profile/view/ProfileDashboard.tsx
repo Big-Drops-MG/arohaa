@@ -11,7 +11,7 @@ type ProfileDashboardProps = {
 
 export function ProfileDashboard({ profile }: ProfileDashboardProps) {
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 pb-8 sm:px-6 lg:px-8">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pb-8">
       <div className="pt-4">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
           Profile

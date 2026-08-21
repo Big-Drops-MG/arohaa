@@ -30,6 +30,7 @@ import type {
   OverviewKpiValuesByDateRange,
   OverviewLandingFormType,
   OverviewTrafficStat,
+  OverviewZipcodeMetric,
 } from "@/features/overview/model/overview"
 import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
 import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
@@ -400,6 +401,95 @@ export async function loadOverviewCityMetricsForApi(
     }
   } catch {
     return { ok: true, data: { state, cities: [] } }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export async function loadOverviewZipcodeMetricsForApi(
+  landingPagePublicId: string,
+  stateRaw: string | null | undefined,
+  cityRaw: string | null | undefined,
+  rangeIdRaw: string | null | undefined,
+  utmFilter?: DashboardUtmFilter,
+  customRange?: DashboardCustomRange
+): Promise<
+  | {
+      ok: true
+      data: { state: string; city: string; zipcodes: OverviewZipcodeMetric[] }
+    }
+  | { ok: false; status: number; error: string }
+> {
+  const state = stateRaw?.trim() ?? ""
+  const city = cityRaw?.trim() ?? ""
+  if (!state) {
+    return { ok: false, status: 400, error: "state is required" }
+  }
+  if (!city) {
+    return { ok: false, status: 400, error: "city is required" }
+  }
+
+  const rangeId = parseTrafficRangeId(rangeIdRaw)
+  const actor = await requireLandingPageActor()
+  if (!actor) {
+    return { ok: false, status: 401, error: "Unauthorized" }
+  }
+  const scopedUtmFilter = await resolveUtmFilterForActor(
+    actor,
+    landingPagePublicId,
+    utmFilter
+  )
+
+  const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
+  if (!row) {
+    return { ok: false, status: 404, error: "Not found" }
+  }
+
+  const formType = parseOverviewLandingFormType(row.formType)
+  const apiBase = resolveIngestApiBase()
+  const secret = resolveInternalApiSecret()
+  if (!apiBase || !secret) {
+    return { ok: true, data: { state, city, zipcodes: [] } }
+  }
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 8_000)
+
+  try {
+    const url = new URL(`${apiBase}/v1/analytics/overview/zipcodes`)
+    url.searchParams.set("workspace_id", row.id)
+    url.searchParams.set("state", state)
+    url.searchParams.set("city", city)
+    url.searchParams.set("form_type", formType)
+    url.searchParams.set("range_id", rangeId)
+    appendDashboardCustomRangeParams(url, rangeId, customRange)
+    appendDashboardUtmParams(url, scopedUtmFilter)
+
+    const resp = await fetch(url.toString(), {
+      headers: { "x-arohaa-internal": secret },
+      signal: controller.signal,
+      cache: "no-store",
+    })
+
+    if (!resp.ok) {
+      return { ok: true, data: { state, city, zipcodes: [] } }
+    }
+
+    const data = (await resp.json()) as {
+      state: string
+      city: string
+      zipcodes: OverviewZipcodeMetric[]
+    }
+    return {
+      ok: true,
+      data: {
+        state: data.state || state,
+        city: data.city || city,
+        zipcodes: Array.isArray(data.zipcodes) ? data.zipcodes : [],
+      },
+    }
+  } catch {
+    return { ok: true, data: { state, city, zipcodes: [] } }
   } finally {
     clearTimeout(timer)
   }

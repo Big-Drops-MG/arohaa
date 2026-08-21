@@ -137,6 +137,8 @@ export const US_STATES_TOPOJSON_URL =
 export const US_COUNTIES_TOPOJSON_URL =
   "https://cdn.jsdelivr.net/npm/us-atlas@3/counties-10m.json"
 
+export type OverviewMapDrillLevel = "usa" | "state"
+
 export type OverviewMapBubbleTier = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
 
 /** ColorBrewer YlGnBu-9 sequential scale (low → high). */

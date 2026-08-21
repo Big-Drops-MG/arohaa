@@ -1981,6 +1981,12 @@ export async function getExtendedInsights(
       return vehicleInsights(ctx)
     case 'quality':
       return qualityInsights(ctx)
+    case 'intelligence': {
+      const { intelligenceInsights } = await import(
+        './analytics-intelligence.service.js'
+      )
+      return intelligenceInsights(ctx)
+    }
     default:
       return emptyAnalyticsInsights(section)
   }

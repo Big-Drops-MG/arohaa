@@ -26,6 +26,7 @@ import { loadSeoDashboardData } from "@/lib/server/seo-dashboard-load"
 import { loadWebVitalDashboardData } from "@/lib/server/web-vital-dashboard-load"
 import { loadDataExportDashboardData } from "@/lib/server/data-export-dashboard-load"
 import { canAccessDataExport } from "@/lib/server/data-export-acl"
+import { isReadOnlyAccessLevel } from "@/features/team/model/access-level"
 import { loadUtmDashboardData } from "@/lib/server/utm-dashboard-load"
 import { loadTrafficDashboardData } from "@/lib/server/traffic-dashboard-load"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
@@ -58,6 +59,7 @@ type ProjectPageProps = {
     utm_dim?: string
     utm_value?: string
     segment_id?: string
+    lab?: string
   }>
 }
 
@@ -93,6 +95,7 @@ export default async function ProjectPage({
     utm_dim,
     utm_value,
     segment_id,
+    lab: labParam,
   } = await searchParams
   const rangeId = parseTrafficRangeId(rangeIdParam)
   const customRange = parseDashboardCustomRange(from, to)
@@ -129,11 +132,9 @@ export default async function ProjectPage({
 
   const formType = parseOverviewLandingFormType(row.formType)
   const overviewPlaceholder = getOverviewPlaceholderData(project, formType)
-  const allowDataExport = canAccessDataExport(actor.email)
-
-  if (tab === "data-export" && !allowDataExport) {
-    notFound()
-  }
+  const actorReadOnly =
+    access.isExternal || isReadOnlyAccessLevel(actor.accessLevel)
+  const allowDataExport = canAccessDataExport(actor.email) && !actorReadOnly
 
   let overview = null
   let traffic = null
@@ -148,6 +149,12 @@ export default async function ProjectPage({
   let utm = null
   let alerts = null
   let settings = null
+
+  const wantsLeadsSeed =
+    allowDataExport &&
+    (tabParam === "data-export" ||
+      (effectiveTab === "data-lab" &&
+        (labParam === "leads" || tabParam === "data-export")))
 
   switch (effectiveTab) {
     case "overview":
@@ -221,13 +228,6 @@ export default async function ProjectPage({
         customRange,
       })
       break
-    case "data-export":
-      dataExport = await loadDataExportDashboardData({
-        landingPagePublicId: project,
-        rangeId,
-        customRange,
-      })
-      break
     case "utm":
       utm = await loadUtmDashboardData(project)
       break
@@ -242,6 +242,16 @@ export default async function ProjectPage({
     case "settings":
       settings = await loadLandingPageSettingsData(project)
       break
+    case "data-lab":
+      break
+  }
+
+  if (wantsLeadsSeed) {
+    dataExport = await loadDataExportDashboardData({
+      landingPagePublicId: project,
+      rangeId,
+      customRange,
+    })
   }
 
   const sectionsByTab = access.isExternal
@@ -266,7 +276,7 @@ export default async function ProjectPage({
         overviewPlaceholder={overviewPlaceholder}
         allowedTabs={allowedTabs}
         sectionsByTab={sectionsByTab}
-        readOnly={access.isExternal}
+        readOnly={actorReadOnly}
         lockedUtmSources={lockedUtmSources}
         canAccessDataExport={allowDataExport}
         initial={{

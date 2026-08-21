@@ -35,6 +35,7 @@ import {
   exportChannelRetentionCsv,
   exportRetentionCsv,
 } from "@/features/retention/utils/export-csv"
+import { useDashboardAccess } from "@/features/dashboard/view/dashboard-access-context"
 import {
   buildChannelRetentionSummary,
   buildRetentionMatrix,
@@ -65,6 +66,7 @@ function retentionHelpText(splitBy: RetentionSplitBy): string {
 
 export function CohortRetentionSection({ projectId }: Props) {
   const { segmentId } = useDashboardSegmentFilter()
+  const { readOnly } = useDashboardAccess()
   const [splitBy, setSplitBy] = useState<RetentionSplitBy>("none")
   const [rows, setRows] = useState<CohortRetentionRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -78,6 +80,7 @@ export function CohortRetentionSection({ projectId }: Props) {
   )
 
   const canExport =
+    !readOnly &&
     !isLoading &&
     (splitBy === "none" ? matrix.length > 0 : channelSummaries.length > 0)
 
@@ -186,22 +189,24 @@ export function CohortRetentionSection({ projectId }: Props) {
               </SelectItem>
             </SelectContent>
           </Select>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 rounded-lg border-neutral-200 bg-white shadow-xs"
-            disabled={!canExport}
-            onClick={() => {
-              if (splitBy === "none") {
-                exportRetentionCsv(matrix, MAX_WEEKS)
-                return
-              }
-              exportChannelRetentionCsv(channelSummaries, splitBy)
-            }}
-          >
-            <Download className="size-3.5" />
-            Export CSV
-          </Button>
+          {!readOnly ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-lg border-neutral-200 bg-white shadow-xs"
+              disabled={!canExport}
+              onClick={() => {
+                if (splitBy === "none") {
+                  exportRetentionCsv(matrix, MAX_WEEKS)
+                  return
+                }
+                exportChannelRetentionCsv(channelSummaries, splitBy)
+              }}
+            >
+              <Download className="size-3.5" />
+              Export CSV
+            </Button>
+          ) : null}
         </div>
       </CardHeader>
       <CardContent

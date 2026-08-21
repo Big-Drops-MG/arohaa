@@ -8,12 +8,11 @@ import {
   TabsTrigger,
 } from "@workspace/ui/components/tabs"
 import { AlertsDashboard } from "@/features/alerts/view/AlertsDashboard"
-import { DataExportDashboard } from "@/features/data-export/view/DataExportDashboard"
+import { DataLabDashboard } from "@/features/data-lab/view/DataLabDashboard"
 import { EventTrackingDashboard } from "@/features/event-tracking/view/EventTrackingDashboard"
 import { ExperimentsDashboard } from "@/features/experiments/view/ExperimentsDashboard"
 import { FunnelDashboard } from "@/features/funnel/view/FunnelDashboard"
 import { HeatmapDashboard } from "@/features/heatmap/view/HeatmapDashboard"
-import { InsightsDashboard } from "@/features/insights/view/InsightsDashboard"
 import type {
   OverviewDashboardData,
   OverviewDateRangeId,
@@ -72,21 +71,15 @@ function ProjectDashboardViewInner({
 }: Omit<ProjectDashboardViewProps, "initialTab" | "rangeId">) {
   const { isPending } = useDashboardNavigation()
   const visibleTabs = useMemo(() => {
-    const base =
-      allowedTabs && allowedTabs.length > 0
-        ? PROJECT_TABS.filter((tab) => allowedTabs.includes(tab.value))
-        : PROJECT_TABS
-    return base.filter(
-      (tab) => tab.value !== "data-export" || canAccessDataExport
-    )
-  }, [allowedTabs, canAccessDataExport])
+    if (allowedTabs && allowedTabs.length > 0) {
+      return PROJECT_TABS.filter((tab) => allowedTabs.includes(tab.value))
+    }
+    return PROJECT_TABS
+  }, [allowedTabs])
 
   const [activeTab, setActiveTab] = useDashboardQueryParam("tab", {
     parse: (value) => {
       const parsed = parseProjectTab(value)
-      if (parsed === "data-export" && !canAccessDataExport) {
-        return visibleTabs[0]?.value ?? "overview"
-      }
       if (
         allowedTabs &&
         allowedTabs.length > 0 &&
@@ -127,7 +120,6 @@ function ProjectDashboardViewInner({
     experiments,
     seo,
     webVital,
-    dataExport,
     utm,
     alerts,
     settings,
@@ -168,7 +160,7 @@ function ProjectDashboardViewInner({
         >
           <div className="w-full border-b border-neutral-200 bg-neutral-50/90">
             <div className="mx-auto w-full max-w-[1440px]">
-              <TabsList className="h-auto min-h-11 justify-start rounded-none border-0 bg-transparent px-0">
+              <TabsList className="h-auto min-h-11 justify-start gap-5 rounded-none border-0 bg-transparent px-0">
                 {visibleTabs.map((tab) => (
                   <TabsTrigger key={tab.value} value={tab.value}>
                     {tab.label}
@@ -206,8 +198,14 @@ function ProjectDashboardViewInner({
                     isActive
                     isLoading={isTabLoading("funnel")}
                   />
-                ) : tab.value === "insights" ? (
-                  <InsightsDashboard projectId={projectId} isActive />
+                ) : tab.value === "data-lab" ? (
+                  <DataLabDashboard
+                    projectId={projectId}
+                    isActive
+                    canAccessDataExport={canAccessDataExport}
+                    allowedSections={sectionsByTab?.["data-lab"]}
+                    initialDataExport={initial["data-export"] ?? null}
+                  />
                 ) : tab.value === "heatmap" ? (
                   <HeatmapDashboard
                     data={heatmap}
@@ -252,13 +250,6 @@ function ProjectDashboardViewInner({
                     projectId={projectId}
                     isActive
                     isLoading={isTabLoading("web-vital")}
-                  />
-                ) : tab.value === "data-export" ? (
-                  <DataExportDashboard
-                    data={dataExport}
-                    projectId={projectId}
-                    isActive
-                    isLoading={isTabLoading("data-export")}
                   />
                 ) : tab.value === "utm" ? (
                   <UtmDashboard

@@ -10,6 +10,7 @@ export type InsightSectionId =
   | 'vehicle'
   | 'quality'
   | 'experiment'
+  | 'intelligence'
 
 export const INSIGHT_SECTION_IDS: readonly InsightSectionId[] = [
   'volume',
@@ -23,6 +24,7 @@ export const INSIGHT_SECTION_IDS: readonly InsightSectionId[] = [
   'vehicle',
   'quality',
   'experiment',
+  'intelligence',
 ] as const
 
 export function isInsightSectionId(value: string): value is InsightSectionId {
@@ -70,14 +72,47 @@ export type InsightChart = {
   emptyMessage?: string
 }
 
+export type IntelligenceWinner = {
+  id: string
+  label: string
+  value: string
+  metricLabel: string
+  metricValue: number
+  secondaryLabel?: string
+  secondaryValue?: number | string
+  sampleSize: number
+  enoughData: boolean
+}
+
+export type IntelligenceBoard = {
+  id: string
+  title: string
+  columns: InsightTableColumn[]
+  rows: { label: string; values: Record<string, string | number> }[]
+  takeaway: string
+}
+
 export type AnalyticsInsights = {
   section: InsightSectionId
   kpis: InsightKpi[]
   charts: InsightChart[]
+  winners?: IntelligenceWinner[]
+  boards?: IntelligenceBoard[]
+  actions?: string[]
 }
 
 export function emptyAnalyticsInsights(
   section: InsightSectionId,
 ): AnalyticsInsights {
+  if (section === 'intelligence') {
+    return {
+      section,
+      kpis: [],
+      charts: [],
+      winners: [],
+      boards: [],
+      actions: [],
+    }
+  }
   return { section, kpis: [], charts: [] }
 }

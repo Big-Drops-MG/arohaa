@@ -38,6 +38,8 @@ type DataExportDashboardProps = {
   projectId: string
   isActive?: boolean
   isLoading?: boolean
+  /** When true, omit the page header (used inside Data Lab). */
+  embedded?: boolean
 }
 
 const PREFERRED_FIELD_ORDER = [
@@ -181,6 +183,7 @@ export function DataExportDashboard({
   projectId,
   isActive = true,
   isLoading: isTabLoading = false,
+  embedded = false,
 }: DataExportDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
@@ -315,18 +318,22 @@ export function DataExportDashboard({
     void fetchPage(clamped, undefined, { pageOnly: true })
   }
 
+  const header = embedded ? null : (
+    <OverviewHeader
+      title="Data Export"
+      helpContent="Captured offer-form details for this landing page."
+      dateRangeId={dateRangeId}
+      onDateRangeChange={setDateRangeId}
+      customRange={customRange}
+      onCustomRangeChange={setCustomRange}
+      dateRangeOptions={dashboardData.dateRangeOptions}
+    />
+  )
+
   if (isTabLoading || isBlockingLoad) {
     return (
       <div className="space-y-4">
-        <OverviewHeader
-          title="Data Export"
-          helpContent="Captured offer-form details for this landing page."
-          dateRangeId={dateRangeId}
-          onDateRangeChange={setDateRangeId}
-          customRange={customRange}
-          onCustomRangeChange={setCustomRange}
-          dateRangeOptions={dashboardData.dateRangeOptions}
-        />
+        {header}
         <div className="h-40 animate-pulse rounded-xl border border-border bg-muted/40" />
       </div>
     )
@@ -335,15 +342,7 @@ export function DataExportDashboard({
   if (!dashboardData.hasRedirect) {
     return (
       <div className="space-y-4">
-        <OverviewHeader
-          title="Data Export"
-          helpContent="Captured offer-form details for this landing page."
-          dateRangeId={dateRangeId}
-          onDateRangeChange={setDateRangeId}
-          customRange={customRange}
-          onCustomRangeChange={setCustomRange}
-          dateRangeOptions={dashboardData.dateRangeOptions}
-        />
+        {header}
         <Card
           className={cn(
             overviewCardPointerFocusResetClassName,
@@ -366,15 +365,7 @@ export function DataExportDashboard({
 
   return (
     <div className="space-y-4">
-      <OverviewHeader
-        title="Data Export"
-        helpContent="Captured offer-form details for this landing page."
-        dateRangeId={dateRangeId}
-        onDateRangeChange={setDateRangeId}
-        customRange={customRange}
-        onCustomRangeChange={setCustomRange}
-        dateRangeOptions={dashboardData.dateRangeOptions}
-      />
+      {header}
 
       <Card
         className={cn(

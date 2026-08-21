@@ -192,6 +192,19 @@ export type OverviewCityMetric = {
   bounceRate: number
 }
 
+/** Zipcode KPI values within a selected US city (map drill-down). */
+export type OverviewZipcodeMetric = {
+  zipcode: string
+  city: string
+  state: string
+  visitors: number
+  sessions: number
+  pageViews: number
+  formSubmitted: number
+  fsr: number
+  bounceRate: number
+}
+
 export type OverviewKpiByStateByDateRange = Partial<
   Record<OverviewDateRangeId, OverviewStateMetric[]>
 >

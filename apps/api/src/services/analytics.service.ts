@@ -89,6 +89,18 @@ export interface OverviewCityMetric {
   bounceRate: number
 }
 
+export interface OverviewZipcodeMetric {
+  zipcode: string
+  city: string
+  state: string
+  visitors: number
+  sessions: number
+  pageViews: number
+  formSubmitted: number
+  fsr: number
+  bounceRate: number
+}
+
 export interface AnalyticsOverview {
   rangeId: AnalyticsRangeId
   kpis: RangeKpis
@@ -974,6 +986,162 @@ export async function getAnalyticsOverviewCities({
   })
 
   const result = { state: normalized.name, cities }
+  try {
+    await redis.set(cacheKey, JSON.stringify(result), 'EX', 45)
+  } catch {
+    // ignore cache write errors
+  }
+  return result
+}
+
+export async function getAnalyticsOverviewZipcodes({
+  workspaceId,
+  state: stateRaw,
+  city: cityRaw,
+  formTypeRaw,
+  utmFilter,
+  rangeId = DEFAULT_ANALYTICS_RANGE_ID,
+  custom,
+}: {
+  workspaceId: string
+  state: string
+  city: string
+  formTypeRaw?: string
+  utmFilter?: AnalyticsUtmFilter
+  rangeId?: AnalyticsRangeId
+  custom?: AnalyticsCustomRange
+}): Promise<{ state: string; city: string; zipcodes: OverviewZipcodeMetric[] }> {
+  const normalized = normalizeOverviewStateInput(stateRaw)
+  const city = cityRaw.trim()
+  if (!normalized || !city) {
+    return { state: stateRaw.trim(), city, zipcodes: [] }
+  }
+
+  const formType = parseLandingFormType(formTypeRaw)
+  const submitEvent = submissionEventName(formType)
+  const window = resolveAnalyticsWindow(rangeId, new Date(), custom)
+  const where = rangeFilter(utmFilter)
+  const p = {
+    wid: workspaceId,
+    state_name: normalized.name,
+    state_code: normalized.code,
+    city_name: city,
+    ...rangeQueryParams(window),
+    ...utmFilterParams(utmFilter),
+  }
+  const cacheKey = `analytics:overview:zipcodes:v1:${workspaceId}:${formType}:${normalized.code}:${city.toLowerCase()}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
+
+  try {
+    const cachedStr = await redis.get(cacheKey)
+    if (cachedStr) {
+      return JSON.parse(cachedStr) as {
+        state: string
+        city: string
+        zipcodes: OverviewZipcodeMetric[]
+      }
+    }
+  } catch {
+    // ignore cache read errors
+  }
+
+  const ch = getClickHouseClient()
+  const stateMatch = `(
+    lowerUTF8(trim(state)) = lowerUTF8({state_name:String})
+    OR upperUTF8(trim(state)) = {state_code:String}
+  )`
+  const zipWhere = `${where}
+          AND city != ''
+          AND lowerUTF8(trim(city)) = lowerUTF8(trim({city_name:String}))
+          AND zipcode != ''
+          AND ${stateMatch}
+          AND country IN ('United States', 'USA', 'US')`
+
+  const [zipMetricsRes, zipBounceRes] = await Promise.all([
+    ch.query({
+      format: 'JSON',
+      query_params: p,
+      query: `
+        SELECT
+          zipcode AS zipcode,
+          uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+          uniqExact(session_id) AS sessions,
+          countIf(event_name = 'page_view') AS page_views,
+          uniqExactIf(session_id, event_name = '${submitEvent}') AS form_submitted
+        FROM events_raw
+        WHERE ${zipWhere}
+        GROUP BY zipcode
+        ORDER BY visitors DESC
+        LIMIT 120
+      `,
+    }),
+    ch.query({
+      format: 'JSON',
+      query_params: p,
+      query: `
+        SELECT
+          session_zip AS zipcode,
+          sumIf(1, is_bounce = 1) AS bounces,
+          count() AS sessions
+        FROM (
+          SELECT
+            session_id,
+            anyHeavyIf(zipcode, zipcode != '') AS session_zip,
+            toUInt8(count() = 1) AS is_bounce
+          FROM events_raw
+          WHERE ${zipWhere}
+          GROUP BY session_id
+        )
+        WHERE session_zip != ''
+        GROUP BY session_zip
+      `,
+    }),
+  ])
+
+  const zipMetricRows =
+    (
+      (await zipMetricsRes.json()) as CHJson<{
+        zipcode: string
+        visitors: string
+        sessions: string
+        page_views: string
+        form_submitted: string
+      }>
+    ).data ?? []
+  const zipBounceRows =
+    (
+      (await zipBounceRes.json()) as CHJson<{
+        zipcode: string
+        bounces: string
+        sessions: string
+      }>
+    ).data ?? []
+
+  const bounceByZip = new Map<string, { bounces: number; sessions: number }>()
+  for (const row of zipBounceRows) {
+    bounceByZip.set(row.zipcode, {
+      bounces: n(row.bounces),
+      sessions: n(row.sessions),
+    })
+  }
+
+  const zipcodes: OverviewZipcodeMetric[] = zipMetricRows.map((row) => {
+    const zipSessions = n(row.sessions)
+    const zipSubmitted = n(row.form_submitted)
+    const bounce = bounceByZip.get(row.zipcode)
+    return {
+      zipcode: row.zipcode,
+      city,
+      state: normalized.name,
+      visitors: n(row.visitors),
+      sessions: zipSessions,
+      pageViews: n(row.page_views),
+      formSubmitted: zipSubmitted,
+      fsr: fsrPct(zipSubmitted, zipSessions),
+      bounceRate: bouncePct(bounce?.bounces ?? 0, bounce?.sessions ?? 0),
+    }
+  })
+
+  const result = { state: normalized.name, city, zipcodes }
   try {
     await redis.set(cacheKey, JSON.stringify(result), 'EX', 45)
   } catch {
