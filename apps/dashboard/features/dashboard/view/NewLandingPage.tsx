@@ -16,6 +16,7 @@ import { cn } from "@workspace/ui/lib/utils"
 import { CheckCircle2, XCircle, Loader2, Copy, Check } from "lucide-react"
 import type { OverviewLandingFormType } from "@/features/overview/model/overview"
 import { LANDING_FORM_TYPE_OPTIONS } from "@/features/overview/model/overview"
+import { VariantLabelField } from "@/features/experiments/view/VariantLabelField"
 import {
   overviewSelectContentClassName,
   overviewSelectItemClassName,
@@ -388,37 +389,15 @@ export function NewLandingPage({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="variant-label">Variant</Label>
-                <Select
-                  value={variantLabel || undefined}
-                  disabled={!labelPlan || currentStep > 1}
+                <VariantLabelField
+                  id="variant-label"
+                  value={variantLabel}
                   onValueChange={setVariantLabel}
-                >
-                  <SelectTrigger
-                    id="variant-label"
-                    aria-label="Variant label"
-                    className={cn(
-                      overviewSelectTriggerClassName,
-                      "h-12 w-full text-base"
-                    )}
-                  >
-                    <SelectValue placeholder="—" />
-                  </SelectTrigger>
-                  <SelectContent
-                    position="popper"
-                    align="start"
-                    className={overviewSelectContentClassName}
-                  >
-                    {labelPlan?.availableLabels.map((labelOption) => (
-                      <SelectItem
-                        key={labelOption}
-                        value={labelOption}
-                        className={overviewSelectItemClassName}
-                      >
-                        Variant {labelOption}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  availableLabels={labelPlan?.availableLabels ?? []}
+                  disabled={!labelPlan || currentStep > 1}
+                  placeholder="—"
+                  triggerClassName="h-12 text-base"
+                />
               </div>
             </div>
           ) : null}
