@@ -84,7 +84,7 @@ export interface OverviewCityMetric {
   state: string
   latitude?: number
   longitude?: number
-  /** Distinct zipcodes submitted through the form in this city (GeoIP postals excluded). */
+  /** Distinct zipcodes with events in this city (GeoIP postal + form-submitted). */
   zipCount: number
   /** Distinct zipcode values backing `zipCount`, capped for payload size. */
   zipcodes: string[]
@@ -856,36 +856,6 @@ function normalizeOverviewStateInput(raw: string): {
 /** Cap on distinct zipcodes returned per city so county totals stay exact without huge payloads. */
 const CITY_ZIP_SAMPLE_LIMIT = 250
 
-/**
- * Form-submitted zip for a row, excluding the GeoIP postal fallback that also
- * lands in `zipcode`. Reads the stored props blob, so historical rows resolve
- * without a backfill. Mirrors `zipFromProps` in types/event.ts.
- */
-const SUBMITTED_ZIP_EXPR = `
-  if(
-    properties = '' OR properties = '{}',
-    '',
-    substring(
-      replaceRegexpAll(
-        coalesce(
-          nullIf(replaceRegexpAll(JSONExtractRaw(properties, 'zip'), '"', ''), ''),
-          nullIf(replaceRegexpAll(JSONExtractRaw(properties, 'zipCode'), '"', ''), ''),
-          nullIf(replaceRegexpAll(JSONExtractRaw(properties, 'zipcode'), '"', ''), ''),
-          nullIf(replaceRegexpAll(JSONExtractRaw(properties, 'fields', 'zip'), '"', ''), ''),
-          nullIf(replaceRegexpAll(JSONExtractRaw(properties, 'fields', 'zipCode'), '"', ''), ''),
-          nullIf(replaceRegexpAll(JSONExtractRaw(properties, 'fields', 'zipcode'), '"', ''), ''),
-          nullIf(replaceRegexpAll(JSONExtractRaw(properties, 'fields', 'postal'), '"', ''), ''),
-          ''
-        ),
-        '[^0-9]',
-        ''
-      ),
-      1,
-      5
-    )
-  )
-`
-
 export async function getAnalyticsOverviewCities({
   workspaceId,
   state: stateRaw,
@@ -917,7 +887,7 @@ export async function getAnalyticsOverviewCities({
     ...rangeQueryParams(window),
     ...utmFilterParams(utmFilter),
   }
-  const cacheKey = `analytics:overview:cities:v5:${workspaceId}:${formType}:${normalized.code}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
+  const cacheKey = `analytics:overview:cities:v6:${workspaceId}:${formType}:${normalized.code}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
 
   try {
     const cachedStr = await redis.get(cacheKey)
@@ -950,9 +920,9 @@ export async function getAnalyticsOverviewCities({
           city AS city,
           avgIf(latitude, latitude != 0 AND longitude != 0) AS latitude,
           avgIf(longitude, latitude != 0 AND longitude != 0) AS longitude,
-          uniqExactIf(submitted_zip, length(submitted_zip) = 5) AS zip_count,
+          uniqExactIf(zipcode, zipcode != '') AS zip_count,
           arraySlice(
-            arraySort(groupUniqArrayIf(submitted_zip, length(submitted_zip) = 5)),
+            arraySort(groupUniqArrayIf(toString(zipcode), zipcode != '')),
             1,
             ${CITY_ZIP_SAMPLE_LIMIT}
           ) AS zipcodes,
@@ -960,18 +930,8 @@ export async function getAnalyticsOverviewCities({
           uniqExact(session_id) AS sessions,
           countIf(event_name = 'page_view') AS page_views,
           uniqExactIf(session_id, event_name = '${submitEvent}') AS form_submitted
-        FROM (
-          SELECT
-            city,
-            latitude,
-            longitude,
-            user_id,
-            session_id,
-            event_name,
-            ${SUBMITTED_ZIP_EXPR} AS submitted_zip
-          FROM events_raw
-          WHERE ${cityWhere}
-        )
+        FROM events_raw
+        WHERE ${cityWhere}
         GROUP BY city
         ORDER BY visitors DESC
         LIMIT 500
