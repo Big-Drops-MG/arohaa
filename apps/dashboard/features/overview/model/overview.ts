@@ -184,6 +184,12 @@ export type OverviewStateMetric = {
 export type OverviewCityMetric = {
   city: string
   state: string
+  latitude?: number
+  longitude?: number
+  /** Distinct zipcodes submitted through the form in this city. */
+  zipCount: number
+  /** Distinct zipcode values backing `zipCount`, capped by the API. */
+  zipcodes: string[]
   visitors: number
   sessions: number
   pageViews: number

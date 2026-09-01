@@ -396,7 +396,13 @@ export async function loadOverviewCityMetricsForApi(
       ok: true,
       data: {
         state: data.state || state,
-        cities: Array.isArray(data.cities) ? data.cities : [],
+        cities: Array.isArray(data.cities)
+          ? data.cities.map((row) => ({
+              ...row,
+              zipCount: Number(row.zipCount ?? 0) || 0,
+              zipcodes: Array.isArray(row.zipcodes) ? row.zipcodes : [],
+            }))
+          : [],
       },
     }
   } catch {

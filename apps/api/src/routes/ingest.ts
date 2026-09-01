@@ -192,6 +192,10 @@ async function ingestOne(
     city: ctx.geo.city,
     state: ctx.geo.state,
     zipcode: ctx.geo.zipcode,
+    stateCode: ctx.geo.stateCode,
+    latitude: ctx.geo.latitude,
+    longitude: ctx.geo.longitude,
+    accuracyRadius: ctx.geo.accuracyRadius,
   })
 
   pushEvent(row)

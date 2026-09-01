@@ -29,6 +29,10 @@ CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_EVENTS_TABLE} (
     city LowCardinality(String) DEFAULT '',
     state LowCardinality(String) DEFAULT '',
     zipcode LowCardinality(String) DEFAULT '',
+    state_code LowCardinality(String) DEFAULT '',
+    latitude Float64 DEFAULT 0,
+    longitude Float64 DEFAULT 0,
+    geo_accuracy UInt16 DEFAULT 0,
     metric_name LowCardinality(String) DEFAULT '',
     metric_value Float64 DEFAULT 0,
     properties String,
@@ -141,6 +145,22 @@ export async function ensureEventsTable(): Promise<void> {
   await ch.command({
     query:
       `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS zipcode LowCardinality(String) DEFAULT ''`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS state_code LowCardinality(String) DEFAULT ''`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS latitude Float64 DEFAULT 0`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS longitude Float64 DEFAULT 0`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS geo_accuracy UInt16 DEFAULT 0`,
   })
   await ch.command({
     query:

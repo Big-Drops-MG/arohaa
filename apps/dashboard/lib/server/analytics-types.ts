@@ -48,6 +48,10 @@ export interface OverviewStateMetric {
 export interface OverviewCityMetric {
   city: string
   state: string
+  latitude?: number
+  longitude?: number
+  zipCount: number
+  zipcodes: string[]
   visitors: number
   sessions: number
   pageViews: number

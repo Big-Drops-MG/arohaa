@@ -37,6 +37,8 @@ npm-debug.log*
 # Misc
 .DS_Store
 *.pem
+.cache/geo
+apps/dashboard/public/geo/places/
 
 # Terraform
 terraform/.terraform/

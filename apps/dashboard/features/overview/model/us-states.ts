@@ -131,6 +131,10 @@ export function normalizeUsStateName(raw: string): string | null {
   return null
 }
 
+export const US_STATES_GEOJSON_URL = "/geo/us-states.geojson"
+export const US_COUNTIES_GEOJSON_URL = "/geo/us-counties.geojson"
+
+/** Legacy CDN TopoJSON — prefer local GeoJSON URLs for dashboard maps. */
 export const US_STATES_TOPOJSON_URL =
   "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"
 
