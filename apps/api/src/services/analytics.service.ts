@@ -856,6 +856,10 @@ function normalizeOverviewStateInput(raw: string): {
 /** Cap on distinct zipcodes returned per city so county totals stay exact without huge payloads. */
 const CITY_ZIP_SAMPLE_LIMIT = 250
 
+/** Group events without a city name by ZIP or a fallback label for county drill-down. */
+const CITY_GROUP_SQL = `if(city != '', city, if(zipcode != '', concat('ZIP ', zipcode), 'Unknown'))`
+const CITY_LOCATION_SQL = `(city != '' OR zipcode != '' OR (latitude != 0 AND longitude != 0))`
+
 export async function getAnalyticsOverviewCities({
   workspaceId,
   state: stateRaw,
@@ -887,7 +891,7 @@ export async function getAnalyticsOverviewCities({
     ...rangeQueryParams(window),
     ...utmFilterParams(utmFilter),
   }
-  const cacheKey = `analytics:overview:cities:v6:${workspaceId}:${formType}:${normalized.code}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
+  const cacheKey = `analytics:overview:cities:v7:${workspaceId}:${formType}:${normalized.code}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
 
   try {
     const cachedStr = await redis.get(cacheKey)
@@ -907,9 +911,9 @@ export async function getAnalyticsOverviewCities({
     OR upperUTF8(trim(state)) = {state_code:String}
   )`
   const cityWhere = `${where}
-          AND city != ''
           AND ${stateMatch}
-          AND country IN ('United States', 'USA', 'US')`
+          AND country IN ('United States', 'USA', 'US')
+          AND ${CITY_LOCATION_SQL}`
 
   const [cityMetricsRes, cityBounceRes] = await Promise.all([
     ch.query({
@@ -917,7 +921,7 @@ export async function getAnalyticsOverviewCities({
       query_params: p,
       query: `
         SELECT
-          city AS city,
+          ${CITY_GROUP_SQL} AS city,
           avgIf(latitude, latitude != 0 AND longitude != 0) AS latitude,
           avgIf(longitude, latitude != 0 AND longitude != 0) AS longitude,
           uniqExactIf(zipcode, zipcode != '') AS zip_count,
@@ -932,7 +936,7 @@ export async function getAnalyticsOverviewCities({
           uniqExactIf(session_id, event_name = '${submitEvent}') AS form_submitted
         FROM events_raw
         WHERE ${cityWhere}
-        GROUP BY city
+        GROUP BY ${CITY_GROUP_SQL}
         ORDER BY visitors DESC
         LIMIT 500
       `,
@@ -948,7 +952,7 @@ export async function getAnalyticsOverviewCities({
         FROM (
           SELECT
             session_id,
-            anyHeavyIf(city, city != '') AS session_city,
+            anyHeavyIf(${CITY_GROUP_SQL}, ${CITY_LOCATION_SQL}) AS session_city,
             toUInt8(count() = 1) AS is_bounce
           FROM events_raw
           WHERE ${cityWhere}

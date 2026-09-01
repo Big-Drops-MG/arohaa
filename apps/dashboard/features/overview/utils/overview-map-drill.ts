@@ -86,13 +86,10 @@ export function resolveCityGeoPoint(
   return overviewCityPointInBbox(row.city.trim(), fallbackBbox)
 }
 
-function cityHasRealCoordinates(row: OverviewCityMetric): boolean {
-  return (
-    typeof row.latitude === "number" &&
-    typeof row.longitude === "number" &&
-    row.latitude !== 0 &&
-    row.longitude !== 0
-  )
+function normalizeCountyId(value: string | number | null | undefined): string {
+  const raw = String(value ?? "").trim()
+  if (!raw) return ""
+  return raw.padStart(5, "0")
 }
 
 function nearestFeature(
@@ -167,19 +164,16 @@ export function buildCountyRegions({
     const label = row.city.trim()
     if (!label) continue
     const metrics = metricsByCity.get(label)
-    if (!metrics || metrics.value <= 0) continue
+    if (!metrics || (metrics.value <= 0 && metrics.zipCount <= 0)) continue
     const point = resolveCityGeoPoint(row, countiesBbox)
     const contained =
       counties.features.find((feat) =>
         geoContains(feat as Feature<Geometry>, point)
       ) ?? null
     const matched =
-      contained ??
-      (cityHasRealCoordinates(row)
-        ? null
-        : nearestFeature(point, counties.features as Feature[]))
+      contained ?? nearestFeature(point, counties.features as Feature[])
     if (!matched) continue
-    const countyId = String(matched.id ?? label)
+    const countyId = normalizeCountyId(matched.id ?? label)
     let cityMap = countyBuckets.get(countyId)
     if (!cityMap) {
       cityMap = new Map()
@@ -192,7 +186,7 @@ export function buildCountyRegions({
   for (const feat of counties.features) {
     const d = path(feat as Feature<Geometry>)
     if (!d) continue
-    const countyId = String(feat.id ?? "")
+    const countyId = normalizeCountyId(feat.id)
     const props = feat.properties as Record<string, unknown> | null | undefined
     const countyLabel =
       typeof props?.NAME === "string"

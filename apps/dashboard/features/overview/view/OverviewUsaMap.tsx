@@ -164,6 +164,8 @@ export function OverviewUsaMap({
   const { segmentId } = useDashboardSegmentFilter()
   const [collection, setCollection] = useState<FeatureCollection | null>(null)
   const [counties, setCounties] = useState<FeatureCollection | null>(null)
+  const [countiesLoading, setCountiesLoading] = useState(false)
+  const [countiesError, setCountiesError] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [hovered, setHovered] = useState<string | null>(null)
   const [selectedState, setSelectedState] = useState<string | null>(null)
@@ -213,15 +215,21 @@ export function OverviewUsaMap({
   useEffect(() => {
     if (!selectedState) {
       setCounties(null)
+      setCountiesLoading(false)
+      setCountiesError(false)
       return
     }
     const stateFips = US_STATE_NAME_TO_FIPS[selectedState]
     if (!stateFips) {
       setCounties(null)
+      setCountiesLoading(false)
+      setCountiesError(true)
       return
     }
 
     let cancelled = false
+    setCountiesLoading(true)
+    setCountiesError(false)
     void fetch(US_COUNTIES_GEOJSON_URL)
       .then((res) => {
         if (!res.ok) throw new Error(`counties geojson ${res.status}`)
@@ -238,7 +246,13 @@ export function OverviewUsaMap({
         })
       })
       .catch(() => {
-        if (!cancelled) setCounties(null)
+        if (!cancelled) {
+          setCounties(null)
+          setCountiesError(true)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCountiesLoading(false)
       })
 
     return () => {
@@ -264,6 +278,7 @@ export function OverviewUsaMap({
         rangeId: dateRangeId,
         customRange,
         utmFilter,
+        segmentId,
         extra: { state: selectedState },
       }
     )
@@ -417,7 +432,13 @@ export function OverviewUsaMap({
 
   const regions = level === "usa" ? stateRegions : countyRegions
 
-  const hasMetricRegions = regions.some((region) => region.tier !== null)
+  const hasMetricRegions =
+    level === "usa"
+      ? regions.some((region) => region.tier !== null)
+      : regions.some(
+          (region) =>
+            region.tier !== null || (region.cityEntries?.length ?? 0) > 0
+        )
   const outlineFeature = level === "state" ? selectedStateFeature : null
   const outlinePath = outlineFeature
     ? path(outlineFeature as Feature<Geometry>)
@@ -547,18 +568,26 @@ export function OverviewUsaMap({
   const canZoomOut = transform.k > MIN_ZOOM + 0.001
   const canReset = transform.k !== 1 || transform.x !== 0 || transform.y !== 0
   const boundaryWidth = level === "usa" ? 1.35 : 1.15
-  const isLoading = level === "state" && citiesLoading
+  const selectedStateMetricValue = selectedState
+    ? (valueByState.get(selectedState) ?? 0)
+    : 0
+  const isLoading = level === "state" && (citiesLoading || countiesLoading)
   const showEmptyOverlay =
     !isLoading &&
     ((level === "usa" && !hasMetricRegions) ||
-      (level === "state" && (citiesError || !hasMetricRegions)))
+      (level === "state" &&
+        (citiesError || countiesError || !hasMetricRegions)))
 
   const emptyMessage =
     level === "usa"
       ? "No US state location data for this range yet. Regions fill once GeoIP state is present on events."
-      : citiesError
-        ? `Could not load city data for ${selectedState}.`
-        : `No county-level data for ${selectedState} in this range yet.`
+      : countiesError
+        ? `Could not load county boundaries for ${selectedState}.`
+        : citiesError
+          ? `Could not load city data for ${selectedState}.`
+          : selectedStateMetricValue > 0 && cities.length === 0
+            ? `${selectedState} has ${formatMetricValue(selectedStateMetricValue, metricId)} at the state level, but events in this range are missing city or ZIP location data needed for county drill-down.`
+            : `No county-level data for ${selectedState} in this range yet.`
 
   return (
     <div className={cn("relative h-full min-h-0 w-full", className)}>
