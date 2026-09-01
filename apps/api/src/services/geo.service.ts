@@ -8,6 +8,14 @@ export interface GeoInfo {
   city: string
   state: string
   zipcode: string
+  /** USPS state code (e.g. CA, NY). Empty when unknown. */
+  stateCode: string
+  /** WGS84 latitude from GeoIP. Null when unknown or private IP. */
+  latitude: number | null
+  /** WGS84 longitude from GeoIP. Null when unknown or private IP. */
+  longitude: number | null
+  /** GeoIP accuracy radius in km. Null when unknown. */
+  accuracyRadius: number | null
 }
 
 const UNKNOWN_GEO: GeoInfo = {
@@ -15,6 +23,10 @@ const UNKNOWN_GEO: GeoInfo = {
   city: '',
   state: '',
   zipcode: '',
+  stateCode: '',
+  latitude: null,
+  longitude: null,
+  accuracyRadius: null,
 }
 
 let reader: Reader<CityResponse> | null = null
@@ -77,12 +89,38 @@ export function lookupGeoIp(ip: string): GeoInfo {
 
     const country = result.country?.names?.en?.trim() || 'Unknown'
     const city = result.city?.names?.en?.trim() || ''
+    const stateSubdivision = result.subdivisions?.[0]
     const state =
-      result.subdivisions?.[0]?.names?.en?.trim() ||
-      result.subdivisions?.[0]?.iso_code?.trim() ||
+      stateSubdivision?.names?.en?.trim() ||
+      stateSubdivision?.iso_code?.trim() ||
       ''
+    const stateCode = stateSubdivision?.iso_code?.trim().toUpperCase() || ''
     const zipcode = result.postal?.code?.trim() || ''
-    return { country, city, state, zipcode }
+
+    const rawLat = result.location?.latitude
+    const rawLng = result.location?.longitude
+    const latitude =
+      typeof rawLat === 'number' && Number.isFinite(rawLat) ? rawLat : null
+    const longitude =
+      typeof rawLng === 'number' && Number.isFinite(rawLng) ? rawLng : null
+    const rawAccuracy = result.location?.accuracy_radius
+    const accuracyRadius =
+      typeof rawAccuracy === 'number' &&
+      Number.isFinite(rawAccuracy) &&
+      rawAccuracy > 0
+        ? Math.round(rawAccuracy)
+        : null
+
+    return {
+      country,
+      city,
+      state,
+      zipcode,
+      stateCode,
+      latitude,
+      longitude,
+      accuracyRadius,
+    }
   } catch {
     return { ...UNKNOWN_GEO }
   }

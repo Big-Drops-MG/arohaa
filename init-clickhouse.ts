@@ -48,6 +48,10 @@ const EXPECTED_COLUMNS = [
   "created_at",
   "state",
   "zipcode",
+  "state_code",
+  "latitude",
+  "longitude",
+  "geo_accuracy",
   "event_date_et",
 ] as const
 
@@ -282,6 +286,18 @@ async function ensureAdditiveColumns(): Promise<void> {
   })
   await client.command({
     query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS zipcode LowCardinality(String) DEFAULT ''`,
+  })
+  await client.command({
+    query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS state_code LowCardinality(String) DEFAULT ''`,
+  })
+  await client.command({
+    query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS latitude Float64 DEFAULT 0`,
+  })
+  await client.command({
+    query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS longitude Float64 DEFAULT 0`,
+  })
+  await client.command({
+    query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS geo_accuracy UInt16 DEFAULT 0`,
   })
   await client.command({
     query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS event_date_et Date MATERIALIZED toDate(created_at, 'America/New_York')`,

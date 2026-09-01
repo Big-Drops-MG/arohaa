@@ -8,9 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react"
 import { geoAlbers, geoAlbersUsa, geoPath } from "d3-geo"
-import { feature } from "topojson-client"
 import type { Feature, FeatureCollection, Geometry } from "geojson"
-import type { GeometryCollection, Topology } from "topojson-specification"
 import { ArrowLeft, Minus, Plus, RotateCcw } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import type {
@@ -23,10 +21,10 @@ import {
   OVERVIEW_MAP_TIER_COLORS,
   OVERVIEW_MAP_TIER_IDS,
   OVERVIEW_MAP_TIER_STROKES,
-  US_COUNTIES_TOPOJSON_URL,
+  US_COUNTIES_GEOJSON_URL,
   US_STATE_FIPS_TO_NAME,
   US_STATE_NAME_TO_FIPS,
-  US_STATES_TOPOJSON_URL,
+  US_STATES_GEOJSON_URL,
   normalizeUsStateName,
   overviewMapBubbleTier,
   overviewMapBubbleTierForValue,
@@ -35,20 +33,13 @@ import {
 } from "@/features/overview/model/us-states"
 import {
   buildCountyRegions,
+  countyRegionHoverSummary,
   type OverviewMapRegion,
 } from "@/features/overview/utils/overview-map-drill"
 import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
 import type { DashboardCustomRange } from "@/features/traffic/model/traffic-range"
-
-type UsStatesTopology = Topology<{
-  states: GeometryCollection
-}>
-
-type UsCountiesTopology = Topology<{
-  counties: GeometryCollection
-}>
 
 type OverviewUsaMapProps = {
   metricId: OverviewKpiMetricId
@@ -72,7 +63,17 @@ function drillLevel(selectedState: string | null): OverviewMapDrillLevel {
 }
 
 function legendScopeLabel(level: OverviewMapDrillLevel): string {
-  return level === "state" ? " · Counties" : ""
+  return level === "state" ? " · Cities" : ""
+}
+
+function normalizeStateFips(value: string): string {
+  return value.padStart(2, "0")
+}
+
+function featureStateFips(feat: Feature): string {
+  const props = feat.properties as Record<string, unknown> | null | undefined
+  const raw = String(feat.id ?? props?.GEOID ?? props?.STATEFP ?? "")
+  return normalizeStateFips(raw.slice(0, 2))
 }
 
 const MAP_WIDTH = 720
@@ -85,6 +86,7 @@ const EMPTY_FILL = "#f8fafc"
 const BOUNDARY_STROKE = "#334155"
 const INNER_BOUNDARY_STROKE = "#64748b"
 const IDENTITY_TRANSFORM: MapTransform = { k: 1, x: 0, y: 0 }
+const MAX_HOVER_CITIES = 8
 
 function metricValue(
   row: OverviewStateMetric | OverviewCityMetric,
@@ -191,14 +193,14 @@ export function OverviewUsaMap({
 
   useEffect(() => {
     let cancelled = false
-    void fetch(US_STATES_TOPOJSON_URL)
+    void fetch(US_STATES_GEOJSON_URL)
       .then((res) => {
-        if (!res.ok) throw new Error(`map topology ${res.status}`)
-        return res.json() as Promise<UsStatesTopology>
+        if (!res.ok) throw new Error(`states geojson ${res.status}`)
+        return res.json() as Promise<FeatureCollection>
       })
-      .then((topo) => {
+      .then((geojson) => {
         if (cancelled) return
-        setCollection(feature(topo, topo.objects.states) as FeatureCollection)
+        setCollection(geojson)
       })
       .catch(() => {
         if (!cancelled) setLoadError(true)
@@ -220,18 +222,18 @@ export function OverviewUsaMap({
     }
 
     let cancelled = false
-    void fetch(US_COUNTIES_TOPOJSON_URL)
+    void fetch(US_COUNTIES_GEOJSON_URL)
       .then((res) => {
-        if (!res.ok) throw new Error(`counties topology ${res.status}`)
-        return res.json() as Promise<UsCountiesTopology>
+        if (!res.ok) throw new Error(`counties geojson ${res.status}`)
+        return res.json() as Promise<FeatureCollection>
       })
-      .then((topo) => {
+      .then((geojson) => {
         if (cancelled) return
-        const fc = feature(topo, topo.objects.counties) as FeatureCollection
+        const padded = normalizeStateFips(stateFips)
         setCounties({
           type: "FeatureCollection",
-          features: fc.features.filter((feat) =>
-            String(feat.id ?? "").startsWith(stateFips)
+          features: geojson.features.filter(
+            (feat) => featureStateFips(feat) === padded
           ),
         })
       })
@@ -329,8 +331,10 @@ export function OverviewUsaMap({
     if (!collection || !selectedState) return null
     const fips = US_STATE_NAME_TO_FIPS[selectedState]
     if (!fips) return null
+    const padded = normalizeStateFips(fips)
     return (
-      collection.features.find((feat) => String(feat.id ?? "") === fips) ?? null
+      collection.features.find((feat) => featureStateFips(feat) === padded) ??
+      null
     )
   }, [collection, selectedState])
 
@@ -381,7 +385,7 @@ export function OverviewUsaMap({
   const stateRegions = useMemo((): OverviewMapRegion[] => {
     if (!collection || level !== "usa") return []
     return collection.features.flatMap((feat) => {
-      const fips = String(feat.id ?? "")
+      const fips = featureStateFips(feat)
       const name = US_STATE_FIPS_TO_NAME[fips]
       if (!name) return []
       const d = path(feat as Feature<Geometry>)
@@ -536,6 +540,9 @@ export function OverviewUsaMap({
   const hoveredRegion = hovered
     ? (regions.find((region) => region.key === hovered) ?? null)
     : null
+  const showCountyCityBreakdown =
+    level === "state" &&
+    Boolean(hoveredRegion?.cityEntries && hoveredRegion.cityEntries.length > 0)
   const canZoomIn = transform.k < MAX_ZOOM - 0.001
   const canZoomOut = transform.k > MIN_ZOOM + 0.001
   const canReset = transform.k !== 1 || transform.x !== 0 || transform.y !== 0
@@ -660,8 +667,9 @@ export function OverviewUsaMap({
                   >
                     {region.label ? (
                       <title>
-                        {region.label}:{" "}
-                        {formatMetricValue(region.value, metricId)}
+                        {level === "state"
+                          ? `${countyRegionHoverSummary(region)}\n${metricLabel}: ${formatMetricValue(region.value, metricId)}`
+                          : `${region.label}: ${formatMetricValue(region.value, metricId)}`}
                         {valueSuffix &&
                         metricId !== "fsr" &&
                         metricId !== "bounce-rate"
@@ -704,22 +712,86 @@ export function OverviewUsaMap({
         </div>
       ) : null}
 
-      {hoveredRegion && hoveredRegion.label ? (
+      {hoveredRegion ? (
         <div
           className={cn(
-            "pointer-events-none absolute top-3 left-3 rounded-lg border border-neutral-200 bg-white/95 px-3 py-2 text-xs shadow-sm",
+            "pointer-events-none absolute top-3 left-3 z-20 w-60 max-w-[calc(100%-1.5rem)] overflow-hidden rounded-lg border border-neutral-200 bg-white/97 shadow-md",
             level !== "usa" && "mt-12"
           )}
         >
-          <p className="font-semibold text-neutral-900">
-            {hoveredRegion.label}
-          </p>
-          <p className="mt-0.5 text-neutral-600">
-            {metricLabel}: {formatMetricValue(hoveredRegion.value, metricId)}
-          </p>
-          {canDrillFromLevel() ? (
-            <p className="mt-1 text-[10px] text-neutral-400">Click to expand</p>
+          <div className="flex items-baseline justify-between gap-2 border-b border-neutral-100 px-3 py-2">
+            <p className="truncate text-xs font-semibold text-neutral-900">
+              {hoveredRegion.label}
+              {level === "state" ? " County" : ""}
+            </p>
+            {level === "state" ? (
+              <span className="shrink-0 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600 tabular-nums">
+                {(hoveredRegion.totalZipCount ?? 0).toLocaleString("en-US")}{" "}
+                {hoveredRegion.totalZipCount === 1 ? "zip" : "zips"}
+              </span>
+            ) : null}
+          </div>
+
+          {level === "state" ? (
+            <div className="px-3 py-2">
+              {showCountyCityBreakdown && hoveredRegion.cityEntries ? (
+                <ul className="space-y-1">
+                  {hoveredRegion.cityEntries
+                    .slice(0, MAX_HOVER_CITIES)
+                    .map((entry) => (
+                      <li
+                        key={entry.label}
+                        className="flex items-baseline justify-between gap-3 text-[11px] leading-snug"
+                      >
+                        <span className="flex min-w-0 items-baseline gap-1.5">
+                          <span className="text-neutral-300" aria-hidden>
+                            •
+                          </span>
+                          <span className="truncate text-neutral-700">
+                            {entry.label}
+                          </span>
+                        </span>
+                        <span className="shrink-0 font-medium text-neutral-900 tabular-nums">
+                          {entry.zipCount.toLocaleString("en-US")}
+                        </span>
+                      </li>
+                    ))}
+                  {hoveredRegion.cityEntries.length > MAX_HOVER_CITIES ? (
+                    <li className="pt-0.5 pl-3 text-[10px] text-neutral-400">
+                      +{hoveredRegion.cityEntries.length - MAX_HOVER_CITIES}{" "}
+                      more cities
+                    </li>
+                  ) : null}
+                </ul>
+              ) : (
+                <p className="text-[11px] text-neutral-400">
+                  No city data in this range
+                </p>
+              )}
+            </div>
           ) : null}
+
+          <div
+            className={cn(
+              "px-3 py-2",
+              level === "state" && "border-t border-neutral-100"
+            )}
+          >
+            <p className="flex items-baseline justify-between gap-3 text-[11px] text-neutral-600">
+              <span className="truncate">{metricLabel}</span>
+              <span className="shrink-0 font-medium text-neutral-900 tabular-nums">
+                {formatMetricValue(hoveredRegion.value, metricId)}
+                {valueSuffix && metricId !== "fsr" && metricId !== "bounce-rate"
+                  ? valueSuffix
+                  : ""}
+              </span>
+            </p>
+            {canDrillFromLevel() ? (
+              <p className="mt-1 text-[10px] text-neutral-400">
+                Click to expand
+              </p>
+            ) : null}
+          </div>
         </div>
       ) : null}
 

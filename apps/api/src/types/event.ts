@@ -51,6 +51,10 @@ export interface EventRow {
   city: string
   state: string
   zipcode: string
+  state_code: string
+  latitude: number
+  longitude: number
+  geo_accuracy: number
   variant: string
   metric_name: string
   metric_value: number
@@ -68,6 +72,10 @@ export interface EnrichmentForRow {
   city: string
   state: string
   zipcode: string
+  stateCode: string
+  latitude: number | null
+  longitude: number | null
+  accuracyRadius: number | null
 }
 
 function zipFromValue(raw: unknown): string {
@@ -126,6 +134,10 @@ export function ingestBodyToEventRow(
     city: enrichment.city,
     state: enrichment.state,
     zipcode: submittedZip || enrichment.zipcode,
+    state_code: enrichment.stateCode,
+    latitude: enrichment.latitude ?? 0,
+    longitude: enrichment.longitude ?? 0,
+    geo_accuracy: enrichment.accuracyRadius ?? 0,
     variant: body.variant ?? '',
     metric_name: body.metric_name ?? '',
     metric_value: typeof body.metric_value === 'number' && Number.isFinite(body.metric_value)

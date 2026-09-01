@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@workspace/ui/components/select"
 import { cn } from "@workspace/ui/lib/utils"
+import { VariantLabelField } from "@/features/experiments/view/VariantLabelField"
 import { experimentVariantDisplayLabel } from "@/features/experiments/utils/experiment-table-columns"
 import {
   overviewSelectContentClassName,
@@ -84,6 +85,7 @@ export function SettingsExperimentSection({
   const [parentPublicId, setParentPublicId] = useState("")
   const [labelPlan, setLabelPlan] = useState<LabelPlan | null>(null)
   const [label, setLabel] = useState("")
+  const [relabelDraft, setRelabelDraft] = useState("")
 
   const membershipPath = `/api/landing-pages/${encodeURIComponent(publicId)}/experiments/membership`
 
@@ -271,6 +273,15 @@ export function SettingsExperimentSection({
         new Set([labelPlan.suggestedLabel, ...labelPlan.availableLabels])
       )
     : []
+  const relabelOptions = membership?.label
+    ? Array.from(
+        new Set([membership.label, ...(labelPlan?.availableLabels ?? [])])
+      )
+    : (labelPlan?.availableLabels ?? [])
+
+  useEffect(() => {
+    setRelabelDraft(membership?.label ?? "")
+  }, [membership?.label])
   const selectedCandidate =
     candidates.find((c) => c.publicId === parentPublicId) ?? null
   const formTypeMismatch =
@@ -366,40 +377,38 @@ export function SettingsExperimentSection({
 
               {membership.label ? (
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                  <div className="w-full space-y-1.5 sm:max-w-48">
+                  <div className="w-full space-y-1.5 sm:max-w-xs">
                     <Label htmlFor="variant-relabel">Variant label</Label>
-                    <Select
-                      value={membership.label}
+                    <VariantLabelField
+                      id="variant-relabel"
+                      value={relabelDraft}
+                      onValueChange={setRelabelDraft}
+                      availableLabels={relabelOptions}
                       disabled={isSaving}
-                      onValueChange={(value) => void handleRelabel(value)}
-                    >
-                      <SelectTrigger
-                        id="variant-relabel"
-                        aria-label="Variant label"
-                        className={cn(overviewSelectTriggerClassName, "w-full")}
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent
-                        position="popper"
-                        align="start"
-                        className={overviewSelectContentClassName}
-                      >
-                        {[
-                          membership.label,
-                          ...(labelPlan?.availableLabels ?? []),
-                        ].map((option) => (
-                          <SelectItem
-                            key={option}
-                            value={option}
-                            className={overviewSelectItemClassName}
-                          >
-                            {experimentVariantDisplayLabel(option)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    />
                   </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => void handleRelabel(relabelDraft)}
+                    disabled={
+                      isSaving ||
+                      !relabelDraft.trim() ||
+                      relabelDraft.trim() === membership.label
+                    }
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader2
+                          className="mr-2 size-4 animate-spin"
+                          aria-hidden
+                        />
+                        Saving
+                      </>
+                    ) : (
+                      "Save label"
+                    )}
+                  </Button>
                   <Button asChild variant="outline">
                     <Link
                       href={`/dashboard/${encodeURIComponent(publicId)}?tab=experiments`}
@@ -501,34 +510,14 @@ export function SettingsExperimentSection({
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="join-label">This project becomes</Label>
-                  <Select
-                    value={label || undefined}
-                    disabled={!labelPlan || isSaving}
+                  <VariantLabelField
+                    id="join-label"
+                    value={label}
                     onValueChange={setLabel}
-                  >
-                    <SelectTrigger
-                      id="join-label"
-                      aria-label="Variant label for this project"
-                      className={cn(overviewSelectTriggerClassName, "w-full")}
-                    >
-                      <SelectValue placeholder="—" />
-                    </SelectTrigger>
-                    <SelectContent
-                      position="popper"
-                      align="start"
-                      className={overviewSelectContentClassName}
-                    >
-                      {joinLabelOptions.map((option) => (
-                        <SelectItem
-                          key={option}
-                          value={option}
-                          className={overviewSelectItemClassName}
-                        >
-                          {experimentVariantDisplayLabel(option)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    availableLabels={joinLabelOptions}
+                    disabled={!labelPlan || isSaving}
+                    placeholder="—"
+                  />
                 </div>
               </div>
 

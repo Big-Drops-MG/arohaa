@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack -p 3000",
+    "dev": "pnpm ensure:geo && next dev --webpack -p 3000",
+    "ensure:geo": "node -e \"const fs=require('fs');const paths=['public/geo/us-states.geojson','public/geo/us-counties.geojson'];if(!paths.every(p=>fs.existsSync(p))){const {execSync}=require('child_process');execSync('pnpm --dir ../.. geo:build',{stdio:'inherit'})}\"",
+    "prebuild": "pnpm --dir ../.. geo:build",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
