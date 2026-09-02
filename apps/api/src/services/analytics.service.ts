@@ -39,6 +39,7 @@ import {
 } from '../lib/analytics-utm-filter.js'
 import { redis } from './redis.service.js'
 import { resolveUsCityCoordinates } from './us-gazetteer.service.js'
+import { resolveCountyFipsForZips } from './us-zip-county.service.js'
 
 export type RangeId = AnalyticsRangeId
 
@@ -84,6 +85,8 @@ export interface OverviewCityMetric {
   state: string
   latitude?: number
   longitude?: number
+  /** County FIPS resolved from zipcodes, for rows without usable coordinates. */
+  countyFips?: string
   /** Distinct zipcodes with events in this city (GeoIP postal + form-submitted). */
   zipCount: number
   /** Distinct zipcode values backing `zipCount`, capped for payload size. */
@@ -891,7 +894,7 @@ export async function getAnalyticsOverviewCities({
     ...rangeQueryParams(window),
     ...utmFilterParams(utmFilter),
   }
-  const cacheKey = `analytics:overview:cities:v7:${workspaceId}:${formType}:${normalized.code}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
+  const cacheKey = `analytics:overview:cities:v8:${workspaceId}:${formType}:${normalized.code}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
 
   try {
     const cachedStr = await redis.get(cacheKey)
@@ -921,9 +924,9 @@ export async function getAnalyticsOverviewCities({
       query_params: p,
       query: `
         SELECT
-          ${CITY_GROUP_SQL} AS city,
-          avgIf(latitude, latitude != 0 AND longitude != 0) AS latitude,
-          avgIf(longitude, latitude != 0 AND longitude != 0) AS longitude,
+          ${CITY_GROUP_SQL} AS city_label,
+          avgIf(latitude, latitude != 0 AND longitude != 0) AS avg_latitude,
+          avgIf(longitude, latitude != 0 AND longitude != 0) AS avg_longitude,
           uniqExactIf(zipcode, zipcode != '') AS zip_count,
           arraySlice(
             arraySort(groupUniqArrayIf(toString(zipcode), zipcode != '')),
@@ -936,7 +939,7 @@ export async function getAnalyticsOverviewCities({
           uniqExactIf(session_id, event_name = '${submitEvent}') AS form_submitted
         FROM events_raw
         WHERE ${cityWhere}
-        GROUP BY ${CITY_GROUP_SQL}
+        GROUP BY city_label
         ORDER BY visitors DESC
         LIMIT 500
       `,
@@ -946,7 +949,7 @@ export async function getAnalyticsOverviewCities({
       query_params: p,
       query: `
         SELECT
-          session_city AS city,
+          session_city AS city_label,
           sumIf(1, is_bounce = 1) AS bounces,
           count() AS sessions
         FROM (
@@ -967,9 +970,9 @@ export async function getAnalyticsOverviewCities({
   const cityMetricRows =
     (
       (await cityMetricsRes.json()) as CHJson<{
-        city: string
-        latitude: string | number | null
-        longitude: string | number | null
+        city_label: string
+        avg_latitude: string | number | null
+        avg_longitude: string | number | null
         zip_count: string
         zipcodes: string[] | null
         visitors: string
@@ -981,7 +984,7 @@ export async function getAnalyticsOverviewCities({
   const cityBounceRows =
     (
       (await cityBounceRes.json()) as CHJson<{
-        city: string
+        city_label: string
         bounces: string
         sessions: string
       }>
@@ -989,7 +992,7 @@ export async function getAnalyticsOverviewCities({
 
   const bounceByCity = new Map<string, { bounces: number; sessions: number }>()
   for (const row of cityBounceRows) {
-    bounceByCity.set(row.city, {
+    bounceByCity.set(row.city_label, {
       bounces: n(row.bounces),
       sessions: n(row.sessions),
     })
@@ -998,21 +1001,24 @@ export async function getAnalyticsOverviewCities({
   const cities: OverviewCityMetric[] = cityMetricRows.map((row) => {
     const citySessions = n(row.sessions)
     const citySubmitted = n(row.form_submitted)
-    const bounce = bounceByCity.get(row.city)
+    const bounce = bounceByCity.get(row.city_label)
     const coords = resolveUsCityCoordinates({
-      city: row.city,
+      city: row.city_label,
       stateCode: normalized.code,
-      latitude: n(row.latitude),
-      longitude: n(row.longitude),
+      latitude: n(row.avg_latitude),
+      longitude: n(row.avg_longitude),
     })
+    const zipcodes = Array.isArray(row.zipcodes) ? row.zipcodes : []
+    const countyFips = resolveCountyFipsForZips(zipcodes)
     return {
-      city: row.city,
+      city: row.city_label,
       state: normalized.name,
       ...(coords
         ? { latitude: coords.latitude, longitude: coords.longitude }
         : {}),
+      ...(countyFips ? { countyFips } : {}),
       zipCount: n(row.zip_count),
-      zipcodes: Array.isArray(row.zipcodes) ? row.zipcodes : [],
+      zipcodes,
       visitors: n(row.visitors),
       sessions: citySessions,
       pageViews: n(row.page_views),

@@ -568,6 +568,11 @@ export function OverviewUsaMap({
   const canZoomOut = transform.k > MIN_ZOOM + 0.001
   const canReset = transform.k !== 1 || transform.x !== 0 || transform.y !== 0
   const boundaryWidth = level === "usa" ? 1.35 : 1.15
+  const formatValue = (value: number): string => {
+    const base = formatMetricValue(value, metricId)
+    if (metricId === "fsr" || metricId === "bounce-rate") return base
+    return valueSuffix ? `${base}${valueSuffix}` : base
+  }
   const selectedStateMetricValue = selectedState
     ? (valueByState.get(selectedState) ?? 0)
     : 0
@@ -697,13 +702,8 @@ export function OverviewUsaMap({
                     {region.label ? (
                       <title>
                         {level === "state"
-                          ? `${countyRegionHoverSummary(region)}\n${metricLabel}: ${formatMetricValue(region.value, metricId)}`
-                          : `${region.label}: ${formatMetricValue(region.value, metricId)}`}
-                        {valueSuffix &&
-                        metricId !== "fsr" &&
-                        metricId !== "bounce-rate"
-                          ? valueSuffix
-                          : ""}
+                          ? `${countyRegionHoverSummary(region, formatValue)}\n${metricLabel} total: ${formatValue(region.value)}`
+                          : `${region.label}: ${formatValue(region.value)}`}
                       </title>
                     ) : null}
                   </path>
@@ -780,8 +780,14 @@ export function OverviewUsaMap({
                             {entry.label}
                           </span>
                         </span>
-                        <span className="shrink-0 font-medium text-neutral-900 tabular-nums">
-                          {entry.zipCount.toLocaleString("en-US")}
+                        <span className="shrink-0 tabular-nums">
+                          <span className="font-medium text-neutral-900">
+                            {formatValue(entry.value)}
+                          </span>
+                          <span className="ml-1.5 text-[10px] text-neutral-400">
+                            {entry.zipCount.toLocaleString("en-US")}{" "}
+                            {entry.zipCount === 1 ? "zip" : "zips"}
+                          </span>
                         </span>
                       </li>
                     ))}

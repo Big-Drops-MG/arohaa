@@ -20,7 +20,7 @@
     "db:migrate": "pnpm --filter @workspace/database db:migrate",
     "db:push": "pnpm --filter @workspace/database db:push",
     "clickhouse:migrate": "tsx scripts/migrate-clickhouse-phase1.mts",
-    "geo:build": "tsx scripts/geo/build-us-boundaries.mts && tsx scripts/geo/build-us-gazetteer.mts",
+    "geo:build": "tsx scripts/geo/build-us-boundaries.mts && tsx scripts/geo/build-us-gazetteer.mts && tsx scripts/geo/build-us-zip-counties.mts",
     "prepare": "husky",
     "vercel:link": "pnpm dlx vercel@latest link --yes --cwd apps/dashboard --scope big-drops-mg-admins-projects --project arohaa-dashboard",
     "vercel:env:pull": "pnpm dlx vercel@latest env pull --cwd apps/dashboard"
