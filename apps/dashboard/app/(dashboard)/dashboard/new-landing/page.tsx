@@ -1,6 +1,6 @@
 import { parseNewLandingMode } from "@/features/dashboard/model/new-landing-mode"
 import { NewLandingPage } from "@/features/dashboard/view/NewLandingPage"
-import { isReadOnlyAccessLevel } from "@/features/team/model/access-level"
+import { canWriteLandingPages } from "@/lib/server/actor-can"
 import { isExternalTeamKind } from "@/features/team/model/external-privileges"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { pageMetadata } from "@/lib/site-metadata"
@@ -19,7 +19,7 @@ export default async function NewLandingRoute({
   if (
     !actor ||
     isExternalTeamKind(actor.teamKind) ||
-    isReadOnlyAccessLevel(actor.accessLevel)
+    !(await canWriteLandingPages(actor))
   ) {
     redirect("/dashboard")
   }

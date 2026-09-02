@@ -23,6 +23,18 @@ describe('alert webhook dispatch', () => {
       false,
     )
     expect(isAllowedWebhookUrl('https://example.com/hook')).toBe(false)
+    expect(isAllowedWebhookUrl('https://evilslack.com/services/test')).toBe(
+      false,
+    )
+    expect(
+      isAllowedWebhookUrl('https://hooks.slack.com:1234/services/test'),
+    ).toBe(false)
+    expect(
+      isAllowedWebhookUrl('https://discord.com/api/webhooks/1/2'),
+    ).toBe(true)
+    expect(isAllowedWebhookUrl('https://evildiscord.com/api/webhooks/1/2')).toBe(
+      false,
+    )
   })
 
   it('builds slack-compatible JSON bodies', () => {

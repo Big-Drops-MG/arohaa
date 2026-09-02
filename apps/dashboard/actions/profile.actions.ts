@@ -116,5 +116,12 @@ export async function changeProfilePassword(input: {
     .set({ password: hashed })
     .where(whereUserEmail(normalizeUserEmail(session.user.email)))
 
+  const { invalidateAllSessionsForUser } =
+    await import("@/lib/server/session-revocation")
+  await invalidateAllSessionsForUser(user.id)
+
+  const { signOut } = await import("@/auth")
+  await signOut({ redirect: false })
+
   return { success: true }
 }

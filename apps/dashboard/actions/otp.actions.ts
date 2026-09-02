@@ -1,17 +1,19 @@
 "use server"
 
-import { auth } from "@/auth"
+import { auth, unstable_update } from "@/auth"
 import {
   db,
   normalizeUserEmail,
   users,
   whereUserEmail,
 } from "@workspace/database"
-import { generateSecret, generateURI, verifySync } from "otplib"
+import { generateSecret, generateURI } from "otplib"
 import QRCode from "qrcode"
-import { cookies } from "next/headers"
+import { encryptField } from "@/lib/server/field-encryption"
+import { readTotpSecretFromRow } from "@/lib/server/totp-secrets"
+import { consumeTotp, issueTwoFactorSessionStamp } from "@/lib/server/totp"
 
-export async function generateOTPSetup() {
+export async function generateOTPSetup(params?: { stepUpCode?: string }) {
   const session = await auth()
   if (!session?.user?.email) throw new Error("Not authenticated")
 
@@ -25,14 +27,37 @@ export async function generateOTPSetup() {
     throw new Error("User not found")
   }
 
+  if (row.isTwoFactorEnabled) {
+    const stepUp = params?.stepUpCode?.replace(/\D/g, "").slice(0, 6) ?? ""
+    const activeSecret = await readTotpSecretFromRow(
+      row.id,
+      row,
+      "twoFactorSecret"
+    )
+    if (!activeSecret || !/^\d{6}$/.test(stepUp)) {
+      throw new Error(
+        "Authenticator is already enabled. Enter a current code to re-enroll."
+      )
+    }
+    const ok = await consumeTotp(row.id, activeSecret, stepUp)
+    if (!ok) {
+      throw new Error("Invalid authenticator code.")
+    }
+  }
+
   let secret: string
-  if (row.pendingTwoFactorSecret && !row.isTwoFactorEnabled) {
-    secret = row.pendingTwoFactorSecret
+  const pendingSecret = await readTotpSecretFromRow(
+    row.id,
+    row,
+    "pendingTwoFactorSecret"
+  )
+  if (pendingSecret && !row.isTwoFactorEnabled) {
+    secret = pendingSecret
   } else {
     secret = generateSecret()
     await db
       .update(users)
-      .set({ pendingTwoFactorSecret: secret })
+      .set({ pendingTwoFactorSecret: encryptField(secret) })
       .where(whereUserEmail(enrolledEmail))
   }
 
@@ -64,7 +89,18 @@ export async function verifyAndEnableOTP(
     where: whereUserEmail(enrolledEmail),
   })
 
-  if (!row?.pendingTwoFactorSecret) {
+  if (row?.isTwoFactorEnabled) {
+    return {
+      error:
+        "Authenticator is already enabled. Sign out and use your existing code, or re-enroll with a step-up code.",
+    }
+  }
+
+  const pendingSecret = row
+    ? await readTotpSecretFromRow(row.id, row, "pendingTwoFactorSecret")
+    : null
+
+  if (!pendingSecret) {
     return {
       error:
         "No QR enrollment for this login. Refresh this page and scan the code shown here.",
@@ -75,13 +111,8 @@ export async function verifyAndEnableOTP(
     return { error: "Enter all 6 digits from your authenticator app." }
   }
 
-  const ok = verifySync({
-    secret: row.pendingTwoFactorSecret,
-    token: normalized,
-    epochTolerance: 90,
-  }).valid
-
-  if (!ok) {
+  const consumed = await consumeTotp(row!.id, pendingSecret, normalized)
+  if (!consumed) {
     return {
       error:
         "Invalid code. Use the 6-digit code for the account labeled with your registered email.",
@@ -92,17 +123,19 @@ export async function verifyAndEnableOTP(
     .update(users)
     .set({
       isTwoFactorEnabled: true,
-      twoFactorSecret: row.pendingTwoFactorSecret,
+      twoFactorSecret: encryptField(pendingSecret),
       pendingTwoFactorSecret: null,
     })
     .where(whereUserEmail(enrolledEmail))
-  ;(await cookies()).set("arohaa_2fa_verified", "true", {
-    secure: process.env.NODE_ENV === "production",
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-  })
+
+  const sessionJti = session.jti
+  if (!sessionJti) {
+    return { error: "Session expired. Sign in again." }
+  }
+
+  await issueTwoFactorSessionStamp(row!.id, sessionJti)
+  await unstable_update({})
 
   const { resolvePostAuthPath } = await import("@/lib/server/access-status")
-  return { success: true, redirectTo: resolvePostAuthPath(row) }
+  return { success: true, redirectTo: resolvePostAuthPath(row!) }
 }

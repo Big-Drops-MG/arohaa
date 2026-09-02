@@ -10,6 +10,8 @@ export type CohortRetentionRow = {
 
 export type CohortSplitBy = 'utm_source' | 'utm_campaign' | 'utm_id';
 
+const MAX_COHORT_LOOKBACK_WEEKS = 52;
+
 export async function getCohortRetention(
   workspaceId: string,
   segmentGroup: SegmentGroup | null = null,
@@ -34,6 +36,7 @@ export async function getCohortRetention(
             ${selectChannel}
         FROM events_raw
         WHERE workspace_id = {workspaceId: UUID}
+          AND created_at >= toStartOfWeek(now() - INTERVAL ${MAX_COHORT_LOOKBACK_WEEKS} WEEK, 1)
           AND (${compiledSegment.sql})
         GROUP BY vid
     ),
@@ -43,6 +46,7 @@ export async function getCohortRetention(
             toStartOfWeek(created_at, 1) AS activity_week
         FROM events_raw
         WHERE workspace_id = {workspaceId: UUID}
+          AND created_at >= toStartOfWeek(now() - INTERVAL ${MAX_COHORT_LOOKBACK_WEEKS} WEEK, 1)
         GROUP BY vid, activity_week
     )
     SELECT

@@ -1,35 +1,31 @@
 import { NextResponse } from "next/server"
 import { previewSegmentDefinition } from "@/lib/server/segment-definitions-store"
+import { route } from "@/lib/server/route"
+import { segmentPreviewBodySchema } from "@/lib/server/route-schemas"
 
-export async function POST(
-  request: Request,
-  props: { params: Promise<{ publicId: string }> }
-) {
-  const { publicId } = await props.params
-
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
-  }
-  if (!body || typeof body !== "object") {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
-  }
-
-  const { conditions } = body as Record<string, unknown>
-  if (!conditions) {
-    return NextResponse.json(
-      { error: "conditions are required" },
-      { status: 400 }
+export const POST = route(
+  {
+    permission: "landing_pages.read",
+    actor: "read",
+    tab: "segments",
+    section: "saved",
+    rateLimit: "landing",
+    schema: segmentPreviewBodySchema,
+  },
+  async ({ actor, params, body }) => {
+    const result = await previewSegmentDefinition(
+      actor.id,
+      params.publicId!,
+      body.conditions
     )
+
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: result.status }
+      )
+    }
+
+    return NextResponse.json(result.data)
   }
-
-  const result = await previewSegmentDefinition(publicId, conditions)
-
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: result.status })
-  }
-
-  return NextResponse.json(result.data)
-}
+)

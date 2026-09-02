@@ -1,10 +1,6 @@
 import { notFound } from "next/navigation"
-import { asc, db, eq, users } from "@workspace/database"
-import { isCeoRole } from "@/features/auth/model/role-options"
-import {
-  isFullAccessLevel,
-  parseInternalAccessLevel,
-} from "@/features/team/model/access-level"
+import { asc, db, eq, users, VIEWER_ROLE_KEY } from "@workspace/database"
+import { parseInternalAccessLevel } from "@/features/team/model/access-level"
 import { isExternalTeamKind } from "@/features/team/model/external-privileges"
 import type {
   AccessRequestItem,
@@ -12,8 +8,12 @@ import type {
   TeamMember,
 } from "@/features/team/model/team"
 import { listPendingAccessRequests } from "@/lib/server/access-requests"
+import {
+  actorCan,
+  canManageExternalTeam,
+  canWriteLandingPages,
+} from "@/lib/server/actor-can"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { isTeamPrivilegeActor } from "@/lib/server/team-privilege-acl"
 import { isUserActive, touchUserLastSeen } from "@/lib/server/user-last-seen"
 
 function buildInitials(
@@ -49,19 +49,46 @@ function toPersonFields(row: {
   }
 }
 
+function accessLevelFromRoleKey(
+  roleKey: string | undefined,
+  teamKind: string
+): ReturnType<typeof parseInternalAccessLevel> {
+  if (teamKind === "external") return "full"
+  return roleKey === VIEWER_ROLE_KEY ? "read_only" : "full"
+}
+
 export async function loadTeamDashboardData(): Promise<TeamDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
 
   await touchUserLastSeen(actor.id)
 
-  const [memberRows, pendingRows] = await Promise.all([
+  const [
+    memberRows,
+    roleRows,
+    pendingRows,
+    canReviewAccessRequests,
+    canAssignRoles,
+    canReadAuditLogs,
+    canManageExternalMembers,
+    actorCanWrite,
+  ] = await Promise.all([
     db.query.users.findMany({
       where: eq(users.accessStatus, "approved"),
       orderBy: [asc(users.firstName), asc(users.lastName), asc(users.email)],
     }),
+    db.query.accessRoles.findMany({
+      columns: { id: true, key: true },
+    }),
     listPendingAccessRequests(),
+    actorCan(actor, "team.review_access"),
+    actorCan(actor, "team.assign_roles"),
+    actorCan(actor, "audit_logs.read"),
+    canManageExternalTeam(actor),
+    canWriteLandingPages(actor),
   ])
+
+  const roleKeyById = new Map(roleRows.map((row) => [row.id, row.key]))
 
   const now = new Date()
   const members: TeamMember[] = memberRows.map((row) => {
@@ -69,13 +96,15 @@ export async function loadTeamDashboardData(): Promise<TeamDashboardData> {
     const lastSeenAt = row.lastSeenAt?.toISOString() ?? null
     const active =
       row.id === actor.id ? true : isUserActive(row.lastSeenAt, now)
+    const roleKey = row.roleId ? roleKeyById.get(row.roleId) : undefined
 
     return {
       ...person,
       isCurrentUser: row.id === actor.id,
       status: active ? "active" : "inactive",
       kind: row.teamKind === "external" ? "external" : "internal",
-      accessLevel: parseInternalAccessLevel(row.accessLevel),
+      accessLevel: accessLevelFromRoleKey(roleKey, row.teamKind),
+      roleKey,
       lastSeenAt: row.id === actor.id ? now.toISOString() : lastSeenAt,
     }
   })
@@ -84,16 +113,14 @@ export async function loadTeamDashboardData(): Promise<TeamDashboardData> {
     toPersonFields(row)
   )
 
-  const isInternalFullAccess =
-    !isExternalTeamKind(actor.teamKind) && isFullAccessLevel(actor.accessLevel)
-  const isPrivilegeActor = isTeamPrivilegeActor(actor)
+  const isInternalWriter = !isExternalTeamKind(actor.teamKind) && actorCanWrite
 
   return {
     members,
     accessRequests,
-    canReviewAccessRequests: isCeoRole(actor.role),
-    canManageAccessLevels: isPrivilegeActor && isInternalFullAccess,
-    canViewMemberLogs: isPrivilegeActor,
-    canManageExternalMembers: isInternalFullAccess,
+    canReviewAccessRequests,
+    canManageAccessLevels: canAssignRoles && isInternalWriter,
+    canViewMemberLogs: canReadAuditLogs,
+    canManageExternalMembers,
   }
 }

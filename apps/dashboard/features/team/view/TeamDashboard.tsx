@@ -107,7 +107,8 @@ function MemberList({
         const showAccessDropdown =
           member.kind === "internal" &&
           canManageAccessLevels &&
-          Boolean(onAccessLevelChange)
+          Boolean(onAccessLevelChange) &&
+          (member.roleKey === "viewer" || member.roleKey === "member")
         return (
           <li key={member.id}>
             {index > 0 ? (

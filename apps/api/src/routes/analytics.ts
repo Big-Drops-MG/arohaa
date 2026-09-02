@@ -5,6 +5,7 @@ import {
   verifyInternalApiRequest,
 } from '../lib/internal-api-secret.js'
 import { verifyWorkspaceApiKeyForWorkspace } from '../lib/workspace-api-key-auth.js'
+import { guardFunnelLeadsRequest } from '../lib/funnel-leads-auth.js'
 import {
   emptyAnalyticsFunnel,
   getAnalyticsFunnel,
@@ -266,6 +267,7 @@ async function sendAnalyticsQuery<T>({
   run,
   logLabel,
   logContext,
+  guard = guardAnalyticsRequest,
 }: {
   request: FastifyRequest
   reply: FastifyReply
@@ -274,8 +276,13 @@ async function sendAnalyticsQuery<T>({
   run: () => Promise<T>
   logLabel: string
   logContext?: Record<string, unknown>
+  guard?: (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    workspaceId: string,
+  ) => Promise<boolean>
 }): Promise<void> {
-  if (!(await guardAnalyticsRequest(request, reply, workspaceId))) return
+  if (!(await guard(request, reply, workspaceId))) return
 
   try {
     const result = await run()
@@ -297,11 +304,7 @@ async function sendAnalyticsQuery<T>({
 }
 
 
-/**
- * Analytics scopes by landing page: the `workspace_id` query param carries the
- * landing page id (ClickHouse stores it in its `workspace_id` column), so the
- * ownership check must compare against the segment's landingPageId.
- */
+
 async function resolveSegmentFilter(segmentId?: string, landingPageId?: string) {
   if (!segmentId || !landingPageId) return undefined;
   const segment = await getSegmentById(segmentId);
@@ -674,6 +677,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
         request,
         reply,
         workspaceId: workspace_id,
+        guard: guardFunnelLeadsRequest,
         emptyValue: emptyFunnelLeads(parsed.rangeId, limit, offset),
         run: () =>
           getFunnelLeads({

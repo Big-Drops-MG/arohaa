@@ -1,14 +1,6 @@
-const DATA_EXPORT_ALLOWLIST = new Set([
-  "yash@bigdropsmarketing.com",
-  "sami@bigdropsmarketing.com",
-  "ishan@bigdropsmarketing.com",
-])
+import type { Actor } from "@/lib/server/actor-can"
+import { actorCan } from "@/lib/server/actor-can"
 
-export function canAccessDataExport(email: string | null | undefined): boolean {
-  if (!email) return false
-  return DATA_EXPORT_ALLOWLIST.has(email.trim().toLowerCase())
-}
-
-export function dataExportAllowlist(): readonly string[] {
-  return [...DATA_EXPORT_ALLOWLIST]
+export async function canAccessDataExport(actor: Actor): Promise<boolean> {
+  return actorCan(actor, "data_export.read")
 }

@@ -15,6 +15,10 @@ export const workspaceApiKeys = pgTable(
     name: text('name').notNull(),
     keyPrefix: text('keyPrefix').notNull(),
     keyHash: text('keyHash').notNull(),
+    scopes: text('scopes')
+      .array()
+      .notNull()
+      .default(sql`ARRAY['analytics.read']::text[]`),
     createdByUserId: text('createdByUserId')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),

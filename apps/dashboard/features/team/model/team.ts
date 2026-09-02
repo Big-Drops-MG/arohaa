@@ -13,8 +13,8 @@ export type TeamMember = {
   isCurrentUser: boolean
   status: TeamMemberStatus
   kind: TeamMemberKind
-  /** Internal members only; externals are always treated as read-only. */
   accessLevel: InternalAccessLevel
+  roleKey?: string
   lastSeenAt: string | null
 }
 
@@ -30,10 +30,7 @@ export type TeamDashboardData = {
   members: TeamMember[]
   accessRequests: AccessRequestItem[]
   canReviewAccessRequests: boolean
-  /** Whether the current user can change internal access levels. */
   canManageAccessLevels: boolean
-  /** Whether the current user can open member activity logs. */
   canViewMemberLogs: boolean
-  /** Whether the current user can add/edit/remove external members. */
   canManageExternalMembers: boolean
 }

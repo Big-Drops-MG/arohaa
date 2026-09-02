@@ -6,9 +6,12 @@ import { isApprovedAccess } from "@/lib/server/access-status"
 import { isExternalTeamKind } from "@/features/team/model/external-privileges"
 import { db, normalizeUserEmail, whereUserEmail } from "@workspace/database"
 import { redirect } from "next/navigation"
-import { cookies } from "next/headers"
 import { Suspense } from "react"
 import { touchUserLastSeen } from "@/lib/server/user-last-seen"
+import {
+  sessionHasVerifiedTwoFactor,
+  sessionNeedsTwoFactorChallenge,
+} from "@/lib/server/session-2fa"
 
 export default async function DashboardGroupLayout({
   children,
@@ -21,6 +24,10 @@ export default async function DashboardGroupLayout({
     redirect("/login")
   }
 
+  if (sessionNeedsTwoFactorChallenge(session)) {
+    redirect("/login?requiresTwoFactor=true")
+  }
+
   const normalizedEmail = normalizeUserEmail(email)
   const user = await db.query.users.findFirst({
     where: whereUserEmail(normalizedEmail),
@@ -30,15 +37,16 @@ export default async function DashboardGroupLayout({
     redirect("/authenticate")
   }
 
-  const cookieStore = await cookies()
-  const hasVerified2FA =
-    cookieStore.get("arohaa_2fa_verified")?.value === "true"
-
-  if (!hasVerified2FA) {
+  if (!sessionHasVerifiedTwoFactor(session)) {
     redirect("/login?requiresTwoFactor=true")
   }
 
-  if (!user.firstName?.trim() || !user.lastName?.trim() || !user.role?.trim()) {
+  if (
+    !user.firstName?.trim() ||
+    !user.lastName?.trim() ||
+    !user.role?.trim() ||
+    !user.roleId
+  ) {
     redirect("/onboarding")
   }
 

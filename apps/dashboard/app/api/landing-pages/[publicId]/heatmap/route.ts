@@ -1,42 +1,48 @@
-import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import {
   parseDashboardCustomRange,
   parseTrafficRangeId,
 } from "@/features/traffic/model/traffic-range"
 import { loadHeatmapDashboardDataForApi } from "@/lib/server/heatmap-dashboard-load"
-import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
-import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { route } from "@/lib/server/route"
+import { MAX_DASHBOARD_CUSTOM_SPAN_DAYS } from "@/lib/server/route-query"
+import { sanitizeHeatmapPageUrl } from "@/lib/server/route-query-limits"
+import { heatmapModeToAclSection } from "@/lib/server/route-section"
 
-export async function GET(
-  request: NextRequest,
-  context: { params: Promise<{ publicId: string }> }
-) {
-  const actor = await requireLandingPageActor()
-  if (!actor) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+export const GET = route(
+  {
+    permission: "landing_pages.read",
+    actor: "read",
+    tab: "heatmap",
+    section: {
+      queryParam: "mode",
+      resolve: heatmapModeToAclSection,
+    },
+    rateLimit: "landing",
+    query: { maxCustomRangeDays: MAX_DASHBOARD_CUSTOM_SPAN_DAYS },
+  },
+  async ({ params, request }) => {
+    const { searchParams } = new URL(request.url)
+    const result = await loadHeatmapDashboardDataForApi(
+      params.publicId!,
+      parseTrafficRangeId(searchParams.get("range_id")),
+      {
+        modeRaw: searchParams.get("mode"),
+        deviceRaw: searchParams.get("device"),
+        pageUrl: sanitizeHeatmapPageUrl(searchParams.get("page_url")),
+        customRange: parseDashboardCustomRange(
+          searchParams.get("from"),
+          searchParams.get("to")
+        ),
+      }
+    )
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: result.status }
+      )
+    }
+
+    return NextResponse.json(result.data)
   }
-  const limited = await enforceLandingApiRateLimit(actor.id)
-  if (limited) return limited
-
-  const { publicId } = await context.params
-  const rangeId = parseTrafficRangeId(
-    request.nextUrl.searchParams.get("range_id")
-  )
-  const customRange = parseDashboardCustomRange(
-    request.nextUrl.searchParams.get("from"),
-    request.nextUrl.searchParams.get("to")
-  )
-
-  const result = await loadHeatmapDashboardDataForApi(publicId, rangeId, {
-    modeRaw: request.nextUrl.searchParams.get("mode"),
-    deviceRaw: request.nextUrl.searchParams.get("device"),
-    pageUrl: request.nextUrl.searchParams.get("page_url"),
-    customRange,
-  })
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: result.status })
-  }
-
-  return NextResponse.json(result.data)
-}
+)

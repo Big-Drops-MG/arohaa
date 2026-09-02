@@ -133,6 +133,13 @@ function isValidLeadTimestamp(value: string | null | undefined): boolean {
   return !Number.isNaN(new Date(trimmed.replace(' ', 'T')).getTime())
 }
 
+export function formatFingerprintAsMacId(fingerprint: string): string {
+  const hex = fingerprint.replace(/[^a-fA-F0-9]/g, '').toLowerCase()
+  if (!hex) return ''
+  const padded = hex.padEnd(12, '0').slice(0, 12)
+  return padded.match(/.{2}/g)?.join(':') ?? ''
+}
+
 function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
   const rawFields = extractRawFieldMap(row.props || '{}')
   const fields = normalizeLeadFields(rawFields)
@@ -149,7 +156,7 @@ function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
     : null
   return {
     sessionId: row.session_id,
-    macId: (row.fingerprint || '').trim(),
+    macId: formatFingerprintAsMacId(row.fingerprint || ''),
     createdAt: row.last_at,
     submittedAt,
     zip,

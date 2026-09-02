@@ -23,8 +23,6 @@ function isUnsafeIp(ip: string): boolean {
 }
 
 async function assertSafeHostname(hostname: string): Promise<void> {
-  if (process.env.NODE_ENV !== "production") return
-
   const resolved = await dns.lookup(hostname, { all: true, verbatim: false })
   for (const addr of resolved) {
     if (isUnsafeIp(addr.address)) {

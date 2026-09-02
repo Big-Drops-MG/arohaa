@@ -26,7 +26,7 @@ import { loadSeoDashboardData } from "@/lib/server/seo-dashboard-load"
 import { loadWebVitalDashboardData } from "@/lib/server/web-vital-dashboard-load"
 import { loadDataExportDashboardData } from "@/lib/server/data-export-dashboard-load"
 import { canAccessDataExport } from "@/lib/server/data-export-acl"
-import { isReadOnlyAccessLevel } from "@/features/team/model/access-level"
+import { canWriteLandingPages } from "@/lib/server/actor-can"
 import { loadUtmDashboardData } from "@/lib/server/utm-dashboard-load"
 import { loadTrafficDashboardData } from "@/lib/server/traffic-dashboard-load"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
@@ -132,8 +132,8 @@ export default async function ProjectPage({
   const formType = parseOverviewLandingFormType(row.formType)
   const overviewPlaceholder = getOverviewPlaceholderData(project, formType)
   const actorReadOnly =
-    access.isExternal || isReadOnlyAccessLevel(actor.accessLevel)
-  const allowDataExport = canAccessDataExport(actor.email) && !actorReadOnly
+    access.isExternal || !(await canWriteLandingPages(actor))
+  const allowDataExport = (await canAccessDataExport(actor)) && !actorReadOnly
 
   let overview = null
   let traffic = null

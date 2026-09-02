@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache"
 import { db, users } from "@workspace/database"
 import { eq } from "drizzle-orm"
-import { isCeoRole } from "@/features/auth/model/role-options"
 import { setUserAccessStatus } from "@/lib/server/access-requests"
+import { actorCan } from "@/lib/server/actor-can"
 import { isApprovedAccess } from "@/lib/server/access-status"
 import { sendAccessRequestDecisionEmail } from "@/lib/server/email/send-access-email"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
@@ -29,9 +29,9 @@ async function reviewAccessRequest(
   if (
     !actor ||
     !isApprovedAccess(actor.accessStatus) ||
-    !isCeoRole(actor.role)
+    !(await actorCan(actor, "team.review_access"))
   ) {
-    return { error: "Only the CEO can accept or reject access requests." }
+    return { error: "You are not allowed to accept or reject access requests." }
   }
 
   const targetId = typeof userId === "string" ? userId.trim() : ""

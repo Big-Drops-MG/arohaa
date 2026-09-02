@@ -2,7 +2,7 @@ import { Ratelimit } from "@upstash/ratelimit"
 import { Redis } from "@upstash/redis"
 import { NextResponse } from "next/server"
 
-let ratelimit: Ratelimit | null = null
+let ratelimit: Ratelimit | null | undefined
 
 function getRedis(): Redis | null {
   const url = process.env.KV_REST_API_URL?.trim()
@@ -12,9 +12,12 @@ function getRedis(): Redis | null {
 }
 
 function getLimiter(): Ratelimit | null {
-  if (ratelimit) return ratelimit
+  if (ratelimit !== undefined) return ratelimit
   const redis = getRedis()
-  if (!redis) return null
+  if (!redis) {
+    ratelimit = null
+    return null
+  }
   ratelimit = new Ratelimit({
     redis,
     limiter: Ratelimit.slidingWindow(120, "1 m"),
@@ -27,7 +30,15 @@ export async function enforceLandingApiRateLimit(
   actorId: string
 ): Promise<NextResponse | null> {
   const limiter = getLimiter()
-  if (!limiter) return null
+  if (!limiter) {
+    if (process.env.NODE_ENV === "production") {
+      return NextResponse.json(
+        { error: "Service temporarily unavailable. Try again shortly." },
+        { status: 503 }
+      )
+    }
+    return null
+  }
 
   const { success } = await limiter.limit(`user:${actorId}`)
   if (success) return null

@@ -192,7 +192,7 @@ function buildWinnerCallout(
       }
     }
     if (best && (best.fsrLiftAbs ?? 0) > 0) {
-      return `${experimentVariantDisplayLabel(best.variant)} leads vs ${controlLabel} by ${fmtLiftPct(best.fsrLiftAbs)} ${rateLabel} points (${fmtLiftPct(best.fsrLiftPct)} relative)`
+      return `${experimentVariantDisplayLabel(best.variant)} leads vs ${controlLabel} by ${fmtLiftAbs(best.fsrLiftAbs)} ${rateLabel} points (${fmtLiftPct(best.fsrLiftPct)} relative)`
     }
     return `Control ${controlLabel} is ahead or tied on ${rateLabel}`
   }

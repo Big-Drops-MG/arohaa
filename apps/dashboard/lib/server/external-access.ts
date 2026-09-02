@@ -21,24 +21,29 @@ import {
   mapLegacyInsightSectionToDataLab,
   normalizeDataLabSectionId,
 } from "@/features/data-lab/model/data-lab-sections"
-import { isReadOnlyAccessLevel } from "@/features/team/model/access-level"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 
 type UserRow = InferSelectModel<typeof users>
 
-export type ExternalAccessSnapshot = {
-  isExternal: true
-  projectIds: Set<string>
-  /** key: `${publicId}::${tab}` → set of section ids (empty set = whole tab) */
-  tabSections: Map<string, Set<string>>
-  /** Forced utm_source values per landing page public id */
-  utmSourceByProject: Map<string, string[]>
-}
+import {
+  buildAccessFromGrants,
+  canAccessProject,
+  canAccessSection,
+  canAccessTab,
+  allowedSectionsForTab,
+  allowedTabsForProject,
+  type ActorAccess,
+  type ExternalAccessSnapshot,
+} from "@/lib/server/external-access-acl"
 
-export type ActorAccess = { isExternal: false } | ExternalAccessSnapshot
-
-function tabKey(publicId: string, tab: string) {
-  return `${publicId}::${tab}`
+export type { ActorAccess, ExternalAccessSnapshot }
+export {
+  buildAccessFromGrants,
+  canAccessProject,
+  canAccessSection,
+  canAccessTab,
+  allowedSectionsForTab,
+  allowedTabsForProject,
 }
 
 function normalizePrivilegeGrant(row: {
@@ -107,49 +112,8 @@ export async function loadExternalProjectScopes(
     .filter((row) => row.utmSource.length > 0)
 }
 
-export function buildAccessFromGrants(
-  grants: ExternalPrivilegeGrant[],
-  scopes: ExternalProjectScope[] = []
-): ExternalAccessSnapshot {
-  const projectIds = new Set<string>()
-  const tabSections = new Map<string, Set<string>>()
-  const utmSourceByProject = new Map<string, string[]>()
-
-  for (const grant of grants) {
-    projectIds.add(grant.landingPagePublicId)
-    const key = tabKey(grant.landingPagePublicId, grant.tab)
-    let sections = tabSections.get(key)
-    if (!sections) {
-      sections = new Set()
-      tabSections.set(key, sections)
-    }
-    if (grant.section) {
-      sections.add(grant.section)
-    }
-  }
-
-  for (const scope of scopes) {
-    const source = scope.utmSource.trim()
-    if (!source) continue
-    const existing = utmSourceByProject.get(scope.landingPagePublicId) ?? []
-    if (!existing.includes(source)) {
-      existing.push(source)
-      utmSourceByProject.set(scope.landingPagePublicId, existing)
-    }
-  }
-
-  for (const [publicId, sources] of utmSourceByProject) {
-    utmSourceByProject.set(
-      publicId,
-      [...sources].sort((a, b) => a.localeCompare(b))
-    )
-  }
-
-  return { isExternal: true, projectIds, tabSections, utmSourceByProject }
-}
-
 export async function getActorAccess(
-  actor: UserRow | null | undefined
+  actor: { id: string; teamKind?: string | null } | null | undefined
 ): Promise<ActorAccess> {
   if (!actor || !isExternalTeamKind(actor.teamKind)) {
     return { isExternal: false }
@@ -161,65 +125,6 @@ export async function getActorAccess(
   return buildAccessFromGrants(grants, scopes)
 }
 
-export function canAccessProject(
-  access: ActorAccess,
-  publicId: string
-): boolean {
-  if (!access.isExternal) return true
-  return access.projectIds.has(publicId)
-}
-
-export function canAccessTab(
-  access: ActorAccess,
-  publicId: string,
-  tab: ProjectTabValue
-): boolean {
-  if (!access.isExternal) return true
-  return access.tabSections.has(tabKey(publicId, tab))
-}
-
-export function allowedTabsForProject(
-  access: ActorAccess,
-  publicId: string
-): ProjectTabValue[] | null {
-  if (!access.isExternal) return null
-  const tabs: ProjectTabValue[] = []
-  for (const def of EXTERNAL_PRIVILEGE_TABS) {
-    if (access.tabSections.has(tabKey(publicId, def.value))) {
-      tabs.push(def.value)
-    }
-  }
-  return tabs
-}
-
-export function canAccessSection(
-  access: ActorAccess,
-  publicId: string,
-  tab: ProjectTabValue,
-  sectionId: string
-): boolean {
-  if (!access.isExternal) return true
-  const sections = access.tabSections.get(tabKey(publicId, tab))
-  if (!sections) return false
-  if (sections.size === 0) return true
-  return sections.has(sectionId)
-}
-
-export function allowedSectionsForTab(
-  access: ActorAccess,
-  publicId: string,
-  tab: ProjectTabValue
-): string[] | null {
-  if (!access.isExternal) return null
-  const sections = access.tabSections.get(tabKey(publicId, tab))
-  if (!sections) return []
-  if (sections.size === 0) {
-    const def = EXTERNAL_PRIVILEGE_TABS.find((t) => t.value === tab)
-    return def?.sections.map((s) => s.id) ?? []
-  }
-  return [...sections]
-}
-
 export function getForcedUtmSources(
   access: ActorAccess,
   publicId: string
@@ -229,7 +134,6 @@ export function getForcedUtmSources(
   return sources && sources.length > 0 ? sources : null
 }
 
-/** @deprecated Prefer getForcedUtmSources */
 export function getForcedUtmSource(
   access: ActorAccess,
   publicId: string
@@ -238,7 +142,6 @@ export function getForcedUtmSource(
   return sources?.[0] ?? null
 }
 
-/** Force external collaborators onto their assigned utm_source values for a project. */
 export function applyExternalUtmScope(
   access: ActorAccess,
   publicId: string,
@@ -250,7 +153,6 @@ export function applyExternalUtmScope(
 
   const forced = access.utmSourceByProject.get(publicId) ?? []
   if (forced.length === 0) {
-    // No scope configured — return a filter that matches no real traffic.
     return { utm_source: ["__external_unscoped__"] }
   }
 
@@ -265,7 +167,6 @@ export function applyExternalUtmScope(
 export async function requireWritableLandingPageActor(): Promise<UserRow | null> {
   const actor = await requireLandingPageActor()
   if (!actor || isExternalTeamKind(actor.teamKind)) return null
-  if (isReadOnlyAccessLevel(actor.accessLevel)) return null
   return actor
 }
 

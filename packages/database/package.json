@@ -11,6 +11,14 @@
     "./landing/normalizeLandingPageUrl": {
       "types": "./src/landing/normalizeLandingPageUrl.ts",
       "default": "./src/landing/normalizeLandingPageUrl.ts"
+    },
+    "./workspace-api-keys/scopes": {
+      "types": "./src/workspace-api-keys/scopes.ts",
+      "default": "./src/workspace-api-keys/scopes.ts"
+    },
+    "./schema/access-roles": {
+      "types": "./src/schema/access-roles.ts",
+      "default": "./src/schema/access-roles.ts"
     }
   },
   "dependencies": {

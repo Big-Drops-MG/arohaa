@@ -2,10 +2,20 @@
 
 import { AuthError } from "next-auth"
 import bcrypt from "bcryptjs"
-import { signIn, signOut, auth } from "../auth"
+import { signIn, signOut, auth, unstable_update } from "../auth"
 import { db, normalizeUserEmail, whereUserEmail } from "@workspace/database"
-import { verifySync } from "otplib"
-import { cookies } from "next/headers"
+import {
+  authGenericError,
+  enforceAuthRateLimit,
+} from "@/lib/server/rate-limit-auth"
+import { clientIpFromNextHeaders } from "@/lib/server/request-client-meta"
+import { DUMMY_PASSWORD_HASH } from "@/lib/server/auth-timing"
+import {
+  consumeTotp,
+  issueTwoFactorSessionStamp,
+  pruneUsedTotp,
+} from "@/lib/server/totp"
+import { readTotpSecretFromRow } from "@/lib/server/totp-secrets"
 
 export type LoginWithCredentialsResult =
   | { requiresTwoFactor: true }
@@ -20,30 +30,43 @@ export async function verifyTwoFactorCode(
     return { error: "Not authenticated." }
   }
 
+  const limited = await enforceAuthRateLimit({
+    ip: (await clientIpFromNextHeaders()) ?? "unknown",
+    email: session.user.email,
+  })
+  if (limited) return { error: limited.error }
+
   const userRow = await db.query.users.findFirst({
     where: whereUserEmail(normalizeUserEmail(session.user.email)),
   })
 
-  if (!userRow || !userRow.twoFactorSecret) {
-    return { error: "2FA is not set up properly." }
+  if (!userRow?.isTwoFactorEnabled || !userRow.twoFactorSecret) {
+    return { error: authGenericError() }
   }
 
-  const isValid = verifySync({
-    token: code,
-    secret: userRow.twoFactorSecret,
-    epochTolerance: 90,
-  }).valid
-
-  if (!isValid) {
-    return { error: "Invalid authenticator code." }
+  const secret = await readTotpSecretFromRow(
+    userRow.id,
+    userRow,
+    "twoFactorSecret"
+  )
+  if (!secret) {
+    return { error: authGenericError() }
   }
 
-  ;(await cookies()).set("arohaa_2fa_verified", "true", {
-    secure: process.env.NODE_ENV === "production",
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-  })
+  const digits = code.replace(/\D/g, "").slice(0, 6)
+  const ok = await consumeTotp(userRow.id, secret, digits)
+  if (!ok) {
+    return { error: authGenericError() }
+  }
+
+  const sessionJti = session.jti
+  if (!sessionJti) {
+    return { error: authGenericError() }
+  }
+
+  void pruneUsedTotp(userRow.id)
+  await issueTwoFactorSessionStamp(userRow.id, sessionJti)
+  await unstable_update({})
 
   const { touchUserLastSeen } = await import("@/lib/server/user-last-seen")
   void touchUserLastSeen(userRow.id)
@@ -68,32 +91,26 @@ export async function loginWithCredentials(
     return { error: "Email and password are required." }
   }
 
+  const limited = await enforceAuthRateLimit({
+    ip: (await clientIpFromNextHeaders()) ?? "unknown",
+    email,
+  })
+  if (limited) return { error: limited.error }
+
   const existingUser = await db.query.users.findFirst({
     where: whereUserEmail(email),
   })
 
-  if (
-    existingUser?.password &&
-    existingUser.isTwoFactorEnabled &&
-    (await bcrypt.compare(password, existingUser.password))
-  ) {
-    if (!code) {
-      return { requiresTwoFactor: true }
-    }
+  const passwordValid = await bcrypt.compare(
+    password,
+    existingUser?.password ?? DUMMY_PASSWORD_HASH
+  )
+  if (!passwordValid) {
+    return { error: authGenericError() }
+  }
 
-    if (!existingUser.twoFactorSecret) {
-      return { error: "2FA is not set up properly." }
-    }
-
-    const isValid = verifySync({
-      token: code,
-      secret: existingUser.twoFactorSecret,
-      epochTolerance: 90,
-    }).valid
-
-    if (!isValid) {
-      return { error: "Invalid authenticator code." }
-    }
+  if (existingUser?.isTwoFactorEnabled && !code) {
+    return { requiresTwoFactor: true }
   }
 
   try {
@@ -105,14 +122,7 @@ export async function loginWithCredentials(
     })
   } catch (error) {
     if (error instanceof AuthError) {
-      switch (error.type) {
-        case "CredentialsSignin":
-          return {
-            error: "Invalid credentials.",
-          }
-        default:
-          return { error: "Something went wrong." }
-      }
+      return { error: authGenericError() }
     }
     throw error
   }
@@ -122,21 +132,15 @@ export async function loginWithCredentials(
   })
 
   if (!userRow) {
-    return { error: "Invalid credentials or authenticator code." }
+    return { error: authGenericError() }
   }
 
   if (userRow.isTwoFactorEnabled) {
-    ;(await cookies()).set("arohaa_2fa_verified", "true", {
-      secure: process.env.NODE_ENV === "production",
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-    })
     const { resolvePostAuthPath } = await import("@/lib/server/access-status")
     return { redirectTo: resolvePostAuthPath(userRow) }
-  } else {
-    return { redirectTo: "/authenticate" }
   }
+
+  return { redirectTo: "/authenticate" }
 }
 
 export async function loginWithGoogle() {
@@ -144,6 +148,10 @@ export async function loginWithGoogle() {
 }
 
 export async function logout() {
-  ;(await cookies()).delete("arohaa_2fa_verified")
+  const session = await auth()
+  if (session?.jti && session.user?.id) {
+    const { revokeSessionJti } = await import("@/lib/server/session-revocation")
+    await revokeSessionJti({ jti: session.jti, userId: session.user.id })
+  }
   await signOut({ redirectTo: "/login" })
 }

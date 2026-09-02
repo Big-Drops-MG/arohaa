@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Check, Eye, EyeOff, Loader2, RefreshCw, Shield } from "lucide-react"
+import { Check, Loader2, Shield } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import {
   Dialog,
@@ -39,14 +39,6 @@ type AddExternalMemberDialogProps = {
   mode?: WizardMode
 }
 
-function generateStrongPassword(length = 20): string {
-  const alphabet =
-    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*"
-  const bytes = new Uint8Array(length)
-  crypto.getRandomValues(bytes)
-  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("")
-}
-
 export function AddExternalMemberDialog({
   open,
   onOpenChange,
@@ -60,8 +52,6 @@ export function AddExternalMemberDialog({
   const [firstName, setFirstName] = useState("")
   const [lastName, setLastName] = useState("")
   const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [showPassword, setShowPassword] = useState(false)
   const [createdUserId, setCreatedUserId] = useState<string | null>(
     isEdit && mode.kind === "edit" ? mode.userId : null
   )
@@ -77,7 +67,6 @@ export function AddExternalMemberDialog({
     firstName.trim().length > 0 &&
     lastName.trim().length > 0 &&
     email.trim().length > 0 &&
-    password.length >= 12 &&
     !isPending
 
   function resetForm() {
@@ -85,8 +74,6 @@ export function AddExternalMemberDialog({
     setFirstName("")
     setLastName("")
     setEmail("")
-    setPassword("")
-    setShowPassword(false)
     setCreatedUserId(isEdit && mode.kind === "edit" ? mode.userId : null)
     setEmailSent(null)
     setProjects([])
@@ -128,11 +115,6 @@ export function AddExternalMemberDialog({
     }
   }, [open, mode, startTransition])
 
-  function handleGeneratePassword() {
-    setPassword(generateStrongPassword())
-    setShowPassword(true)
-  }
-
   function handleCreate() {
     if (!canSubmitDetails) return
     setError(null)
@@ -141,7 +123,6 @@ export function AddExternalMemberDialog({
         firstName,
         lastName,
         email,
-        password,
       })
       if (result.error || !result.userId) {
         setError(result.error ?? "Could not create member.")
@@ -207,10 +188,10 @@ export function AddExternalMemberDialog({
     mode.kind === "edit"
       ? "Choose projects, a UTM Source per project, then tabs and sections."
       : step === "details"
-        ? "Create the account — login details are emailed to the collaborator automatically."
+        ? "Create the account — a secure invite link is emailed automatically."
         : emailSent === false
-          ? "Account created, but the credentials email failed to send. Share the password manually, or resend from Details later, then assign privileges."
-          : "Credentials were emailed with name, email, and password. On first sign-in they scan an authenticator QR. Choose projects, UTM Sources, then tabs and sections."
+          ? "Account created, but the invite email failed to send. Resend from Details, then assign privileges."
+          : "Invite email sent. They set a password from the link, then finish authenticator setup on first sign-in. Choose projects, UTM Sources, then tabs and sections."
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -289,47 +270,6 @@ export function AddExternalMemberDialog({
                   placeholder="name@company.com"
                   autoComplete="email"
                 />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="external-password">Password</Label>
-                <div className="flex gap-2">
-                  <div className="relative min-w-0 flex-1">
-                    <Input
-                      id="external-password"
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="h-9 rounded-lg border-neutral-200 bg-white pr-10 shadow-xs"
-                      autoComplete="new-password"
-                      placeholder="At least 12 characters"
-                    />
-                    <button
-                      type="button"
-                      className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      onClick={() => setShowPassword((v) => !v)}
-                      aria-label={
-                        showPassword ? "Hide password" : "Show password"
-                      }
-                    >
-                      {showPassword ? (
-                        <EyeOff className="size-4" />
-                      ) : (
-                        <Eye className="size-4" />
-                      )}
-                    </button>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-9 shrink-0 rounded-lg border-neutral-200 bg-white shadow-xs"
-                    onClick={handleGeneratePassword}
-                    disabled={isPending}
-                  >
-                    <RefreshCw className="size-3.5" />
-                    Generate
-                  </Button>
-                </div>
               </div>
             </>
           ) : loadingPrivileges ? (

@@ -1,63 +1,53 @@
-import { eq } from "drizzle-orm"
-import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
-import { db, landingPages } from "@workspace/database"
-import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { requireWritableLandingPageActor } from "@/lib/server/external-access"
-import { writeLandingPageAuditLog } from "@/lib/server/landing-audit-log"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
-import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
+import { scrubExperimentsAndSoftDeleteLandingPage } from "@/lib/server/landing-page-soft-delete"
+import { route } from "@/lib/server/route"
 
-function traceIdFrom(request: NextRequest): string | null {
+function traceIdFrom(request: Request): string | null {
   return request.headers.get("x-trace-id")?.trim() || null
 }
 
-export async function POST(
-  request: NextRequest,
-  context: { params: Promise<{ publicId: string }> }
-) {
-  const actor = await requireWritableLandingPageActor()
-  if (!actor) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+export const POST = route(
+  {
+    permission: "landing_pages.write",
+    actor: "write",
+    tab: "settings",
+    section: "project",
+    rateLimit: "landing",
+  },
+  async ({ actor, params, request }) => {
+    const row = await getActiveLandingPageForActor(actor.id, params.publicId!)
+    if (!row) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
+
+    const archived = await scrubExperimentsAndSoftDeleteLandingPage(
+      row,
+      actor.id,
+      {
+        action: "archive",
+        actorUserId: actor.id,
+        traceId: traceIdFrom(request),
+        beforePayload: {
+          deletedAt: null,
+          status: row.status,
+          brandName: row.brandName,
+          workspaceId: row.workspaceId,
+        },
+        afterPayload: (deletedAt) => ({
+          deletedAt: deletedAt.toISOString(),
+          status: "archived",
+          workspaceId: row.workspaceId,
+        }),
+      }
+    )
+    if (!archived.ok) {
+      return NextResponse.json(
+        { error: archived.error },
+        { status: archived.status }
+      )
+    }
+
+    return NextResponse.json({ ok: true })
   }
-  const limited = await enforceLandingApiRateLimit(actor.id)
-  if (limited) return limited
-
-  const { publicId } = await context.params
-  const row = await getActiveLandingPageForActor(actor.id, publicId)
-  if (!row) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
-  }
-
-  const now = new Date()
-  await db
-    .update(landingPages)
-    .set({
-      deletedAt: now,
-      updatedByUserId: actor.id,
-      updatedAt: now,
-      status: "archived",
-      sdkInstallStatus: "failed",
-    })
-    .where(eq(landingPages.id, row.id))
-
-  await writeLandingPageAuditLog({
-    actorUserId: actor.id,
-    landingPageId: row.id,
-    action: "archive",
-    beforePayload: {
-      deletedAt: null,
-      status: row.status,
-      brandName: row.brandName,
-      workspaceId: row.workspaceId,
-    },
-    afterPayload: {
-      deletedAt: now.toISOString(),
-      status: "archived",
-      workspaceId: row.workspaceId,
-    },
-    traceId: traceIdFrom(request),
-  })
-
-  return NextResponse.json({ ok: true })
-}
+)

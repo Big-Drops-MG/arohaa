@@ -207,6 +207,32 @@ export async function testWorkspaceAlertWebhook(
 
   if (!existing) return { error: "Webhook not found" }
 
+  if (!isAllowedWebhookUrl(existing.url)) {
+    const message = "Webhook URL not allowed"
+    const [row] = await db
+      .update(workspaceAlertWebhooks)
+      .set({
+        lastTestedAt: new Date(),
+        lastTestStatus: "failed",
+        lastTestError: message,
+      })
+      .where(eq(workspaceAlertWebhooks.id, webhookId))
+      .returning({
+        id: workspaceAlertWebhooks.id,
+        name: workspaceAlertWebhooks.name,
+        url: workspaceAlertWebhooks.url,
+        provider: workspaceAlertWebhooks.provider,
+        enabled: workspaceAlertWebhooks.enabled,
+        lastTestedAt: workspaceAlertWebhooks.lastTestedAt,
+        lastTestStatus: workspaceAlertWebhooks.lastTestStatus,
+        lastTestError: workspaceAlertWebhooks.lastTestError,
+        createdAt: workspaceAlertWebhooks.createdAt,
+      })
+
+    if (!row) return { error: message }
+    return { item: toListItem(row), success: false, error: message }
+  }
+
   const testedAt = new Date()
   const testPayload: OutboundWebhookPayload = {
     title: "Arohaa webhook test",

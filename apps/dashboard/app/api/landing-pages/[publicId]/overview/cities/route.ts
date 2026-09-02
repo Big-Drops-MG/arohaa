@@ -1,4 +1,3 @@
-import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import {
   parseDashboardCustomRange,
@@ -6,41 +5,36 @@ import {
 } from "@/features/traffic/model/traffic-range"
 import { loadOverviewCityMetricsForApi } from "@/lib/server/overview-dashboard-load"
 import { parseUtmFilterFromSearchParams } from "@/lib/server/analytics-utm-params"
-import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
-import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { route } from "@/lib/server/route"
+import { MAX_DASHBOARD_CUSTOM_SPAN_DAYS } from "@/lib/server/route-query"
 
-export async function GET(
-  request: NextRequest,
-  context: { params: Promise<{ publicId: string }> }
-) {
-  const actor = await requireLandingPageActor()
-  if (!actor) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+export const GET = route(
+  {
+    permission: "landing_pages.read",
+    actor: "read",
+    tab: "overview",
+    rateLimit: "landing",
+    query: { maxCustomRangeDays: MAX_DASHBOARD_CUSTOM_SPAN_DAYS },
+  },
+  async ({ params, request }) => {
+    const { searchParams } = new URL(request.url)
+    const result = await loadOverviewCityMetricsForApi(
+      params.publicId!,
+      searchParams.get("state"),
+      parseTrafficRangeId(searchParams.get("range_id")),
+      parseUtmFilterFromSearchParams(searchParams),
+      parseDashboardCustomRange(
+        searchParams.get("from"),
+        searchParams.get("to")
+      )
+    )
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: result.status }
+      )
+    }
+
+    return NextResponse.json(result.data)
   }
-  const limited = await enforceLandingApiRateLimit(actor.id)
-  if (limited) return limited
-
-  const { publicId } = await context.params
-  const rangeId = parseTrafficRangeId(
-    request.nextUrl.searchParams.get("range_id")
-  )
-  const customRange = parseDashboardCustomRange(
-    request.nextUrl.searchParams.get("from"),
-    request.nextUrl.searchParams.get("to")
-  )
-  const utmFilter = parseUtmFilterFromSearchParams(request.nextUrl.searchParams)
-  const state = request.nextUrl.searchParams.get("state")
-
-  const result = await loadOverviewCityMetricsForApi(
-    publicId,
-    state,
-    rangeId,
-    utmFilter,
-    customRange
-  )
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: result.status })
-  }
-
-  return NextResponse.json(result.data)
-}
+)

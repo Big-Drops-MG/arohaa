@@ -21,24 +21,25 @@ type SendExternalMemberInviteEmailInput = {
   to: string
   recipientFirstName?: string
   recipientLastName?: string
-  password: string
+  inviteUrl: string
 }
 
 export async function sendExternalMemberInviteEmail(
   input: SendExternalMemberInviteEmailInput
 ): Promise<{ messageId?: string } | null> {
   const base = resolveAppBaseUrl()
+  const acceptLink = `${base}/accept-invite?token=${encodeURIComponent(input.inviteUrl)}`
 
   try {
     return await sendEmail({
       to: input.to,
-      subject: "Your Arohaa partner account details",
+      subject: "You're invited to Arohaa",
       react: createElement(ExternalMemberInviteEmail, {
         recipientFirstName: input.recipientFirstName,
         recipientLastName: input.recipientLastName,
         email: input.to,
-        password: input.password,
-        loginUrl: `${base}/login`,
+        acceptLink,
+        expiresInHours: 48,
       }),
     })
   } catch (err) {

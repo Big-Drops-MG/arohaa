@@ -1,6 +1,6 @@
 import { getLandingPageList } from "@/features/dashboard/controller/landing-pages"
 import { LandingPagesDashboard } from "@/features/dashboard/view/LandingPagesDashboard"
-import { isReadOnlyAccessLevel } from "@/features/team/model/access-level"
+import { canWriteLandingPages } from "@/lib/server/actor-can"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { isExternalTeamKind } from "@/features/team/model/external-privileges"
 
@@ -13,7 +13,7 @@ export async function HomePage() {
   const canCreateProjects = Boolean(
     actor &&
     !isExternalTeamKind(actor.teamKind) &&
-    !isReadOnlyAccessLevel(actor.accessLevel)
+    (await canWriteLandingPages(actor))
   )
 
   return (

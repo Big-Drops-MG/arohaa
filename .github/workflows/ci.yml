@@ -19,9 +19,32 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Block hardcoded operator emails and unsigned 2FA cookie in source
+        run: |
+          if rg -l '[A-Za-z0-9._-]+@bigdropsmarketing\.com' apps packages \
+            --glob '!**/node_modules/**' \
+            --glob '!packages/database/drizzle/**'; then
+            echo "Hardcoded operator emails are not allowed outside SQL migrations."
+            rg '[A-Za-z0-9._-]+@bigdropsmarketing\.com' apps packages \
+              --glob '!**/node_modules/**' \
+              --glob '!packages/database/drizzle/**'
+            exit 1
+          fi
+          if rg -l 'arohaa_2fa_verified' apps packages \
+            --glob '!**/node_modules/**'; then
+            echo "Unsigned 2FA cookie arohaa_2fa_verified must not be reintroduced."
+            rg 'arohaa_2fa_verified' apps packages \
+              --glob '!**/node_modules/**'
+            exit 1
+          fi
+      - name: Require route() wrapper on non-exempt API handlers
+        run: node scripts/check-api-routes.mjs
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RUN_ACL_INTEGRATION: "1"
       - run: pnpm exec playwright install chromium --with-deps
         working-directory: apps/dashboard
       - run: pnpm test:e2e

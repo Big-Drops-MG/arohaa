@@ -19,6 +19,7 @@ import {
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
 import { appendDashboardCustomRangeParams } from "@/lib/server/analytics-utm-params"
+import { sanitizeHeatmapPageUrl } from "@/lib/server/route-query-limits"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
@@ -76,14 +77,16 @@ export async function fetchHeatmapAnalytics(
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 20_000)
 
+  const pageUrl = sanitizeHeatmapPageUrl(options.pageUrl)
+
   try {
     const url = new URL(`${apiBase}/v1/analytics/heatmap`)
     url.searchParams.set("workspace_id", workspaceId)
     url.searchParams.set("range_id", rangeId)
     url.searchParams.set("mode", options.mode)
     url.searchParams.set("device", options.device)
-    if (options.pageUrl) {
-      url.searchParams.set("page_url", options.pageUrl)
+    if (pageUrl) {
+      url.searchParams.set("page_url", pageUrl)
     }
     appendDashboardCustomRangeParams(url, rangeId, options.customRange)
 
