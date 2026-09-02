@@ -277,28 +277,3 @@ export function overviewMapBubbleRadius(
   const t = Math.pow(value / maxValue, 0.58)
   return minR + t * (maxR - minR)
 }
-
-function hashString(input: string): number {
-  let h = 2166136261
-  for (let i = 0; i < input.length; i += 1) {
-    h ^= input.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
-  return h >>> 0
-}
-
-/**
- * Place a city inside a geographic bbox when precise coordinates are unknown.
- * Positions are stable for a given city name so drill-down views stay consistent.
- */
-export function overviewCityPointInBbox(
-  city: string,
-  bbox: [[number, number], [number, number]]
-): [number, number] {
-  const [[minLng, minLat], [maxLng, maxLat]] = bbox
-  const pad = 0.18
-  const h = hashString(city.toLowerCase())
-  const u = pad + ((h % 10_000) / 10_000) * (1 - 2 * pad)
-  const v = pad + ((Math.floor(h / 10_000) % 10_000) / 10_000) * (1 - 2 * pad)
-  return [minLng + u * (maxLng - minLng), minLat + v * (maxLat - minLat)]
-}

@@ -1,15 +1,10 @@
-import {
-  geoBounds,
-  geoCentroid,
-  geoContains,
-  geoDistance,
-  type GeoPath,
-} from "d3-geo"
+import { geoCentroid, geoContains, geoDistance, type GeoPath } from "d3-geo"
 import type { Feature, FeatureCollection, Geometry } from "geojson"
-import type { OverviewKpiMetricId } from "@/features/overview/model/overview"
-import type { OverviewCityMetric } from "@/features/overview/model/overview"
+import type {
+  OverviewCityMetric,
+  OverviewKpiMetricId,
+} from "@/features/overview/model/overview"
 import {
-  overviewCityPointInBbox,
   overviewMapBubbleTierForValue,
   type OverviewMapBubbleTier,
 } from "@/features/overview/model/us-states"
@@ -31,59 +26,87 @@ export type OverviewMapRegion = {
   totalZipCount?: number
 }
 
-function metricValue(
-  row:
-    | OverviewCityMetric
-    | {
-        visitors: number
-        sessions: number
-        pageViews: number
-        formSubmitted: number
-        fsr: number
-        bounceRate: number
-      },
+/** Raw counters kept per region so rate metrics recompute instead of averaging. */
+type RegionTotals = {
+  visitors: number
+  sessions: number
+  pageViews: number
+  formSubmitted: number
+  bounces: number
+}
+
+function emptyTotals(): RegionTotals {
+  return {
+    visitors: 0,
+    sessions: 0,
+    pageViews: 0,
+    formSubmitted: 0,
+    bounces: 0,
+  }
+}
+
+function ratePct(numerator: number, denominator: number): number {
+  if (denominator <= 0) return 0
+  return Math.round((numerator / denominator) * 1000) / 10
+}
+
+function totalsFromCity(row: OverviewCityMetric): RegionTotals {
+  return {
+    visitors: row.visitors,
+    sessions: row.sessions,
+    pageViews: row.pageViews,
+    formSubmitted: row.formSubmitted,
+    bounces: Math.round((row.bounceRate / 100) * row.sessions),
+  }
+}
+
+function addTotals(target: RegionTotals, source: RegionTotals): void {
+  target.visitors += source.visitors
+  target.sessions += source.sessions
+  target.pageViews += source.pageViews
+  target.formSubmitted += source.formSubmitted
+  target.bounces += source.bounces
+}
+
+export function regionMetricValue(
+  totals: RegionTotals,
   metricId: OverviewKpiMetricId
 ): number {
   switch (metricId) {
     case "visitors":
-      return row.visitors
+      return totals.visitors
     case "sessions":
-      return row.sessions
+      return totals.sessions
     case "page-views":
-      return row.pageViews
+      return totals.pageViews
     case "form-submitted":
-      return row.formSubmitted
+      return totals.formSubmitted
     case "fsr":
-      return row.fsr
+      return ratePct(totals.formSubmitted, totals.sessions)
     case "bounce-rate":
-      return row.bounceRate
+      return ratePct(totals.bounces, totals.sessions)
   }
 }
 
-export function aggregateRegionValues(
-  values: number[],
-  metricId: OverviewKpiMetricId
-): number {
-  if (values.length === 0) return 0
-  if (metricId === "fsr" || metricId === "bounce-rate") {
-    return values.reduce((sum, value) => sum + value, 0) / values.length
-  }
-  return values.reduce((sum, value) => sum + value, 0)
-}
-
+/**
+ * Only real coordinates place a city into a county. Cities without coordinates
+ * are left unmapped rather than scattered into arbitrary counties.
+ */
 export function resolveCityGeoPoint(
-  row: OverviewCityMetric,
-  fallbackBbox: [[number, number], [number, number]]
-): [number, number] {
+  row: OverviewCityMetric
+): [number, number] | null {
+  const { latitude, longitude } = row
   if (
-    typeof row.latitude === "number" &&
-    typeof row.longitude === "number" &&
-    row.latitude !== 0 &&
-    row.longitude !== 0
+    typeof latitude !== "number" ||
+    typeof longitude !== "number" ||
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    latitude === 0 ||
+    longitude === 0
   ) {
-    return [row.longitude, row.latitude]
+    return null
   }
-  return overviewCityPointInBbox(row.city.trim(), fallbackBbox)
+  return [longitude, latitude]
 }
 
 function normalizeCountyId(value: string | number | null | undefined): string {
@@ -110,16 +133,45 @@ function nearestFeature(
 }
 
 type CountyCityBucket = {
-  value: number
+  label: string
   zipCount: number
   zipcodes: string[]
+  totals: RegionTotals
+}
+
+/**
+ * Coordinates win when present, since they pinpoint the city. Rows without
+ * coordinates (typically a form-submitted ZIP with no GeoIP fix) fall back to
+ * the county the API resolved from their zipcodes.
+ */
+function resolveCountyIdForCity(
+  row: OverviewCityMetric,
+  counties: FeatureCollection,
+  countyIdsInState: ReadonlySet<string>
+): string {
+  const point = resolveCityGeoPoint(row)
+  if (point) {
+    const contained =
+      counties.features.find((feat) =>
+        geoContains(feat as Feature<Geometry>, point)
+      ) ?? null
+    const matched =
+      contained ?? nearestFeature(point, counties.features as Feature[])
+    const countyId = matched ? normalizeCountyId(matched.id) : ""
+    if (countyId) return countyId
+  }
+
+  const fromZip = normalizeCountyId(row.countyFips)
+  return fromZip && countyIdsInState.has(fromZip) ? fromZip : ""
 }
 
 /**
  * Distinct zipcodes across cities. Zip lists can be capped by the API, so any
  * counted-but-missing zips are added back to keep the total exact.
  */
-function distinctZipTotal(entries: OverviewMapCityEntry[]): number {
+function distinctZipTotal(
+  entries: ReadonlyArray<{ zipCount: number; zipcodes: string[] }>
+): number {
   const seen = new Set<string>()
   let uncounted = 0
   for (const entry of entries) {
@@ -142,50 +194,47 @@ export function buildCountyRegions({
   thresholds: readonly number[]
   path: GeoPath
 }): OverviewMapRegion[] {
-  const metricsByCity = new Map<string, CountyCityBucket>()
-  for (const row of cities) {
-    const name = row.city.trim()
-    if (!name) continue
-    const zipcodes = Array.isArray(row.zipcodes) ? row.zipcodes : []
-    metricsByCity.set(name, {
-      value: metricValue(row, metricId),
-      zipCount: row.zipCount ?? zipcodes.length,
-      zipcodes,
-    })
-  }
-
   const countyBuckets = new Map<string, Map<string, CountyCityBucket>>()
-  const countiesBbox = geoBounds({
-    type: "FeatureCollection",
-    features: counties.features,
-  } as FeatureCollection)
+  const countyIdsInState = new Set(
+    counties.features.map((feat) => normalizeCountyId(feat.id))
+  )
 
   for (const row of cities) {
     const label = row.city.trim()
     if (!label) continue
-    const metrics = metricsByCity.get(label)
-    if (!metrics || (metrics.value <= 0 && metrics.zipCount <= 0)) continue
-    const point = resolveCityGeoPoint(row, countiesBbox)
-    const contained =
-      counties.features.find((feat) =>
-        geoContains(feat as Feature<Geometry>, point)
-      ) ?? null
-    const matched =
-      contained ?? nearestFeature(point, counties.features as Feature[])
-    if (!matched) continue
-    const countyId = normalizeCountyId(matched.id ?? label)
+
+    const countyId = resolveCountyIdForCity(row, counties, countyIdsInState)
+    if (!countyId) continue
+
     let cityMap = countyBuckets.get(countyId)
     if (!cityMap) {
       cityMap = new Map()
       countyBuckets.set(countyId, cityMap)
     }
-    cityMap.set(label, metrics)
+
+    const zipcodes = Array.isArray(row.zipcodes) ? row.zipcodes : []
+    const zipCount = row.zipCount ?? zipcodes.length
+    const existing = cityMap.get(label)
+    if (existing) {
+      addTotals(existing.totals, totalsFromCity(row))
+      existing.zipCount += zipCount
+      existing.zipcodes = [...new Set([...existing.zipcodes, ...zipcodes])]
+      continue
+    }
+
+    cityMap.set(label, {
+      label,
+      zipCount,
+      zipcodes,
+      totals: totalsFromCity(row),
+    })
   }
 
   const regions: OverviewMapRegion[] = []
   for (const feat of counties.features) {
     const d = path(feat as Feature<Geometry>)
     if (!d) continue
+
     const countyId = normalizeCountyId(feat.id)
     const props = feat.properties as Record<string, unknown> | null | undefined
     const countyLabel =
@@ -194,8 +243,9 @@ export function buildCountyRegions({
         : typeof props?.name === "string"
           ? props.name.trim()
           : countyId
+
     const cityMap = countyBuckets.get(countyId)
-    if (!cityMap) {
+    if (!cityMap || cityMap.size === 0) {
       regions.push({
         key: countyId,
         label: countyLabel,
@@ -206,26 +256,40 @@ export function buildCountyRegions({
       continue
     }
 
-    const cityEntries: OverviewMapCityEntry[] = [...cityMap.entries()]
-      .map(([cityLabel, bucket]) => ({
-        label: cityLabel,
+    const countyTotals = emptyTotals()
+    for (const bucket of cityMap.values()) {
+      addTotals(countyTotals, bucket.totals)
+    }
+
+    const cityEntries: OverviewMapCityEntry[] = [...cityMap.values()]
+      .map((bucket) => ({
+        label: bucket.label,
         zipCount: bucket.zipCount,
         zipcodes: bucket.zipcodes,
-        value: bucket.value,
+        value: regionMetricValue(bucket.totals, metricId),
       }))
       .sort(
         (a, b) =>
-          b.zipCount - a.zipCount ||
           b.value - a.value ||
+          b.zipCount - a.zipCount ||
           a.label.localeCompare(b.label)
       )
-    const values = cityEntries.map((entry) => entry.value)
-    const value = aggregateRegionValues(values, metricId)
+
+    const value = regionMetricValue(countyTotals, metricId)
+    // Rate metrics can legitimately be 0 while the county still has traffic,
+    // so activity decides whether a county is shaded.
+    const hasActivity =
+      countyTotals.sessions > 0 ||
+      countyTotals.pageViews > 0 ||
+      countyTotals.visitors > 0
+
     regions.push({
       key: countyId,
       label: countyLabel,
       value,
-      tier: value > 0 ? overviewMapBubbleTierForValue(value, thresholds) : null,
+      tier: hasActivity
+        ? overviewMapBubbleTierForValue(value, thresholds)
+        : null,
       pathD: d,
       cityEntries,
       totalZipCount: distinctZipTotal(cityEntries),
@@ -235,13 +299,17 @@ export function buildCountyRegions({
   return regions
 }
 
-export function countyRegionHoverSummary(region: OverviewMapRegion): string {
+export function countyRegionHoverSummary(
+  region: OverviewMapRegion,
+  formatValue: (value: number) => string
+): string {
+  const header = `${region.label} County`
   if (!region.cityEntries?.length) {
-    return `${region.label}: 0`
+    return `${header}\nNo city data in this range`
   }
-  const header = `${region.label}: ${region.totalZipCount ?? 0}`
-  const lines = region.cityEntries.map(
-    (entry) => `- ${entry.label}: ${entry.zipCount}`
-  )
+  const lines = region.cityEntries.map((entry) => {
+    const zipLabel = entry.zipCount === 1 ? "zip" : "zips"
+    return `- ${entry.label}: ${formatValue(entry.value)} (${entry.zipCount} ${zipLabel})`
+  })
   return [header, ...lines].join("\n")
 }

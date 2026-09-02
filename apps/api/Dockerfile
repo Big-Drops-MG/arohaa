@@ -65,6 +65,7 @@ COPY --from=deps /app/packages/database/node_modules ./packages/database/node_mo
 COPY apps/api/package.json apps/api/
 COPY apps/api/tsconfig.json apps/api/
 COPY apps/api/src apps/api/src
+COPY apps/api/data apps/api/data
 COPY packages/database/package.json packages/database/
 COPY packages/database/src packages/database/src
 COPY packages/typescript-config packages/typescript-config

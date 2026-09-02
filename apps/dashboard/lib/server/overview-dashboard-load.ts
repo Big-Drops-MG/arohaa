@@ -385,7 +385,16 @@ export async function loadOverviewCityMetricsForApi(
     })
 
     if (!resp.ok) {
-      return { ok: true, data: { state, cities: [] } }
+      const body = await resp.text().catch(() => "")
+      console.error(
+        `[overview] cities API ${resp.status} for ${state}`,
+        body.slice(0, 200)
+      )
+      return {
+        ok: false,
+        status: 502,
+        error: "Failed to load city metrics",
+      }
     }
 
     const data = (await resp.json()) as {
@@ -405,8 +414,9 @@ export async function loadOverviewCityMetricsForApi(
           : [],
       },
     }
-  } catch {
-    return { ok: true, data: { state, cities: [] } }
+  } catch (err) {
+    console.error(`[overview] cities fetch failed for ${state}`, err)
+    return { ok: false, status: 504, error: "City metrics request failed" }
   } finally {
     clearTimeout(timer)
   }

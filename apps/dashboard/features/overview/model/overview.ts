@@ -186,6 +186,8 @@ export type OverviewCityMetric = {
   state: string
   latitude?: number
   longitude?: number
+  /** County FIPS resolved from zipcodes, for rows without usable coordinates. */
+  countyFips?: string
   /** Distinct zipcodes with events in this city (GeoIP postal + form-submitted). */
   zipCount: number
   /** Distinct zipcode values backing `zipCount`, capped by the API. */

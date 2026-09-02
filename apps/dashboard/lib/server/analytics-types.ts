@@ -50,6 +50,7 @@ export interface OverviewCityMetric {
   state: string
   latitude?: number
   longitude?: number
+  countyFips?: string
   zipCount: number
   zipcodes: string[]
   visitors: number
