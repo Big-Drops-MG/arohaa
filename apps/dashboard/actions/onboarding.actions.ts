@@ -12,10 +12,10 @@ import {
   normalizeRoleName,
 } from "@/features/auth/model/role-options"
 import {
-  countApprovedUsers,
   notifyApprovedUsersOfAccessRequest,
   setUserAccessStatus,
 } from "@/lib/server/access-requests"
+import { getMemberRoleId } from "@/lib/server/actor-can"
 import { ensureRoleExists } from "@/lib/server/roles"
 
 export async function completeOnboarding(formData: FormData): Promise<{
@@ -33,13 +33,13 @@ export async function completeOnboarding(formData: FormData): Promise<{
   const firstName = typeof firstNameRaw === "string" ? firstNameRaw.trim() : ""
   const lastName = typeof lastNameRaw === "string" ? lastNameRaw.trim() : ""
   const roleInput = typeof roleRaw === "string" ? roleRaw : ""
-  const role = normalizeRoleName(roleInput)
+  const jobTitle = normalizeRoleName(roleInput)
 
-  if (!firstName || !lastName || !role) {
+  if (!firstName || !lastName || !jobTitle) {
     return { error: "First name, last name, and role are required." }
   }
 
-  if (!isValidRoleName(role)) {
+  if (!isValidRoleName(jobTitle)) {
     return { error: "Role must be between 2 and 80 characters." }
   }
 
@@ -49,30 +49,26 @@ export async function completeOnboarding(formData: FormData): Promise<{
   })
   if (!existing) return { error: "User not found." }
 
-  let savedRole: string
+  let savedJobTitle: string
   try {
-    savedRole = await ensureRoleExists(role)
+    savedJobTitle = await ensureRoleExists(jobTitle)
   } catch {
     return { error: "Could not save role. Please try again." }
   }
 
+  const memberRoleId = existing.roleId ?? (await getMemberRoleId())
+
   await db
     .update(users)
-    .set({ firstName, lastName, role: savedRole })
+    .set({
+      firstName,
+      lastName,
+      role: savedJobTitle,
+      roleId: memberRoleId,
+    })
     .where(whereUserEmail(email))
 
-  const approvedCount = await countApprovedUsers()
-  const isBootstrap = approvedCount === 0
-  const alreadyApproved = existing.accessStatus === "approved"
-
-  if (isBootstrap || alreadyApproved) {
-    if (!alreadyApproved) {
-      await setUserAccessStatus({
-        userId: existing.id,
-        status: "approved",
-        reviewedByUserId: existing.id,
-      })
-    }
+  if (existing.accessStatus === "approved") {
     return { success: true, redirectTo: "/dashboard" }
   }
 

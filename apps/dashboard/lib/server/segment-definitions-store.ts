@@ -2,8 +2,6 @@ import {
   resolveIngestApiBase,
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
-import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { requireWritableLandingPageActor } from "@/lib/server/external-access"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
 export type SegmentDefinition = {
@@ -29,17 +27,10 @@ type SegmentScope = {
 }
 
 async function resolveScope(
-  publicId: string,
-  opts?: { writable?: boolean }
+  actorId: string,
+  publicId: string
 ): Promise<SegmentDefinitionResult<SegmentScope>> {
-  const actor = opts?.writable
-    ? await requireWritableLandingPageActor()
-    : await requireLandingPageActor()
-  if (!actor) {
-    return { ok: false, status: 401, error: "Unauthorized" }
-  }
-
-  const landingPage = await getActiveLandingPageForActor(actor.id, publicId)
+  const landingPage = await getActiveLandingPageForActor(actorId, publicId)
   if (!landingPage) {
     return { ok: false, status: 404, error: "Not found" }
   }
@@ -109,9 +100,10 @@ async function callSegmentsApi<T>(
 }
 
 export async function listSegmentDefinitions(
+  actorId: string,
   publicId: string
 ): Promise<SegmentDefinitionResult<SegmentDefinition[]>> {
-  const scope = await resolveScope(publicId)
+  const scope = await resolveScope(actorId, publicId)
   if (!scope.ok) return scope
 
   return callSegmentsApi<SegmentDefinition[]>(
@@ -121,10 +113,11 @@ export async function listSegmentDefinitions(
 }
 
 export async function createSegmentDefinition(
+  actorId: string,
   publicId: string,
   input: { name: string; description?: string; conditions: unknown }
 ): Promise<SegmentDefinitionResult<SegmentDefinition>> {
-  const scope = await resolveScope(publicId, { writable: true })
+  const scope = await resolveScope(actorId, publicId)
   if (!scope.ok) return scope
 
   return callSegmentsApi<SegmentDefinition>("/v1/segments", {
@@ -140,10 +133,11 @@ export async function createSegmentDefinition(
 }
 
 export async function deleteSegmentDefinition(
+  actorId: string,
   publicId: string,
   segmentId: string
 ): Promise<SegmentDefinitionResult<{ success: boolean }>> {
-  const scope = await resolveScope(publicId, { writable: true })
+  const scope = await resolveScope(actorId, publicId)
   if (!scope.ok) return scope
 
   return callSegmentsApi<{ success: boolean }>(
@@ -153,10 +147,11 @@ export async function deleteSegmentDefinition(
 }
 
 export async function previewSegmentDefinition(
+  actorId: string,
   publicId: string,
   conditions: unknown
 ): Promise<SegmentDefinitionResult<{ count: number }>> {
-  const scope = await resolveScope(publicId)
+  const scope = await resolveScope(actorId, publicId)
   if (!scope.ok) return scope
 
   return callSegmentsApi<{ count: number }>("/v1/segments/preview", {
@@ -166,10 +161,11 @@ export async function previewSegmentDefinition(
 }
 
 export async function fetchSegmentColumnValues(
+  actorId: string,
   publicId: string,
   column: string
 ): Promise<SegmentDefinitionResult<{ column: string; values: string[] }>> {
-  const scope = await resolveScope(publicId)
+  const scope = await resolveScope(actorId, publicId)
   if (!scope.ok) return scope
 
   const qs = new URLSearchParams({

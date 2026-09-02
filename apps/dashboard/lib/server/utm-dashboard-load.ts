@@ -14,6 +14,7 @@ import {
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { requireWritableLandingPageActor } from "@/lib/server/external-access"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
 export type UtmParamStatus = "active" | "blocked"
@@ -96,30 +97,23 @@ async function syncDiscoveredParams(
 ) {
   if (discovered.length === 0) return
 
-  const existing = await db
-    .select({
-      key: landingPageUtmParams.key,
-      value: landingPageUtmParams.value,
+  await db
+    .insert(landingPageUtmParams)
+    .values(
+      discovered.map((row) => ({
+        landingPageId,
+        key: row.key,
+        value: row.value,
+        status: "active" as const,
+      }))
+    )
+    .onConflictDoNothing({
+      target: [
+        landingPageUtmParams.landingPageId,
+        landingPageUtmParams.key,
+        landingPageUtmParams.value,
+      ],
     })
-    .from(landingPageUtmParams)
-    .where(eq(landingPageUtmParams.landingPageId, landingPageId))
-
-  const existingSet = new Set(existing.map((row) => `${row.key}::${row.value}`))
-
-  const toInsert = discovered.filter(
-    (row) => !existingSet.has(`${row.key}::${row.value}`)
-  )
-
-  if (toInsert.length === 0) return
-
-  await db.insert(landingPageUtmParams).values(
-    toInsert.map((row) => ({
-      landingPageId,
-      key: row.key,
-      value: row.value,
-      status: "active" as const,
-    }))
-  )
 }
 
 function countByKeyAndStatus(
@@ -202,7 +196,7 @@ export async function updateUtmParamsForLandingPage({
   | { ok: true; data: UtmDashboardData }
   | { ok: false; status: number; error: string }
 > {
-  const actor = await requireLandingPageActor()
+  const actor = await requireWritableLandingPageActor()
   if (!actor) {
     return { ok: false, status: 401, error: "Unauthorized" }
   }
@@ -229,49 +223,29 @@ export async function updateUtmParamsForLandingPage({
     return { ok: true, data: await loadUtmDashboardData(landingPagePublicId) }
   }
 
-  const values = [...new Set(valid.map((item) => item.value))]
-  const keys = [...new Set(valid.map((item) => item.key))]
-
-  const existing = await db
-    .select({
-      key: landingPageUtmParams.key,
-      value: landingPageUtmParams.value,
-    })
-    .from(landingPageUtmParams)
-    .where(
-      and(
-        eq(landingPageUtmParams.landingPageId, row.id),
-        inArray(landingPageUtmParams.key, keys),
-        inArray(landingPageUtmParams.value, values)
-      )
-    )
-
-  const existingSet = new Set(
-    existing.map((item) => `${item.key}::${item.value}`)
-  )
-
-  for (const item of valid) {
-    const id = `${item.key}::${item.value}`
-    if (existingSet.has(id)) {
-      await db
-        .update(landingPageUtmParams)
-        .set({ status: item.status, updatedAt: new Date() })
-        .where(
-          and(
-            eq(landingPageUtmParams.landingPageId, row.id),
-            eq(landingPageUtmParams.key, item.key),
-            eq(landingPageUtmParams.value, item.value)
-          )
-        )
-    } else {
-      await db.insert(landingPageUtmParams).values({
-        landingPageId: row.id,
-        key: item.key,
-        value: item.value,
-        status: item.status,
-      })
+  await db.transaction(async (tx) => {
+    for (const item of valid) {
+      await tx
+        .insert(landingPageUtmParams)
+        .values({
+          landingPageId: row.id,
+          key: item.key,
+          value: item.value,
+          status: item.status,
+        })
+        .onConflictDoUpdate({
+          target: [
+            landingPageUtmParams.landingPageId,
+            landingPageUtmParams.key,
+            landingPageUtmParams.value,
+          ],
+          set: {
+            status: item.status,
+            updatedAt: new Date(),
+          },
+        })
     }
-  }
+  })
 
   return { ok: true, data: await loadUtmDashboardData(landingPagePublicId) }
 }

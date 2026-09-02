@@ -31,4 +31,17 @@ describe('internal api secret', () => {
     delete process.env.AROHAA_INTERNAL_API_SECRET
     expect(resolveInternalApiSecret()).toBe(DEV_INTERNAL_API_SECRET)
   })
+
+  it('does not fall back when NODE_ENV is production without a configured secret', () => {
+    process.env.NODE_ENV = 'production'
+    delete process.env.AROHAA_INTERNAL_API_SECRET
+    expect(resolveInternalApiSecret()).toBeUndefined()
+    expect(verifyInternalApiRequest(DEV_INTERNAL_API_SECRET)).toBe(false)
+  })
+
+  it('does not fall back in staging-like production builds', () => {
+    process.env.NODE_ENV = 'production'
+    delete process.env.AROHAA_INTERNAL_API_SECRET
+    expect(resolveInternalApiSecret()).toBeUndefined()
+  })
 })

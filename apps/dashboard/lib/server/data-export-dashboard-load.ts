@@ -12,14 +12,18 @@ import {
 } from "@/features/traffic/model/traffic-range"
 import type { RangeId } from "@/lib/server/analytics-types"
 import {
+  buildInternalUserDelegationHeaders,
+  FUNNEL_LEADS_DELEGATION_SCOPE,
+} from "@workspace/database"
+import {
   resolveIngestApiBase,
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
 import { canAccessDataExport } from "@/lib/server/data-export-acl"
-import { isReadOnlyAccessLevel } from "@/features/team/model/access-level"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import { appendDashboardCustomRangeParams } from "@/lib/server/analytics-utm-params"
+import { DEFAULT_ROUTE_MAX_OFFSET } from "@/lib/server/route-query-limits"
 
 type LeadsApiResponse = {
   rangeId?: RangeId
@@ -43,6 +47,7 @@ type LeadsApiResponse = {
 
 async function fetchLeads(
   workspaceId: string,
+  actorId: string,
   rangeId: RangeId,
   customRange: DashboardCustomRange | undefined,
   limit: number,
@@ -51,6 +56,12 @@ async function fetchLeads(
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
   if (!apiBase || !secret) return null
+
+  const delegationHeaders = buildInternalUserDelegationHeaders(secret, {
+    userId: actorId,
+    landingPageId: workspaceId,
+    scope: FUNNEL_LEADS_DELEGATION_SCOPE,
+  })
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 12_000)
@@ -63,7 +74,10 @@ async function fetchLeads(
     appendDashboardCustomRangeParams(url, rangeId, customRange)
 
     const res = await fetch(url.toString(), {
-      headers: { "x-arohaa-internal": secret },
+      headers: {
+        "x-arohaa-internal": secret,
+        ...delegationHeaders,
+      },
       signal: controller.signal,
       cache: "no-store",
     })
@@ -89,12 +103,11 @@ export async function loadDataExportDashboardData({
   limit?: number
   offset?: number
 }): Promise<DataExportDashboardData> {
+  if (offset > DEFAULT_ROUTE_MAX_OFFSET) notFound()
+
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
-  if (
-    !canAccessDataExport(actor.email) ||
-    isReadOnlyAccessLevel(actor.accessLevel)
-  ) {
+  if (!(await canAccessDataExport(actor))) {
     notFound()
   }
 
@@ -108,6 +121,7 @@ export async function loadDataExportDashboardData({
 
   const analytics = await fetchLeads(
     row.id,
+    actor.id,
     rangeId,
     customRange,
     limit,
@@ -156,11 +170,13 @@ export async function loadDataExportDashboardDataForApi(
   if (!actor) {
     return { ok: false, status: 401, error: "Unauthorized" }
   }
-  if (
-    !canAccessDataExport(actor.email) ||
-    isReadOnlyAccessLevel(actor.accessLevel)
-  ) {
+  if (!(await canAccessDataExport(actor))) {
     return { ok: false, status: 403, error: "Forbidden" }
+  }
+
+  const offsetRawNum = Number(offsetRaw ?? 0) || 0
+  if (offsetRawNum > DEFAULT_ROUTE_MAX_OFFSET) {
+    return { ok: false, status: 400, error: "Invalid offset" }
   }
 
   const rangeId = parseTrafficRangeId(rangeIdRaw)
@@ -171,7 +187,7 @@ export async function loadDataExportDashboardDataForApi(
       Number(limitRaw ?? DATA_EXPORT_PAGE_SIZE) || DATA_EXPORT_PAGE_SIZE
     )
   )
-  const offset = Math.max(0, Number(offsetRaw ?? 0) || 0)
+  const offset = Math.min(DEFAULT_ROUTE_MAX_OFFSET, Math.max(0, offsetRawNum))
 
   const data = await loadDataExportDashboardData({
     landingPagePublicId,

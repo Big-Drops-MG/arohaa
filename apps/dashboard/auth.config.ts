@@ -14,6 +14,11 @@ function hasTwoFactorEnabled(user: unknown): boolean {
   return candidate.isTwoFactorEnabled === true
 }
 
+function hasTwoFactorAt(auth: { twoFactorAt?: unknown } | null): boolean {
+  const at = auth?.twoFactorAt
+  return typeof at === "number" && Number.isFinite(at) && at > 0
+}
+
 export const authConfig = {
   trustHost: true,
   secret: authSecret,
@@ -36,10 +41,7 @@ export const authConfig = {
         if (!isLoggedIn) return false
 
         const isTwoFactorEnabled = hasTwoFactorEnabled(auth.user)
-        const hasVerified2FA =
-          request.cookies.get("arohaa_2fa_verified")?.value === "true"
-
-        if (isTwoFactorEnabled && !hasVerified2FA) {
+        if (isTwoFactorEnabled && !hasTwoFactorAt(auth)) {
           return Response.redirect(
             new URL("/login?requiresTwoFactor=true", nextUrl)
           )

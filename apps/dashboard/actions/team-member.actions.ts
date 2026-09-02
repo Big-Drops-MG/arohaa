@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { randomUUID } from "node:crypto"
 import bcrypt from "bcryptjs"
 import { generateSecret } from "otplib"
 import { desc, eq, isNull } from "drizzle-orm"
@@ -17,7 +18,6 @@ import {
   type ExternalPrivilegeGrant,
   type ExternalProjectScope,
 } from "@/features/team/model/external-privileges"
-import { isFullAccessLevel } from "@/features/team/model/access-level"
 import { isApprovedAccess } from "@/lib/server/access-status"
 import {
   assertExternalTarget,
@@ -31,13 +31,10 @@ import {
 } from "@/lib/server/email/send-external-invite-email"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { ensureRoleExists } from "@/lib/server/roles"
+import { canManageExternalTeam, getMemberRoleId } from "@/lib/server/actor-can"
+import { encryptField } from "@/lib/server/field-encryption"
+import { issueExternalMemberInviteToken } from "@/lib/server/external-invite-token"
 import type { ExternalMemberAccessProject } from "@/emails/templates"
-
-const MIN_PASSWORD_LENGTH = 12
-
-function isValidPassword(password: string): boolean {
-  return password.length >= MIN_PASSWORD_LENGTH
-}
 
 const allowedTabValues = new Set(
   EXTERNAL_PRIVILEGE_TABS.map((tab) => tab.value)
@@ -79,23 +76,10 @@ function sanitizeGrants(
 
 const EXTERNAL_MEMBER_ROLE = "Partner"
 
-function canManageTeam(actor: {
-  accessStatus: string | null
-  teamKind: string | null
-  accessLevel: string | null
-}): boolean {
-  return (
-    isApprovedAccess(actor.accessStatus) &&
-    !isExternalTeamKind(actor.teamKind) &&
-    isFullAccessLevel(actor.accessLevel)
-  )
-}
-
 export async function createExternalTeamMember(input: {
   firstName: string
   lastName: string
   email: string
-  password: string
 }): Promise<{
   error?: string
   success?: true
@@ -103,29 +87,22 @@ export async function createExternalTeamMember(input: {
   emailSent?: boolean
 }> {
   const actor = await requireLandingPageActor()
-  if (!actor || !canManageTeam(actor)) {
+  if (!actor || !(await canManageExternalTeam(actor))) {
     return { error: "Unauthorized." }
   }
 
   const firstName = input.firstName.trim()
   const lastName = input.lastName.trim()
   const email = normalizeUserEmail(input.email)
-  const password = input.password
 
-  if (!firstName || !lastName || !email || !password) {
+  if (!firstName || !lastName || !email) {
     return {
-      error: "First name, last name, email, and password are required.",
+      error: "First name, last name, and email are required.",
     }
   }
 
   if (!email.includes("@")) {
     return { error: "Enter a valid email address." }
-  }
-
-  if (!isValidPassword(password)) {
-    return {
-      error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
-    }
   }
 
   const existing = await db.query.users.findFirst({
@@ -149,9 +126,10 @@ export async function createExternalTeamMember(input: {
     return { error: "Could not save role. Please try again." }
   }
 
-  const passwordHash = await bcrypt.hash(password, 12)
+  const passwordHash = await bcrypt.hash(randomUUID(), 12)
   const twoFactorSecret = generateSecret()
   const now = new Date()
+  const memberRoleId = await getMemberRoleId()
 
   const inserted = await db
     .insert(users)
@@ -160,6 +138,7 @@ export async function createExternalTeamMember(input: {
       lastName,
       email,
       role: savedRole,
+      roleId: memberRoleId,
       password: passwordHash,
       accessStatus: "approved",
       accessReviewedAt: now,
@@ -167,7 +146,7 @@ export async function createExternalTeamMember(input: {
       teamKind: "external",
       isTwoFactorEnabled: false,
       twoFactorSecret: null,
-      pendingTwoFactorSecret: twoFactorSecret,
+      pendingTwoFactorSecret: encryptField(twoFactorSecret),
     })
     .returning({ id: users.id })
 
@@ -176,11 +155,13 @@ export async function createExternalTeamMember(input: {
     return { error: "Could not create member. Please try again." }
   }
 
+  const inviteToken = await issueExternalMemberInviteToken(userId)
+
   const emailResult = await sendExternalMemberInviteEmail({
     to: email,
     recipientFirstName: firstName,
     recipientLastName: lastName,
-    password,
+    inviteUrl: inviteToken,
   })
 
   revalidatePath("/dashboard/team")
@@ -197,7 +178,7 @@ export async function saveExternalMemberPrivileges(input: {
   scopes?: ExternalProjectScope[]
 }): Promise<{ error?: string; success?: true; accessEmailSent?: boolean }> {
   const actor = await requireLandingPageActor()
-  if (!actor || !canManageTeam(actor)) {
+  if (!actor || !(await canManageExternalTeam(actor))) {
     return { error: "Unauthorized." }
   }
 
@@ -241,7 +222,6 @@ export async function saveExternalMemberPrivileges(input: {
     }
   }
 
-  // Keep scopes only for projects that still have grants.
   const grantProjectIds = new Set(projectIds)
   const scopesForGrants = scopes.filter((scope) =>
     grantProjectIds.has(scope.landingPagePublicId)
@@ -300,22 +280,15 @@ export async function saveExternalMemberPrivileges(input: {
   }
 }
 
-function generateInvitePassword(length = 20): string {
-  const alphabet =
-    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*"
-  const bytes = new Uint8Array(length)
-  crypto.getRandomValues(bytes)
-  return Array.from(bytes, (b) => alphabet[b % alphabet.length]!).join("")
+function generatePlaceholderPasswordHash() {
+  return bcrypt.hash(randomUUID(), 12)
 }
 
-/**
- * Reset credentials for an external member and email the new details.
- */
 export async function resendExternalMemberInvite(
   userId: string
 ): Promise<{ error?: string; success?: true; emailSent?: boolean }> {
   const actor = await requireLandingPageActor()
-  if (!actor || !canManageTeam(actor)) {
+  if (!actor || !(await canManageExternalTeam(actor))) {
     return { error: "Unauthorized." }
   }
 
@@ -327,8 +300,7 @@ export async function resendExternalMemberInvite(
     return { error: "This member has no email address." }
   }
 
-  const password = generateInvitePassword()
-  const passwordHash = await bcrypt.hash(password, 12)
+  const passwordHash = await generatePlaceholderPasswordHash()
   const twoFactorSecret = generateSecret()
 
   await db
@@ -337,21 +309,27 @@ export async function resendExternalMemberInvite(
       password: passwordHash,
       isTwoFactorEnabled: false,
       twoFactorSecret: null,
-      pendingTwoFactorSecret: twoFactorSecret,
+      pendingTwoFactorSecret: encryptField(twoFactorSecret),
     })
     .where(eq(users.id, userId))
+
+  const { invalidateAllSessionsForUser } =
+    await import("@/lib/server/session-revocation")
+  await invalidateAllSessionsForUser(userId)
+
+  const inviteToken = await issueExternalMemberInviteToken(userId)
 
   const emailResult = await sendExternalMemberInviteEmail({
     to: target.email,
     recipientFirstName: target.firstName ?? undefined,
     recipientLastName: target.lastName ?? undefined,
-    password,
+    inviteUrl: inviteToken,
   })
 
   if (!emailResult) {
     return {
       error:
-        "Credentials were reset, but the email failed to send. Try again in a moment.",
+        "Invite was reset, but the email failed to send. Try again in a moment.",
     }
   }
 
@@ -365,7 +343,7 @@ export async function getExternalMemberPrivileges(userId: string): Promise<{
   scopes?: ExternalProjectScope[]
 }> {
   const actor = await requireLandingPageActor()
-  if (!actor || !canManageTeam(actor)) {
+  if (!actor || !(await canManageExternalTeam(actor))) {
     return { error: "Unauthorized." }
   }
 
@@ -386,7 +364,7 @@ export async function listProjectsForPrivileges(): Promise<{
   projects?: { publicId: string; brandName: string }[]
 }> {
   const actor = await requireLandingPageActor()
-  if (!actor || !canManageTeam(actor)) {
+  if (!actor || !(await canManageExternalTeam(actor))) {
     return { error: "Unauthorized." }
   }
 
@@ -402,15 +380,11 @@ export async function listProjectsForPrivileges(): Promise<{
   return { projects }
 }
 
-/**
- * Permanently remove an external partner: delete privileges/scopes and the
- * user row so they cannot sign in and the email can be invited again.
- */
 export async function removeExternalTeamMember(
   userId: string
 ): Promise<{ error?: string; success?: true }> {
   const actor = await requireLandingPageActor()
-  if (!actor || !canManageTeam(actor)) {
+  if (!actor || !(await canManageExternalTeam(actor))) {
     return { error: "Unauthorized." }
   }
 

@@ -1,30 +1,42 @@
 import { NextResponse } from "next/server"
 import { parseDashboardCustomRange } from "@/features/traffic/model/traffic-range"
 import { loadDataExportDashboardDataForApi } from "@/lib/server/data-export-dashboard-load"
+import { route } from "@/lib/server/route"
+import {
+  DEFAULT_ROUTE_MAX_OFFSET,
+  MAX_DASHBOARD_CUSTOM_SPAN_DAYS,
+  parseRouteOffset,
+} from "@/lib/server/route-query"
 
-export async function GET(
-  request: Request,
-  props: { params: Promise<{ publicId: string }> }
-) {
-  const { searchParams } = new URL(request.url)
-  const rangeId = searchParams.get("range_id")
-  const customRange = parseDashboardCustomRange(
-    searchParams.get("from"),
-    searchParams.get("to")
-  )
-  const { publicId } = await props.params
+export const GET = route(
+  {
+    permission: "data_export.read",
+    actor: "read",
+    tab: "data-lab",
+    section: "leads",
+    rateLimit: "landing",
+    query: {
+      maxCustomRangeDays: MAX_DASHBOARD_CUSTOM_SPAN_DAYS,
+      maxOffset: DEFAULT_ROUTE_MAX_OFFSET,
+    },
+  },
+  async ({ params, request }) => {
+    const { searchParams } = new URL(request.url)
+    const res = await loadDataExportDashboardDataForApi(
+      params.publicId!,
+      searchParams.get("range_id"),
+      parseDashboardCustomRange(
+        searchParams.get("from"),
+        searchParams.get("to")
+      ),
+      searchParams.get("limit"),
+      String(parseRouteOffset(searchParams.get("offset")))
+    )
 
-  const res = await loadDataExportDashboardDataForApi(
-    publicId,
-    rangeId,
-    customRange,
-    searchParams.get("limit"),
-    searchParams.get("offset")
-  )
+    if (!res.ok) {
+      return NextResponse.json({ error: res.error }, { status: res.status })
+    }
 
-  if (!res.ok) {
-    return NextResponse.json({ error: res.error }, { status: res.status })
+    return NextResponse.json(res.data)
   }
-
-  return NextResponse.json(res.data)
-}
+)

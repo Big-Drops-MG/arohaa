@@ -1,6 +1,5 @@
 import type { InferSelectModel } from "drizzle-orm"
 import { auth } from "@/auth"
-import { cookies } from "next/headers"
 
 import {
   db,
@@ -9,6 +8,7 @@ import {
   whereUserEmail,
 } from "@workspace/database"
 import { isApprovedAccess } from "@/lib/server/access-status"
+import { sessionNeedsTwoFactorChallenge } from "@/lib/server/session-2fa"
 
 async function fetchUser(email: string) {
   return db.query.users.findFirst({
@@ -18,7 +18,6 @@ async function fetchUser(email: string) {
 
 type UserRow = InferSelectModel<typeof users>
 
-/** Dashboard session user with onboarding + 2FA aligned with `app/(dashboard)/layout.tsx`. */
 export async function requireLandingPageActor(): Promise<UserRow | null> {
   const session = await auth()
   const email = session?.user?.email
@@ -26,15 +25,14 @@ export async function requireLandingPageActor(): Promise<UserRow | null> {
     return null
   }
 
+  if (sessionNeedsTwoFactorChallenge(session)) {
+    return null
+  }
+
   const user = await fetchUser(email)
   if (!user?.isTwoFactorEnabled) return null
 
-  const cookieStore = await cookies()
-  const hasVerified2FA =
-    cookieStore.get("arohaa_2fa_verified")?.value === "true"
-  if (!hasVerified2FA) return null
-
-  if (!user.firstName?.trim() || !user.lastName?.trim() || !user.role?.trim()) {
+  if (!user.firstName?.trim() || !user.lastName?.trim() || !user.roleId) {
     return null
   }
 

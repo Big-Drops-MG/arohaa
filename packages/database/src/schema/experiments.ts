@@ -3,6 +3,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core'
 import { landingPages } from './landing-pages.js'
 
@@ -33,4 +34,8 @@ export const experiments = pgTable('experiment', {
   highlighted: text('highlighted'),
   createdAt: timestamp('createdAt', { mode: 'date' }).notNull().defaultNow(),
   updatedAt: timestamp('updatedAt', { mode: 'date' }).notNull().defaultNow(),
-})
+}, (t) => ({
+  landingPageUid: uniqueIndex('experiment_landing_page_id_uidx').on(
+    t.landingPageId,
+  ),
+}))

@@ -14,7 +14,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "email:dev": "react-email dev --dir ./emails/templates",
-    "email:export": "react-email export --dir ./emails/templates --outDir ./emails/dist"
+    "email:export": "react-email export --dir ./emails/templates --outDir ./emails/dist",
+    "encrypt:totp-secrets": "tsx scripts/encrypt-totp-secrets.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.2",
@@ -44,7 +45,8 @@
     "react-dom": "^19.2.4",
     "react-email": "6.1.1",
     "recharts": "^3.8.1",
-    "topojson-client": "^3.1.0"
+    "topojson-client": "^3.1.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

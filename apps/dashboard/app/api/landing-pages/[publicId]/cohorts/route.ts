@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import {
   loadCohortsForApi,
   type CohortSplitBy,
 } from "@/lib/server/cohorts-dashboard-load"
+import { route } from "@/lib/server/route"
 
 function parseSplitBy(raw: string | null): CohortSplitBy | null {
   if (raw === "utm_source" || raw === "utm_campaign" || raw === "utm_id") {
@@ -11,21 +12,28 @@ function parseSplitBy(raw: string | null): CohortSplitBy | null {
   return null
 }
 
-export async function GET(
-  request: NextRequest,
-  props: { params: Promise<{ publicId: string }> }
-) {
-  const { publicId } = await props.params
-  const { searchParams } = new URL(request.url)
+export const GET = route(
+  {
+    permission: "landing_pages.read",
+    actor: "read",
+    tab: "segments",
+    section: "cohort",
+    rateLimit: "landing",
+  },
+  async ({ params, request }) => {
+    const { searchParams } = new URL(request.url)
+    const result = await loadCohortsForApi(params.publicId!, {
+      segmentId: searchParams.get("segment_id"),
+      splitBy: parseSplitBy(searchParams.get("split_by")),
+    })
 
-  const result = await loadCohortsForApi(publicId, {
-    segmentId: searchParams.get("segment_id"),
-    splitBy: parseSplitBy(searchParams.get("split_by")),
-  })
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: result.status }
+      )
+    }
 
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: result.status })
+    return NextResponse.json(result.data)
   }
-
-  return NextResponse.json(result.data)
-}
+)

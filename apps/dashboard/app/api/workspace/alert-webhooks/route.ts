@@ -1,47 +1,41 @@
-import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
-import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { requireWritableLandingPageActor } from "@/lib/server/external-access"
 import {
   createWorkspaceAlertWebhook,
   listWorkspaceAlertWebhooks,
 } from "@/lib/server/workspace-alert-webhooks"
-import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
+import { route } from "@/lib/server/route"
+import { alertWebhookCreateBodySchema } from "@/lib/server/route-schemas"
 
-export async function GET() {
-  const actor = await requireLandingPageActor()
-  if (!actor) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+export const GET = route(
+  {
+    permission: "webhooks.write",
+    actor: "read",
+    tab: "workspace",
+    rateLimit: "landing",
+  },
+  async ({ actor }) => {
+    const items = await listWorkspaceAlertWebhooks(actor.id)
+    return NextResponse.json({ items })
   }
-  const limited = await enforceLandingApiRateLimit(actor.id)
-  if (limited) return limited
+)
 
-  const items = await listWorkspaceAlertWebhooks(actor.id)
-  return NextResponse.json({ items })
-}
+export const POST = route(
+  {
+    permission: "webhooks.write",
+    actor: "write",
+    tab: "workspace",
+    rateLimit: "landing",
+    schema: alertWebhookCreateBodySchema,
+  },
+  async ({ actor, body }) => {
+    const result = await createWorkspaceAlertWebhook(actor.id, {
+      name: body.name,
+      url: body.url,
+    })
+    if ("error" in result) {
+      return NextResponse.json({ error: result.error }, { status: 400 })
+    }
 
-export async function POST(request: NextRequest) {
-  const actor = await requireWritableLandingPageActor()
-  if (!actor) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    return NextResponse.json({ item: result.item })
   }
-  const limited = await enforceLandingApiRateLimit(actor.id)
-  if (limited) return limited
-
-  let body: { name?: string; url?: string }
-  try {
-    body = (await request.json()) as { name?: string; url?: string }
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
-  }
-
-  const result = await createWorkspaceAlertWebhook(actor.id, {
-    name: body.name ?? "",
-    url: body.url ?? "",
-  })
-  if ("error" in result) {
-    return NextResponse.json({ error: result.error }, { status: 400 })
-  }
-
-  return NextResponse.json({ item: result.item })
-}
+)

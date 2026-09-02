@@ -1,39 +1,32 @@
-import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
-import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { requireWritableLandingPageActor } from "@/lib/server/external-access"
 import { testWorkspaceAlertWebhook } from "@/lib/server/workspace-alert-webhooks"
-import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
+import { route } from "@/lib/server/route"
 
-type RouteContext = {
-  params: Promise<{ id: string }>
-}
+export const POST = route(
+  {
+    permission: "webhooks.write",
+    actor: "write",
+    tab: "workspace",
+    rateLimit: "landing",
+  },
+  async ({ actor, params }) => {
+    const result = await testWorkspaceAlertWebhook(actor.id, params.id!)
 
-export async function POST(_request: NextRequest, context: RouteContext) {
-  const actor = await requireWritableLandingPageActor()
-  if (!actor) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    if ("error" in result && !("item" in result)) {
+      return NextResponse.json({ error: result.error }, { status: 404 })
+    }
+
+    if (!result.success) {
+      return NextResponse.json(
+        {
+          item: result.item,
+          success: false,
+          error: result.error,
+        },
+        { status: 502 }
+      )
+    }
+
+    return NextResponse.json({ item: result.item, success: true })
   }
-  const limited = await enforceLandingApiRateLimit(actor.id)
-  if (limited) return limited
-
-  const { id } = await context.params
-  const result = await testWorkspaceAlertWebhook(actor.id, id)
-
-  if ("error" in result && !("item" in result)) {
-    return NextResponse.json({ error: result.error }, { status: 404 })
-  }
-
-  if (!result.success) {
-    return NextResponse.json(
-      {
-        item: result.item,
-        success: false,
-        error: result.error,
-      },
-      { status: 502 }
-    )
-  }
-
-  return NextResponse.json({ item: result.item, success: true })
-}
+)

@@ -1,93 +1,85 @@
 import { NextResponse } from "next/server"
-import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { requireWritableLandingPageActor } from "@/lib/server/external-access"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import {
   createExperimentForLandingPage,
   getExperimentConfigForLandingPage,
 } from "@/lib/server/experiments-store"
-import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
-import type { ExperimentVariantLink } from "@workspace/database"
+import { getActorAccess } from "@/lib/server/external-access"
+import { route } from "@/lib/server/route"
+import { experimentCreateBodySchema } from "@/lib/server/route-schemas"
+import type { InferSelectModel, users } from "@workspace/database"
 
-export async function GET(
-  _request: Request,
-  props: { params: Promise<{ publicId: string }> }
-) {
-  const actor = await requireLandingPageActor()
-  if (!actor) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
-  const limited = await enforceLandingApiRateLimit(actor.id)
-  if (limited) return limited
+type UserRow = InferSelectModel<typeof users>
 
-  const { publicId } = await props.params
-  const landingPage = await getActiveLandingPageForActor(actor.id, publicId)
-  if (!landingPage) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
-  }
-
-  const data = await getExperimentConfigForLandingPage(landingPage)
-  return NextResponse.json(data)
+async function siblingOpts(actor: UserRow) {
+  const access = await getActorAccess(actor)
+  if (!access.isExternal)
+    return { allowedPublicIds: null as Set<string> | null }
+  return { allowedPublicIds: access.projectIds }
 }
 
-export async function POST(
-  request: Request,
-  props: { params: Promise<{ publicId: string }> }
-) {
-  const actor = await requireWritableLandingPageActor()
-  if (!actor) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+export const GET = route(
+  {
+    permission: "landing_pages.read",
+    actor: "read",
+    tab: "experiments",
+    rateLimit: "landing",
+  },
+  async ({ actor, params }) => {
+    const landingPage = await getActiveLandingPageForActor(
+      actor.id,
+      params.publicId!
+    )
+    if (!landingPage) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
+
+    const data = await getExperimentConfigForLandingPage(
+      landingPage,
+      await siblingOpts(actor)
+    )
+    return NextResponse.json(data)
   }
-  const limited = await enforceLandingApiRateLimit(actor.id)
-  if (limited) return limited
+)
 
-  const { publicId } = await props.params
-  const landingPage = await getActiveLandingPageForActor(actor.id, publicId)
-  if (!landingPage) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
+export const POST = route(
+  {
+    permission: "experiments.write",
+    actor: "write",
+    tab: "experiments",
+    rateLimit: "landing",
+    schema: experimentCreateBodySchema,
+  },
+  async ({ actor, params, body }) => {
+    const landingPage = await getActiveLandingPageForActor(
+      actor.id,
+      params.publicId!
+    )
+    if (!landingPage) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
+
+    const result = await createExperimentForLandingPage(landingPage, {
+      name: body.name,
+      status: body.status,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      noEndDate: body.noEndDate,
+      variants: body.variants,
+      controlLandingPageId: body.controlLandingPageId,
+    })
+
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: result.status ?? 400 }
+      )
+    }
+
+    const data = await getExperimentConfigForLandingPage(
+      landingPage,
+      await siblingOpts(actor)
+    )
+    return NextResponse.json(data, { status: 201 })
   }
-
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
-  }
-  if (!body || typeof body !== "object") {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
-  }
-
-  const record = body as Record<string, unknown>
-  const variants = Array.isArray(record.variants)
-    ? (record.variants as ExperimentVariantLink[])
-    : undefined
-
-  const result = await createExperimentForLandingPage(landingPage, {
-    name: typeof record.name === "string" ? record.name : "",
-    status: typeof record.status === "string" ? record.status : undefined,
-    startDate:
-      typeof record.startDate === "string" ? record.startDate : undefined,
-    endDate:
-      record.endDate === null
-        ? null
-        : typeof record.endDate === "string"
-          ? record.endDate
-          : undefined,
-    noEndDate:
-      typeof record.noEndDate === "boolean" ? record.noEndDate : undefined,
-    variants,
-    controlLandingPageId:
-      record.controlLandingPageId === null
-        ? null
-        : typeof record.controlLandingPageId === "string"
-          ? record.controlLandingPageId
-          : undefined,
-  })
-
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: 400 })
-  }
-
-  const data = await getExperimentConfigForLandingPage(landingPage)
-  return NextResponse.json(data, { status: 201 })
-}
+)

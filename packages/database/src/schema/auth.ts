@@ -7,6 +7,7 @@ import {
   timestamp,
 } from 'drizzle-orm/pg-core';
 import type { AdapterAccountType } from '@auth/core/adapters';
+import { accessRoles } from './access-roles.js';
 
 export const users = pgTable('user', {
   id: text('id')
@@ -15,6 +16,9 @@ export const users = pgTable('user', {
   firstName: text('firstName'),
   lastName: text('lastName'),
   role: text('role'),
+  roleId: text('roleId')
+    .notNull()
+    .references(() => accessRoles.id, { onDelete: 'restrict' }),
   email: text('email').unique(),
   emailVerified: timestamp('emailVerified', { mode: 'date' }),
   image: text('image'),
@@ -23,14 +27,12 @@ export const users = pgTable('user', {
   pendingTwoFactorSecret: text('pendingTwoFactorSecret'),
   twoFactorSecret: text('twoFactorSecret'),
   lastSeenAt: timestamp('lastSeenAt', { mode: 'date' }),
-  /** pending → awaiting team approval; approved → full access; rejected → blocked */
   accessStatus: text('accessStatus').notNull().default('pending'),
   accessReviewedAt: timestamp('accessReviewedAt', { mode: 'date' }),
   accessReviewedByUserId: text('accessReviewedByUserId'),
-  /** internal → company roster; external → partner / collaborator */
   teamKind: text('teamKind').notNull().default('internal'),
-  /** full → all actions; read_only → view data only (no create/edit/download) */
   accessLevel: text('accessLevel').notNull().default('full'),
+  sessionsInvalidBefore: timestamp('sessionsInvalidBefore', { mode: 'date' }),
 });
 
 export const accounts = pgTable(

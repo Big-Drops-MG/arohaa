@@ -22,19 +22,23 @@ import {
   appendDashboardUtmParams,
   resolveUtmFilterForActor,
 } from "@/lib/server/analytics-utm-params"
+import { z } from "zod"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
-interface AnalyticsAlertItem {
-  id: string
-  message: string
-  date: string
-  severity: "warning" | "info"
-}
+const analyticsAlertItemSchema = z.object({
+  id: z.string(),
+  message: z.string(),
+  date: z.string(),
+  severity: z.enum(["warning", "info"]),
+})
 
-interface AnalyticsAlertsResponse {
-  items: AnalyticsAlertItem[]
-}
+const analyticsAlertsResponseSchema = z.object({
+  items: z.array(analyticsAlertItemSchema),
+})
+
+type AnalyticsAlertItem = z.infer<typeof analyticsAlertItemSchema>
+type AnalyticsAlertsResponse = z.infer<typeof analyticsAlertsResponseSchema>
 
 function mapAlertSeverity(
   severity: AnalyticsAlertItem["severity"]
@@ -105,7 +109,22 @@ export async function fetchAlertsAnalytics(
       return null
     }
 
-    return (await resp.json()) as AnalyticsAlertsResponse
+    let payload: unknown
+    try {
+      payload = await resp.json()
+    } catch {
+      return null
+    }
+
+    const parsed = analyticsAlertsResponseSchema.safeParse(payload)
+    if (!parsed.success) {
+      if (process.env.NODE_ENV === "development") {
+        console.error("[alerts] invalid analytics response shape")
+      }
+      return null
+    }
+
+    return parsed.data
   } catch (err: any) {
     if (err.name === "AbortError") {
       if (process.env.NODE_ENV === "development") {

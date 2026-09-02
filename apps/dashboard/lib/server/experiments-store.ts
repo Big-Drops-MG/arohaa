@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, isNull, ne, or } from "drizzle-orm"
 import {
   db,
   experimentIncludesLandingPage,
+  experimentVariantLabels,
   experiments,
   isVariantLabelTaken,
   landingPages,
@@ -13,6 +14,10 @@ import {
   type ExperimentVariantLink,
 } from "@workspace/database"
 import type { LandingPageRow } from "@/lib/server/landing-pages-store"
+import {
+  isUniqueViolation,
+  uniqueViolationMessage,
+} from "@/lib/server/db-errors"
 
 export type ExperimentVariantHealth = {
   label: string
@@ -38,13 +43,10 @@ export type ExperimentConfigView = {
   controlLandingPageId: string | null
   variants: ExperimentVariantHealth[]
   variantLabels: string
-  /** Landing page that owns the experiment row. */
   hubLandingPageId: string
   hubPublicId: string | null
   hubBrandName: string | null
-  /** Whether the page being viewed is the owner rather than a linked variant. */
   isHub: boolean
-  /** Label of the page being viewed, when it participates in the experiment. */
   currentLabel: string | null
 }
 
@@ -59,12 +61,60 @@ export type SiblingLandingPageOption = {
 
 type ExperimentRow = typeof experiments.$inferSelect
 
+export type ExperimentsDb = Pick<
+  typeof db,
+  "select" | "update" | "delete" | "insert"
+>
+
+type ExperimentWriteClient = Pick<typeof db, "delete" | "insert">
+
+async function replaceExperimentVariantLabels(
+  client: ExperimentWriteClient,
+  experimentId: string,
+  labels: string[]
+) {
+  await client
+    .delete(experimentVariantLabels)
+    .where(eq(experimentVariantLabels.experimentId, experimentId))
+
+  if (labels.length === 0) return
+
+  await client.insert(experimentVariantLabels).values(
+    labels.map((label) => ({
+      experimentId,
+      label,
+    }))
+  )
+}
+
+function experimentConflict(err: unknown, fallback: string) {
+  return {
+    ok: false as const,
+    error: uniqueViolationMessage(err, fallback),
+    status: 409 as const,
+  }
+}
+
 export type ExperimentResolution = {
   experiment: ExperimentRow
   isHub: boolean
 }
 
 const STALE_MS = 7 * 24 * 60 * 60 * 1000
+
+async function activeVariantLinks(
+  links: ExperimentVariantLink[],
+  client: ExperimentsDb = db
+): Promise<ExperimentVariantLink[]> {
+  if (links.length === 0) return []
+  const ids = links.map((link) => link.landingPageId)
+  const rows = await client
+    .select({ id: landingPages.id })
+    .from(landingPages)
+    .where(and(inArray(landingPages.id, ids), isNull(landingPages.deletedAt)))
+  const activeIds = new Set(rows.map((row) => row.id))
+  return links.filter((link) => activeIds.has(link.landingPageId))
+}
 
 function toDateKey(date: Date): string {
   return date.toISOString().slice(0, 10)
@@ -83,15 +133,11 @@ function resolveHealth(lastEventAt: Date | null): "ok" | "waiting" | "stale" {
   return "ok"
 }
 
-/**
- * Finds the experiment a landing page takes part in, whether it owns the row
- * or is only linked as one of the variants. Variant landing pages have no
- * experiment row of their own, so membership is the fallback lookup.
- */
 export async function resolveExperimentForLandingPage(
-  landingPageId: string
+  landingPageId: string,
+  client: ExperimentsDb = db
 ): Promise<ExperimentResolution | null> {
-  const owned = await db
+  const owned = await client
     .select()
     .from(experiments)
     .where(eq(experiments.landingPageId, landingPageId))
@@ -100,7 +146,7 @@ export async function resolveExperimentForLandingPage(
 
   if (owned[0]) return { experiment: owned[0], isHub: true }
 
-  const linked = await db
+  const linked = await client
     .select()
     .from(experiments)
     .where(experimentIncludesLandingPage(landingPageId))
@@ -113,7 +159,8 @@ export async function resolveExperimentForLandingPage(
 }
 
 export async function listSiblingLandingPages(
-  excludeLandingPageId?: string
+  excludeLandingPageId?: string,
+  opts?: { allowedPublicIds?: ReadonlySet<string> | null }
 ): Promise<SiblingLandingPageOption[]> {
   const rows = await db
     .select({
@@ -135,7 +182,8 @@ export async function listSiblingLandingPages(
     )
     .orderBy(asc(landingPages.brandName))
 
-  return rows
+  if (!opts?.allowedPublicIds) return rows
+  return rows.filter((row) => opts.allowedPublicIds!.has(row.publicId))
 }
 
 async function hydrateVariantHealth(
@@ -176,14 +224,15 @@ async function hydrateVariantHealth(
 }
 
 export async function getExperimentConfigForLandingPage(
-  landingPage: LandingPageRow
+  landingPage: LandingPageRow,
+  opts?: { allowedPublicIds?: ReadonlySet<string> | null }
 ): Promise<{
   experiment: ExperimentConfigView | null
   siblings: SiblingLandingPageOption[]
 }> {
   const [resolution, siblings] = await Promise.all([
     resolveExperimentForLandingPage(landingPage.id),
-    listSiblingLandingPages(landingPage.id),
+    listSiblingLandingPages(landingPage.id, opts),
   ])
 
   if (!resolution) {
@@ -235,18 +284,12 @@ export async function getExperimentConfigForLandingPage(
 export type VariantLabelPlan = {
   hasExperiment: boolean
   experimentName: string | null
-  /** Label the parent holds (or will hold once the experiment is created). */
   parentLabel: string
   takenLabels: string[]
   availableLabels: string[]
   suggestedLabel: string
 }
 
-/**
- * Describes which variant labels a new landing page may claim under `parent`.
- * When the parent has no experiment yet, its future label is reserved so the
- * first added variant becomes B rather than A.
- */
 export async function getVariantLabelPlanForLandingPage(
   parent: LandingPageRow
 ): Promise<VariantLabelPlan> {
@@ -305,7 +348,8 @@ function validateStatus(value: unknown): ExperimentStatus | null {
 
 async function assertVariantLinksExist(
   links: ExperimentVariantLink[],
-  currentExperimentId?: string | null
+  currentExperimentId?: string | null,
+  opts?: { allowedLandingPageIds?: ReadonlySet<string> | null }
 ): Promise<string | null> {
   if (links.length === 0) return null
   const labels = new Set<string>()
@@ -322,6 +366,14 @@ async function assertVariantLinksExist(
     return "Each landing page can only be linked once"
   }
 
+  if (opts?.allowedLandingPageIds) {
+    for (const id of ids) {
+      if (!opts.allowedLandingPageIds.has(id)) {
+        return "Each variant must be a landing page you can access"
+      }
+    }
+  }
+
   const rows = await db
     .select({ id: landingPages.id, brandName: landingPages.brandName })
     .from(landingPages)
@@ -335,8 +387,6 @@ async function assertVariantLinksExist(
     }
   }
 
-  // A landing page may belong to at most one experiment, otherwise its
-  // Experiments tab could resolve either of them.
   const conflicts = await db
     .select({ name: experiments.name, variants: experiments.variants })
     .from(experiments)
@@ -375,14 +425,11 @@ export async function createExperimentForLandingPage(
     variants?: ExperimentVariantLink[]
     controlLandingPageId?: string | null
   }
-): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; id: string } | { ok: false; error: string; status?: number }
+> {
   const name = input.name.trim()
   if (!name) return { ok: false, error: "Name is required" }
-
-  const existing = await resolveExperimentForLandingPage(hub.id)
-  if (existing) {
-    return { ok: false, error: "An experiment already exists for this project" }
-  }
 
   const status = validateStatus(input.status) ?? "Running"
   const startDate = input.startDate ? parseDateKey(input.startDate) : new Date()
@@ -416,28 +463,42 @@ export async function createExperimentForLandingPage(
 
   const id = crypto.randomUUID()
   const now = new Date()
-  await db.insert(experiments).values({
-    id,
-    landingPageId: hub.id,
-    name,
-    status,
-    variants,
-    controlLandingPageId,
-    startDate,
-    endDate,
-    highlighted: null,
-    createdAt: now,
-    updatedAt: now,
-  })
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx.insert(experiments).values({
+        id,
+        landingPageId: hub.id,
+        name,
+        status,
+        variants,
+        controlLandingPageId,
+        startDate,
+        endDate,
+        highlighted: null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      await tx.insert(experimentVariantLabels).values(
+        variants.map((variant) => ({
+          experimentId: id,
+          label: variant.label,
+        }))
+      )
+    })
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return experimentConflict(
+        err,
+        "An experiment already exists for this project"
+      )
+    }
+    throw err
+  }
 
   return { ok: true, id }
 }
 
-/**
- * Links a freshly created landing page to `parent`'s experiment as a new
- * variant, bootstrapping the experiment (and the parent's own label) when the
- * parent is not part of one yet.
- */
 export async function attachLandingPageAsVariant({
   parent,
   child,
@@ -456,7 +517,7 @@ export async function attachLandingPageAsVariant({
       hubPublicId: string
       variantLabels: string[]
     }
-  | { ok: false; error: string }
+  | { ok: false; error: string; status?: number }
 > {
   if (parent.id === child.id) {
     return { ok: false, error: "A landing page cannot be its own variant" }
@@ -465,8 +526,6 @@ export async function attachLandingPageAsVariant({
   const parsedLabel = normalizeExperimentVariantLabel(label)
   if (!parsedLabel.ok) return { ok: false, error: parsedLabel.error }
 
-  // A landing page may belong to at most one experiment, otherwise its
-  // Experiments tab could resolve either of them.
   const childResolution = await resolveExperimentForLandingPage(child.id)
   if (childResolution) {
     return {
@@ -486,19 +545,37 @@ export async function attachLandingPageAsVariant({
     ]
     const experimentId = crypto.randomUUID()
 
-    await db.insert(experiments).values({
-      id: experimentId,
-      landingPageId: parent.id,
-      name: experimentName?.trim() || `${parent.brandName} A/B test`,
-      status: "Running",
-      variants,
-      controlLandingPageId: parent.id,
-      startDate: now,
-      endDate: null,
-      highlighted: null,
-      createdAt: now,
-      updatedAt: now,
-    })
+    try {
+      await db.transaction(async (tx) => {
+        await tx.insert(experiments).values({
+          id: experimentId,
+          landingPageId: parent.id,
+          name: experimentName?.trim() || `${parent.brandName} A/B test`,
+          status: "Running",
+          variants,
+          controlLandingPageId: parent.id,
+          startDate: now,
+          endDate: null,
+          highlighted: null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        await tx.insert(experimentVariantLabels).values(
+          variants.map((variant) => ({
+            experimentId,
+            label: variant.label,
+          }))
+        )
+      })
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        return experimentConflict(
+          err,
+          "An experiment already exists for this project"
+        )
+      }
+      throw err
+    }
 
     return {
       ok: true,
@@ -515,19 +592,7 @@ export async function attachLandingPageAsVariant({
   if (variants.some((v) => v.landingPageId === child.id)) {
     return { ok: false, error: "This landing page is already a variant" }
   }
-  if (
-    isVariantLabelTaken(
-      parsedLabel.label,
-      variants.map((v) => v.label)
-    )
-  ) {
-    return {
-      ok: false,
-      error: `Variant ${parsedLabel.label} is already used in this experiment`,
-    }
-  }
 
-  // An experiment can exist without the hub listed among its own variants.
   if (!variants.some((v) => v.landingPageId === parent.id)) {
     variants.unshift({
       label: nextAvailableVariantLabel([
@@ -546,15 +611,33 @@ export async function attachLandingPageAsVariant({
     .where(eq(landingPages.id, experiment.landingPageId))
     .limit(1)
 
-  await db
-    .update(experiments)
-    .set({
-      variants,
-      controlLandingPageId:
-        experiment.controlLandingPageId ?? variants[0]?.landingPageId ?? null,
-      updatedAt: now,
+  try {
+    await db.transaction(async (tx) => {
+      await tx.insert(experimentVariantLabels).values({
+        experimentId: experiment.id,
+        label: parsedLabel.label,
+      })
+      await tx
+        .update(experiments)
+        .set({
+          variants,
+          controlLandingPageId:
+            experiment.controlLandingPageId ??
+            variants[0]?.landingPageId ??
+            null,
+          updatedAt: now,
+        })
+        .where(eq(experiments.id, experiment.id))
     })
-    .where(eq(experiments.id, experiment.id))
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return experimentConflict(
+        err,
+        `Variant ${parsedLabel.label} is already used in this experiment`
+      )
+    }
+    throw err
+  }
 
   return {
     ok: true,
@@ -585,10 +668,6 @@ export type ExperimentMembershipView = {
   variants: ExperimentMembershipVariant[]
 }
 
-/**
- * Experiment membership of a single landing page plus the projects it could
- * join, for the variant controls in project settings.
- */
 export async function getExperimentMembershipForLandingPage(
   landingPage: LandingPageRow
 ): Promise<{
@@ -656,38 +735,48 @@ export async function renameVariantLabelForLandingPage(
     return { ok: true, label: parsed.label }
   }
 
-  const otherLabels = links
-    .filter((link) => link.landingPageId !== landingPage.id)
-    .map((link) => link.label)
-  if (isVariantLabelTaken(parsed.label, otherLabels)) {
-    return {
-      ok: false,
-      error: `Variant ${parsed.label} is already used in this experiment`,
-    }
-  }
-
-  await db
-    .update(experiments)
-    .set({
-      variants: links.map((link) =>
-        link.landingPageId === landingPage.id
-          ? { ...link, label: parsed.label }
-          : link
-      ),
-      updatedAt: new Date(),
+  try {
+    await db.transaction(async (tx) => {
+      await tx.insert(experimentVariantLabels).values({
+        experimentId: experiment.id,
+        label: parsed.label,
+      })
+      await tx
+        .delete(experimentVariantLabels)
+        .where(
+          and(
+            eq(experimentVariantLabels.experimentId, experiment.id),
+            eq(experimentVariantLabels.label, current.label)
+          )
+        )
+      await tx
+        .update(experiments)
+        .set({
+          variants: links.map((link) =>
+            link.landingPageId === landingPage.id
+              ? { ...link, label: parsed.label }
+              : link
+          ),
+          updatedAt: new Date(),
+        })
+        .where(eq(experiments.id, experiment.id))
     })
-    .where(eq(experiments.id, experiment.id))
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return experimentConflict(
+        err,
+        `Variant ${parsed.label} is already used in this experiment`
+      )
+    }
+    throw err
+  }
 
   return { ok: true, label: parsed.label }
 }
 
-/**
- * Detaches a landing page from its experiment. Because the experiment row is
- * owned by one landing page, ownership is handed to a remaining variant when
- * the owner leaves, and the experiment is dropped once nobody is left.
- */
 export async function leaveExperimentForLandingPage(
-  landingPage: LandingPageRow
+  landingPage: LandingPageRow,
+  client: ExperimentsDb = db
 ): Promise<
   | {
       ok: true
@@ -697,7 +786,10 @@ export async function leaveExperimentForLandingPage(
     }
   | { ok: false; error: string; status?: number }
 > {
-  const resolution = await resolveExperimentForLandingPage(landingPage.id)
+  const resolution = await resolveExperimentForLandingPage(
+    landingPage.id,
+    client
+  )
   if (!resolution) {
     return {
       ok: false,
@@ -707,12 +799,15 @@ export async function leaveExperimentForLandingPage(
   }
 
   const { experiment } = resolution
-  const remaining = normalizeExperimentVariantLinks(experiment.variants).filter(
-    (link) => link.landingPageId !== landingPage.id
+  const remaining = await activeVariantLinks(
+    normalizeExperimentVariantLinks(experiment.variants).filter(
+      (link) => link.landingPageId !== landingPage.id
+    ),
+    client
   )
 
   if (remaining.length === 0) {
-    await db.delete(experiments).where(eq(experiments.id, experiment.id))
+    await client.delete(experiments).where(eq(experiments.id, experiment.id))
     return {
       ok: true,
       experimentName: experiment.name,
@@ -728,11 +823,19 @@ export async function leaveExperimentForLandingPage(
 
   const nextControlId =
     experiment.controlLandingPageId === landingPage.id ||
-    experiment.controlLandingPageId == null
-      ? remaining[0]!.landingPageId
+    experiment.controlLandingPageId == null ||
+    !remaining.some(
+      (link) => link.landingPageId === experiment.controlLandingPageId
+    )
+      ? (remaining[0]?.landingPageId ?? null)
       : experiment.controlLandingPageId
 
-  await db
+  await replaceExperimentVariantLabels(
+    client,
+    experiment.id,
+    remaining.map((link) => link.label)
+  )
+  await client
     .update(experiments)
     .set({
       landingPageId: nextHubId,
@@ -744,7 +847,7 @@ export async function leaveExperimentForLandingPage(
 
   const transferred = nextHubId !== experiment.landingPageId
   const [nextHub] = transferred
-    ? await db
+    ? await client
         .select({ publicId: landingPages.publicId })
         .from(landingPages)
         .where(eq(landingPages.id, nextHubId))
@@ -759,10 +862,6 @@ export async function leaveExperimentForLandingPage(
   }
 }
 
-/**
- * Loads an experiment that `landingPage` is allowed to edit: either it owns the
- * row or it is linked as one of the variants.
- */
 async function getParticipatingExperiment(
   landingPage: LandingPageRow,
   experimentId: string
@@ -867,10 +966,36 @@ export async function updateExperimentForLandingPage(
     patch.controlLandingPageId = nextVariants[0]?.landingPageId ?? null
   }
 
-  await db
-    .update(experiments)
-    .set(patch)
-    .where(eq(experiments.id, experimentId))
+  const variantsChanged = input.variants !== undefined
+
+  try {
+    if (variantsChanged) {
+      await db.transaction(async (tx) => {
+        await replaceExperimentVariantLabels(
+          tx,
+          experimentId,
+          nextVariants.map((variant) => variant.label)
+        )
+        await tx
+          .update(experiments)
+          .set(patch)
+          .where(eq(experiments.id, experimentId))
+      })
+    } else {
+      await db
+        .update(experiments)
+        .set(patch)
+        .where(eq(experiments.id, experimentId))
+    }
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return experimentConflict(
+        err,
+        "That variant label is already used in this experiment"
+      )
+    }
+    throw err
+  }
 
   return { ok: true }
 }

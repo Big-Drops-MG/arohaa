@@ -1,35 +1,44 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import { parseDashboardCustomRange } from "@/features/traffic/model/traffic-range"
-import { loadInsightsDashboardDataForApi } from "@/lib/server/insights-dashboard-load"
 import { parseUtmFilterFromSearchParams } from "@/lib/server/analytics-utm-params"
+import { loadInsightsDashboardDataForApi } from "@/lib/server/insights-dashboard-load"
+import { route } from "@/lib/server/route"
+import { insightSectionToAclSection } from "@/lib/server/route-section"
+import { MAX_DASHBOARD_CUSTOM_SPAN_DAYS } from "@/lib/server/route-query"
 
-export async function GET(
-  request: NextRequest,
-  props: { params: Promise<{ publicId: string }> }
-) {
-  const { publicId } = await props.params
-  const { searchParams } = new URL(request.url)
-  const rangeIdRaw = searchParams.get("range_id")
-  const sectionRaw = searchParams.get("section")
-  const customRange = parseDashboardCustomRange(
-    searchParams.get("from"),
-    searchParams.get("to")
-  )
-  const utmFilter = parseUtmFilterFromSearchParams(searchParams)
-  const segmentId = searchParams.get("segment_id")
+export const GET = route(
+  {
+    permission: "landing_pages.read",
+    actor: "read",
+    tab: "data-lab",
+    section: {
+      queryParam: "section",
+      resolve: insightSectionToAclSection,
+    },
+    rateLimit: "landing",
+    query: { maxCustomRangeDays: MAX_DASHBOARD_CUSTOM_SPAN_DAYS },
+  },
+  async ({ params, request }) => {
+    const { searchParams } = new URL(request.url)
+    const result = await loadInsightsDashboardDataForApi(
+      params.publicId!,
+      searchParams.get("range_id"),
+      searchParams.get("section"),
+      parseUtmFilterFromSearchParams(searchParams),
+      parseDashboardCustomRange(
+        searchParams.get("from"),
+        searchParams.get("to")
+      ),
+      searchParams.get("segment_id")
+    )
 
-  const result = await loadInsightsDashboardDataForApi(
-    publicId,
-    rangeIdRaw,
-    sectionRaw,
-    utmFilter,
-    customRange,
-    segmentId
-  )
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: result.status }
+      )
+    }
 
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: result.status })
+    return NextResponse.json(result.data)
   }
-
-  return NextResponse.json(result.data)
-}
+)

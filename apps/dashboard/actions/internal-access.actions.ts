@@ -2,22 +2,31 @@
 
 import { revalidatePath } from "next/cache"
 import { eq } from "drizzle-orm"
-import { db, users } from "@workspace/database"
 import {
-  isFullAccessLevel,
-  parseInternalAccessLevel,
+  db,
+  users,
+  VIEWER_ROLE_KEY,
+  MEMBER_ROLE_KEY,
+} from "@workspace/database"
+import {
   type InternalAccessLevel,
+  parseInternalAccessLevel,
 } from "@/features/team/model/access-level"
 import { isExternalTeamKind } from "@/features/team/model/external-privileges"
+import { actorCan, getRoleById } from "@/lib/server/actor-can"
 import { isApprovedAccess } from "@/lib/server/access-status"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { assignRole } from "@/lib/server/role-management"
 import {
   clientIpFromNextHeaders,
   userAgentFromHeaders,
 } from "@/lib/server/request-client-meta"
 import { writeUserActivityLog } from "@/lib/server/user-activity-log"
-import { isTeamPrivilegeActor } from "@/lib/server/team-privilege-acl"
 import { headers } from "next/headers"
+
+function roleKeyForAccessLevel(accessLevel: InternalAccessLevel): string {
+  return accessLevel === "read_only" ? VIEWER_ROLE_KEY : MEMBER_ROLE_KEY
+}
 
 export async function updateInternalMemberAccessLevel(input: {
   userId: string
@@ -28,8 +37,8 @@ export async function updateInternalMemberAccessLevel(input: {
     !actor ||
     !isApprovedAccess(actor.accessStatus) ||
     isExternalTeamKind(actor.teamKind) ||
-    !isFullAccessLevel(actor.accessLevel) ||
-    !isTeamPrivilegeActor(actor)
+    !(await actorCan(actor, "landing_pages.write")) ||
+    !(await actorCan(actor, "team.assign_roles"))
   ) {
     return { error: "Unauthorized." }
   }
@@ -41,6 +50,7 @@ export async function updateInternalMemberAccessLevel(input: {
   }
 
   const accessLevel = parseInternalAccessLevel(input.accessLevel)
+  const targetRoleKey = roleKeyForAccessLevel(accessLevel)
 
   const target = await db.query.users.findFirst({
     where: eq(users.id, targetId),
@@ -53,11 +63,13 @@ export async function updateInternalMemberAccessLevel(input: {
     return { error: "Member is not approved." }
   }
 
-  if (parseInternalAccessLevel(target.accessLevel) === accessLevel) {
+  const currentRole = target.roleId ? await getRoleById(target.roleId) : null
+  if (currentRole?.key === targetRoleKey) {
     return { success: true }
   }
 
-  await db.update(users).set({ accessLevel }).where(eq(users.id, target.id))
+  const assigned = await assignRole(actor, target.id, targetRoleKey)
+  if (assigned.error) return { error: assigned.error }
 
   const headerStore = await headers()
   await writeUserActivityLog({
@@ -71,6 +83,7 @@ export async function updateInternalMemberAccessLevel(input: {
     metadata: {
       targetUserId: target.id,
       accessLevel,
+      roleKey: targetRoleKey,
     },
   })
 

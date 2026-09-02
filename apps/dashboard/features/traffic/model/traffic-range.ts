@@ -34,6 +34,17 @@ export type DashboardCustomRange = {
 
 const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/
 
+export const MAX_DASHBOARD_CUSTOM_SPAN_DAYS = 731
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function customRangeSpanDays(from: string, to: string): number {
+  const start = Date.parse(`${from}T00:00:00.000Z`)
+  const end = Date.parse(`${to}T00:00:00.000Z`)
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 0
+  return Math.floor((end - start) / DAY_MS) + 1
+}
+
 export function isTrafficRangeId(value: string): value is OverviewDateRangeId {
   return (TRAFFIC_RANGE_IDS as readonly string[]).includes(value)
 }
@@ -59,6 +70,8 @@ export function parseDashboardCustomRange(
   if (!f || !t) return undefined
   if (!isDashboardDateKey(f) || !isDashboardDateKey(t)) return undefined
   if (f > t) return undefined
+  if (customRangeSpanDays(f, t) > MAX_DASHBOARD_CUSTOM_SPAN_DAYS)
+    return undefined
   return { from: f, to: t }
 }
 

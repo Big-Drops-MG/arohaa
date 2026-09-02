@@ -18,6 +18,7 @@ import {
 } from "@/lib/server/analytics-env"
 import { appendDashboardCustomRangeParams } from "@/lib/server/analytics-utm-params"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
+import { requireWritableLandingPageActor } from "@/lib/server/external-access"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
 interface AnalyticsSeoResponse {
@@ -171,7 +172,7 @@ export async function syncSeoRowsForApi(
 ): Promise<
   { ok: true; inserted: number } | { ok: false; status: number; error: string }
 > {
-  const actor = await requireLandingPageActor()
+  const actor = await requireWritableLandingPageActor()
   if (!actor) {
     return { ok: false, status: 401, error: "Unauthorized" }
   }
@@ -187,32 +188,59 @@ export async function syncSeoRowsForApi(
     return { ok: false, status: 503, error: "Analytics API not configured" }
   }
 
-  const res = await fetch(`${apiBase}/v1/analytics/seo/sync`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-arohaa-internal": secret,
-    },
-    body: JSON.stringify({
-      workspace_id: row.id,
-      lp_public_id: landingPagePublicId,
-      rows: rows.map((entry) => ({
-        query: entry.query,
-        pageUrl: entry.pageUrl,
-        clicks: entry.clicks,
-        impressions: entry.impressions,
-        ctr: entry.ctr,
-        position: entry.position,
-        reportDate: entry.reportDate,
-      })),
-    }),
-    cache: "no-store",
-  })
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 12_000)
 
-  if (!res.ok) {
-    return { ok: false, status: res.status, error: "SEO sync failed" }
+  try {
+    const res = await fetch(`${apiBase}/v1/analytics/seo/sync`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-arohaa-internal": secret,
+      },
+      body: JSON.stringify({
+        workspace_id: row.id,
+        lp_public_id: landingPagePublicId,
+        rows: rows.map((entry) => ({
+          query: entry.query,
+          pageUrl: entry.pageUrl,
+          clicks: entry.clicks,
+          impressions: entry.impressions,
+          ctr: entry.ctr,
+          position: entry.position,
+          reportDate: entry.reportDate,
+        })),
+      }),
+      cache: "no-store",
+      signal: controller.signal,
+    })
+
+    if (!res.ok) {
+      return { ok: false, status: res.status, error: "SEO sync failed" }
+    }
+
+    let payload: unknown
+    try {
+      payload = await res.json()
+    } catch {
+      return { ok: false, status: 502, error: "SEO sync returned invalid JSON" }
+    }
+
+    const inserted =
+      payload &&
+      typeof payload === "object" &&
+      "inserted" in payload &&
+      typeof (payload as { inserted: unknown }).inserted === "number"
+        ? (payload as { inserted: number }).inserted
+        : rows.length
+
+    return { ok: true, inserted }
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "AbortError") {
+      return { ok: false, status: 504, error: "SEO sync timed out" }
+    }
+    return { ok: false, status: 502, error: "SEO sync failed" }
+  } finally {
+    clearTimeout(timer)
   }
-
-  const json = (await res.json()) as { inserted: number }
-  return { ok: true, inserted: json.inserted ?? rows.length }
 }

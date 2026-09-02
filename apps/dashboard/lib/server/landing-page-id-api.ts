@@ -1,0 +1,399 @@
+import { eq, type InferSelectModel } from "drizzle-orm"
+import { NextResponse } from "next/server"
+import {
+  db,
+  generateHtmlVerificationToken,
+  landingPages,
+  normalizeLandingPageUrl,
+  normalizeOptionalRedirectUrl,
+  normalizedBrandName,
+  users,
+} from "@workspace/database"
+import {
+  mergeChannelTypeIntoMetadata,
+  normalizeLandingPageChannelTypeInput,
+  parseLandingPageChannelType,
+} from "@/features/settings/model/landing-page-channel-types"
+import {
+  mergeServicesIntoMetadata,
+  normalizeLandingPageServicesInput,
+} from "@/features/settings/model/landing-page-services"
+import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
+import { toLandingPageRecord } from "@/lib/server/landing-page-json"
+import { scrubExperimentsAndSoftDeleteLandingPage } from "@/lib/server/landing-page-soft-delete"
+import {
+  parseLandingPageFormType,
+  parseOptionalFaviconUrl,
+  parseOptionalNotes,
+} from "@/lib/server/landing-page-validation"
+import {
+  isLandingPageLive,
+  resolveLiveStatusChange,
+} from "@/lib/server/landing-page-live"
+import { buildHtmlVerificationMetaTag } from "@/lib/server/landing-snippet"
+import { writeLandingPageAuditLog } from "@/lib/server/landing-audit-log"
+import type { z } from "zod"
+import type { landingPagePatchBodySchema } from "@/lib/server/route-schemas"
+
+type UserRow = InferSelectModel<typeof users>
+type PatchBody = z.infer<typeof landingPagePatchBodySchema>
+
+function isUniqueViolation(err: unknown): boolean {
+  const e = err as {
+    code?: string
+    cause?: { code?: string }
+    message?: string
+  }
+  const code = e?.code ?? e?.cause?.code
+  return (
+    code === "23505" ||
+    (typeof e?.message === "string" && e.message.includes("duplicate key"))
+  )
+}
+
+export async function getLandingPageForApi(
+  actorId: string,
+  publicId: string
+): Promise<
+  | { ok: true; data: ReturnType<typeof toLandingPageRecord> }
+  | { ok: false; status: number; error: string }
+> {
+  const row = await getActiveLandingPageForActor(actorId, publicId)
+  if (!row) {
+    return { ok: false, status: 404, error: "Not found" }
+  }
+  return { ok: true, data: toLandingPageRecord(row) }
+}
+
+export async function patchLandingPageForApi(
+  actor: UserRow,
+  publicId: string,
+  body: PatchBody,
+  traceId: string | null
+): Promise<Response> {
+  const row = await getActiveLandingPageForActor(actor.id, publicId)
+  if (!row) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  }
+
+  const record = body as Record<string, unknown>
+
+  const before = {
+    brandName: row.brandName,
+    landingPageUrl: row.landingPageUrl,
+    normalizedUrl: row.normalizedUrl,
+    hostname: row.hostname,
+    origin: row.origin,
+    formType: row.formType,
+    faviconUrl: row.faviconUrl,
+    notes: row.notes,
+    redirectPageUrl: row.redirectPageUrl,
+    redirectHostname: row.redirectHostname,
+    redirectOrigin: row.redirectOrigin,
+    verificationMethod: row.verificationMethod,
+    htmlTokenRotated: false,
+  }
+
+  let nextBrand = row.brandName
+  if ("brandName" in record) {
+    const bn = normalizedBrandName(String(record.brandName))
+    if (!bn.ok) {
+      return NextResponse.json({ error: bn.error }, { status: 400 })
+    }
+    nextBrand = bn.brandName
+  }
+
+  let urlFields: {
+    landingPageUrl: string
+    normalizedUrl: string
+    origin: string
+    hostname: string
+  } = {
+    landingPageUrl: row.landingPageUrl,
+    normalizedUrl: row.normalizedUrl,
+    origin: row.origin,
+    hostname: row.hostname,
+  }
+
+  let urlChanged = false
+  if ("landingPageUrl" in record) {
+    const nu = normalizeLandingPageUrl(String(record.landingPageUrl))
+    if (!nu.ok) {
+      return NextResponse.json({ error: nu.error }, { status: 400 })
+    }
+    urlFields = {
+      landingPageUrl: nu.landingPageUrl,
+      normalizedUrl: nu.normalizedUrl,
+      origin: nu.origin,
+      hostname: nu.hostname,
+    }
+    urlChanged = nu.normalizedUrl !== row.normalizedUrl
+  }
+
+  let nextFormType = row.formType
+  if ("formType" in record) {
+    const parsed = parseLandingPageFormType(record.formType)
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 })
+    }
+    nextFormType = parsed.value
+  }
+
+  let nextFaviconUrl = row.faviconUrl
+  if ("faviconUrl" in record) {
+    const parsed = parseOptionalFaviconUrl(String(record.faviconUrl))
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 })
+    }
+    nextFaviconUrl = parsed.value
+  }
+
+  let nextNotes = row.notes
+  if ("notes" in record) {
+    const parsed = parseOptionalNotes(record.notes)
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 })
+    }
+    nextNotes = parsed.value
+  }
+
+  let nextRedirectPageUrl = row.redirectPageUrl ?? null
+  let nextRedirectHostname = row.redirectHostname ?? null
+  let nextRedirectOrigin = row.redirectOrigin ?? null
+  if ("redirectPageUrl" in record) {
+    const parsed = normalizeOptionalRedirectUrl(
+      record.redirectPageUrl == null ? "" : String(record.redirectPageUrl)
+    )
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 })
+    }
+    nextRedirectPageUrl = parsed.redirectPageUrl
+    nextRedirectHostname = parsed.redirectHostname
+    nextRedirectOrigin = parsed.redirectOrigin
+  }
+
+  if (nextFormType !== "zip") {
+    nextRedirectPageUrl = null
+    nextRedirectHostname = null
+    nextRedirectOrigin = null
+  }
+
+  let nextStatus = row.status
+  let nextMetadata = row.metadata as Record<string, unknown> | null
+  let liveStatusChanged = false
+
+  if ("isLive" in record) {
+    if (typeof record.isLive !== "boolean") {
+      return NextResponse.json(
+        { error: "isLive must be a boolean" },
+        { status: 400 }
+      )
+    }
+
+    const liveChange = resolveLiveStatusChange(row, record.isLive)
+    if (liveChange) {
+      nextStatus = liveChange.status
+      nextMetadata = liveChange.metadata
+      liveStatusChanged = true
+    }
+  }
+
+  if ("services" in record) {
+    const parsed = normalizeLandingPageServicesInput(record.services)
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 })
+    }
+    nextMetadata = mergeServicesIntoMetadata(nextMetadata, parsed.value)
+  }
+
+  if ("channelType" in record || "channelTypes" in record) {
+    const raw =
+      "channelType" in record ? record.channelType : record.channelTypes
+    const parsed = normalizeLandingPageChannelTypeInput(raw)
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 })
+    }
+    nextMetadata = mergeChannelTypeIntoMetadata(nextMetadata, parsed.value)
+  }
+
+  const nextHtmlVerificationToken =
+    urlChanged || !row.htmlVerificationToken
+      ? generateHtmlVerificationToken()
+      : row.htmlVerificationToken
+
+  const now = new Date()
+
+  const verificationReset = urlChanged
+    ? {
+        sdkInstallStatus: "waiting" as const,
+        status: "pending_verification" as const,
+        verifiedAt: null as Date | null,
+        verificationMethod: null as string | null,
+        lastSeenAt: null as Date | null,
+        lastEventAt: null as Date | null,
+        metadata: null as Record<string, unknown> | null,
+      }
+    : {}
+
+  const statusForUpdate = urlChanged
+    ? "pending_verification"
+    : liveStatusChanged
+      ? nextStatus
+      : row.status
+
+  const metadataForUpdate = urlChanged ? null : nextMetadata
+
+  try {
+    await db
+      .update(landingPages)
+      .set({
+        brandName: nextBrand,
+        ...urlFields,
+        formType: nextFormType,
+        faviconUrl: nextFaviconUrl,
+        notes: nextNotes,
+        redirectPageUrl: nextRedirectPageUrl,
+        redirectHostname: nextRedirectHostname,
+        redirectOrigin: nextRedirectOrigin,
+        htmlVerificationToken: nextHtmlVerificationToken ?? null,
+        status: statusForUpdate,
+        metadata: metadataForUpdate,
+        updatedByUserId: actor.id,
+        updatedAt: now,
+        ...verificationReset,
+      })
+      .where(eq(landingPages.id, row.id))
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return NextResponse.json(
+        {
+          error: "This landing page URL is already registered",
+        },
+        { status: 409 }
+      )
+    }
+    throw err
+  }
+
+  const [saved] = await db
+    .select()
+    .from(landingPages)
+    .where(eq(landingPages.id, row.id))
+    .limit(1)
+
+  if (!saved) {
+    return NextResponse.json({ error: "Update failed" }, { status: 500 })
+  }
+
+  if (liveStatusChanged) {
+    await writeLandingPageAuditLog({
+      actorUserId: actor.id,
+      landingPageId: row.id,
+      action: "live_toggle",
+      beforePayload: {
+        status: row.status,
+        isLive: isLandingPageLive(row.status),
+      },
+      afterPayload: {
+        status: saved.status,
+        isLive: isLandingPageLive(saved.status),
+      },
+      traceId,
+    })
+  }
+
+  const beforeChannelType = parseLandingPageChannelType(
+    row.metadata as Record<string, unknown> | null
+  )
+  const afterChannelType = parseLandingPageChannelType(
+    saved.metadata as Record<string, unknown> | null
+  )
+  const channelTypeChanged = beforeChannelType !== afterChannelType
+
+  const generalFieldsChanged =
+    nextBrand !== row.brandName ||
+    urlChanged ||
+    nextFormType !== row.formType ||
+    nextFaviconUrl !== row.faviconUrl ||
+    nextNotes !== row.notes ||
+    channelTypeChanged
+
+  if (generalFieldsChanged) {
+    await writeLandingPageAuditLog({
+      actorUserId: actor.id,
+      landingPageId: row.id,
+      action: "update",
+      beforePayload: {
+        ...before,
+        channelType: beforeChannelType,
+      },
+      afterPayload: {
+        brandName: saved.brandName,
+        landingPageUrl: saved.landingPageUrl,
+        normalizedUrl: saved.normalizedUrl,
+        hostname: saved.hostname,
+        origin: saved.origin,
+        formType: saved.formType,
+        faviconUrl: saved.faviconUrl,
+        notes: saved.notes,
+        channelType: afterChannelType,
+        verificationMethod: saved.verificationMethod,
+        htmlTokenRotated: urlChanged,
+      },
+      traceId,
+    })
+  }
+
+  const htmlVerificationMetaTag =
+    urlChanged && saved.htmlVerificationToken
+      ? buildHtmlVerificationMetaTag(saved.htmlVerificationToken)
+      : undefined
+
+  return NextResponse.json({
+    landingPage: toLandingPageRecord(saved),
+    ...(htmlVerificationMetaTag ? { htmlVerificationMetaTag } : {}),
+    urlChanged,
+  })
+}
+
+export async function deleteLandingPageForApi(
+  actor: UserRow,
+  publicId: string,
+  traceId: string | null
+): Promise<Response> {
+  const row = await getActiveLandingPageForActor(actor.id, publicId)
+  if (!row) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  }
+
+  const deleted = await scrubExperimentsAndSoftDeleteLandingPage(
+    row,
+    actor.id,
+    {
+      action: "delete",
+      actorUserId: actor.id,
+      traceId,
+      beforePayload: {
+        deletedAt: null,
+        status: row.status,
+        publicId: row.publicId,
+        brandName: row.brandName,
+        workspaceId: row.workspaceId,
+      },
+      afterPayload: (deletedAt) => ({
+        deletedAt: deletedAt.toISOString(),
+        status: "archived",
+        publicId: row.publicId,
+        workspaceId: row.workspaceId,
+      }),
+    }
+  )
+  if (!deleted.ok) {
+    return NextResponse.json(
+      { error: deleted.error },
+      { status: deleted.status }
+    )
+  }
+
+  return new NextResponse(null, { status: 204 })
+}

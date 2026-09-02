@@ -1,32 +1,37 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import { parseDashboardCustomRange } from "@/features/traffic/model/traffic-range"
-import { loadSegmentsDashboardDataForApi } from "@/lib/server/segments-dashboard-load"
 import { parseUtmFilterFromSearchParams } from "@/lib/server/analytics-utm-params"
+import { loadSegmentsDashboardDataForApi } from "@/lib/server/segments-dashboard-load"
+import { route } from "@/lib/server/route"
+import { MAX_DASHBOARD_CUSTOM_SPAN_DAYS } from "@/lib/server/route-query"
 
-export async function GET(
-  request: NextRequest,
-  props: { params: Promise<{ publicId: string }> }
-) {
-  const { publicId } = await props.params
+export const GET = route(
+  {
+    permission: "landing_pages.read",
+    actor: "read",
+    tab: "segments",
+    rateLimit: "landing",
+    query: { maxCustomRangeDays: MAX_DASHBOARD_CUSTOM_SPAN_DAYS },
+  },
+  async ({ params, request }) => {
+    const { searchParams } = new URL(request.url)
+    const result = await loadSegmentsDashboardDataForApi(
+      params.publicId!,
+      searchParams.get("range_id"),
+      parseUtmFilterFromSearchParams(searchParams),
+      parseDashboardCustomRange(
+        searchParams.get("from"),
+        searchParams.get("to")
+      )
+    )
 
-  const { searchParams } = new URL(request.url)
-  const rangeIdRaw = searchParams.get("range_id")
-  const customRange = parseDashboardCustomRange(
-    searchParams.get("from"),
-    searchParams.get("to")
-  )
-  const utmFilter = parseUtmFilterFromSearchParams(searchParams)
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: result.status }
+      )
+    }
 
-  const result = await loadSegmentsDashboardDataForApi(
-    publicId,
-    rangeIdRaw,
-    utmFilter,
-    customRange
-  )
-
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: result.status })
+    return NextResponse.json(result.data)
   }
-
-  return NextResponse.json(result.data)
-}
+)

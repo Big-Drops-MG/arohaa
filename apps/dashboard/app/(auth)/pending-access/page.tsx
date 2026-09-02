@@ -4,7 +4,7 @@ import { isApprovedAccess } from "@/lib/server/access-status"
 import { pageMetadata } from "@/lib/site-metadata"
 import { db, normalizeUserEmail, whereUserEmail } from "@workspace/database"
 import { redirect } from "next/navigation"
-import { cookies } from "next/headers"
+import { sessionNeedsTwoFactorChallenge } from "@/lib/server/session-2fa"
 
 export const metadata = pageMetadata("Access Pending")
 
@@ -15,21 +15,16 @@ export default async function PendingAccessRoutePage() {
     redirect("/login")
   }
 
+  if (sessionNeedsTwoFactorChallenge(session)) {
+    redirect("/login?requiresTwoFactor=true")
+  }
+
   const user = await db.query.users.findFirst({
     where: whereUserEmail(normalizeUserEmail(email)),
   })
 
   if (!user) {
     redirect("/login")
-  }
-
-  if (user.isTwoFactorEnabled) {
-    const cookieStore = await cookies()
-    const hasVerified2FA =
-      cookieStore.get("arohaa_2fa_verified")?.value === "true"
-    if (!hasVerified2FA) {
-      redirect("/login?requiresTwoFactor=true")
-    }
   }
 
   if (!user.firstName?.trim() || !user.lastName?.trim() || !user.role?.trim()) {

@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server"
-import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { requireWritableLandingPageActor } from "@/lib/server/external-access"
 import {
-  getActiveLandingPageByPublicId,
   getActiveLandingPageForActor,
   type LandingPageRow,
 } from "@/lib/server/landing-pages-store"
@@ -12,191 +9,162 @@ import {
   leaveExperimentForLandingPage,
   renameVariantLabelForLandingPage,
 } from "@/lib/server/experiments-store"
-import { enforceLandingApiRateLimit } from "@/lib/server/rate-limit-landing"
 import { writeLandingPageAuditLog } from "@/lib/server/landing-audit-log"
+import { route } from "@/lib/server/route"
+import {
+  experimentMembershipAttachBodySchema,
+  experimentMembershipRenameBodySchema,
+} from "@/lib/server/route-schemas"
 
-async function resolveActorAndPage(
-  publicId: string,
-  opts?: { writable?: boolean }
-): Promise<
-  | { ok: true; actorId: string; landingPage: LandingPageRow }
-  | { ok: false; response: NextResponse }
-> {
-  const actor = opts?.writable
-    ? await requireWritableLandingPageActor()
-    : await requireLandingPageActor()
-  if (!actor) {
-    return {
-      ok: false,
-      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+async function requirePage(
+  actorId: string,
+  publicId: string
+): Promise<LandingPageRow | null> {
+  return getActiveLandingPageForActor(actorId, publicId)
+}
+
+export const GET = route(
+  {
+    permission: "landing_pages.read",
+    actor: "read",
+    tab: "experiments",
+    rateLimit: "landing",
+  },
+  async ({ actor, params }) => {
+    const landingPage = await requirePage(actor.id, params.publicId!)
+    if (!landingPage) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
-  }
-  const limited = await enforceLandingApiRateLimit(actor.id)
-  if (limited) return { ok: false, response: limited }
 
-  const landingPage = await getActiveLandingPageForActor(actor.id, publicId)
-  if (!landingPage) {
-    return {
-      ok: false,
-      response: NextResponse.json({ error: "Not found" }, { status: 404 }),
+    const data = await getExperimentMembershipForLandingPage(landingPage)
+    return NextResponse.json(data)
+  }
+)
+
+export const POST = route(
+  {
+    permission: "experiments.write",
+    actor: "write",
+    tab: "experiments",
+    rateLimit: "landing",
+    schema: experimentMembershipAttachBodySchema,
+  },
+  async ({ actor, params, body, request }) => {
+    const landingPage = await requirePage(actor.id, params.publicId!)
+    if (!landingPage) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
+
+    const parentPublicId = body.parentPublicId.trim()
+    if (parentPublicId === landingPage.publicId) {
+      return NextResponse.json(
+        { error: "A project cannot be a variant of itself" },
+        { status: 400 }
+      )
+    }
+
+    const parent = await getActiveLandingPageForActor(actor.id, parentPublicId)
+    if (!parent) {
+      return NextResponse.json(
+        { error: "Parent project not found" },
+        { status: 404 }
+      )
+    }
+
+    const attached = await attachLandingPageAsVariant({
+      parent,
+      child: landingPage,
+      label: body.label,
+    })
+    if (!attached.ok) {
+      return NextResponse.json(
+        { error: attached.error },
+        { status: attached.status ?? 409 }
+      )
+    }
+
+    await writeLandingPageAuditLog({
+      actorUserId: actor.id,
+      landingPageId: landingPage.id,
+      action: "variant_link",
+      beforePayload: null,
+      afterPayload: {
+        variantLabel: attached.label,
+        variantOfBrandName: parent.brandName,
+        experimentId: attached.experimentId,
+      },
+      traceId: request.headers.get("x-trace-id")?.trim() || null,
+    })
+
+    const data = await getExperimentMembershipForLandingPage(landingPage)
+    return NextResponse.json(data, { status: 201 })
   }
+)
 
-  return { ok: true, actorId: actor.id, landingPage }
-}
+export const PATCH = route(
+  {
+    permission: "experiments.write",
+    actor: "write",
+    tab: "experiments",
+    rateLimit: "landing",
+    schema: experimentMembershipRenameBodySchema,
+  },
+  async ({ actor, params, body }) => {
+    const landingPage = await requirePage(actor.id, params.publicId!)
+    if (!landingPage) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
 
-export async function GET(
-  _request: Request,
-  props: { params: Promise<{ publicId: string }> }
-) {
-  const { publicId } = await props.params
-  const resolved = await resolveActorAndPage(publicId)
-  if (!resolved.ok) return resolved.response
-
-  const data = await getExperimentMembershipForLandingPage(resolved.landingPage)
-  return NextResponse.json(data)
-}
-
-export async function POST(
-  request: Request,
-  props: { params: Promise<{ publicId: string }> }
-) {
-  const { publicId } = await props.params
-  const resolved = await resolveActorAndPage(publicId, { writable: true })
-  if (!resolved.ok) return resolved.response
-  const { actorId, landingPage } = resolved
-
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
-  }
-  if (!body || typeof body !== "object") {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
-  }
-
-  const record = body as Record<string, unknown>
-  const parentPublicId =
-    typeof record.parentPublicId === "string"
-      ? record.parentPublicId.trim()
-      : ""
-  const label = typeof record.label === "string" ? record.label : ""
-
-  if (!parentPublicId) {
-    return NextResponse.json(
-      { error: "Choose the project to compare against" },
-      { status: 400 }
+    const renamed = await renameVariantLabelForLandingPage(
+      landingPage,
+      body.label
     )
+    if (!renamed.ok) {
+      return NextResponse.json(
+        { error: renamed.error },
+        { status: renamed.status ?? 400 }
+      )
+    }
+
+    const data = await getExperimentMembershipForLandingPage(landingPage)
+    return NextResponse.json(data)
   }
-  if (parentPublicId === landingPage.publicId) {
-    return NextResponse.json(
-      { error: "A project cannot be a variant of itself" },
-      { status: 400 }
-    )
+)
+
+export const DELETE = route(
+  {
+    permission: "experiments.write",
+    actor: "write",
+    tab: "experiments",
+    rateLimit: "landing",
+  },
+  async ({ actor, params, request }) => {
+    const landingPage = await requirePage(actor.id, params.publicId!)
+    if (!landingPage) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
+
+    const left = await leaveExperimentForLandingPage(landingPage)
+    if (!left.ok) {
+      return NextResponse.json(
+        { error: left.error },
+        { status: left.status ?? 400 }
+      )
+    }
+
+    await writeLandingPageAuditLog({
+      actorUserId: actor.id,
+      landingPageId: landingPage.id,
+      action: "variant_unlink",
+      beforePayload: null,
+      afterPayload: {
+        experimentName: left.experimentName,
+        experimentDeleted: left.experimentDeleted,
+      },
+      traceId: request.headers.get("x-trace-id")?.trim() || null,
+    })
+
+    const data = await getExperimentMembershipForLandingPage(landingPage)
+    return NextResponse.json({ ...data, ...left })
   }
-
-  const parent = await getActiveLandingPageByPublicId(parentPublicId)
-  if (!parent) {
-    return NextResponse.json(
-      { error: "Parent project not found" },
-      { status: 404 }
-    )
-  }
-
-  const attached = await attachLandingPageAsVariant({
-    parent,
-    child: landingPage,
-    label,
-  })
-  if (!attached.ok) {
-    return NextResponse.json({ error: attached.error }, { status: 409 })
-  }
-
-  await writeLandingPageAuditLog({
-    actorUserId: actorId,
-    landingPageId: landingPage.id,
-    action: "variant_link",
-    beforePayload: null,
-    afterPayload: {
-      variantLabel: attached.label,
-      variantOfBrandName: parent.brandName,
-      experimentId: attached.experimentId,
-    },
-    traceId: request.headers.get("x-trace-id")?.trim() || null,
-  })
-
-  const data = await getExperimentMembershipForLandingPage(landingPage)
-  return NextResponse.json(data, { status: 201 })
-}
-
-export async function PATCH(
-  request: Request,
-  props: { params: Promise<{ publicId: string }> }
-) {
-  const { publicId } = await props.params
-  const resolved = await resolveActorAndPage(publicId, { writable: true })
-  if (!resolved.ok) return resolved.response
-
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
-  }
-  if (!body || typeof body !== "object") {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
-  }
-
-  const label = (body as Record<string, unknown>).label
-  if (typeof label !== "string") {
-    return NextResponse.json({ error: "label is required" }, { status: 400 })
-  }
-
-  const renamed = await renameVariantLabelForLandingPage(
-    resolved.landingPage,
-    label
-  )
-  if (!renamed.ok) {
-    return NextResponse.json(
-      { error: renamed.error },
-      { status: renamed.status ?? 400 }
-    )
-  }
-
-  const data = await getExperimentMembershipForLandingPage(resolved.landingPage)
-  return NextResponse.json(data)
-}
-
-export async function DELETE(
-  request: Request,
-  props: { params: Promise<{ publicId: string }> }
-) {
-  const { publicId } = await props.params
-  const resolved = await resolveActorAndPage(publicId, { writable: true })
-  if (!resolved.ok) return resolved.response
-  const { actorId, landingPage } = resolved
-
-  const left = await leaveExperimentForLandingPage(landingPage)
-  if (!left.ok) {
-    return NextResponse.json(
-      { error: left.error },
-      { status: left.status ?? 400 }
-    )
-  }
-
-  await writeLandingPageAuditLog({
-    actorUserId: actorId,
-    landingPageId: landingPage.id,
-    action: "variant_unlink",
-    beforePayload: null,
-    afterPayload: {
-      experimentName: left.experimentName,
-      experimentDeleted: left.experimentDeleted,
-    },
-    traceId: request.headers.get("x-trace-id")?.trim() || null,
-  })
-
-  const data = await getExperimentMembershipForLandingPage(landingPage)
-  return NextResponse.json({ ...data, ...left })
-}
+)

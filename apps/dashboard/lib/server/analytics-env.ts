@@ -14,6 +14,7 @@ export function resolveInternalApiSecret(): string | undefined {
   ensureDashboardEnvLoaded()
   const secret = process.env.AROHAA_INTERNAL_API_SECRET?.trim()
   if (secret) return secret
+  if (process.env.NODE_ENV === "production") return undefined
   if (process.env.NODE_ENV === "development") return DEV_INTERNAL_API_SECRET
   return undefined
 }

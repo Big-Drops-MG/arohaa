@@ -1,5 +1,6 @@
-import type { NextRequest } from "next/server"
 import { headers } from "next/headers"
+
+type RequestWithHeaders = Pick<Request, "headers"> & { ip?: string }
 
 const LOOPBACK = new Set(["127.0.0.1", "::1", "0:0:0:0:0:0:0:1", "localhost"])
 
@@ -8,12 +9,10 @@ function normalizeIp(raw: string | null | undefined): string | null {
   let value = raw.split(",")[0]?.trim() ?? ""
   if (!value) return null
 
-  // Strip surrounding brackets used by IPv6 literals in some proxies.
   if (value.startsWith("[") && value.endsWith("]")) {
     value = value.slice(1, -1)
   }
 
-  // Drop optional port from IPv4 host:port
   if (/^\d{1,3}(\.\d{1,3}){3}:\d+$/.test(value)) {
     value = value.replace(/:\d+$/, "")
   }
@@ -34,7 +33,6 @@ function firstHeaderIp(
   return null
 }
 
-/** Prefer proxy headers; works for App Router route handlers and server actions. */
 export function clientIpFromHeaders(
   headerStore: Headers | { get(name: string): string | null }
 ): string | null {
@@ -49,17 +47,15 @@ export function clientIpFromHeaders(
   ])
 }
 
-export function clientIpFromRequest(request: NextRequest): string | null {
+export function clientIpFromRequest(
+  request: RequestWithHeaders
+): string | null {
   const fromHeaders = clientIpFromHeaders(request.headers)
   if (fromHeaders) return fromHeaders
 
-  const maybeIp =
-    "ip" in request && typeof request.ip === "string" ? request.ip : null
-  const fromRequest = normalizeIp(maybeIp)
+  const fromRequest = normalizeIp(request.ip)
   if (fromRequest) return fromRequest
 
-  // Local Next.js often has no forwarded headers — still record loopback so
-  // activity logs always show an IP during development.
   if (process.env.NODE_ENV !== "production") {
     return "127.0.0.1"
   }
@@ -82,6 +78,8 @@ export function userAgentFromHeaders(
   return ua || null
 }
 
-export function userAgentFromRequest(request: NextRequest): string | null {
+export function userAgentFromRequest(
+  request: RequestWithHeaders
+): string | null {
   return userAgentFromHeaders(request.headers)
 }
