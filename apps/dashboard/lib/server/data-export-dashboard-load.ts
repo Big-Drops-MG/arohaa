@@ -20,6 +20,11 @@ import { isReadOnlyAccessLevel } from "@/features/team/model/access-level"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import { appendDashboardCustomRangeParams } from "@/lib/server/analytics-utm-params"
+import {
+  resolveLevel1Stats,
+  type Level1Stat,
+} from "@/features/data-lab/model/level1"
+import { mapDataExportLeadRow } from "@/features/data-lab/model/level1-from-leads"
 
 type LeadsApiResponse = {
   rangeId?: RangeId
@@ -27,6 +32,7 @@ type LeadsApiResponse = {
     sessionId: string
     macId?: string
     createdAt: string
+    submittedAt?: string | null
     zip: string
     email?: string
     utmSource?: string
@@ -39,6 +45,7 @@ type LeadsApiResponse = {
   limit?: number
   offset?: number
   hasMore?: boolean
+  level1Stats?: Level1Stat[]
 }
 
 async function fetchLeads(
@@ -117,28 +124,23 @@ export async function loadDataExportDashboardData({
     return getDataExportEmptyDashboardData(rangeId, true, row.brandName)
   }
 
+  const mappedLeads = (analytics.leads ?? []).map((lead) =>
+    mapDataExportLeadRow(lead as unknown as Record<string, unknown>)
+  )
+
   return {
     brandName: row.brandName,
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: (analytics.rangeId ??
       rangeId) as DataExportDashboardData["defaultDateRangeId"],
-    leads: (analytics.leads ?? []).map((lead) => ({
-      sessionId: lead.sessionId,
-      macId: lead.macId ?? "",
-      createdAt: lead.createdAt,
-      zip: lead.zip,
-      email: lead.email ?? "",
-      utmSource: lead.utmSource ?? "",
-      utmId: lead.utmId ?? "",
-      trustedFormUrl: lead.trustedFormUrl ?? "",
-      formSubmitted: Boolean(lead.formSubmitted),
-      fields: lead.fields ?? {},
-    })),
+    leads: mappedLeads,
     total: analytics.total ?? 0,
     limit: analytics.limit ?? limit,
     offset: analytics.offset ?? offset,
     hasMore: Boolean(analytics.hasMore),
     hasRedirect: true,
+    // Always derive from lead rows (same When + Form Submitted as the table).
+    level1Stats: resolveLevel1Stats(analytics.level1Stats, mappedLeads),
   }
 }
 

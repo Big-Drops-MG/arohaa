@@ -12,6 +12,7 @@ type DataLabLeadsPanelProps = {
   data: DataExportDashboardData | null
   isLoading: boolean
   isActive: boolean
+  onDataChange?: (data: DataExportDashboardData) => void
 }
 
 export function DataLabLeadsPanel({
@@ -20,6 +21,7 @@ export function DataLabLeadsPanel({
   data,
   isLoading,
   isActive,
+  onDataChange,
 }: DataLabLeadsPanelProps) {
   const { dateRangeId } = useDashboardDateRange()
 
@@ -33,8 +35,7 @@ export function DataLabLeadsPanel({
           </p>
           <p className="mt-1 max-w-md text-sm text-muted-foreground">
             Raw lead rows and CSV export are only available to approved
-            operators. You can still use Intelligence Center and the other Data
-            Lab views.
+            operators.
           </p>
         </div>
       </div>
@@ -48,6 +49,7 @@ export function DataLabLeadsPanel({
       isActive={isActive}
       isLoading={isLoading}
       embedded
+      onDataChange={onDataChange}
     />
   )
 }

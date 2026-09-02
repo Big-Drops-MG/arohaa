@@ -211,11 +211,9 @@ function EventTrackingKpiPerformanceCardBody({
       variants={overviewScaleIn}
       initial={reduceMotion ? false : "hidden"}
       animate="visible"
-      className="h-full min-h-0"
     >
       <Card
         className={cn(
-          "flex h-full min-h-0 flex-col overflow-hidden",
           overviewCardPointerFocusResetClassName,
           overviewAnalyticCardShellClassName,
           overviewRechartsPointerFocusResetClassName,
@@ -229,7 +227,7 @@ function EventTrackingKpiPerformanceCardBody({
         </CardHeader>
         <CardContent
           className={cn(
-            "flex min-h-0 flex-1 flex-col",
+            "flex flex-col",
             overviewAnalyticCardContentPaddingClassName
           )}
         >
@@ -269,7 +267,6 @@ export function EventTrackingKpiPerformanceCard({
   return (
     <TrafficExpandableCard
       title="KPI Performance"
-      className="h-full min-h-0"
       dialogClassName="max-w-4xl"
       expandedContent={
         <div className="p-6">

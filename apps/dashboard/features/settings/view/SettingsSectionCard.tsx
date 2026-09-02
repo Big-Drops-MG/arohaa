@@ -33,7 +33,6 @@ export function SettingsSectionCard({
       className={cn(
         overviewCardPointerFocusResetClassName,
         overviewAnalyticCardShellClassName,
-        "h-full min-h-0 flex-col",
         className
       )}
     >

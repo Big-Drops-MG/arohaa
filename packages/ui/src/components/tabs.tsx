@@ -26,7 +26,7 @@ function TabsList({
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
-        "inline-flex h-11 w-full min-w-0 items-center gap-5 overflow-x-auto border-b border-neutral-200 bg-neutral-50/90",
+        "inline-flex h-11 w-full min-w-0 flex-wrap items-center gap-x-5 gap-y-1 border-b border-neutral-200 bg-neutral-50/90",
         className
       )}
       {...props}
@@ -62,7 +62,7 @@ function TabsContent({
     <TabsPrimitive.Content
       data-slot="tabs-content"
       className={cn(
-        "mt-8 flex-1 outline-none focus:outline-none focus-visible:outline-none",
+        "mt-6 outline-none focus:outline-none focus-visible:outline-none",
         className
       )}
       {...props}

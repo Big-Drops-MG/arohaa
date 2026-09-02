@@ -17,7 +17,10 @@ import {
   type ExternalPrivilegeGrant,
   type ExternalProjectScope,
 } from "@/features/team/model/external-privileges"
-import { mapLegacyInsightSectionToDataLab } from "@/features/data-lab/model/data-lab-sections"
+import {
+  mapLegacyInsightSectionToDataLab,
+  normalizeDataLabSectionId,
+} from "@/features/data-lab/model/data-lab-sections"
 import { isReadOnlyAccessLevel } from "@/features/team/model/access-level"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 
@@ -52,6 +55,10 @@ function normalizePrivilegeGrant(row: {
   } else if (tab === "data-export") {
     tab = "data-lab"
     section = section || "leads"
+  }
+
+  if (tab === "data-lab" && section) {
+    section = normalizeDataLabSectionId(section)
   }
 
   const allowedTabs = new Set(EXTERNAL_PRIVILEGE_TABS.map((t) => t.value))

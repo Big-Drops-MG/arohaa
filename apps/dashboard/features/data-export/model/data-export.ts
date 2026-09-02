@@ -2,11 +2,13 @@ import type {
   OverviewDateRangeId,
   OverviewDateRangeOption,
 } from "@/features/overview/model/overview"
+import type { Level1Stat } from "@/features/data-lab/model/level1"
 
 export type DataExportLeadRow = {
   sessionId: string
   macId: string
   createdAt: string
+  submittedAt: string | null
   zip: string
   email: string
   utmSource: string
@@ -26,6 +28,7 @@ export type DataExportDashboardData = {
   offset: number
   hasMore: boolean
   hasRedirect: boolean
+  level1Stats: Level1Stat[]
 }
 
 export const DATA_EXPORT_PAGE_SIZE = 15

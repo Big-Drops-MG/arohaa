@@ -40,6 +40,7 @@ type DataExportDashboardProps = {
   isLoading?: boolean
   /** When true, omit the page header (used inside Data Lab). */
   embedded?: boolean
+  onDataChange?: (data: DataExportDashboardData) => void
 }
 
 const PREFERRED_FIELD_ORDER = [
@@ -184,6 +185,7 @@ export function DataExportDashboard({
   isActive = true,
   isLoading: isTabLoading = false,
   embedded = false,
+  onDataChange,
 }: DataExportDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
@@ -250,6 +252,7 @@ export function DataExportDashboard({
         const next = (await res.json()) as DataExportDashboardData
         setDashboardData(next)
         setPageOffset(next.offset)
+        onDataChange?.(next)
       } catch {
         if (signal?.aborted) return
         if (!quiet) {
@@ -274,6 +277,7 @@ export function DataExportDashboard({
       dashboardData.brandName,
       dashboardData.hasRedirect,
       dateRangeId,
+      onDataChange,
       projectId,
     ]
   )
@@ -290,12 +294,13 @@ export function DataExportDashboard({
     ) {
       setDashboardData(initialData)
       setPageOffset(initialData.offset)
+      onDataChange?.(initialData)
       return
     }
     const controller = new AbortController()
     void fetchPage(0, controller.signal)
     return () => controller.abort()
-  }, [customRange, dateRangeId, fetchPage, initialData, isActive])
+  }, [customRange, dateRangeId, fetchPage, initialData, isActive, onDataChange])
 
   useEffect(() => {
     if (!isActive || !dashboardData.hasRedirect) return

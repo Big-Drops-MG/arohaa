@@ -61,13 +61,8 @@ export const EXTERNAL_PRIVILEGE_TABS: PrivilegeTabDef[] = PROJECT_TABS.map(
           ]
         case "data-lab":
           return [
-            { id: "intelligence", label: "Intelligence Center" },
-            { id: "glance", label: "At a glance" },
+            { id: "level-1", label: "Level 1" },
             { id: "leads", label: "Leads table" },
-            { id: "sources", label: "Where leads come from" },
-            { id: "journey", label: "Form journey" },
-            { id: "quality", label: "Lead quality" },
-            { id: "tests", label: "Tests and changes" },
           ]
         default:
           return []

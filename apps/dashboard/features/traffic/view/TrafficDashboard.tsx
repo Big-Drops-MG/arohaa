@@ -22,6 +22,7 @@ import {
   buildAnalyticsApiPath,
   shouldUseInitialTabData,
 } from "@/lib/dashboard/analytics-query"
+import { dashboardGridTwoColClassName } from "@/features/overview/view/overview-card-density"
 import { cn } from "@workspace/ui/lib/utils"
 
 const TRAFFIC_REFETCH_MS = 60_000
@@ -190,7 +191,7 @@ export function TrafficDashboard({
           />
 
           <div className="flex flex-col gap-4">
-            <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
+            <div className={dashboardGridTwoColClassName}>
               {showSection("time") ? (
                 <TrafficDataTableCard
                   section={dashboardData.trafficByTime}
@@ -207,7 +208,7 @@ export function TrafficDashboard({
               ) : null}
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
+            <div className={dashboardGridTwoColClassName}>
               {showSection("device") ? (
                 <TrafficDataTableCard
                   section={dashboardData.trafficByDevice}
@@ -227,7 +228,7 @@ export function TrafficDashboard({
             </div>
 
             {showSection("pages") ? (
-              <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0">
+              <div className={dashboardGridTwoColClassName}>
                 <div className="lg:col-span-2">
                   <TrafficDataTableCard
                     section={dashboardData.topPages}

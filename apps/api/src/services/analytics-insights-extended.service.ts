@@ -1987,6 +1987,10 @@ export async function getExtendedInsights(
       )
       return intelligenceInsights(ctx)
     }
+    case 'level1': {
+      const { level1Insights } = await import('./analytics-level1.service.js')
+      return level1Insights(ctx)
+    }
     default:
       return emptyAnalyticsInsights(section)
   }

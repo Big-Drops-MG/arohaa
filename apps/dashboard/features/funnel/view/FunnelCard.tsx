@@ -34,7 +34,6 @@ export function FunnelCard({ steps }: FunnelCardProps) {
   return (
     <Card
       className={cn(
-        "flex h-full min-h-0 flex-col",
         overviewCardPointerFocusResetClassName,
         overviewAnalyticCardShellClassName
       )}
@@ -44,12 +43,12 @@ export function FunnelCard({ steps }: FunnelCardProps) {
           Funnel
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col p-0">
+      <CardContent className="flex flex-col p-0">
         {steps.map((step, index) => (
           <div
             key={step.label}
             className={cn(
-              "flex min-h-0 flex-1 items-center justify-between gap-3 px-5 py-3 sm:px-6 sm:py-4",
+              "flex items-center justify-between gap-3 px-5 py-3 sm:px-6 sm:py-4",
               index < steps.length - 1 && "border-b border-border"
             )}
           >

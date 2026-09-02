@@ -7,6 +7,10 @@ import {
   type AnalyticsRangeId,
 } from '../lib/analytics-range.js'
 import {
+  formatAnalyticsHourWindow,
+  getAnalyticsEtParts,
+} from '../lib/analytics-timezone.js'
+import {
   fieldsWithoutReserved,
   isDisplayableLead,
   normalizeLeadFields,
@@ -14,13 +18,17 @@ import {
   pickLeadZip,
   pickTrustedFormUrl,
 } from '../lib/lead-fields.js'
+import type { Level1Stat } from '../types/analytics-insights.js'
 
 type CHJson<T> = { data: T[] }
+
+const SUBMIT_EVENTS = `event_name IN ('form_success', 'service_click')`
 
 export type FunnelLeadRow = {
   sessionId: string
   macId: string
   createdAt: string
+  submittedAt: string | null
   zip: string
   email: string
   utmSource: string
@@ -37,12 +45,14 @@ export type FunnelLeadsResponse = {
   limit: number
   offset: number
   hasMore: boolean
+  level1Stats: Level1Stat[]
 }
 
 type RawLeadSessionRow = {
   session_id: string
   fingerprint: string
   last_at: string
+  submitted_at: string
   props: string
   form_submitted: number | boolean | string
   sample_url: string
@@ -106,6 +116,23 @@ function resolveLeadUtm(input: {
   }
 }
 
+function isLeadFormSubmitted(value: number | boolean | string): boolean {
+  if (value === true || value === 1 || value === '1') return true
+  if (value === false || value === 0 || value === '0') return false
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    return normalized === 'true' || normalized === 'yes'
+  }
+  return Boolean(value)
+}
+
+function isValidLeadTimestamp(value: string | null | undefined): boolean {
+  if (!value) return false
+  const trimmed = value.trim()
+  if (!trimmed || trimmed.startsWith('1970-')) return false
+  return !Number.isNaN(new Date(trimmed.replace(' ', 'T')).getTime())
+}
+
 function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
   const rawFields = extractRawFieldMap(row.props || '{}')
   const fields = normalizeLeadFields(rawFields)
@@ -116,21 +143,68 @@ function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
     utmId: row.utm_id,
     url: row.sample_url,
   })
+  const formSubmitted = isLeadFormSubmitted(row.form_submitted)
+  const submittedAt = isValidLeadTimestamp(row.submitted_at)
+    ? row.submitted_at.trim()
+    : null
   return {
     sessionId: row.session_id,
     macId: (row.fingerprint || '').trim(),
     createdAt: row.last_at,
+    submittedAt,
     zip,
     email,
     utmSource: utm.utmSource,
     utmId: utm.utmId,
     trustedFormUrl: pickTrustedFormUrl(rawFields),
-    formSubmitted:
-      row.form_submitted === true ||
-      row.form_submitted === 1 ||
-      row.form_submitted === '1',
+    formSubmitted,
     fields: fieldsWithoutReserved(fields),
   }
+}
+
+/** Same parsing as the leads table When column. */
+function parseLeadWhen(value: string): Date | null {
+  const trimmed = value.trim()
+  if (!trimmed || trimmed.startsWith('1970-')) return null
+  const date = new Date(
+    trimmed.includes('T') ? trimmed : `${trimmed.replace(' ', 'T')}Z`,
+  )
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+export function computeLevel1StatsFromLeads(leads: FunnelLeadRow[]): Level1Stat[] {
+  const hourCounts = new Map<number, number>()
+
+  for (const lead of leads) {
+    if (!lead.formSubmitted) continue
+    const when = parseLeadWhen(lead.createdAt)
+    if (!when) continue
+    const hour = getAnalyticsEtParts(when).hour
+    hourCounts.set(hour, (hourCounts.get(hour) ?? 0) + 1)
+  }
+
+  let bestHour = -1
+  let bestCount = 0
+  for (const [hour, count] of hourCounts) {
+    if (count > bestCount) {
+      bestHour = hour
+      bestCount = count
+    }
+  }
+
+  return [
+    {
+      id: 'best-time',
+      label: 'Best Time',
+      value:
+        bestCount > 0 && bestHour >= 0
+          ? formatAnalyticsHourWindow(bestHour)
+          : '—',
+      metricLabel: 'Form submissions',
+      metricValue: bestCount,
+      enoughData: bestCount > 0,
+    },
+  ]
 }
 
 export function paginateDisplayableLeads(
@@ -199,6 +273,7 @@ export async function getFunnelLeads({
         l.session_id AS session_id,
         f.fingerprint AS fingerprint,
         l.last_at AS last_at,
+        l.submitted_at AS submitted_at,
         l.props AS props,
         l.form_submitted AS form_submitted,
         l.sample_url AS sample_url,
@@ -209,9 +284,10 @@ export async function getFunnelLeads({
         SELECT
           session_id,
           max(created_at) AS last_at,
+          maxIf(created_at, ${SUBMIT_EVENTS}) AS submitted_at,
           argMax(properties, (length(properties), created_at)) AS props,
           argMax(url, (length(properties), created_at)) AS sample_url,
-          max(event_name = 'form_success') AS form_submitted
+          max(${SUBMIT_EVENTS}) AS form_submitted
         FROM events_raw
         WHERE ${where}
         GROUP BY session_id
@@ -254,10 +330,12 @@ export async function getFunnelLeads({
     .map((row) => toFunnelLead(row))
     .filter((lead) => isDisplayableLead(lead))
 
+  const level1Stats = computeLevel1StatsFromLeads(displayable)
   const page = paginateDisplayableLeads(displayable, limit, offset)
 
   return {
     rangeId: window.rangeId,
+    level1Stats,
     ...page,
   }
 }
@@ -274,5 +352,6 @@ export function emptyFunnelLeads(
     limit,
     offset,
     hasMore: false,
+    level1Stats: computeLevel1StatsFromLeads([]),
   }
 }

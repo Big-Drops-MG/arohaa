@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo } from "react"
+import { cn } from "@workspace/ui/lib/utils"
 import {
   Tabs,
   TabsContent,
@@ -41,6 +42,7 @@ import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardNavigation } from "@/hooks/use-dashboard-navigation"
 import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
 import { DashboardAccessProvider } from "@/features/dashboard/view/dashboard-access-context"
+import { dashboardPageInsetClassName } from "@/features/overview/view/overview-card-density"
 
 export type { ProjectTabValue }
 
@@ -159,8 +161,13 @@ function ProjectDashboardViewInner({
           className="w-full"
         >
           <div className="w-full border-b border-neutral-200 bg-neutral-50/90">
-            <div className="mx-auto w-full max-w-[1440px]">
-              <TabsList className="h-auto min-h-11 justify-start gap-5 rounded-none border-0 bg-transparent px-0">
+            <div
+              className={cn(
+                "mx-auto w-full max-w-[1440px]",
+                dashboardPageInsetClassName
+              )}
+            >
+              <TabsList className="h-auto min-h-11 flex-wrap justify-start gap-x-5 gap-y-1 rounded-none border-0 bg-transparent px-0">
                 {visibleTabs.map((tab) => (
                   <TabsTrigger key={tab.value} value={tab.value}>
                     {tab.label}
@@ -171,7 +178,10 @@ function ProjectDashboardViewInner({
           </div>
 
           <div
-            className="mx-auto w-full max-w-[1440px] pb-10"
+            className={cn(
+              "mx-auto w-full max-w-[1440px] pb-8",
+              dashboardPageInsetClassName
+            )}
             aria-busy={isPending}
           >
             {visibleTabs.map((tab) => (

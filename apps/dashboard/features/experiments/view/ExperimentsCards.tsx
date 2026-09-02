@@ -1,5 +1,7 @@
 "use client"
 
+import { dashboardGridTwoColClassName } from "@/features/overview/view/overview-card-density"
+
 import {
   experimentHighlightForTables,
   type ExperimentsDashboardData,
@@ -45,7 +47,7 @@ export function ExperimentsCards({ data }: ExperimentsCardsProps) {
   })
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:*:min-h-0">
+    <div className={dashboardGridTwoColClassName}>
       <ExperimentsTableCard
         title={data.variantPerformance.title}
         table={variantPerformance}

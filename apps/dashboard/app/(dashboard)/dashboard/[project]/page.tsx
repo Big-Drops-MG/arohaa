@@ -95,7 +95,6 @@ export default async function ProjectPage({
     utm_dim,
     utm_value,
     segment_id,
-    lab: labParam,
   } = await searchParams
   const rangeId = parseTrafficRangeId(rangeIdParam)
   const customRange = parseDashboardCustomRange(from, to)
@@ -152,9 +151,7 @@ export default async function ProjectPage({
 
   const wantsLeadsSeed =
     allowDataExport &&
-    (tabParam === "data-export" ||
-      (effectiveTab === "data-lab" &&
-        (labParam === "leads" || tabParam === "data-export")))
+    (tabParam === "data-export" || effectiveTab === "data-lab")
 
   switch (effectiveTab) {
     case "overview":

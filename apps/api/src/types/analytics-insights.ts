@@ -1,3 +1,12 @@
+export type Level1Stat = {
+  id: string
+  label: string
+  value: string
+  metricLabel?: string
+  metricValue?: number
+  enoughData: boolean
+}
+
 export type InsightSectionId =
   | 'volume'
   | 'source'
@@ -11,6 +20,7 @@ export type InsightSectionId =
   | 'quality'
   | 'experiment'
   | 'intelligence'
+  | 'level1'
 
 export const INSIGHT_SECTION_IDS: readonly InsightSectionId[] = [
   'volume',
@@ -25,6 +35,7 @@ export const INSIGHT_SECTION_IDS: readonly InsightSectionId[] = [
   'quality',
   'experiment',
   'intelligence',
+  'level1',
 ] as const
 
 export function isInsightSectionId(value: string): value is InsightSectionId {
@@ -99,6 +110,7 @@ export type AnalyticsInsights = {
   winners?: IntelligenceWinner[]
   boards?: IntelligenceBoard[]
   actions?: string[]
+  level1Stats?: Level1Stat[]
 }
 
 export function emptyAnalyticsInsights(
@@ -113,6 +125,9 @@ export function emptyAnalyticsInsights(
       boards: [],
       actions: [],
     }
+  }
+  if (section === 'level1') {
+    return { section, kpis: [], charts: [], level1Stats: [] }
   }
   return { section, kpis: [], charts: [] }
 }

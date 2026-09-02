@@ -45,11 +45,9 @@ export function FunnelMultiStepTrackingCard({
       variants={overviewScaleIn}
       initial={reduceMotion ? false : "hidden"}
       animate="visible"
-      className="h-full min-h-0"
     >
       <Card
         className={cn(
-          "flex h-full min-h-0 flex-col overflow-hidden",
           overviewCardPointerFocusResetClassName,
           overviewAnalyticCardShellClassName
         )}
@@ -59,7 +57,7 @@ export function FunnelMultiStepTrackingCard({
             Multi-Step Form Tracking
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex min-h-0 flex-1 flex-col p-0">
+        <CardContent className="flex flex-col p-0">
           {steps.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-muted-foreground sm:px-6">
               No multi-step data for this period. Add{" "}
@@ -79,7 +77,7 @@ export function FunnelMultiStepTrackingCard({
                   ease: [0.22, 1, 0.36, 1],
                 }}
                 className={cn(
-                  "flex min-h-0 flex-1 flex-col justify-center gap-2 px-5 py-3 sm:px-6 sm:py-4",
+                  "flex flex-col gap-2 px-5 py-3 sm:px-6 sm:py-4",
                   index < steps.length - 1 && "border-b border-border"
                 )}
               >

@@ -189,6 +189,19 @@ export function analyticsMondayKey(date: Date): string {
   return analyticsDayKey(addAnalyticsEtDays(start, diff))
 }
 
+export function formatAnalyticsHourWindow(hour: number): string {
+  const start = formatAnalyticsHourOfDay(hour)
+  const end = formatAnalyticsHourOfDay((hour + 1) % 24)
+  return `${start} – ${end} ET`
+}
+
+export function formatAnalyticsHourOfDay(hour: number): string {
+  const normalized = ((hour % 24) + 24) % 24
+  const suffix = normalized >= 12 ? "PM" : "AM"
+  const displayHour = normalized % 12 || 12
+  return `${displayHour}:00 ${suffix}`
+}
+
 export function formatAnalyticsSeriesHour(bucket: Date): string {
   return new Intl.DateTimeFormat(ANALYTICS_DISPLAY_LOCALE, {
     timeZone: ANALYTICS_TIMEZONE,

@@ -97,7 +97,7 @@ function ParamsPanel({
     <>
       <Card
         className={cn(
-          "group/status-card relative flex h-[380px] w-full max-w-none flex-col gap-0 overflow-hidden py-0!"
+          "group/status-card relative flex w-full max-w-none flex-col gap-0 py-0!"
         )}
       >
         <CardHeader className="shrink-0 border-b border-border px-5 py-4 sm:px-6">
@@ -115,7 +115,7 @@ function ParamsPanel({
             ) : null}
           </div>
         </CardHeader>
-        <CardContent className="min-h-0 flex-1 overflow-y-auto px-5 pt-5 pb-14 sm:px-6">
+        <CardContent className="px-5 pt-5 pb-4 sm:px-6">
           <UtmParamMasonryChips
             items={items}
             tone={tone}

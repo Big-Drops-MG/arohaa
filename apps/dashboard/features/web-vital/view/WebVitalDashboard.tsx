@@ -153,7 +153,7 @@ export function WebVitalDashboard({
       ) : (
         <div
           className={cn(
-            "grid gap-4 transition-opacity lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:items-stretch",
+            "grid gap-4 transition-opacity lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]",
             isRefreshing && "opacity-80"
           )}
           aria-busy={isRefreshing}
@@ -211,13 +211,13 @@ export function WebVitalDashboard({
             ))}
           </div>
 
-          <div className="flex min-h-0 min-w-0 flex-col gap-4">
+          <div className="flex min-w-0 flex-col gap-4">
             <WebVitalsUsaMap
               states={dashboardData.states}
               className="shrink-0"
             />
 
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-white">
+            <div className="flex flex-col rounded-xl border border-border bg-white">
               <div className="shrink-0 border-b border-neutral-100 px-4 py-3">
                 <h3 className="text-sm font-semibold text-neutral-900">
                   By device
@@ -226,8 +226,8 @@ export function WebVitalDashboard({
                   p75 Core Web Vitals per device class
                 </p>
               </div>
-              <div className="min-h-0 flex-1 overflow-x-auto">
-                <table className="h-full w-full min-w-[420px] text-left text-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[420px] text-left text-sm">
                   <thead>
                     <tr className="border-b border-neutral-100 text-xs text-muted-foreground">
                       <th className="px-4 py-2.5 font-medium">Device</th>

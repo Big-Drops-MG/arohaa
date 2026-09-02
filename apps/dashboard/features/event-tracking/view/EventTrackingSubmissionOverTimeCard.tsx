@@ -47,7 +47,7 @@ function EventTrackingSubmissionTable({
   const columns = eventTrackingSubmissionColumnLabels(formType)
 
   return (
-    <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
+    <div className="overflow-x-auto">
       <table className="w-full min-w-[280px] border-collapse text-sm">
         <thead>
           <tr className="border-b border-border">
@@ -118,7 +118,6 @@ function EventTrackingSubmissionOverTimeCardBody({
       variants={overviewScaleIn}
       initial={reduceMotion ? false : "hidden"}
       animate="visible"
-      className="h-full min-h-0"
     >
       <Card
         className={cn(
@@ -170,7 +169,6 @@ export function EventTrackingSubmissionOverTimeCard({
   return (
     <TrafficExpandableCard
       title={title}
-      className="h-full min-h-0"
       dialogClassName="max-w-3xl"
       expandedContent={
         <EventTrackingSubmissionTable

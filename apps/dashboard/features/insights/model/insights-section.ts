@@ -11,6 +11,7 @@ export const INSIGHT_SECTIONS = [
   { id: "quality", label: "Quality" },
   { id: "experiment", label: "Experiment" },
   { id: "intelligence", label: "Intelligence" },
+  { id: "level1", label: "Level 1" },
 ] as const
 
 export type InsightSectionId = (typeof INSIGHT_SECTIONS)[number]["id"]

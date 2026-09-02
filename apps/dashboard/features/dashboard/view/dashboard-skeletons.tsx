@@ -1,6 +1,8 @@
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import { cn } from "@workspace/ui/lib/utils"
 import {
+  dashboardGridFunnelChartClassName,
+  dashboardGridTwoColClassName,
   overviewAnalyticCardContentPaddingClassName,
   overviewAnalyticCardHeaderClassName,
   overviewAnalyticCardShellClassName,
@@ -51,7 +53,7 @@ export function DashboardAnalyticCardSkeleton({
   return (
     <div
       className={cn(
-        "flex h-full min-h-[220px] flex-col overflow-hidden rounded-[15px] border border-foreground/10 bg-card",
+        "flex min-h-[220px] flex-col rounded-[15px] border border-foreground/10 bg-card",
         overviewAnalyticCardShellClassName,
         className
       )}
@@ -186,12 +188,7 @@ export function DashboardCardGridSkeleton({
   className?: string
 }) {
   return (
-    <div
-      className={cn(
-        "grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0",
-        className
-      )}
-    >
+    <div className={cn(dashboardGridTwoColClassName, className)}>
       {Array.from({ length: cards }, (_, i) => (
         <DashboardAnalyticCardSkeleton key={i} />
       ))}
@@ -213,7 +210,7 @@ export function OverviewDashboardSkeleton() {
   return (
     <div className="flex flex-col gap-4" aria-busy>
       <DashboardKpiRowSkeleton count={6} />
-      <div className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-[3fr_7fr] lg:items-stretch">
+      <div className={dashboardGridFunnelChartClassName}>
         <DashboardAnalyticCardSkeleton rows={5} />
         <DashboardChartSkeleton />
       </div>

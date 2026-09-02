@@ -44,7 +44,6 @@ export function FunnelDropOffByFieldCard({
       variants={overviewScaleIn}
       initial={reduceMotion ? false : "hidden"}
       animate="visible"
-      className="h-full min-h-0"
     >
       <Card
         className={cn(
@@ -59,7 +58,7 @@ export function FunnelDropOffByFieldCard({
           </CardTitle>
         </CardHeader>
         <CardContent className={trafficBreakdownCardContentClassName}>
-          <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
+          <div className="overflow-x-auto">
             <table className="w-full min-w-[280px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-border">

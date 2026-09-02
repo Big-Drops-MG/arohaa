@@ -59,7 +59,6 @@ function SegmentsPerformanceBreakdownCardBody({
       variants={overviewScaleIn}
       initial={reduceMotion ? false : "hidden"}
       animate="visible"
-      className="h-full min-h-0"
     >
       <Card
         className={cn(
@@ -74,7 +73,7 @@ function SegmentsPerformanceBreakdownCardBody({
           </CardTitle>
         </CardHeader>
         <CardContent className={segmentsPerformanceCardContentClassName(size)}>
-          <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
+          <div className="overflow-x-auto">
             <TrafficBreakdownTableView
               table={table}
               emptyMessage={emptyMessage}
@@ -119,7 +118,6 @@ export function SegmentsPerformanceBreakdownCard({
   return (
     <TrafficExpandableCard
       title={title}
-      className="h-full min-h-0"
       expandedContent={
         <TrafficBreakdownTableView
           table={table}

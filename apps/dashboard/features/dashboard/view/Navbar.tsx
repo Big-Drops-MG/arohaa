@@ -9,7 +9,9 @@ import type { LandingPageNavItem } from "@/features/dashboard/model/landing-page
 import { LandingPageProjectDropdown } from "@/features/dashboard/view/LandingPageProjectDropdown"
 import { NavbarClock } from "@/features/dashboard/view/NavbarClock"
 import { NotificationBell } from "@/features/notifications/view/NotificationBell"
+import { dashboardPageInsetClassName } from "@/features/overview/view/overview-card-density"
 import { Button } from "@workspace/ui/components/button"
+import { cn } from "@workspace/ui/lib/utils"
 import {
   Popover,
   PopoverContent,
@@ -47,7 +49,12 @@ export function Navbar({
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-border bg-background">
-      <div className="mx-auto flex w-full max-w-[1440px] items-center justify-between">
+      <div
+        className={cn(
+          "mx-auto flex w-full max-w-[1440px] items-center justify-between",
+          dashboardPageInsetClassName
+        )}
+      >
         <div className="flex min-w-0 items-center gap-6">
           <Link
             href="/dashboard"

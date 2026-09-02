@@ -240,7 +240,7 @@ export function SegmentsDashboard({
             className="flex flex-col gap-4"
           >
             <div className="border-b border-neutral-200 bg-transparent">
-              <TabsList className="h-auto min-h-10 w-full justify-start gap-5 overflow-x-auto rounded-none border-0 bg-transparent p-0">
+              <TabsList className="h-auto min-h-10 w-full flex-wrap justify-start gap-x-5 gap-y-1 rounded-none border-0 bg-transparent p-0">
                 {visibleViews.map((option) => (
                   <TabsTrigger
                     key={option.value}
