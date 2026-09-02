@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { cn } from "@workspace/ui/lib/utils"
 import {
   Tabs,
@@ -43,6 +43,14 @@ import { useDashboardNavigation } from "@/hooks/use-dashboard-navigation"
 import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
 import { DashboardAccessProvider } from "@/features/dashboard/view/dashboard-access-context"
 import { dashboardPageInsetClassName } from "@/features/overview/view/overview-card-density"
+import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
+import {
+  cacheDataLabResponse,
+  fetchDataLabWithPriority,
+} from "@/features/data-lab/model/data-lab-priority-fetch"
+import { fetchDataLabStatsFromLeadsTable } from "@/features/data-lab/model/level1-from-leads"
+import { hasCompleteLevel1Stats } from "@/features/data-lab/model/level1"
+import { DATA_EXPORT_PAGE_SIZE } from "@/features/data-export/model/data-export"
 
 export type { ProjectTabValue }
 
@@ -91,7 +99,7 @@ function ProjectDashboardViewInner({
       }
       return parsed
     },
-    // Do not restore tab from localStorage — bare /dashboard/{id} must open Overview.
+    projectId,
     omitDefault: true,
     // Tab bodies load via client fetch; refreshing RSC here races replace and
     // leaves the controlled Tabs on the previous value until a second click.
@@ -100,6 +108,107 @@ function ProjectDashboardViewInner({
   const { dateRangeId, customRange } = useDashboardDateRange()
   const { utmFilter, setUtmFilter } = useDashboardUtmFilter()
   const { segmentId } = useDashboardSegmentFilter()
+  const dataLabPath = useMemo(() => {
+    const path = buildAnalyticsApiPath(
+      `/api/landing-pages/${encodeURIComponent(projectId)}/data-export`,
+      { rangeId: dateRangeId, customRange }
+    )
+    const url = new URL(path, "http://local.invalid")
+    url.searchParams.set("limit", "50")
+    return `${url.pathname}${url.search}`
+  }, [customRange, dateRangeId, projectId])
+  const [dataLabPreload, setDataLabPreload] = useState<{
+    requestKey: string
+    data: ProjectTabData["data-export"] | null
+    loading: boolean
+  }>(() => ({
+    requestKey: dataLabPath,
+    data: initial["data-export"] ?? null,
+    loading: !initial["data-export"],
+  }))
+
+  useEffect(() => {
+    if (
+      !canAccessDataExport ||
+      !visibleTabs.some((tab) => tab.value === "data-lab")
+    ) {
+      return
+    }
+
+    const controller = new AbortController()
+    setDataLabPreload((current) => ({
+      requestKey: dataLabPath,
+      data: current.requestKey === dataLabPath ? current.data : null,
+      loading: true,
+    }))
+
+    void fetchDataLabWithPriority(dataLabPath, controller.signal)
+      .then(async (data) => {
+        const statsComplete =
+          data.level1Complete &&
+          hasCompleteLevel1Stats(data.level1Stats) &&
+          data.level2Complete &&
+          Array.isArray(data.level2Stats)
+        let completeData = data
+        if (!statsComplete) {
+          const completeStats = await fetchDataLabStatsFromLeadsTable({
+            projectId,
+            dateRangeId,
+            customRange,
+            signal: controller.signal,
+            seed: data,
+          })
+          completeData = {
+            ...data,
+            level1Stats: completeStats.level1Stats,
+            level1Complete: true,
+            level2Stats: completeStats.level2Stats,
+            level2Complete: true,
+          }
+        }
+
+        const firstPageData = {
+          ...completeData,
+          leads: completeData.leads.slice(0, DATA_EXPORT_PAGE_SIZE),
+          limit: DATA_EXPORT_PAGE_SIZE,
+          offset: 0,
+          hasMore: completeData.total > DATA_EXPORT_PAGE_SIZE,
+        }
+        cacheDataLabResponse(dataLabPath, firstPageData)
+        return firstPageData
+      })
+      .then((data) => {
+        if (controller.signal.aborted) return
+        setDataLabPreload({
+          requestKey: dataLabPath,
+          data,
+          loading: false,
+        })
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return
+        setDataLabPreload((current) =>
+          current.requestKey === dataLabPath
+            ? { ...current, loading: false }
+            : current
+        )
+        console.error("[data-lab] priority preload failed", error)
+      })
+
+    return () => controller.abort()
+  }, [
+    canAccessDataExport,
+    customRange,
+    dataLabPath,
+    dateRangeId,
+    projectId,
+    visibleTabs,
+  ])
+
+  const preloadedDataLab =
+    dataLabPreload.requestKey === dataLabPath ? dataLabPreload.data : null
+  const preloadedDataLabLoading =
+    dataLabPreload.requestKey !== dataLabPath || dataLabPreload.loading
 
   useEffect(() => {
     if (!lockedUtmSources || lockedUtmSources.length === 0) return
@@ -111,6 +220,14 @@ function ProjectDashboardViewInner({
     if (sameSources) return
     setUtmFilter({ utm_source: lockedUtmSources })
   }, [lockedUtmSources, utmFilter, setUtmFilter])
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("arohaa:dashboard-tab", {
+        detail: { projectPublicId: projectId, tab: activeTab },
+      })
+    )
+  }, [activeTab, projectId])
 
   const {
     overview,
@@ -145,7 +262,11 @@ function ProjectDashboardViewInner({
     <DashboardAccessProvider
       value={{ readOnly, lockedUtmSources: lockedUtmSources ?? null }}
     >
-      <div className="relative flex w-full flex-1 flex-col">
+      <div
+        className="relative flex w-full flex-1 flex-col"
+        data-project-public-id={projectId}
+        data-dashboard-tab={activeTab}
+      >
         {isPending ? (
           <div
             className="pointer-events-none absolute inset-x-0 top-0 z-20 h-0.5 overflow-hidden bg-neutral-200"
@@ -163,7 +284,7 @@ function ProjectDashboardViewInner({
           <div className="w-full border-b border-neutral-200 bg-neutral-50/90">
             <div
               className={cn(
-                "mx-auto w-full max-w-[1440px]",
+                "mx-auto w-full max-w-360",
                 dashboardPageInsetClassName
               )}
             >
@@ -179,7 +300,7 @@ function ProjectDashboardViewInner({
 
           <div
             className={cn(
-              "mx-auto w-full max-w-[1440px] pb-8",
+              "mx-auto w-full max-w-360 pb-8",
               dashboardPageInsetClassName
             )}
             aria-busy={isPending}
@@ -214,7 +335,8 @@ function ProjectDashboardViewInner({
                     isActive
                     canAccessDataExport={canAccessDataExport}
                     allowedSections={sectionsByTab?.["data-lab"]}
-                    initialDataExport={initial["data-export"] ?? null}
+                    initialDataExport={preloadedDataLab}
+                    initialDataExportLoading={preloadedDataLabLoading}
                   />
                 ) : tab.value === "heatmap" ? (
                   <HeatmapDashboard

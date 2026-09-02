@@ -23,6 +23,7 @@ import {
   overviewSelectTriggerClassName,
 } from "@/features/overview/view/overview-select-styles"
 import type { NewLandingMode } from "@/features/dashboard/model/new-landing-mode"
+import { writeDashboardPreference } from "@/lib/dashboard/dashboard-preferences"
 
 type Step = 1 | 2 | 3
 type ConnectionStatus = "idle" | "checking" | "connected" | "failed"
@@ -72,6 +73,7 @@ export function NewLandingPage({
   const [sdkSnippet, setSdkSnippet] = useState("")
   const [htmlVerificationMetaTag, setHtmlVerificationMetaTag] = useState("")
   const [publicLandingId, setPublicLandingId] = useState<string | null>(null)
+  const [landingPageSlug, setLandingPageSlug] = useState<string | null>(null)
   const [verifyHtmlHint, setVerifyHtmlHint] = useState<string | null>(null)
 
   const [parentOptions, setParentOptions] = useState<ParentProjectOption[]>([])
@@ -187,7 +189,7 @@ export function NewLandingPage({
         error?: string
         sdkSnippetHtml?: string
         htmlVerificationMetaTag?: string
-        landingPage?: { publicId?: string }
+        landingPage?: { publicId?: string; slug?: string }
         variant?: { label?: string } | null
       }
       if (!res.ok) {
@@ -196,12 +198,14 @@ export function NewLandingPage({
       }
       const snippet = data.sdkSnippetHtml
       const pid = data.landingPage?.publicId
-      if (typeof snippet !== "string" || !snippet.trim() || !pid) {
+      const slug = data.landingPage?.slug
+      if (typeof snippet !== "string" || !snippet.trim() || !pid || !slug) {
         setSubmitError("Invalid response from server")
         return
       }
       setSdkSnippet(snippet)
       setPublicLandingId(pid)
+      setLandingPageSlug(slug)
       setCreatedVariantLabel(data.variant?.label ?? null)
       setHtmlVerificationMetaTag(
         typeof data.htmlVerificationMetaTag === "string"
@@ -328,8 +332,8 @@ export function NewLandingPage({
     )
   }, [publicLandingId])
 
-  const experimentHref = publicLandingId
-    ? `/dashboard/${encodeURIComponent(publicLandingId)}?tab=experiments`
+  const experimentHref = landingPageSlug
+    ? `/dashboard/${encodeURIComponent(landingPageSlug)}`
     : "/dashboard"
 
   return (
@@ -629,7 +633,20 @@ export function NewLandingPage({
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 {createdVariantLabel ? (
                   <Button asChild>
-                    <Link href={experimentHref}>View experiment</Link>
+                    <Link
+                      href={experimentHref}
+                      onClick={() => {
+                        if (publicLandingId) {
+                          writeDashboardPreference(
+                            publicLandingId,
+                            "tab",
+                            "experiments"
+                          )
+                        }
+                      }}
+                    >
+                      View experiment
+                    </Link>
                   </Button>
                 ) : null}
                 <Button

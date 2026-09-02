@@ -3,6 +3,7 @@ import type {
   OverviewDateRangeOption,
 } from "@/features/overview/model/overview"
 import type { Level1Stat } from "@/features/data-lab/model/level1"
+import type { Level2Stat } from "@/features/data-lab/model/level2"
 
 export type DataExportLeadRow = {
   sessionId: string
@@ -29,6 +30,11 @@ export type DataExportDashboardData = {
   hasMore: boolean
   hasRedirect: boolean
   level1Stats: Level1Stat[]
+  /** True when level1Stats cover the whole range rather than just this page. */
+  level1Complete: boolean
+  level2Stats: Level2Stat[]
+  /** True when level2Stats cover the whole range rather than just this page. */
+  level2Complete: boolean
 }
 
 export const DATA_EXPORT_PAGE_SIZE = 15

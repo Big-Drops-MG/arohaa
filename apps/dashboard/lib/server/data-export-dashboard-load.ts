@@ -14,6 +14,8 @@ import type { RangeId } from "@/lib/server/analytics-types"
 import {
   buildInternalUserDelegationHeaders,
   FUNNEL_LEADS_DELEGATION_SCOPE,
+  resolveVehicleNamesInLeadFields,
+  resolveVehicleNamesInLevel2Stats,
 } from "@workspace/database"
 import {
   resolveIngestApiBase,
@@ -27,6 +29,10 @@ import {
   resolveLevel1Stats,
   type Level1Stat,
 } from "@/features/data-lab/model/level1"
+import {
+  resolveLevel2Stats,
+  type Level2Stat,
+} from "@/features/data-lab/model/level2"
 import { mapDataExportLeadRow } from "@/features/data-lab/model/level1-from-leads"
 import { DEFAULT_ROUTE_MAX_OFFSET } from "@/lib/server/route-query-limits"
 
@@ -50,6 +56,7 @@ type LeadsApiResponse = {
   offset?: number
   hasMore?: boolean
   level1Stats?: Level1Stat[]
+  level2Stats?: Level2Stat[]
 }
 
 async function fetchLeads(
@@ -88,9 +95,22 @@ async function fetchLeads(
       signal: controller.signal,
       cache: "no-store",
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      const body = await res.text().catch(() => "")
+      console.error(`[data-export] leads API ${res.status}`, body.slice(0, 200))
+      return null
+    }
     return (await res.json()) as LeadsApiResponse
-  } catch {
+  } catch (err) {
+    const name =
+      err && typeof err === "object" && "name" in err
+        ? String((err as { name?: string }).name)
+        : ""
+    if (name === "AbortError") {
+      console.warn("[data-export] leads API request timed out")
+    } else {
+      console.error("[data-export] leads API request failed", err)
+    }
     return null
   } finally {
     clearTimeout(timer)
@@ -138,8 +158,26 @@ export async function loadDataExportDashboardData({
     return getDataExportEmptyDashboardData(rangeId, true, row.brandName)
   }
 
-  const mappedLeads = (analytics.leads ?? []).map((lead) =>
+  const rawMappedLeads = (analytics.leads ?? []).map((lead) =>
     mapDataExportLeadRow(lead as unknown as Record<string, unknown>)
+  )
+  let mappedLeads = rawMappedLeads
+  let mappedLevel2Stats = analytics.level2Stats
+  try {
+    const resolved = await Promise.all([
+      resolveVehicleNamesInLeadFields(rawMappedLeads),
+      resolveVehicleNamesInLevel2Stats(analytics.level2Stats ?? []),
+    ])
+    mappedLeads = resolved[0]
+    mappedLevel2Stats = resolved[1]
+  } catch (error) {
+    console.error("[data-export] vehicle model lookup failed", error)
+  }
+  const level1 = resolveLevel1Stats(analytics.level1Stats, mappedLeads)
+  const level2 = resolveLevel2Stats(
+    mappedLevel2Stats,
+    mappedLeads,
+    Array.isArray(mappedLevel2Stats)
   )
 
   return {
@@ -153,8 +191,10 @@ export async function loadDataExportDashboardData({
     offset: analytics.offset ?? offset,
     hasMore: Boolean(analytics.hasMore),
     hasRedirect: true,
-    // Always derive from lead rows (same When + Form Submitted as the table).
-    level1Stats: resolveLevel1Stats(analytics.level1Stats, mappedLeads),
+    level1Stats: level1.stats,
+    level1Complete: level1.complete,
+    level2Stats: level2.stats,
+    level2Complete: level2.complete,
   }
 }
 

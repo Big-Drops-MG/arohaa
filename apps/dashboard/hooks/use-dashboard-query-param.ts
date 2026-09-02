@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   readDashboardPreference,
+  subscribeDashboardPreference,
   writeDashboardPreference,
 } from "@/lib/dashboard/dashboard-preferences"
 import { useDashboardNavigation } from "@/hooks/use-dashboard-navigation"
@@ -46,8 +47,11 @@ export function useDashboardQueryParam<T extends string>(
   )
 
   const [optimisticValue, setOptimisticValue] = useState<T | null>(null)
+  const [storedValue, setStoredValue] = useState<T | null>(null)
 
-  const value = optimisticValue ?? urlValue
+  const value = projectId
+    ? (storedValue ?? urlValue)
+    : (optimisticValue ?? urlValue)
 
   const defaultValue = useMemo(() => parseRef.current(null), [])
 
@@ -77,8 +81,12 @@ export function useDashboardQueryParam<T extends string>(
   const setValue = useCallback(
     (next: T) => {
       if (next === value) return
+      if (projectId) {
+        setStoredValue(next)
+        writeDashboardPreference(projectId, key, next)
+        return
+      }
       setOptimisticValue(next)
-      if (projectId) writeDashboardPreference(projectId, key, next)
       writeUrl(next, refreshOnChange)
     },
     [key, projectId, refreshOnChange, value, writeUrl]
@@ -88,6 +96,7 @@ export function useDashboardQueryParam<T extends string>(
     if (!projectId) return
     if (searchParams.has(key)) {
       writeDashboardPreference(projectId, key, urlValue)
+      setStoredValue(urlValue)
     }
   }, [key, projectId, searchParams, urlValue])
 
@@ -100,11 +109,16 @@ export function useDashboardQueryParam<T extends string>(
     const saved = readDashboardPreference(projectId, key)
     if (!saved) return
     const parsed = parseRef.current(saved)
-    setOptimisticValue(parsed)
-    writeUrl(parsed, false)
-    // Restore once per mount when the URL is missing this key.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional one-shot hydrate
+    setStoredValue(parsed)
   }, [projectId])
+
+  useEffect(() => {
+    if (!projectId) return
+    return subscribeDashboardPreference(projectId, key, (raw) => {
+      if (!raw) return
+      setStoredValue(parseRef.current(raw))
+    })
+  }, [key, projectId])
 
   return [value, setValue, { isPending }]
 }

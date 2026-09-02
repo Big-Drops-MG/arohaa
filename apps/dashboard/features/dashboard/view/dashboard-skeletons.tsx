@@ -348,3 +348,45 @@ export function SettingsDashboardSkeleton() {
     </div>
   )
 }
+
+export function Level1StatsSkeleton({
+  count = 6,
+  className,
+}: {
+  count?: number
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3",
+        className
+      )}
+      aria-busy
+      aria-hidden
+    >
+      {Array.from({ length: count }, (_, i) => (
+        <div
+          key={i}
+          className={cn(
+            "flex min-h-[140px] flex-col rounded-[15px] border border-foreground/10 bg-card",
+            overviewAnalyticCardShellClassName
+          )}
+        >
+          <div className={overviewAnalyticCardHeaderClassName}>
+            <Skeleton className="h-4 w-28" />
+          </div>
+          <div
+            className={cn(
+              "flex flex-1 flex-col gap-3",
+              overviewAnalyticCardContentPaddingClassName
+            )}
+          >
+            <Skeleton className="h-7 w-36" />
+            <Skeleton className="h-4 w-44" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}

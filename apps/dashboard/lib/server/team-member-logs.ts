@@ -72,9 +72,7 @@ export async function loadTeamMemberLogsForApi(targetUserId: string): Promise<
     eventType: row.action,
     summary: formatAuditLogAction(row.action),
     detail: formatAuditLogDetail(row),
-    path: row.landingPagePublicId
-      ? `/dashboard/${row.landingPagePublicId}`
-      : null,
+    path: row.landingPageSlug ? `/dashboard/${row.landingPageSlug}` : null,
     tab: "settings",
     projectPublicId: row.landingPagePublicId ?? null,
     projectName: row.landingPageBrandName ?? null,

@@ -14,9 +14,22 @@ import {
   parseDataLabSection,
   type DataLabSectionId,
 } from "@/features/data-lab/model/data-lab-sections"
-import { emptyLevel1Stats } from "@/features/data-lab/model/level1"
-import { fetchLevel1StatsFromLeadsTable } from "@/features/data-lab/model/level1-from-leads"
+import {
+  emptyLevel1Stats,
+  hasCompleteLevel1Stats,
+  type Level1Stat,
+} from "@/features/data-lab/model/level1"
+import {
+  emptyLevel2Stats,
+  filterLevel2StatsToVisibleLeadColumns,
+  type Level2Stat,
+} from "@/features/data-lab/model/level2"
+import {
+  dataLabStatsFromExportPayload,
+  fetchDataLabStatsFromLeadsTable,
+} from "@/features/data-lab/model/level1-from-leads"
 import { Level1Panel } from "@/features/data-lab/view/Level1Panel"
+import { Level2Panel } from "@/features/data-lab/view/Level2Panel"
 import { DataLabLeadsPanel } from "@/features/data-lab/view/DataLabLeadsPanel"
 import type { DataExportDashboardData } from "@/features/data-export/model/data-export"
 import { getDataExportEmptyDashboardData } from "@/features/data-export/controller/data-export-empty-data"
@@ -25,8 +38,6 @@ import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-ran
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardNavigation } from "@/hooks/use-dashboard-navigation"
 import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
-import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
-import type { Level1Stat } from "@/features/data-lab/model/level1"
 
 type DataLabDashboardProps = {
   projectId: string
@@ -34,6 +45,7 @@ type DataLabDashboardProps = {
   canAccessDataExport: boolean
   allowedSections?: string[] | null
   initialDataExport?: DataExportDashboardData | null
+  initialDataExportLoading?: boolean
 }
 
 function parseLabWithLegacy(
@@ -46,12 +58,34 @@ function parseLabWithLegacy(
   return "level-1"
 }
 
+function seedDataLabStats(initialDataExport: DataExportDashboardData | null) {
+  if (!initialDataExport) {
+    return {
+      level1Stats: emptyLevel1Stats(),
+      level2Stats: emptyLevel2Stats(),
+    }
+  }
+  return dataLabStatsFromExportPayload(initialDataExport)
+}
+
+function hasCompleteDataLabStats(
+  data: DataExportDashboardData | null | undefined
+): boolean {
+  return Boolean(
+    data?.level1Complete &&
+    hasCompleteLevel1Stats(data.level1Stats) &&
+    data.level2Complete &&
+    Array.isArray(data.level2Stats)
+  )
+}
+
 export function DataLabDashboard({
   projectId,
   isActive = true,
   canAccessDataExport,
   allowedSections = null,
   initialDataExport = null,
+  initialDataExportLoading = false,
 }: DataLabDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
@@ -99,80 +133,103 @@ export function DataLabDashboard({
   )
   const [exportLoading, setExportLoading] = useState(false)
 
-  const [level1Stats, setLevel1Stats] = useState<Level1Stat[]>(() =>
-    initialDataExport?.level1Stats?.[0]?.enoughData
-      ? initialDataExport.level1Stats
-      : emptyLevel1Stats()
+  const seeded = seedDataLabStats(initialDataExport)
+  const [level1Stats, setLevel1Stats] = useState<Level1Stat[]>(
+    () => seeded.level1Stats
   )
-  const [level1Loading, setLevel1Loading] = useState(false)
-
-  const loadExport = useCallback(
-    async (signal?: AbortSignal) => {
-      const path = buildAnalyticsApiPath(
-        `/api/landing-pages/${encodeURIComponent(projectId)}/data-export`,
-        { rangeId: dateRangeId, customRange }
-      )
-      const res = await fetch(path, { cache: "no-store", signal })
-      if (!res.ok) throw new Error(`data-export ${res.status}`)
-      return (await res.json()) as DataExportDashboardData
-    },
-    [projectId, dateRangeId, customRange]
+  const [level2Stats, setLevel2Stats] = useState<Level2Stat[]>(
+    () => seeded.level2Stats
+  )
+  const [statsLoading, setStatsLoading] = useState(
+    () =>
+      canAccessDataExport &&
+      (initialDataExportLoading || !hasCompleteDataLabStats(initialDataExport))
   )
 
   useEffect(() => {
     if (!isActive || !canAccessDataExport) return
+    if (initialDataExportLoading || !initialDataExport) {
+      setExportLoading(true)
+      setStatsLoading(true)
+      return
+    }
 
+    const payload = initialDataExport
     const controller = new AbortController()
-    setExportLoading(true)
-    void loadExport(controller.signal)
-      .then((payload) => {
-        if (controller.signal.aborted) return
-        setExportData(payload)
-      })
-      .catch((err) => {
-        if (controller.signal.aborted) return
-        console.error("[data-lab] export fetch failed", err)
+    let cancelled = false
+    setExportData(payload)
+    setExportLoading(false)
+    setStatsLoading(true)
+
+    async function resolveCompleteStats() {
+      try {
+        if (hasCompleteDataLabStats(payload)) {
+          const completeStats = dataLabStatsFromExportPayload(payload)
+          setLevel1Stats(completeStats.level1Stats)
+          setLevel2Stats(completeStats.level2Stats)
+          setStatsLoading(false)
+          return
+        }
+
+        const refined = await fetchDataLabStatsFromLeadsTable({
+          projectId,
+          dateRangeId,
+          customRange,
+          signal: controller.signal,
+          seed: payload,
+        })
+        if (cancelled || controller.signal.aborted) return
+        setLevel1Stats(refined.level1Stats)
+        setLevel2Stats(refined.level2Stats)
+        setStatsLoading(false)
+      } catch (err) {
+        if (cancelled || controller.signal.aborted) return
+        console.error("[data-lab] load failed", err)
         setExportData(getDataExportEmptyDashboardData(dateRangeId))
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setExportLoading(false)
-      })
-
-    return () => controller.abort()
-  }, [isActive, canAccessDataExport, loadExport, dateRangeId, customRange])
-
-  useEffect(() => {
-    if (!isActive || !canAccessDataExport) return
-
-    const controller = new AbortController()
-    setLevel1Loading(true)
-    void fetchLevel1StatsFromLeadsTable({
-      projectId,
-      dateRangeId,
-      customRange,
-      signal: controller.signal,
-    })
-      .then((stats) => {
-        if (controller.signal.aborted) return
-        setLevel1Stats(stats)
-      })
-      .catch((err) => {
-        if (controller.signal.aborted) return
-        console.error("[data-lab] level1 leads fetch failed", err)
         setLevel1Stats(emptyLevel1Stats())
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLevel1Loading(false)
-      })
+        setLevel2Stats(emptyLevel2Stats())
+      } finally {
+        if (!cancelled && !controller.signal.aborted) {
+          setExportLoading(false)
+        }
+      }
+    }
 
-    return () => controller.abort()
-  }, [isActive, canAccessDataExport, projectId, dateRangeId, customRange])
+    void resolveCompleteStats()
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [
+    isActive,
+    canAccessDataExport,
+    projectId,
+    dateRangeId,
+    customRange,
+    initialDataExport,
+    initialDataExportLoading,
+  ])
+
+  const cardsLoading =
+    statsLoading || initialDataExportLoading || !initialDataExport
+  const leadsLoading =
+    exportLoading || initialDataExportLoading || !initialDataExport
 
   const handleExportDataChange = useCallback(
     (data: DataExportDashboardData) => {
       setExportData(data)
     },
     []
+  )
+
+  const visibleLevel2Stats = useMemo(
+    () =>
+      filterLevel2StatsToVisibleLeadColumns(
+        level2Stats,
+        exportData?.leads ?? []
+      ),
+    [level2Stats, exportData?.leads]
   )
 
   return (
@@ -208,7 +265,17 @@ export function DataLabDashboard({
           {labSection === "level-1" ? (
             <Level1Panel
               stats={level1Stats}
-              isLoading={level1Loading}
+              isLoading={cardsLoading}
+              canAccess={canAccessDataExport}
+            />
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="level-2" className="mt-5 outline-none">
+          {labSection === "level-2" ? (
+            <Level2Panel
+              stats={visibleLevel2Stats}
+              isLoading={cardsLoading}
               canAccess={canAccessDataExport}
             />
           ) : null}
@@ -220,7 +287,7 @@ export function DataLabDashboard({
               projectId={projectId}
               canAccess={canAccessDataExport}
               data={exportData}
-              isLoading={exportLoading}
+              isLoading={leadsLoading}
               isActive={isActive}
               onDataChange={handleExportDataChange}
             />

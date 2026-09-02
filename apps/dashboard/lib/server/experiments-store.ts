@@ -23,6 +23,7 @@ export type ExperimentVariantHealth = {
   label: string
   landingPageId: string
   publicId: string
+  slug: string
   brandName: string
   hostname: string
   landingPageUrl: string
@@ -45,6 +46,7 @@ export type ExperimentConfigView = {
   variantLabels: string
   hubLandingPageId: string
   hubPublicId: string | null
+  hubSlug: string | null
   hubBrandName: string | null
   isHub: boolean
   currentLabel: string | null
@@ -53,6 +55,7 @@ export type ExperimentConfigView = {
 export type SiblingLandingPageOption = {
   id: string
   publicId: string
+  slug: string
   brandName: string
   hostname: string
   landingPageUrl: string
@@ -166,6 +169,7 @@ export async function listSiblingLandingPages(
     .select({
       id: landingPages.id,
       publicId: landingPages.publicId,
+      slug: landingPages.slug,
       brandName: landingPages.brandName,
       hostname: landingPages.hostname,
       landingPageUrl: landingPages.landingPageUrl,
@@ -209,6 +213,7 @@ async function hydrateVariantHealth(
       label: link.label,
       landingPageId: lp.id,
       publicId: lp.publicId,
+      slug: lp.slug,
       brandName: lp.brandName,
       hostname: lp.hostname,
       landingPageUrl: lp.landingPageUrl,
@@ -248,11 +253,16 @@ export async function getExperimentConfigForLandingPage(
   )
 
   const hub = isHub
-    ? { publicId: landingPage.publicId, brandName: landingPage.brandName }
+    ? {
+        publicId: landingPage.publicId,
+        slug: landingPage.slug,
+        brandName: landingPage.brandName,
+      }
     : ((
         await db
           .select({
             publicId: landingPages.publicId,
+            slug: landingPages.slug,
             brandName: landingPages.brandName,
           })
           .from(landingPages)
@@ -273,6 +283,7 @@ export async function getExperimentConfigForLandingPage(
       variantLabels: variants.map((v) => v.label).join(" / "),
       hubLandingPageId: exp.landingPageId,
       hubPublicId: hub?.publicId ?? null,
+      hubSlug: hub?.slug ?? null,
       hubBrandName: hub?.brandName ?? null,
       isHub,
       currentLabel: variants.find((v) => v.isCurrent)?.label ?? null,
@@ -651,6 +662,7 @@ export async function attachLandingPageAsVariant({
 export type ExperimentMembershipVariant = {
   label: string
   publicId: string
+  slug: string
   brandName: string
   hostname: string
   isControl: boolean
@@ -664,6 +676,7 @@ export type ExperimentMembershipView = {
   label: string | null
   isHub: boolean
   hubPublicId: string | null
+  hubSlug: string | null
   hubBrandName: string | null
   variants: ExperimentMembershipVariant[]
 }
@@ -689,10 +702,12 @@ export async function getExperimentMembershipForLandingPage(
       label: experiment.currentLabel,
       isHub: experiment.isHub,
       hubPublicId: experiment.hubPublicId,
+      hubSlug: experiment.hubSlug,
       hubBrandName: experiment.hubBrandName,
       variants: experiment.variants.map((variant) => ({
         label: variant.label,
         publicId: variant.publicId,
+        slug: variant.slug,
         brandName: variant.brandName,
         hostname: variant.hostname,
         isControl: variant.isControl,

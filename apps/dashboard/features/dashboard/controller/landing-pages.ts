@@ -24,6 +24,7 @@ export async function getLandingPageNavItems(): Promise<LandingPageNavItem[]> {
   const rows = await db
     .select({
       publicId: landingPages.publicId,
+      slug: landingPages.slug,
       brandName: landingPages.brandName,
       faviconUrl: landingPages.faviconUrl,
     })
@@ -44,6 +45,7 @@ export async function getLandingPageList(): Promise<LandingPageListItem[]> {
     .select({
       id: landingPages.id,
       publicId: landingPages.publicId,
+      slug: landingPages.slug,
       brandName: landingPages.brandName,
       landingPageUrl: landingPages.landingPageUrl,
       faviconUrl: landingPages.faviconUrl,
@@ -72,6 +74,7 @@ export async function getLandingPageList(): Promise<LandingPageListItem[]> {
     const membership = variantByLandingPageId.get(row.id) ?? null
     return {
       publicId: row.publicId,
+      slug: row.slug,
       brandName: row.brandName,
       landingPageUrl: row.landingPageUrl,
       faviconUrl: row.faviconUrl,

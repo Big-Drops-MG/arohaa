@@ -15,6 +15,7 @@ import {
   DATA_EXPORT_PAGE_SIZE,
   type DataExportDashboardData,
 } from "@/features/data-export/model/data-export"
+import { discoverVisibleLeadFieldKeys } from "@/features/data-export/model/lead-field-columns"
 import {
   overviewAnalyticCardHeaderClassName,
   overviewAnalyticCardShellClassName,
@@ -43,15 +44,6 @@ type DataExportDashboardProps = {
   onDataChange?: (data: DataExportDashboardData) => void
 }
 
-const PREFERRED_FIELD_ORDER = [
-  "dob",
-  "first_name",
-  "last_name",
-  "address",
-  "city",
-  "state",
-]
-
 const thClassName =
   "px-4 py-2.5 text-left text-xs font-semibold whitespace-nowrap text-muted-foreground"
 
@@ -73,20 +65,6 @@ function formatWhen(value: string): string {
     hour12: true,
   })
   return `${formatted} ${getDashboardTimezoneAbbreviation(d)}`
-}
-
-function sortFieldKeys(keys: string[]): string[] {
-  const preferred = new Map(
-    PREFERRED_FIELD_ORDER.map((key, index) => [key, index])
-  )
-  return [...keys].sort((a, b) => {
-    const ai = preferred.get(a.toLowerCase())
-    const bi = preferred.get(b.toLowerCase())
-    if (ai != null && bi != null) return ai - bi
-    if (ai != null) return -1
-    if (bi != null) return 1
-    return a.localeCompare(b)
-  })
 }
 
 function isAddressFieldKey(key: string): boolean {
@@ -203,13 +181,10 @@ export function DataExportDashboard({
   const canGoPrev = pageOffset > 0 && total > 0
   const canGoNext = pageOffset + pageSize < total
 
-  const fieldKeys = useMemo(() => {
-    const keys = new Set<string>()
-    for (const lead of dashboardData.leads) {
-      for (const key of Object.keys(lead.fields)) keys.add(key)
-    }
-    return sortFieldKeys([...keys])
-  }, [dashboardData.leads])
+  const fieldKeys = useMemo(
+    () => discoverVisibleLeadFieldKeys(dashboardData.leads),
+    [dashboardData.leads]
+  )
 
   const fieldColumns = useMemo(() => buildFieldColumns(fieldKeys), [fieldKeys])
 

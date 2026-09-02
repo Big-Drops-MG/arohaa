@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useTransition,
   type ReactNode,
@@ -47,6 +48,13 @@ export function DashboardNavigationProvider({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const [isPending, startTransition] = useTransition()
+
+  useEffect(() => {
+    const match = pathname.match(/^\/dashboard\/([^/]+)\/?$/)
+    if (!match?.[1] || !searchParams.toString()) return
+    if (["new-landing", "ops", "profile", "team"].includes(match[1])) return
+    router.replace(pathname, { scroll: false })
+  }, [pathname, router, searchParams])
 
   const replaceSearch = useCallback(
     (

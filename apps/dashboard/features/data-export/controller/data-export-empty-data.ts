@@ -4,6 +4,7 @@ import {
   type DataExportDashboardData,
 } from "@/features/data-export/model/data-export"
 import { emptyLevel1Stats } from "@/features/data-lab/model/level1"
+import { emptyLevel2Stats } from "@/features/data-lab/model/level2"
 import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-range"
 
 export function getDataExportEmptyDashboardData(
@@ -22,5 +23,8 @@ export function getDataExportEmptyDashboardData(
     hasMore: false,
     hasRedirect,
     level1Stats: emptyLevel1Stats(),
+    level1Complete: false,
+    level2Stats: emptyLevel2Stats(),
+    level2Complete: false,
   }
 }

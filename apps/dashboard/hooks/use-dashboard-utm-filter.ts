@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   hasDashboardUtmFilter,
   normalizeDashboardUtmFilter,
@@ -12,6 +12,7 @@ import {
 } from "@/features/dashboard/model/utm-attribution-filter"
 import {
   readDashboardPreference,
+  subscribeDashboardPreference,
   writeDashboardPreference,
 } from "@/lib/dashboard/dashboard-preferences"
 import { useDashboardNavigation } from "@/hooks/use-dashboard-navigation"
@@ -26,12 +27,11 @@ function projectIdFromPath(pathname: string): string | null {
 }
 
 export function useDashboardUtmFilter() {
-  const { pathname, searchParams, replaceSearch, isPending } =
-    useDashboardNavigation()
+  const { pathname, searchParams, isPending } = useDashboardNavigation()
   const projectId = useMemo(() => projectIdFromPath(pathname), [pathname])
   const hydratedRef = useRef(false)
 
-  const utmFilter = useMemo(
+  const legacyUtmFilter = useMemo(
     () =>
       parseDashboardUtmFilterFromParams({
         utm_source: searchParams.get("utm_source"),
@@ -41,9 +41,12 @@ export function useDashboardUtmFilter() {
       }),
     [searchParams]
   )
+  const [utmFilter, setUtmFilterState] = useState<
+    DashboardUtmFilter | undefined
+  >(legacyUtmFilter)
 
   const writeFilter = useCallback(
-    (next: DashboardUtmFilter | null, refresh = true) => {
+    (next: DashboardUtmFilter | null) => {
       const normalized = normalizeDashboardUtmFilter(next)
       const source = serializeUtmValueList(normalized?.utm_source)
       const s1 = serializeUtmValueList(normalized?.utm_s1)
@@ -52,39 +55,26 @@ export function useDashboardUtmFilter() {
         writeDashboardPreference(projectId, "utm_source", source ?? "")
         writeDashboardPreference(projectId, "utm_s1", s1 ?? "")
       }
-
-      replaceSearch(
-        (params) => {
-          params.delete("utm_dim")
-          params.delete("utm_value")
-          params.delete("utm_medium")
-          if (source) params.set("utm_source", source)
-          else params.delete("utm_source")
-          if (s1) params.set("utm_s1", s1)
-          else params.delete("utm_s1")
-        },
-        { refresh }
-      )
+      setUtmFilterState(normalized)
     },
-    [projectId, replaceSearch]
+    [projectId]
   )
 
   const setUtmFilter = useCallback(
     (next: DashboardUtmFilter | null) => {
-      writeFilter(next, true)
+      writeFilter(next)
     },
     [writeFilter]
   )
 
   const clearUtmFilter = useCallback(() => {
-    writeFilter(null, true)
+    writeFilter(null)
   }, [writeFilter])
 
   const toggleDimensionValue = useCallback(
     (dimension: UtmFilterDimension, value: string) => {
       writeFilter(
-        toggleDimensionValueInFilter(utmFilter, dimension, value) ?? null,
-        true
+        toggleDimensionValueInFilter(utmFilter, dimension, value) ?? null
       )
     },
     [utmFilter, writeFilter]
@@ -99,10 +89,11 @@ export function useDashboardUtmFilter() {
       searchParams.has("utm_dim")
 
     if (hasUrlFilter) {
-      const source = serializeUtmValueList(utmFilter?.utm_source)
-      const s1 = serializeUtmValueList(utmFilter?.utm_s1)
+      const source = serializeUtmValueList(legacyUtmFilter?.utm_source)
+      const s1 = serializeUtmValueList(legacyUtmFilter?.utm_s1)
       writeDashboardPreference(projectId, "utm_source", source ?? "")
       writeDashboardPreference(projectId, "utm_s1", s1 ?? "")
+      setUtmFilterState(legacyUtmFilter)
       hydratedRef.current = true
       return
     }
@@ -117,8 +108,36 @@ export function useDashboardUtmFilter() {
       utm_s1: s1,
     })
     if (!hasDashboardUtmFilter(restored)) return
-    writeFilter(restored ?? null, false)
-  }, [projectId, searchParams, utmFilter, writeFilter])
+    writeFilter(restored ?? null)
+  }, [legacyUtmFilter, projectId, searchParams, writeFilter])
+
+  useEffect(() => {
+    if (!projectId) return
+    const syncFilter = () => {
+      queueMicrotask(() => {
+        setUtmFilterState(
+          parseDashboardUtmFilterFromParams({
+            utm_source: readDashboardPreference(projectId, "utm_source"),
+            utm_s1: readDashboardPreference(projectId, "utm_s1"),
+          })
+        )
+      })
+    }
+    const unsubscribeSource = subscribeDashboardPreference(
+      projectId,
+      "utm_source",
+      syncFilter
+    )
+    const unsubscribeS1 = subscribeDashboardPreference(
+      projectId,
+      "utm_s1",
+      syncFilter
+    )
+    return () => {
+      unsubscribeSource()
+      unsubscribeS1()
+    }
+  }, [projectId])
 
   return {
     utmFilter,

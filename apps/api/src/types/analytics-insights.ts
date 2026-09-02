@@ -4,8 +4,11 @@ export type Level1Stat = {
   value: string
   metricLabel?: string
   metricValue?: number
+  breakdown?: Array<{ label: string; value: number }>
   enoughData: boolean
 }
+
+export type Level2Stat = Level1Stat
 
 export type InsightSectionId =
   | 'volume'

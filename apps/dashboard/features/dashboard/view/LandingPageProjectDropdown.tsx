@@ -23,7 +23,7 @@ import type { LandingPageNavItem } from "@/features/dashboard/model/landing-page
 const RESERVED_SEGMENTS = new Set(["new-landing", "profile", "ops", "team"])
 const SEARCH_DEBOUNCE_MS = 220
 
-function projectPublicIdFromPath(pathname: string): string | null {
+function projectSlugFromPath(pathname: string): string | null {
   if (!pathname.startsWith("/dashboard/")) return null
   const rest = pathname.slice("/dashboard/".length)
   if (!rest || rest.includes("/")) return null
@@ -106,14 +106,14 @@ const LandingPageMenuSearch = memo(function LandingPageMenuSearch({
 type LandingPageListProps = {
   pages: LandingPageNavItem[]
   debouncedQuery: string
-  currentId: string
+  currentSlug: string
   onPick: () => void
 }
 
 const LandingPageMenuList = memo(function LandingPageMenuList({
   pages,
   debouncedQuery,
-  currentId,
+  currentSlug,
   onPick,
 }: LandingPageListProps) {
   const filteredPages = useMemo(() => {
@@ -142,7 +142,7 @@ const LandingPageMenuList = memo(function LandingPageMenuList({
   return (
     <div className="max-h-[min(50vh,280px)] overflow-y-auto overscroll-contain px-2 py-1.5">
       {filteredPages.map((page) => {
-        const selected = page.publicId === currentId
+        const selected = page.slug === currentSlug
         return (
           <DropdownMenuItem
             key={page.publicId}
@@ -150,7 +150,7 @@ const LandingPageMenuList = memo(function LandingPageMenuList({
             className="cursor-pointer rounded-md p-0 focus:bg-transparent"
           >
             <Link
-              href={`/dashboard/${encodeURIComponent(page.publicId)}`}
+              href={`/dashboard/${encodeURIComponent(page.slug)}`}
               className={cn(
                 "flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors outline-none",
                 "hover:bg-neutral-50 focus:bg-neutral-50",
@@ -194,8 +194,8 @@ export function LandingPageProjectDropdown({
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const [searchInstance, setSearchInstance] = useState(0)
 
-  const currentId = useMemo(
-    () => projectPublicIdFromPath(pathname ?? ""),
+  const currentSlug = useMemo(
+    () => projectSlugFromPath(pathname ?? ""),
     [pathname]
   )
 
@@ -213,10 +213,10 @@ export function LandingPageProjectDropdown({
     handleOpenChange(false)
   }, [handleOpenChange])
 
-  if (!currentId) return null
+  if (!currentSlug) return null
 
-  const current = pages.find((p) => p.publicId === currentId)
-  const label = current?.brandName ?? currentId
+  const current = pages.find((p) => p.slug === currentSlug)
+  const label = current?.brandName ?? currentSlug
 
   return (
     <DropdownMenu open={open} onOpenChange={handleOpenChange} modal={false}>
@@ -265,7 +265,7 @@ export function LandingPageProjectDropdown({
         <LandingPageMenuList
           pages={pages}
           debouncedQuery={debouncedQuery}
-          currentId={currentId}
+          currentSlug={currentSlug}
           onPick={handleRequestClose}
         />
 
@@ -283,7 +283,7 @@ export function LandingPageProjectDropdown({
           </DropdownMenuItem>
           <DropdownMenuItem asChild className="cursor-pointer rounded-md p-0">
             <Link
-              href={newVariantPath(currentId)}
+              href={newVariantPath(current?.publicId)}
               className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-neutral-700 transition-colors outline-none hover:bg-neutral-50 focus:bg-neutral-50"
               onClick={handleRequestClose}
             >

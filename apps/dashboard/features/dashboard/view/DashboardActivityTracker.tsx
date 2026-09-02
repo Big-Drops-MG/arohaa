@@ -37,6 +37,20 @@ function projectIdFromPath(pathname: string): string | null {
   return segment
 }
 
+function currentProjectState(): {
+  projectPublicId: string | null
+  tab: string | null
+} {
+  if (typeof document === "undefined") {
+    return { projectPublicId: null, tab: null }
+  }
+  const root = document.querySelector<HTMLElement>("[data-project-public-id]")
+  return {
+    projectPublicId: root?.dataset.projectPublicId ?? null,
+    tab: root?.dataset.dashboardTab ?? null,
+  }
+}
+
 function pageSummary(pathname: string, tab: string | null): string {
   if (pathname === "/dashboard" || pathname === "/dashboard/") {
     return "Viewed Landing Pages home"
@@ -134,8 +148,9 @@ export function DashboardActivityTracker() {
   }
 
   useEffect(() => {
-    const tab = searchParams.get("tab")
-    const projectPublicId = projectIdFromPath(pathname)
+    const state = currentProjectState()
+    const tab = state.tab ?? searchParams.get("tab")
+    const projectPublicId = state.projectPublicId ?? projectIdFromPath(pathname)
     const pageKey = `${pathname}?${searchParams.toString()}`
     if (pageKey === lastPageKeyRef.current) return
     lastPageKeyRef.current = pageKey
@@ -170,8 +185,11 @@ export function DashboardActivityTracker() {
       if (clickKey === lastClickKeyRef.current) return
       lastClickKeyRef.current = clickKey
 
-      const projectPublicId = projectIdFromPath(window.location.pathname)
-      const tab = new URLSearchParams(window.location.search).get("tab")
+      const state = currentProjectState()
+      const projectPublicId =
+        state.projectPublicId ?? projectIdFromPath(window.location.pathname)
+      const tab =
+        state.tab ?? new URLSearchParams(window.location.search).get("tab")
       const nav = isNavElement(el)
 
       enqueue({
@@ -193,12 +211,31 @@ export function DashboardActivityTracker() {
       if (document.visibilityState === "hidden") flush()
     }
 
+    function onDashboardTab(event: Event) {
+      const detail = (
+        event as CustomEvent<{ projectPublicId?: string; tab?: string }>
+      ).detail
+      if (!detail?.projectPublicId || !detail.tab) return
+      const pageKey = `${pathname}::${detail.tab}`
+      if (pageKey === lastPageKeyRef.current) return
+      lastPageKeyRef.current = pageKey
+      enqueue({
+        eventType: "tab_view",
+        summary: pageSummary(pathname, detail.tab),
+        path: pathname,
+        tab: detail.tab,
+        projectPublicId: detail.projectPublicId,
+      })
+    }
+
     document.addEventListener("click", onClick, true)
+    window.addEventListener("arohaa:dashboard-tab", onDashboardTab)
     window.addEventListener("pagehide", flush)
     document.addEventListener("visibilitychange", onVisibility)
 
     return () => {
       document.removeEventListener("click", onClick, true)
+      window.removeEventListener("arohaa:dashboard-tab", onDashboardTab)
       window.removeEventListener("pagehide", flush)
       document.removeEventListener("visibilitychange", onVisibility)
       flush()

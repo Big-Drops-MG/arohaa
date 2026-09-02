@@ -40,6 +40,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx scripts/apply-migrations.ts",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "vehicle-models:sync": "tsx scripts/sync-vehicle-models.ts"
   }
 }

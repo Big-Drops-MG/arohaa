@@ -15,6 +15,7 @@ import {
   notificationRowClassName,
 } from "@/features/notifications/utils/notification-format"
 import { Button } from "@workspace/ui/components/button"
+import { writeDashboardPreference } from "@/lib/dashboard/dashboard-preferences"
 import {
   Popover,
   PopoverContent,
@@ -175,6 +176,10 @@ export function NotificationBell() {
               {items.map((item) => {
                 const isUnread = item.readAt == null
                 const isAccessRequest = isAccessRequestNotification(item.type)
+                const targetHref =
+                  item.href && item.landingPagePublicId
+                    ? item.href.split("?")[0]!
+                    : item.href
                 const content = (
                   <>
                     <div className="mt-0.5 shrink-0">
@@ -223,10 +228,22 @@ export function NotificationBell() {
 
                 return (
                   <li key={item.id}>
-                    {item.href ? (
+                    {targetHref ? (
                       <Link
-                        href={item.href}
+                        href={targetHref}
                         onClick={() => {
+                          if (item.href && item.landingPagePublicId) {
+                            const params = new URLSearchParams(
+                              item.href.split("?")[1] ?? ""
+                            )
+                            for (const [key, value] of params) {
+                              writeDashboardPreference(
+                                item.landingPagePublicId,
+                                key,
+                                value
+                              )
+                            }
+                          }
                           if (isUnread) void markRead(item.id)
                           setOpen(false)
                         }}
