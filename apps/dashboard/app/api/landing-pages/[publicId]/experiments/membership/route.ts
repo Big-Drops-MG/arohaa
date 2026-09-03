@@ -15,6 +15,7 @@ import {
   experimentMembershipAttachBodySchema,
   experimentMembershipRenameBodySchema,
 } from "@/lib/server/route-schemas"
+import { getAccessibleProjectIds } from "@/lib/server/external-access"
 
 async function requirePage(
   actorId: string,
@@ -36,7 +37,9 @@ export const GET = route(
       return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
 
-    const data = await getExperimentMembershipForLandingPage(landingPage)
+    const data = await getExperimentMembershipForLandingPage(landingPage, {
+      allowedPublicIds: await getAccessibleProjectIds(actor),
+    })
     return NextResponse.json(data)
   }
 )
@@ -96,7 +99,9 @@ export const POST = route(
       traceId: request.headers.get("x-trace-id")?.trim() || null,
     })
 
-    const data = await getExperimentMembershipForLandingPage(landingPage)
+    const data = await getExperimentMembershipForLandingPage(landingPage, {
+      allowedPublicIds: await getAccessibleProjectIds(actor),
+    })
     return NextResponse.json(data, { status: 201 })
   }
 )
@@ -126,7 +131,9 @@ export const PATCH = route(
       )
     }
 
-    const data = await getExperimentMembershipForLandingPage(landingPage)
+    const data = await getExperimentMembershipForLandingPage(landingPage, {
+      allowedPublicIds: await getAccessibleProjectIds(actor),
+    })
     return NextResponse.json(data)
   }
 )
@@ -164,7 +171,9 @@ export const DELETE = route(
       traceId: request.headers.get("x-trace-id")?.trim() || null,
     })
 
-    const data = await getExperimentMembershipForLandingPage(landingPage)
+    const data = await getExperimentMembershipForLandingPage(landingPage, {
+      allowedPublicIds: await getAccessibleProjectIds(actor),
+    })
     return NextResponse.json({ ...data, ...left })
   }
 )

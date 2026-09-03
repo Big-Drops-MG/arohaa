@@ -682,13 +682,16 @@ export type ExperimentMembershipView = {
 }
 
 export async function getExperimentMembershipForLandingPage(
-  landingPage: LandingPageRow
+  landingPage: LandingPageRow,
+  opts?: { allowedPublicIds?: ReadonlySet<string> | null }
 ): Promise<{
   membership: ExperimentMembershipView | null
   candidates: SiblingLandingPageOption[]
 }> {
-  const { experiment, siblings } =
-    await getExperimentConfigForLandingPage(landingPage)
+  const { experiment, siblings } = await getExperimentConfigForLandingPage(
+    landingPage,
+    opts
+  )
 
   if (!experiment) {
     return { membership: null, candidates: siblings }

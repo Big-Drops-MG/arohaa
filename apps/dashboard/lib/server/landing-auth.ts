@@ -18,7 +18,7 @@ async function fetchUser(email: string) {
 
 type UserRow = InferSelectModel<typeof users>
 
-export async function requireLandingPageActor(): Promise<UserRow | null> {
+export async function requireTwoFactorVerifiedUser(): Promise<UserRow | null> {
   const session = await auth()
   const email = session?.user?.email
   if (!email || typeof email !== "string") {
@@ -31,6 +31,13 @@ export async function requireLandingPageActor(): Promise<UserRow | null> {
 
   const user = await fetchUser(email)
   if (!user?.isTwoFactorEnabled) return null
+
+  return user
+}
+
+export async function requireLandingPageActor(): Promise<UserRow | null> {
+  const user = await requireTwoFactorVerifiedUser()
+  if (!user) return null
 
   if (!user.firstName?.trim() || !user.lastName?.trim() || !user.roleId) {
     return null

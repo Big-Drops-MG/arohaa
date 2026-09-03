@@ -125,6 +125,13 @@ export async function getActorAccess(
   return buildAccessFromGrants(grants, scopes)
 }
 
+export async function getAccessibleProjectIds(
+  actor: { id: string; teamKind?: string | null } | null | undefined
+): Promise<ReadonlySet<string> | null> {
+  const access = await getActorAccess(actor)
+  return access.isExternal ? access.projectIds : null
+}
+
 export function getForcedUtmSources(
   access: ActorAccess,
   publicId: string

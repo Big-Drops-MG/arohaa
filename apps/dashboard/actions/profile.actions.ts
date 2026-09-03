@@ -1,13 +1,27 @@
 "use server"
 
-import { auth } from "@/auth"
 import bcrypt from "bcryptjs"
-import {
-  db,
-  normalizeUserEmail,
-  users,
-  whereUserEmail,
-} from "@workspace/database"
+import { z } from "zod"
+import { db, users } from "@workspace/database"
+import { eq } from "drizzle-orm"
+import { requireLandingPageActor } from "@/lib/server/landing-auth"
+
+const profileSchema = z.object({
+  firstName: z.string().trim().min(1).max(80),
+  lastName: z.string().trim().min(1).max(80),
+  image: z.string().optional(),
+})
+
+const passwordSchema = z
+  .object({
+    currentPassword: z.string().min(1),
+    newPassword: z.string().trim().min(8).max(200),
+    confirmPassword: z.string().trim().min(8).max(200),
+  })
+  .refine((value) => value.newPassword === value.confirmPassword, {
+    message: "New passwords do not match.",
+    path: ["confirmPassword"],
+  })
 
 function parseOptionalImageUrl(value: unknown): string | null {
   if (value == null) return null
@@ -29,27 +43,23 @@ export async function updateProfile(formData: FormData): Promise<{
   error?: string
   success?: true
 }> {
-  const session = await auth()
-  if (!session?.user?.email) {
+  const actor = await requireLandingPageActor()
+  if (!actor) {
     return { error: "Not authenticated." }
   }
 
-  const firstNameRaw = formData.get("firstName")
-  const lastNameRaw = formData.get("lastName")
-  const imageRaw = formData.get("image")
-
-  const firstName = typeof firstNameRaw === "string" ? firstNameRaw.trim() : ""
-  const lastName = typeof lastNameRaw === "string" ? lastNameRaw.trim() : ""
-
-  if (!firstName || !lastName) {
+  const parsed = profileSchema.safeParse({
+    firstName: formData.get("firstName"),
+    lastName: formData.get("lastName"),
+    image: formData.get("image") ?? "",
+  })
+  if (!parsed.success) {
     return { error: "First name and last name are required." }
   }
 
-  if (firstName.length > 80 || lastName.length > 80) {
-    return { error: "Name fields must be 80 characters or fewer." }
-  }
+  const { firstName, lastName } = parsed.data
 
-  const imageInput = typeof imageRaw === "string" ? imageRaw.trim() : ""
+  const imageInput = parsed.data.image?.trim() ?? ""
   const image = imageInput ? parseOptionalImageUrl(imageInput) : null
 
   if (imageInput && !image) {
@@ -63,7 +73,7 @@ export async function updateProfile(formData: FormData): Promise<{
       lastName,
       image,
     })
-    .where(whereUserEmail(normalizeUserEmail(session.user.email)))
+    .where(eq(users.id, actor.id))
 
   return { success: true }
 }
@@ -73,29 +83,20 @@ export async function changeProfilePassword(input: {
   newPassword: string
   confirmPassword: string
 }): Promise<{ error?: string; success?: true }> {
-  const session = await auth()
-  if (!session?.user?.email) {
+  const actor = await requireLandingPageActor()
+  if (!actor) {
     return { error: "Not authenticated." }
   }
 
-  const currentPassword = input.currentPassword
-  const newPassword = input.newPassword.trim()
-  const confirmPassword = input.confirmPassword.trim()
-
-  if (!currentPassword) {
-    return { error: "Current password is required." }
+  const parsed = passwordSchema.safeParse(input)
+  if (!parsed.success) {
+    const message = parsed.error.issues[0]?.message
+    return { error: message ?? "Invalid password change request." }
   }
-
-  if (newPassword.length < 8) {
-    return { error: "New password must be at least 8 characters." }
-  }
-
-  if (newPassword !== confirmPassword) {
-    return { error: "New passwords do not match." }
-  }
+  const { currentPassword, newPassword } = parsed.data
 
   const user = await db.query.users.findFirst({
-    where: whereUserEmail(normalizeUserEmail(session.user.email)),
+    where: eq(users.id, actor.id),
   })
 
   if (!user?.password) {
@@ -111,10 +112,7 @@ export async function changeProfilePassword(input: {
 
   const hashed = await bcrypt.hash(newPassword, 12)
 
-  await db
-    .update(users)
-    .set({ password: hashed })
-    .where(whereUserEmail(normalizeUserEmail(session.user.email)))
+  await db.update(users).set({ password: hashed }).where(eq(users.id, actor.id))
 
   const { invalidateAllSessionsForUser } =
     await import("@/lib/server/session-revocation")
