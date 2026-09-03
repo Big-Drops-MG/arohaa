@@ -24,7 +24,7 @@ export type IntelligenceBoard = {
 }
 
 export type IntelligenceCenterPayload = {
-  section: "intelligence"
+  section: "intelligence" | "level3"
   winners: IntelligenceWinner[]
   boards: IntelligenceBoard[]
   actions: string[]

@@ -359,7 +359,7 @@ export function Level1StatsSkeleton({
   return (
     <div
       className={cn(
-        "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3",
+        "grid auto-rows-fr grid-cols-1 items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-3",
         className
       )}
       aria-busy
@@ -369,8 +369,9 @@ export function Level1StatsSkeleton({
         <div
           key={i}
           className={cn(
-            "flex min-h-[140px] flex-col rounded-[15px] border border-foreground/10 bg-card",
-            overviewAnalyticCardShellClassName
+            "flex h-full min-h-36 flex-col rounded-[15px] border border-foreground/10 bg-card",
+            overviewAnalyticCardShellClassName,
+            "gap-0 pt-3 pb-3"
           )}
         >
           <div className={overviewAnalyticCardHeaderClassName}>

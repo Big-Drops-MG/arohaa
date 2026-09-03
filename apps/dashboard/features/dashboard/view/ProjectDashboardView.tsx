@@ -50,6 +50,7 @@ import {
 } from "@/features/data-lab/model/data-lab-priority-fetch"
 import { fetchDataLabStatsFromLeadsTable } from "@/features/data-lab/model/level1-from-leads"
 import { hasCompleteLevel1Stats } from "@/features/data-lab/model/level1"
+import { hasCompleteLevel3Stats } from "@/features/data-lab/model/level3"
 import { DATA_EXPORT_PAGE_SIZE } from "@/features/data-export/model/data-export"
 
 export type { ProjectTabValue }
@@ -148,7 +149,9 @@ function ProjectDashboardViewInner({
           data.level1Complete &&
           hasCompleteLevel1Stats(data.level1Stats) &&
           data.level2Complete &&
-          Array.isArray(data.level2Stats)
+          Array.isArray(data.level2Stats) &&
+          data.level3Complete &&
+          hasCompleteLevel3Stats(data.level3)
         let completeData = data
         if (!statsComplete) {
           const completeStats = await fetchDataLabStatsFromLeadsTable({
@@ -164,6 +167,8 @@ function ProjectDashboardViewInner({
             level1Complete: true,
             level2Stats: completeStats.level2Stats,
             level2Complete: true,
+            level3: completeStats.level3,
+            level3Complete: true,
           }
         }
 

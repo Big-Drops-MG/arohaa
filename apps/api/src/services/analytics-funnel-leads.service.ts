@@ -18,7 +18,13 @@ import {
   pickLeadZip,
   pickTrustedFormUrl,
 } from '../lib/lead-fields.js'
-import type { Level1Stat, Level2Stat } from '../types/analytics-insights.js'
+import type {
+  IntelligenceBoard,
+  IntelligenceWinner,
+  Level1Stat,
+  Level2Stat,
+  Level3Payload,
+} from '../types/analytics-insights.js'
 import { resolveVehicleNamesInLeads } from '../lib/vehicle-model-names.js'
 
 type CHJson<T> = { data: T[] }
@@ -42,12 +48,14 @@ export type FunnelLeadRow = {
 export type FunnelLeadsResponse = {
   rangeId: AnalyticsRangeId
   leads: FunnelLeadRow[]
+  visibleLeadFieldKeys: string[]
   total: number
   limit: number
   offset: number
   hasMore: boolean
   level1Stats: Level1Stat[]
   level2Stats: Level2Stat[]
+  level3: Level3Payload
 }
 
 type RawLeadSessionRow = {
@@ -65,6 +73,7 @@ type RawLeadSessionRow = {
 
 /** Max raw sessions scanned per request (safety ceiling for a date window). */
 const MAX_RAW_SESSIONS = 20_000
+const LEVEL3_MIN_SAMPLE = 6
 
 function extractRawFieldMap(raw: string): Record<string, string> {
   try {
@@ -518,34 +527,71 @@ export function computeLevel2StatsFromLeads(leads: FunnelLeadRow[]): Level2Stat[
   const columnKeys = discoverLevel2ColumnKeys(leads)
   if (columnKeys.length === 0) return []
 
-  const countsByColumn = new Map<string, Map<string, number>>()
-  for (const key of columnKeys) countsByColumn.set(key, new Map())
+  // For ratio columns: count submitted leads per value (unchanged)
+  const submittedCountsByColumn = new Map<string, Map<string, number>>()
+  // For best-X columns: track total+submitted per value for Wilson scoring
+  type L2Bucket = { value: string; total: number; submitted: number }
+  const efficiencyByColumn = new Map<string, Map<string, L2Bucket>>()
+
+  for (const key of columnKeys) {
+    submittedCountsByColumn.set(key, new Map())
+    efficiencyByColumn.set(key, new Map())
+  }
 
   for (const lead of leads) {
-    if (!lead.formSubmitted) continue
     for (const key of columnKeys) {
       const value = readLeadLevel2Value(lead, key)
       if (!value) continue
-      const counts = countsByColumn.get(key)!
+
+      const eff = efficiencyByColumn.get(key)!
+      const existing = eff.get(value) ?? { value, total: 0, submitted: 0 }
+      existing.total += 1
+      if (lead.formSubmitted) existing.submitted += 1
+      eff.set(value, existing)
+
+      if (lead.formSubmitted) {
+        const counts = submittedCountsByColumn.get(key)!
       counts.set(value, (counts.get(value) ?? 0) + 1)
+      }
     }
   }
 
   return columnKeys.map((key) => {
-    const counts = countsByColumn.get(key) ?? new Map()
-    const ratioKind = level2RatioKindForValues(counts.keys())
-    if (ratioKind) return level2RatioStat(key, counts, ratioKind)
-    const best = pickBestCountKey(counts)
+    const submittedCounts = submittedCountsByColumn.get(key) ?? new Map()
+    const ratioKind = level2RatioKindForValues(submittedCounts.keys())
+    if (ratioKind) return level2RatioStat(key, submittedCounts, ratioKind)
+
+    const effBuckets = efficiencyByColumn.get(key) ?? new Map()
+    let best: L2Bucket | null = null
+    let bestScore = -1
+    for (const bucket of effBuckets.values()) {
+      if (bucket.submitted === 0) continue
+      const p = bucket.submitted / bucket.total
+      const z = 1.64, z2 = z * z
+      const score = Math.max(0, (p + z2 / (2 * bucket.total) - z * Math.sqrt((p * (1 - p) + z2 / (4 * bucket.total)) / bucket.total)) / (1 + z2 / bucket.total))
+      if (score > bestScore || (score === bestScore && (best === null || bucket.submitted > best.submitted))) {
+        best = bucket; bestScore = score
+      }
+    }
+
+    const rate =
+      best && best.total > 0
+        ? formatPercentShare(best.submitted, best.total)
+        : undefined
+
     return {
       id: level2StatId(key),
       label: `Best ${humanizeLevel2ColumnLabel(key)}`,
-      value: best.count > 0 && best.key ? best.key : '—',
-      metricLabel: 'Form submissions',
-      metricValue: best.count,
-      enoughData: best.count > 0,
+      value: best && best.submitted > 0 ? best.value : '\u2014',
+      metricLabel: 'Submitted leads',
+      metricValue: best?.submitted ?? 0,
+      sampleSize: best?.total,
+      submissionRate: rate,
+      enoughData: (best?.submitted ?? 0) > 0,
     }
   })
 }
+
 
 function resolveLeadAge(
   fields: Record<string, string> | null | undefined,
@@ -560,21 +606,6 @@ function resolveLeadAge(
   const age = Number(rawAge.replace(/\D/g, ''))
   if (!Number.isFinite(age) || age < 0 || age > 120) return null
   return age
-}
-
-function pickBestCountKey<T>(counts: Map<T, number>): {
-  key: T | null
-  count: number
-} {
-  let bestKey: T | null = null
-  let bestCount = 0
-  for (const [key, count] of counts) {
-    if (count > bestCount) {
-      bestKey = key
-      bestCount = count
-    }
-  }
-  return { key: bestKey, count: bestCount }
 }
 
 function formatPercentShare(part: number, total: number): string {
@@ -594,27 +625,68 @@ function formatYesNoRatio(yesCount: number, noCount: number): string {
   return `${formatPercentShare(yesCount, total)} : ${formatPercentShare(noCount, total)}`
 }
 
-function bestSubmissionStat(
-  id: string,
+/** Wilson score lower bound for credible efficiency ranking. */
+function calculateL1CredibleRate(
+  submitted: number,
+  total: number,
+  z = 1.64,
+): number {
+  if (total <= 0 || submitted <= 0) return 0
+  const p = submitted / total
+  const z2 = z * z
+  const denominator = 1 + z2 / total
+  const centerAdjusted = p + z2 / (2 * total)
+  const margin = z * Math.sqrt((p * (1 - p) + z2 / (4 * total)) / total)
+  return Math.max(0, (centerAdjusted - margin) / denominator)
+}
+
+type L1BucketCounter = {
+  label: string
+  total: number
+  submitted: number
+}
+
+function addL1Bucket(
+  counts: Map<string, L1BucketCounter>,
   label: string,
-  best: { key: string | null; count: number },
-): Level1Stat {
-  return {
-    id,
-    label,
-    value: best.count > 0 && best.key ? best.key : '—',
-    metricLabel: 'Form submissions',
-    metricValue: best.count,
-    enoughData: best.count > 0,
+  submitted: boolean,
+): void {
+  const next = counts.get(label) ?? { label, total: 0, submitted: 0 }
+  next.total += 1
+  if (submitted) next.submitted += 1
+  counts.set(label, next)
+}
+
+function pickBestL1Bucket(
+  counts: Map<string, L1BucketCounter>,
+): L1BucketCounter | null {
+  let best: L1BucketCounter | null = null
+  let bestScore = -1
+  for (const bucket of counts.values()) {
+    if (bucket.submitted === 0) continue
+    const score = calculateL1CredibleRate(bucket.submitted, bucket.total)
+    if (
+      score > bestScore ||
+      (score === bestScore && (best === null || bucket.submitted > best.submitted))
+    ) {
+      best = bucket
+      bestScore = score
+    }
   }
+  return best
 }
 
 export function computeLevel1StatsFromLeads(leads: FunnelLeadRow[]): Level1Stat[] {
-  const hourCounts = new Map<number, number>()
-  const zipCounts = new Map<string, number>()
-  const ageGroupCounts = new Map<string, number>()
-  const cityCounts = new Map<string, number>()
-  const stateCounts = new Map<string, number>()
+  // Wilson-scored buckets for efficiency-ranked dimensions
+  const timeBuckets = new Map<string, L1BucketCounter>()
+  const ageGroupBuckets = new Map<string, L1BucketCounter>()
+  const cityBuckets = new Map<string, L1BucketCounter>()
+  const stateBuckets = new Map<string, L1BucketCounter>()
+
+  // ZIP stays as highest-submission-count (too granular for credible scoring),
+  // but we still track total leads so the UI can show "3 of 5" context.
+  const zipBuckets = new Map<string, L1BucketCounter>()
+
   let yesCount = 0
   let noCount = 0
   const now = getAnalyticsEtParts(new Date())
@@ -623,83 +695,736 @@ export function computeLevel1StatsFromLeads(leads: FunnelLeadRow[]): Level1Stat[
     if (lead.formSubmitted) yesCount += 1
     else noCount += 1
 
-    if (!lead.formSubmitted) continue
-
     const when = parseLeadWhen(lead.createdAt)
     if (when) {
       const hour = getAnalyticsEtParts(when).hour
-      hourCounts.set(hour, (hourCounts.get(hour) ?? 0) + 1)
-    }
-
-    const zip = normalizeLeadZip(lead.zip)
-    if (zip) {
-      zipCounts.set(zip, (zipCounts.get(zip) ?? 0) + 1)
+      addL1Bucket(timeBuckets, formatAnalyticsHourWindow(hour), lead.formSubmitted)
     }
 
     const age = resolveLeadAge(lead.fields, now)
     const ageGroup = age != null ? ageGroupFromAge(age) : null
     if (ageGroup) {
-      ageGroupCounts.set(ageGroup, (ageGroupCounts.get(ageGroup) ?? 0) + 1)
+      addL1Bucket(ageGroupBuckets, ageGroup, lead.formSubmitted)
     }
 
     const city = pickFieldValue(lead.fields, ['city'])
     if (city) {
-      cityCounts.set(city, (cityCounts.get(city) ?? 0) + 1)
+      addL1Bucket(cityBuckets, city, lead.formSubmitted)
     }
 
     const stateRaw = pickFieldValue(lead.fields, ['state'])
     const state = stateRaw ? normalizeLeadStateName(stateRaw) : null
     if (state) {
-      stateCounts.set(state, (stateCounts.get(state) ?? 0) + 1)
+      addL1Bucket(stateBuckets, state, lead.formSubmitted)
+    }
+
+    const zip = normalizeLeadZip(lead.zip)
+    if (zip) addL1Bucket(zipBuckets, zip, lead.formSubmitted)
+  }
+
+  const bestTime = pickBestL1Bucket(timeBuckets)
+  const bestAgeGroup = pickBestL1Bucket(ageGroupBuckets)
+  const bestCity = pickBestL1Bucket(cityBuckets)
+  const bestState = pickBestL1Bucket(stateBuckets)
+
+  let bestZip: L1BucketCounter | null = null
+  for (const bucket of zipBuckets.values()) {
+    if (
+      !bestZip ||
+      bucket.submitted > bestZip.submitted ||
+      (bucket.submitted === bestZip.submitted && bucket.total > bestZip.total)
+    ) {
+      bestZip = bucket
     }
   }
 
-  const bestTime = pickBestCountKey(hourCounts)
-  const bestZip = pickBestCountKey(zipCounts)
-  const bestAgeGroup = pickBestCountKey(ageGroupCounts)
-  const bestCity = pickBestCountKey(cityCounts)
-  const bestState = pickBestCountKey(stateCounts)
   const totalLeads = yesCount + noCount
 
   return [
     {
       id: 'best-time',
       label: 'Best Time',
-      value:
-        bestTime.count > 0 && bestTime.key != null
-          ? formatAnalyticsHourWindow(bestTime.key)
-          : '—',
-      metricLabel: 'Form submissions',
-      metricValue: bestTime.count,
-      enoughData: bestTime.count > 0,
+      value: bestTime ? bestTime.label : '—',
+      metricLabel: 'Submitted leads',
+      metricValue: bestTime?.submitted ?? 0,
+      sampleSize: bestTime?.total,
+      submissionRate:
+        bestTime && bestTime.total > 0
+          ? formatPercentShare(bestTime.submitted, bestTime.total)
+          : undefined,
+      enoughData: (bestTime?.submitted ?? 0) > 0,
     },
-    bestSubmissionStat('best-zip', 'Best ZIP', {
-      key: bestZip.key,
-      count: bestZip.count,
-    }),
+    {
+      id: 'best-zip',
+      label: 'Best ZIP',
+      value: bestZip?.label ?? '—',
+      metricLabel: 'Submitted leads',
+      metricValue: bestZip?.submitted ?? 0,
+      sampleSize: bestZip?.total,
+      submissionRate:
+        bestZip && bestZip.total > 0
+          ? formatPercentShare(bestZip.submitted, bestZip.total)
+          : undefined,
+      enoughData: (bestZip?.submitted ?? 0) > 0,
+    },
     {
       id: 'form-submission-ratio',
-      label: 'Form Submission Ratio (Yes : No)',
+      label: 'Form Submission Ratio',
       value: totalLeads > 0 ? formatYesNoRatio(yesCount, noCount) : '—',
       breakdown: [
-        { label: 'Yes', value: yesCount },
-        { label: 'No', value: noCount },
+        { label: 'Submitted', value: yesCount },
+        { label: 'Not submitted', value: noCount },
       ],
       enoughData: totalLeads > 0,
     },
-    bestSubmissionStat('best-age-group', 'Best Age Group', {
-      key: bestAgeGroup.key,
-      count: bestAgeGroup.count,
-    }),
-    bestSubmissionStat('best-city', 'Best City', {
-      key: bestCity.key,
-      count: bestCity.count,
-    }),
-    bestSubmissionStat('best-state', 'Best State', {
-      key: bestState.key,
-      count: bestState.count,
-    }),
+    {
+      id: 'best-age-group',
+      label: 'Best Age Group',
+      value: bestAgeGroup?.label ?? '—',
+      metricLabel: 'Submitted leads',
+      metricValue: bestAgeGroup?.submitted ?? 0,
+      sampleSize: bestAgeGroup?.total,
+      submissionRate:
+        bestAgeGroup && bestAgeGroup.total > 0
+          ? formatPercentShare(bestAgeGroup.submitted, bestAgeGroup.total)
+          : undefined,
+      enoughData: (bestAgeGroup?.submitted ?? 0) > 0,
+    },
+    {
+      id: 'best-city',
+      label: 'Best City',
+      value: bestCity?.label ?? '—',
+      metricLabel: 'Submitted leads',
+      metricValue: bestCity?.submitted ?? 0,
+      sampleSize: bestCity?.total,
+      submissionRate:
+        bestCity && bestCity.total > 0
+          ? formatPercentShare(bestCity.submitted, bestCity.total)
+          : undefined,
+      enoughData: (bestCity?.submitted ?? 0) > 0,
+    },
+    {
+      id: 'best-state',
+      label: 'Best State',
+      value: bestState?.label ?? '—',
+      metricLabel: 'Submitted leads',
+      metricValue: bestState?.submitted ?? 0,
+      sampleSize: bestState?.total,
+      submissionRate:
+        bestState && bestState.total > 0
+          ? formatPercentShare(bestState.submitted, bestState.total)
+          : undefined,
+      enoughData: (bestState?.submitted ?? 0) > 0,
+    },
   ]
+}
+
+type Level3BucketCounter = {
+  label: string
+  total: number
+  submitted: number
+}
+
+type Level3BucketRow = Level3BucketCounter & {
+  submissionRate: number
+  shareOfSubmitted: number
+  credibleScore: number
+}
+
+function calculateLevel3CredibleRate(
+  submitted: number,
+  total: number,
+  z = 1.64,
+): number {
+  if (total <= 0 || submitted <= 0) return 0
+  const p = submitted / total
+  const z2 = z * z
+  const denominator = 1 + z2 / total
+  const centerAdjusted = p + z2 / (2 * total)
+  const margin = z * Math.sqrt((p * (1 - p) + z2 / (4 * total)) / total)
+  return Math.max(0, (centerAdjusted - margin) / denominator)
+}
+
+function formatPercent(value: number): string {
+  return `${formatPercentShare(value, 100)}`
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10
+}
+
+function normalizeLevel3Source(value: string): string {
+  const trimmed = value.trim()
+  return trimmed || '(direct)'
+}
+
+function hasVisibleLeadField(
+  visibleLeadFieldKeys: string[],
+  candidates: string[],
+): boolean {
+  const visible = new Set(visibleLeadFieldKeys.map((key) => key.trim().toLowerCase()))
+  return candidates.some((candidate) => visible.has(candidate.toLowerCase()))
+}
+
+function addLevel3Bucket(
+  counts: Map<string, Level3BucketCounter>,
+  label: string,
+  submitted: boolean,
+): void {
+  const next = counts.get(label) ?? { label, total: 0, submitted: 0 }
+  next.total += 1
+  if (submitted) next.submitted += 1
+  counts.set(label, next)
+}
+
+function finalizeLevel3Buckets(
+  counts: Map<string, Level3BucketCounter>,
+): Level3BucketRow[] {
+  const rows = [...counts.values()]
+  const totalSubmitted = rows.reduce((sum, row) => sum + row.submitted, 0)
+
+  return rows
+    .map((row) => {
+      const submissionRate = row.total > 0 ? round1((row.submitted / row.total) * 100) : 0
+      const shareOfSubmitted =
+        totalSubmitted > 0 ? round1((row.submitted / totalSubmitted) * 100) : 0
+      const credibleScore = calculateLevel3CredibleRate(row.submitted, row.total)
+      return {
+        ...row,
+        submissionRate,
+        shareOfSubmitted,
+        credibleScore,
+      }
+    })
+    .sort((a, b) => {
+      // Prefer buckets with enough sample for a reliable read, then Wilson score.
+      // This keeps tiny 100% cells from beating real volume, without letting a
+      // weak large bucket (e.g. 3/8) outrank a stronger mid-size bucket (e.g. 5/6).
+      const aQualified = a.total >= LEVEL3_MIN_SAMPLE && a.submitted > 0 ? 1 : 0
+      const bQualified = b.total >= LEVEL3_MIN_SAMPLE && b.submitted > 0 ? 1 : 0
+      if (bQualified !== aQualified) return bQualified - aQualified
+      return (
+        b.credibleScore - a.credibleScore ||
+        b.submitted - a.submitted ||
+        b.submissionRate - a.submissionRate ||
+        b.total - a.total ||
+        a.label.localeCompare(b.label)
+      )
+    })
+}
+
+function rankLevel3Dimension(
+  leads: FunnelLeadRow[],
+  readLabel: (lead: FunnelLeadRow) => string | null,
+): Level3BucketRow[] {
+  const counts = new Map<string, Level3BucketCounter>()
+  for (const lead of leads) {
+    const label = readLabel(lead)
+    if (!label) continue
+    addLevel3Bucket(counts, label, lead.formSubmitted)
+  }
+  return finalizeLevel3Buckets(counts)
+}
+
+function rankLevel3Pairs(
+  leads: FunnelLeadRow[],
+  readLeft: (lead: FunnelLeadRow) => string | null,
+  readRight: (lead: FunnelLeadRow) => string | null,
+): Level3BucketRow[] {
+  const counts = new Map<string, Level3BucketCounter>()
+  for (const lead of leads) {
+    const left = readLeft(lead)
+    const right = readRight(lead)
+    if (!left || !right) continue
+    addLevel3Bucket(counts, `${left} x ${right}`, lead.formSubmitted)
+  }
+  return finalizeLevel3Buckets(counts)
+}
+
+function pickLevel3Winner(rows: Level3BucketRow[]): Level3BucketRow | null {
+  if (rows.length === 0) return null
+  const qualified = rows.filter(
+    (row) => row.total >= LEVEL3_MIN_SAMPLE && row.submitted > 0,
+  )
+  if (qualified.length > 0) return qualified[0]!
+
+  const withConversions = rows.filter((row) => row.submitted > 0)
+  if (withConversions.length > 0) return withConversions[0]!
+
+  return rows[0] ?? null
+}
+
+function createLevel3WinnerCard(
+  id: string,
+  label: string,
+  rows: Level3BucketRow[],
+): IntelligenceWinner {
+  const best = pickLevel3Winner(rows)
+  return {
+    id,
+    label,
+    value: best?.label ?? '—',
+    metricLabel: 'Submitted leads',
+    metricValue: best?.submitted ?? 0,
+    secondaryLabel: 'Submission rate',
+    secondaryValue: best
+      ? `${formatPercent(best.submissionRate)} (${best.submitted}/${best.total} leads)`
+      : '—',
+    sampleSize: best?.total ?? 0,
+    enoughData: Boolean(best && best.total >= LEVEL3_MIN_SAMPLE && best.submitted > 0),
+  }
+}
+
+function createLevel3Board(
+  id: string,
+  title: string,
+  rows: Level3BucketRow[],
+  options?: { limit?: number; includeShare?: boolean; takeawayPrefix?: string },
+): IntelligenceBoard {
+  const limit = options?.limit ?? 6
+  const includeShare = options?.includeShare === true
+  const best = pickLevel3Winner(rows)
+
+  return {
+    id,
+    title,
+    columns: [
+      { key: 'total', label: 'Total leads' },
+      { key: 'submitted', label: 'Submitted leads' },
+      { key: 'submissionRate', label: 'Submission rate' },
+      ...(includeShare ? [{ key: 'shareOfSubmitted', label: 'Share of submitted leads' }] : []),
+    ],
+    rows: rows.slice(0, limit).map((row) => ({
+      label: row.label,
+      values: {
+        total: row.total,
+        submitted: row.submitted,
+        submissionRate: formatPercent(row.submissionRate),
+        ...(includeShare ? { shareOfSubmitted: formatPercent(row.shareOfSubmitted) } : {}),
+      },
+    })),
+    takeaway:
+      !best || best.submitted === 0
+        ? 'Not enough data yet to identify a clear efficiency winner.'
+        : `${options?.takeawayPrefix ?? best.label} is converting best in this range at ${formatPercent(best.submissionRate)} with ${best.submitted} submissions from ${best.total.toLocaleString()} leads.`,
+  }
+}
+
+function createVolumeEfficiencyGap(rows: Level3BucketRow[]): IntelligenceWinner {
+  const volumeLeader = [...rows].sort(
+    (a, b) =>
+      b.submitted - a.submitted ||
+      b.total - a.total ||
+      b.submissionRate - a.submissionRate,
+  )[0]
+  const efficiencyLeader = pickLevel3Winner(rows)
+
+  if (!volumeLeader || !efficiencyLeader) {
+    return {
+      id: 'volume-vs-efficiency-gap',
+      label: 'Largest Volume vs Best Efficiency Gap',
+      value: '—',
+      metricLabel: 'Gap (pp)',
+      metricValue: 0,
+      sampleSize: 0,
+      enoughData: false,
+    }
+  }
+
+  const sameLeader = volumeLeader.label === efficiencyLeader.label
+  if (sameLeader) {
+    return {
+      id: 'volume-vs-efficiency-gap',
+      label: 'Volume & Efficiency Leader',
+      value: volumeLeader.label,
+      metricLabel: 'Submitted leads',
+      metricValue: volumeLeader.submitted,
+      secondaryLabel: 'Submission rate',
+      secondaryValue: `${formatPercent(volumeLeader.submissionRate)} (${volumeLeader.submitted}/${volumeLeader.total} leads)`,
+      sampleSize: volumeLeader.total,
+      enoughData: volumeLeader.total >= LEVEL3_MIN_SAMPLE && volumeLeader.submitted > 0,
+    }
+  }
+
+  const gap = Math.max(0, round1(efficiencyLeader.submissionRate - volumeLeader.submissionRate))
+  return {
+    id: 'volume-vs-efficiency-gap',
+    label: 'Largest Volume vs Best Efficiency Gap',
+    value: `${volumeLeader.label} vs ${efficiencyLeader.label}`,
+    metricLabel: 'Gap (pp)',
+    metricValue: gap,
+    secondaryLabel: 'Efficiency leader rate',
+    secondaryValue: `${formatPercent(efficiencyLeader.submissionRate)} (${efficiencyLeader.submitted}/${efficiencyLeader.total})`,
+    sampleSize: Math.max(volumeLeader.total, efficiencyLeader.total),
+    enoughData:
+      volumeLeader.total >= LEVEL3_MIN_SAMPLE && efficiencyLeader.total >= LEVEL3_MIN_SAMPLE,
+  }
+}
+
+const LEVEL3_MAX_PAIR_BOARDS = 10
+
+type Level3DimId = 'source' | 'time' | 'state' | 'age' | 'make' | 'gender'
+
+type Level3Dimension = {
+  id: Level3DimId
+  available: boolean
+  rows: Level3BucketRow[]
+  read: (lead: FunnelLeadRow) => string | null
+}
+
+type Level3PairSpec = {
+  left: Level3DimId
+  right: Level3DimId
+  winnerId: string
+  winnerLabel: string
+  boardId: string
+  boardTitle: string
+}
+
+const LEVEL3_PAIR_SPECS: Level3PairSpec[] = [
+  {
+    left: 'source',
+    right: 'age',
+    winnerId: 'best-converting-source-age-group',
+    winnerLabel: 'Best Converting Source x Age Group',
+    boardId: 'source-age-performance',
+    boardTitle: 'Source x Age Group',
+  },
+  {
+    left: 'source',
+    right: 'state',
+    winnerId: 'best-converting-source-state',
+    winnerLabel: 'Best Converting Source x State',
+    boardId: 'source-state-performance',
+    boardTitle: 'Source x State',
+  },
+  {
+    left: 'source',
+    right: 'make',
+    winnerId: 'best-converting-source-make',
+    winnerLabel: 'Best Converting Source x Vehicle Make',
+    boardId: 'source-make-performance',
+    boardTitle: 'Source x Vehicle Make',
+  },
+  {
+    left: 'source',
+    right: 'time',
+    winnerId: 'best-converting-source-time',
+    winnerLabel: 'Best Converting Source x Time Window',
+    boardId: 'source-time-performance',
+    boardTitle: 'Source x Time Window',
+  },
+  {
+    left: 'source',
+    right: 'gender',
+    winnerId: 'best-converting-source-gender',
+    winnerLabel: 'Best Converting Source x Gender',
+    boardId: 'source-gender-performance',
+    boardTitle: 'Source x Gender',
+  },
+  {
+    left: 'age',
+    right: 'state',
+    winnerId: 'best-converting-age-state',
+    winnerLabel: 'Best Converting Age Group x State',
+    boardId: 'age-state-performance',
+    boardTitle: 'Age Group x State',
+  },
+  {
+    left: 'make',
+    right: 'age',
+    winnerId: 'best-converting-make-age',
+    winnerLabel: 'Best Converting Vehicle Make x Age Group',
+    boardId: 'make-age-performance',
+    boardTitle: 'Vehicle Make x Age Group',
+  },
+  {
+    left: 'make',
+    right: 'state',
+    winnerId: 'best-converting-make-state',
+    winnerLabel: 'Best Converting Vehicle Make x State',
+    boardId: 'make-state-performance',
+    boardTitle: 'Vehicle Make x State',
+  },
+  {
+    left: 'time',
+    right: 'state',
+    winnerId: 'best-converting-time-state',
+    winnerLabel: 'Best Converting Time Window x State',
+    boardId: 'time-state-performance',
+    boardTitle: 'Time Window x State',
+  },
+  {
+    left: 'time',
+    right: 'age',
+    winnerId: 'best-converting-time-age',
+    winnerLabel: 'Best Converting Time Window x Age Group',
+    boardId: 'time-age-performance',
+    boardTitle: 'Time Window x Age Group',
+  },
+]
+
+function findLevel3GenderFieldKey(visibleLeadFieldKeys: string[]): string | null {
+  for (const key of visibleLeadFieldKeys) {
+    const trimmed = key.trim()
+    if (/gender|sex|^driver_\d+_gender$/i.test(trimmed)) return trimmed
+  }
+  return null
+}
+
+function canonicalizeLevel3Gender(raw: string): string | null {
+  const value = raw.trim().toLowerCase()
+  if (['male', 'm'].includes(value)) return 'Male'
+  if (['female', 'f'].includes(value)) return 'Female'
+  return null
+}
+
+function findLevel3MakeFieldKeys(visibleLeadFieldKeys: string[]): string[] {
+  const preferred = ['car_0_make', 'vehicle_0_make']
+  const fromVisible = visibleLeadFieldKeys.filter((key) =>
+    /(?:^|_)(?:make|manufacturer)$/i.test(key.trim()),
+  )
+  return [...new Set([...preferred, ...fromVisible])]
+}
+
+function buildLevel3Dimensions(
+  leads: FunnelLeadRow[],
+  visibleLeadFieldKeys: string[],
+): Record<Level3DimId, Level3Dimension> {
+  const now = getAnalyticsEtParts(new Date())
+  const genderKey = findLevel3GenderFieldKey(visibleLeadFieldKeys)
+  const makeKeys = findLevel3MakeFieldKeys(visibleLeadFieldKeys)
+  const canUseState = hasVisibleLeadField(visibleLeadFieldKeys, ['state'])
+  const canUseAge = hasVisibleLeadField(visibleLeadFieldKeys, ['dob', 'age', 'driver_0_age'])
+  const canUseMake = visibleLeadFieldKeys.some((key) =>
+    /(?:^|_)(?:make|manufacturer)$/i.test(key.trim()),
+  )
+
+  const readSource = (lead: FunnelLeadRow) => normalizeLevel3Source(lead.utmSource)
+  const readTime = (lead: FunnelLeadRow) => {
+    const when = parseLeadWhen(lead.createdAt)
+    if (!when) return null
+    return formatAnalyticsHourWindow(getAnalyticsEtParts(when).hour)
+  }
+  const readState = (lead: FunnelLeadRow) => {
+    const stateRaw = pickFieldValue(lead.fields, ['state'])
+    return stateRaw ? normalizeLeadStateName(stateRaw) : null
+  }
+  const readAge = (lead: FunnelLeadRow) => {
+    const age = resolveLeadAge(lead.fields, now)
+    return age != null ? ageGroupFromAge(age) : null
+  }
+  const readMake = (lead: FunnelLeadRow) => {
+    const make = pickFieldValue(lead.fields, makeKeys)
+    return make ? normalizeVehicleMake(makeKeys[0] ?? 'car_0_make', make) : null
+  }
+  const readGender = (lead: FunnelLeadRow) => {
+    if (!genderKey) return null
+    const raw = pickFieldValue(lead.fields, [genderKey])
+    return raw ? canonicalizeLevel3Gender(raw) : null
+  }
+
+  const sourceRows = rankLevel3Dimension(leads, readSource)
+  const timeRows = rankLevel3Dimension(leads, readTime)
+  const stateRows = canUseState ? rankLevel3Dimension(leads, readState) : []
+  const ageRows = canUseAge ? rankLevel3Dimension(leads, readAge) : []
+  const makeRows = canUseMake ? rankLevel3Dimension(leads, readMake) : []
+  const genderRows = genderKey != null ? rankLevel3Dimension(leads, readGender) : []
+
+  return {
+    source: {
+      id: 'source',
+      available: sourceRows.length > 0,
+      rows: sourceRows,
+      read: readSource,
+    },
+    time: {
+      id: 'time',
+      available: timeRows.length > 0,
+      rows: timeRows,
+      read: readTime,
+    },
+    state: {
+      id: 'state',
+      available: canUseState && stateRows.length > 0,
+      rows: stateRows,
+      read: readState,
+    },
+    age: {
+      id: 'age',
+      available: canUseAge && ageRows.length > 0,
+      rows: ageRows,
+      read: readAge,
+    },
+    make: {
+      id: 'make',
+      available: canUseMake && makeRows.length > 0,
+      rows: makeRows,
+      read: readMake,
+    },
+    gender: {
+      id: 'gender',
+      available: genderKey != null && genderRows.length > 0,
+      rows: genderRows,
+      read: readGender,
+    },
+  }
+}
+
+function createLevel3Actions(input: {
+  bestSource: IntelligenceWinner
+  bestState: IntelligenceWinner | null
+  bestSourceAge: IntelligenceWinner | null
+  bestSourceMake: IntelligenceWinner | null
+  bestSourceTime: IntelligenceWinner | null
+  bestAgeState: IntelligenceWinner | null
+  gap: IntelligenceWinner
+}): string[] {
+  const actions: string[] = []
+
+  if (input.bestSource.enoughData && input.bestSource.value !== '—') {
+    actions.push(
+      `Scale spend on ${input.bestSource.value}: It is your highest-efficiency acquisition channel converting at ${input.bestSource.secondaryValue}.`,
+    )
+  }
+  if (input.bestSourceAge?.enoughData && input.bestSourceAge.value !== '—') {
+    actions.push(
+      `Prioritize the ${input.bestSourceAge.value} audience: This source and age group combination delivers your top conversion performance (${input.bestSourceAge.secondaryValue}).`,
+    )
+  }
+  if (input.bestSourceMake?.enoughData && input.bestSourceMake.value !== '—') {
+    actions.push(
+      `Align creative to ${input.bestSourceMake.value}: This source and vehicle make combination leads conversion efficiency (${input.bestSourceMake.secondaryValue}).`,
+    )
+  }
+  if (input.bestSourceTime?.enoughData && input.bestSourceTime.value !== '—') {
+    actions.push(
+      `Schedule more budget into ${input.bestSourceTime.value}: Highest-efficiency source and daypart combination (${input.bestSourceTime.secondaryValue}).`,
+    )
+  }
+  if (input.bestAgeState?.enoughData && input.bestAgeState.value !== '—') {
+    actions.push(
+      `Target ${input.bestAgeState.value}: This age group and state combination converts best (${input.bestAgeState.secondaryValue}).`,
+    )
+  }
+  if (input.bestState?.enoughData && input.bestState.value !== '—') {
+    actions.push(
+      `Lean budget toward ${input.bestState.value}: Leading all geographic regions on submission efficiency (${input.bestState.secondaryValue}).`,
+    )
+  }
+  if (input.gap.enoughData) {
+    if (input.gap.label === 'Volume & Efficiency Leader') {
+      actions.push(
+        `${input.gap.value} captures both your largest lead volume and highest conversion efficiency — a strong signal to scale ad spend with high confidence.`,
+      )
+    } else if (input.gap.value.includes(' vs ')) {
+      actions.push(
+        `Review traffic distribution between ${input.gap.value}: The efficiency leader outperforms your top volume channel by +${input.gap.metricValue}% conversion rate.`,
+      )
+    }
+  }
+
+  return actions.slice(0, 4)
+}
+
+export function computeLevel3FromLeads(
+  leads: FunnelLeadRow[],
+  visibleLeadFieldKeys: string[],
+): Level3Payload {
+  if (leads.length === 0) {
+    return { section: 'level3', winners: [], boards: [], actions: [] }
+  }
+
+  const dims = buildLevel3Dimensions(leads, visibleLeadFieldKeys)
+
+  const pairResults: Array<{
+    spec: Level3PairSpec
+    winner: IntelligenceWinner
+    board: IntelligenceBoard
+  }> = []
+
+  for (const spec of LEVEL3_PAIR_SPECS) {
+    const left = dims[spec.left]
+    const right = dims[spec.right]
+    if (!left.available || !right.available) continue
+    const rows = rankLevel3Pairs(leads, left.read, right.read)
+    if (rows.length === 0) continue
+    pairResults.push({
+      spec,
+      winner: createLevel3WinnerCard(spec.winnerId, spec.winnerLabel, rows),
+      board: createLevel3Board(spec.boardId, spec.boardTitle, rows, { limit: 8 }),
+    })
+  }
+
+  const cappedPairs = pairResults.slice(0, LEVEL3_MAX_PAIR_BOARDS)
+  const winnerById = new Map(
+    cappedPairs.map((pair) => [pair.spec.winnerId, pair.winner]),
+  )
+
+  const bestSource = createLevel3WinnerCard(
+    'best-converting-source',
+    'Best Converting Source',
+    dims.source.rows,
+  )
+  const bestState = dims.state.available
+    ? createLevel3WinnerCard('best-converting-state', 'Best Converting State', dims.state.rows)
+    : null
+  const bestAge = dims.age.available
+    ? createLevel3WinnerCard(
+        'best-converting-age-group',
+        'Best Converting Age Group',
+        dims.age.rows,
+      )
+    : null
+  const bestMake = dims.make.available
+    ? createLevel3WinnerCard(
+        'best-converting-vehicle-make',
+        'Best Converting Vehicle Make',
+        dims.make.rows,
+      )
+    : null
+  const bestTime = createLevel3WinnerCard(
+    'most-efficient-time-window',
+    'Most Efficient Time Window',
+    dims.time.rows,
+  )
+  const gap = createVolumeEfficiencyGap(dims.source.rows)
+  const pairWinners = cappedPairs.map((pair) => pair.winner)
+
+  return {
+    section: 'level3',
+    winners: [
+      bestSource,
+      ...(bestState ? [bestState] : []),
+      ...(bestAge ? [bestAge] : []),
+      ...pairWinners,
+      ...(bestMake ? [bestMake] : []),
+      bestTime,
+      gap,
+    ],
+    boards: [
+      createLevel3Board('source-performance', 'Source Performance', dims.source.rows, {
+        includeShare: true,
+      }),
+      ...(dims.state.available
+        ? [
+            createLevel3Board('state-performance', 'State Performance', dims.state.rows, {
+              includeShare: true,
+            }),
+          ]
+        : []),
+      ...cappedPairs.map((pair) => pair.board),
+    ],
+    actions: createLevel3Actions({
+      bestSource,
+      bestState,
+      bestSourceAge: winnerById.get('best-converting-source-age-group') ?? null,
+      bestSourceMake: winnerById.get('best-converting-source-make') ?? null,
+      bestSourceTime: winnerById.get('best-converting-source-time') ?? null,
+      bestAgeState: winnerById.get('best-converting-age-state') ?? null,
+      gap,
+    }),
+  }
 }
 
 export function paginateDisplayableLeads(
@@ -833,12 +1558,16 @@ export async function getFunnelLeads({
 
   const level1Stats = computeLevel1StatsFromLeads(displayable)
   const level2Stats = computeLevel2StatsFromLeads(displayable)
+  const visibleLeadFieldKeys = discoverVisibleLeadFieldKeys(displayable)
+  const level3 = computeLevel3FromLeads(displayable, visibleLeadFieldKeys)
   const page = paginateDisplayableLeads(displayable, limit, offset)
 
   return {
     rangeId: window.rangeId,
+    visibleLeadFieldKeys,
     level1Stats,
     level2Stats,
+    level3,
     ...page,
   }
 }
@@ -851,11 +1580,13 @@ export function emptyFunnelLeads(
   return {
     rangeId,
     leads: [],
+    visibleLeadFieldKeys: [],
     total: 0,
     limit,
     offset,
     hasMore: false,
     level1Stats: computeLevel1StatsFromLeads([]),
     level2Stats: computeLevel2StatsFromLeads([]),
+    level3: computeLevel3FromLeads([], []),
   }
 }

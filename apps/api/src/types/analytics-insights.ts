@@ -4,6 +4,10 @@ export type Level1Stat = {
   value: string
   metricLabel?: string
   metricValue?: number
+  /** Total leads in this bucket (for context alongside submission count) */
+  sampleSize?: number
+  /** Formatted submission rate, e.g. "94%" */
+  submissionRate?: string
   breakdown?: Array<{ label: string; value: number }>
   enoughData: boolean
 }
@@ -104,6 +108,13 @@ export type IntelligenceBoard = {
   columns: InsightTableColumn[]
   rows: { label: string; values: Record<string, string | number> }[]
   takeaway: string
+}
+
+export type Level3Payload = {
+  section: 'level3'
+  winners: IntelligenceWinner[]
+  boards: IntelligenceBoard[]
+  actions: string[]
 }
 
 export type AnalyticsInsights = {

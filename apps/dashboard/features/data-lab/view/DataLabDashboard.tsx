@@ -16,6 +16,7 @@ import {
 } from "@/features/data-lab/model/data-lab-sections"
 import {
   emptyLevel1Stats,
+  filterLevel1StatsToVisibleLeadColumns,
   hasCompleteLevel1Stats,
   type Level1Stat,
 } from "@/features/data-lab/model/level1"
@@ -28,16 +29,24 @@ import {
   dataLabStatsFromExportPayload,
   fetchDataLabStatsFromLeadsTable,
 } from "@/features/data-lab/model/level1-from-leads"
+import { hasCompleteLevel3Stats } from "@/features/data-lab/model/level3"
+import type { IntelligenceCenterPayload } from "@/features/data-lab/model/intelligence"
 import { Level1Panel } from "@/features/data-lab/view/Level1Panel"
 import { Level2Panel } from "@/features/data-lab/view/Level2Panel"
+import { Level3Panel } from "@/features/data-lab/view/Level3Panel"
 import { DataLabLeadsPanel } from "@/features/data-lab/view/DataLabLeadsPanel"
 import type { DataExportDashboardData } from "@/features/data-export/model/data-export"
 import { getDataExportEmptyDashboardData } from "@/features/data-export/controller/data-export-empty-data"
+import { discoverVisibleLeadFieldKeys } from "@/features/data-export/model/lead-field-columns"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-range"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardNavigation } from "@/hooks/use-dashboard-navigation"
 import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
+
+function emptyLevel3Data(): IntelligenceCenterPayload {
+  return { section: "level3", winners: [], boards: [], actions: [] }
+}
 
 type DataLabDashboardProps = {
   projectId: string
@@ -63,6 +72,7 @@ function seedDataLabStats(initialDataExport: DataExportDashboardData | null) {
     return {
       level1Stats: emptyLevel1Stats(),
       level2Stats: emptyLevel2Stats(),
+      level3: emptyLevel3Data(),
     }
   }
   return dataLabStatsFromExportPayload(initialDataExport)
@@ -75,7 +85,9 @@ function hasCompleteDataLabStats(
     data?.level1Complete &&
     hasCompleteLevel1Stats(data.level1Stats) &&
     data.level2Complete &&
-    Array.isArray(data.level2Stats)
+    Array.isArray(data.level2Stats) &&
+    data.level3Complete &&
+    hasCompleteLevel3Stats(data.level3)
   )
 }
 
@@ -140,6 +152,9 @@ export function DataLabDashboard({
   const [level2Stats, setLevel2Stats] = useState<Level2Stat[]>(
     () => seeded.level2Stats
   )
+  const [level3Data, setLevel3Data] = useState<IntelligenceCenterPayload>(
+    () => seeded.level3
+  )
   const [statsLoading, setStatsLoading] = useState(
     () =>
       canAccessDataExport &&
@@ -167,6 +182,7 @@ export function DataLabDashboard({
           const completeStats = dataLabStatsFromExportPayload(payload)
           setLevel1Stats(completeStats.level1Stats)
           setLevel2Stats(completeStats.level2Stats)
+          setLevel3Data(completeStats.level3)
           setStatsLoading(false)
           return
         }
@@ -177,10 +193,17 @@ export function DataLabDashboard({
           customRange,
           signal: controller.signal,
           seed: payload,
+          onProgress: (progressive) => {
+            if (cancelled || controller.signal.aborted) return
+            setLevel1Stats(progressive.level1Stats)
+            setLevel2Stats(progressive.level2Stats)
+            setLevel3Data(progressive.level3)
+          },
         })
         if (cancelled || controller.signal.aborted) return
         setLevel1Stats(refined.level1Stats)
         setLevel2Stats(refined.level2Stats)
+        setLevel3Data(refined.level3)
         setStatsLoading(false)
       } catch (err) {
         if (cancelled || controller.signal.aborted) return
@@ -188,6 +211,7 @@ export function DataLabDashboard({
         setExportData(getDataExportEmptyDashboardData(dateRangeId))
         setLevel1Stats(emptyLevel1Stats())
         setLevel2Stats(emptyLevel2Stats())
+        setLevel3Data(emptyLevel3Data())
       } finally {
         if (!cancelled && !controller.signal.aborted) {
           setExportLoading(false)
@@ -222,14 +246,23 @@ export function DataLabDashboard({
     },
     []
   )
+  const visibleLeadFieldKeys = useMemo(
+    () =>
+      exportData?.visibleLeadFieldKeys.length
+        ? exportData.visibleLeadFieldKeys
+        : discoverVisibleLeadFieldKeys(exportData?.leads ?? []),
+    [exportData?.leads, exportData?.visibleLeadFieldKeys]
+  )
 
   const visibleLevel2Stats = useMemo(
     () =>
-      filterLevel2StatsToVisibleLeadColumns(
-        level2Stats,
-        exportData?.leads ?? []
-      ),
-    [level2Stats, exportData?.leads]
+      filterLevel2StatsToVisibleLeadColumns(level2Stats, visibleLeadFieldKeys),
+    [level2Stats, visibleLeadFieldKeys]
+  )
+  const visibleLevel1Stats = useMemo(
+    () =>
+      filterLevel1StatsToVisibleLeadColumns(level1Stats, visibleLeadFieldKeys),
+    [level1Stats, visibleLeadFieldKeys]
   )
 
   return (
@@ -264,7 +297,7 @@ export function DataLabDashboard({
         <TabsContent value="level-1" className="mt-5 outline-none">
           {labSection === "level-1" ? (
             <Level1Panel
-              stats={level1Stats}
+              stats={visibleLevel1Stats}
               isLoading={cardsLoading}
               canAccess={canAccessDataExport}
             />
@@ -275,6 +308,16 @@ export function DataLabDashboard({
           {labSection === "level-2" ? (
             <Level2Panel
               stats={visibleLevel2Stats}
+              isLoading={cardsLoading}
+              canAccess={canAccessDataExport}
+            />
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="level-3" className="mt-5 outline-none">
+          {labSection === "level-3" ? (
+            <Level3Panel
+              data={level3Data}
               isLoading={cardsLoading}
               canAccess={canAccessDataExport}
             />
