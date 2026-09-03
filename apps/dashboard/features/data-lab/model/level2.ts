@@ -106,10 +106,12 @@ function level2StatId(key: string): string {
 
 export function filterLevel2StatsToVisibleLeadColumns(
   stats: Level2Stat[],
-  leads: DataExportLeadRow[]
+  visibleLeadFieldKeys: string[]
 ): Level2Stat[] {
   const visibleStatIds = new Set(
-    discoverLevel2ColumnKeys(leads).map(level2StatId)
+    visibleLeadFieldKeys
+      .filter((key) => !isExcludedLevel2Key(key))
+      .map(level2StatId)
   )
   return stats.filter((stat) => visibleStatIds.has(stat.id))
 }
@@ -195,19 +197,45 @@ function ratioStat(
   }
 }
 
-function pickBestCountKey(counts: Map<string, number>): {
-  key: string | null
-  count: number
-} {
-  let bestKey: string | null = null
-  let bestCount = 0
-  for (const [key, count] of counts) {
-    if (count > bestCount) {
-      bestKey = key
-      bestCount = count
+/** Wilson score lower bound for credible efficiency ranking. */
+function calculateL2CredibleRate(
+  submitted: number,
+  total: number,
+  z = 1.64
+): number {
+  if (total <= 0 || submitted <= 0) return 0
+  const p = submitted / total
+  const z2 = z * z
+  const denominator = 1 + z2 / total
+  const centerAdjusted = p + z2 / (2 * total)
+  const margin = z * Math.sqrt((p * (1 - p) + z2 / (4 * total)) / total)
+  return Math.max(0, (centerAdjusted - margin) / denominator)
+}
+
+type L2BucketCounter = {
+  value: string
+  total: number
+  submitted: number
+}
+
+function pickBestL2Bucket(
+  counts: Map<string, L2BucketCounter>
+): L2BucketCounter | null {
+  let best: L2BucketCounter | null = null
+  let bestScore = -1
+  for (const bucket of counts.values()) {
+    if (bucket.submitted === 0) continue
+    const score = calculateL2CredibleRate(bucket.submitted, bucket.total)
+    if (
+      score > bestScore ||
+      (score === bestScore &&
+        (best === null || bucket.submitted > best.submitted))
+    ) {
+      best = bucket
+      bestScore = score
     }
   }
-  return { key: bestKey, count: bestCount }
+  return best
 }
 
 /**
@@ -236,33 +264,59 @@ export function computeLevel2StatsFromLeads(
   const columnKeys = discoverLevel2ColumnKeys(leads)
   if (columnKeys.length === 0) return []
 
-  const countsByColumn = new Map<string, Map<string, number>>()
+  // For ratio columns: count submitted leads per value (unchanged)
+  const submittedCountsByColumn = new Map<string, Map<string, number>>()
+  // For best-X columns: track total+submitted per value for Wilson scoring
+  const efficiencyByColumn = new Map<string, Map<string, L2BucketCounter>>()
+
   for (const key of columnKeys) {
-    countsByColumn.set(key, new Map())
+    submittedCountsByColumn.set(key, new Map())
+    efficiencyByColumn.set(key, new Map())
   }
 
   for (const lead of leads) {
-    if (!lead.formSubmitted) continue
     for (const key of columnKeys) {
       const value = readLeadColumnValue(lead, key)
       if (!value) continue
-      const counts = countsByColumn.get(key)!
-      counts.set(value, (counts.get(value) ?? 0) + 1)
+
+      // Always track efficiency (total + submitted)
+      const eff = efficiencyByColumn.get(key)!
+      const existing = eff.get(value) ?? { value, total: 0, submitted: 0 }
+      existing.total += 1
+      if (lead.formSubmitted) existing.submitted += 1
+      eff.set(value, existing)
+
+      // Ratio detection only uses submitted leads
+      if (lead.formSubmitted) {
+        const counts = submittedCountsByColumn.get(key)!
+        counts.set(value, (counts.get(value) ?? 0) + 1)
+      }
     }
   }
 
   return columnKeys.map((key) => {
-    const counts = countsByColumn.get(key) ?? new Map()
-    const ratioKind = ratioKindForValues(counts.keys())
-    if (ratioKind) return ratioStat(key, counts, ratioKind)
-    const best = pickBestCountKey(counts)
+    const submittedCounts = submittedCountsByColumn.get(key) ?? new Map()
+    const ratioKind = ratioKindForValues(submittedCounts.keys())
+
+    if (ratioKind) return ratioStat(key, submittedCounts, ratioKind)
+
+    const effBuckets = efficiencyByColumn.get(key) ?? new Map()
+    const best = pickBestL2Bucket(effBuckets)
+
+    const rate =
+      best && best.total > 0
+        ? formatPercentShare(best.submitted, best.total)
+        : undefined
+
     return {
       id: level2StatId(key),
       label: `Best ${humanizeColumnLabel(key)}`,
-      value: best.count > 0 && best.key ? best.key : "—",
-      metricLabel: "Form submissions",
-      metricValue: best.count,
-      enoughData: best.count > 0,
+      value: best && best.submitted > 0 ? best.value : "—",
+      metricLabel: "Submitted leads",
+      metricValue: best?.submitted ?? 0,
+      sampleSize: best?.total,
+      submissionRate: rate,
+      enoughData: (best?.submitted ?? 0) > 0,
     }
   })
 }

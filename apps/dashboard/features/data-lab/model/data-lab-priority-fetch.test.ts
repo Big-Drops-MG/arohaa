@@ -8,6 +8,7 @@ function payload(brandName: string): DataExportDashboardData {
     dateRangeOptions: [],
     defaultDateRangeId: "7d",
     leads: [],
+    visibleLeadFieldKeys: [],
     total: 0,
     limit: 15,
     offset: 0,
@@ -17,6 +18,8 @@ function payload(brandName: string): DataExportDashboardData {
     level1Complete: true,
     level2Stats: [],
     level2Complete: true,
+    level3: { section: "level3", winners: [], boards: [], actions: [] },
+    level3Complete: true,
   }
 }
 

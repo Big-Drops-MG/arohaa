@@ -182,8 +182,11 @@ export function DataExportDashboard({
   const canGoNext = pageOffset + pageSize < total
 
   const fieldKeys = useMemo(
-    () => discoverVisibleLeadFieldKeys(dashboardData.leads),
-    [dashboardData.leads]
+    () =>
+      dashboardData.visibleLeadFieldKeys.length > 0
+        ? dashboardData.visibleLeadFieldKeys
+        : discoverVisibleLeadFieldKeys(dashboardData.leads),
+    [dashboardData.leads, dashboardData.visibleLeadFieldKeys]
   )
 
   const fieldColumns = useMemo(() => buildFieldColumns(fieldKeys), [fieldKeys])

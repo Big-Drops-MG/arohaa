@@ -33,6 +33,11 @@ import {
   resolveLevel2Stats,
   type Level2Stat,
 } from "@/features/data-lab/model/level2"
+import {
+  hasCompleteLevel3Stats,
+  resolveLevel3Stats,
+} from "@/features/data-lab/model/level3"
+import type { IntelligenceCenterPayload } from "@/features/data-lab/model/intelligence"
 import { mapDataExportLeadRow } from "@/features/data-lab/model/level1-from-leads"
 import { DEFAULT_ROUTE_MAX_OFFSET } from "@/lib/server/route-query-limits"
 
@@ -55,8 +60,10 @@ type LeadsApiResponse = {
   limit?: number
   offset?: number
   hasMore?: boolean
+  visibleLeadFieldKeys?: string[]
   level1Stats?: Level1Stat[]
   level2Stats?: Level2Stat[]
+  level3?: IntelligenceCenterPayload | null
 }
 
 async function fetchLeads(
@@ -179,6 +186,12 @@ export async function loadDataExportDashboardData({
     mappedLeads,
     Array.isArray(mappedLevel2Stats)
   )
+  const level3 = resolveLevel3Stats(
+    analytics.level3,
+    mappedLeads,
+    analytics.visibleLeadFieldKeys ?? [],
+    Boolean(analytics.level3 && hasCompleteLevel3Stats(analytics.level3))
+  )
 
   return {
     brandName: row.brandName,
@@ -186,6 +199,7 @@ export async function loadDataExportDashboardData({
     defaultDateRangeId: (analytics.rangeId ??
       rangeId) as DataExportDashboardData["defaultDateRangeId"],
     leads: mappedLeads,
+    visibleLeadFieldKeys: analytics.visibleLeadFieldKeys ?? [],
     total: analytics.total ?? 0,
     limit: analytics.limit ?? limit,
     offset: analytics.offset ?? offset,
@@ -195,6 +209,8 @@ export async function loadDataExportDashboardData({
     level1Complete: level1.complete,
     level2Stats: level2.stats,
     level2Complete: level2.complete,
+    level3: level3.payload,
+    level3Complete: level3.complete,
   }
 }
 

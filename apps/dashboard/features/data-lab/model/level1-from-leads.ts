@@ -13,6 +13,13 @@ import {
   emptyLevel2Stats,
   type Level2Stat,
 } from "@/features/data-lab/model/level2"
+import {
+  computeLevel3FromLeads,
+  emptyLevel3Payload,
+  hasCompleteLevel3Stats,
+} from "@/features/data-lab/model/level3"
+import type { IntelligenceCenterPayload } from "@/features/data-lab/model/intelligence"
+import { discoverVisibleLeadFieldKeys } from "@/features/data-export/model/lead-field-columns"
 import type { OverviewDateRangeId } from "@/features/overview/model/overview"
 import type { DashboardCustomRange } from "@/features/traffic/model/traffic-range"
 import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
@@ -25,6 +32,7 @@ const LEVEL1_FETCH_CONCURRENCY = 4
 export type DataLabStatsBundle = {
   level1Stats: Level1Stat[]
   level2Stats: Level2Stat[]
+  level3: IntelligenceCenterPayload
 }
 
 export function isLeadFormSubmittedFlag(value: unknown): boolean {
@@ -77,11 +85,14 @@ function statsFromLeads(leads: DataExportLeadRow[]): DataLabStatsBundle {
     return {
       level1Stats: emptyLevel1Stats(),
       level2Stats: emptyLevel2Stats(),
+      level3: { section: "level3", winners: [], boards: [], actions: [] },
     }
   }
+  const visibleLeadFieldKeys = discoverVisibleLeadFieldKeys(leads)
   return {
     level1Stats: computeLevel1StatsFromLeads(leads),
     level2Stats: computeLevel2StatsFromLeads(leads),
+    level3: computeLevel3FromLeads(leads, visibleLeadFieldKeys),
   }
 }
 
@@ -115,19 +126,42 @@ export function level2StatsFromExportPayload(
   return emptyLevel2Stats()
 }
 
+export function level3StatsFromExportPayload(
+  payload: Pick<
+    DataExportDashboardData,
+    "leads" | "visibleLeadFieldKeys" | "level3" | "level3Complete"
+  >
+): IntelligenceCenterPayload {
+  if (payload.level3Complete && hasCompleteLevel3Stats(payload.level3)) {
+    return payload.level3!
+  }
+  if (payload.leads?.length) {
+    return computeLevel3FromLeads(
+      payload.leads,
+      payload.visibleLeadFieldKeys ??
+        discoverVisibleLeadFieldKeys(payload.leads)
+    )
+  }
+  return emptyLevel3Payload()
+}
+
 export function dataLabStatsFromExportPayload(
   payload: Pick<
     DataExportDashboardData,
     | "leads"
+    | "visibleLeadFieldKeys"
     | "level1Stats"
     | "level1Complete"
     | "level2Stats"
     | "level2Complete"
+    | "level3"
+    | "level3Complete"
   >
 ): DataLabStatsBundle {
   return {
     level1Stats: level1StatsFromExportPayload(payload),
     level2Stats: level2StatsFromExportPayload(payload),
+    level3: level3StatsFromExportPayload(payload),
   }
 }
 
@@ -173,18 +207,26 @@ async function fetchDataExportPage({
 function apiStatsComplete(
   payload: Pick<
     DataExportDashboardData,
-    "level1Stats" | "level1Complete" | "level2Stats" | "level2Complete"
+    | "level1Stats"
+    | "level1Complete"
+    | "level2Stats"
+    | "level2Complete"
+    | "level3"
+    | "level3Complete"
   >
 ): DataLabStatsBundle | null {
   if (
     payload.level1Complete &&
     hasCompleteLevel1Stats(payload.level1Stats) &&
     payload.level2Complete &&
-    Array.isArray(payload.level2Stats)
+    Array.isArray(payload.level2Stats) &&
+    payload.level3Complete &&
+    hasCompleteLevel3Stats(payload.level3)
   ) {
     return {
       level1Stats: payload.level1Stats,
       level2Stats: payload.level2Stats,
+      level3: payload.level3!,
     }
   }
   return null
@@ -214,6 +256,9 @@ export async function fetchDataLabStatsFromLeadsTable({
     | "level1Complete"
     | "level2Stats"
     | "level2Complete"
+    | "level3"
+    | "level3Complete"
+    | "visibleLeadFieldKeys"
     | "total"
     | "limit"
     | "offset"

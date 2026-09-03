@@ -17,6 +17,7 @@ export function getDataExportEmptyDashboardData(
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: rangeId,
     leads: [],
+    visibleLeadFieldKeys: [],
     total: 0,
     limit: DATA_EXPORT_PAGE_SIZE,
     offset: 0,
@@ -26,5 +27,7 @@ export function getDataExportEmptyDashboardData(
     level1Complete: false,
     level2Stats: emptyLevel2Stats(),
     level2Complete: false,
+    level3: null,
+    level3Complete: false,
   }
 }

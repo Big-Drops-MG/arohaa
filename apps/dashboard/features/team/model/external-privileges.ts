@@ -63,6 +63,7 @@ export const EXTERNAL_PRIVILEGE_TABS: PrivilegeTabDef[] = PROJECT_TABS.map(
           return [
             { id: "level-1", label: "Level 1" },
             { id: "level-2", label: "Level 2" },
+            { id: "level-3", label: "Level 3" },
             { id: "leads", label: "Leads table" },
           ]
         default:

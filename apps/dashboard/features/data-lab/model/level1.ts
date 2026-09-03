@@ -16,6 +16,10 @@ export type Level1Stat = {
   value: string
   metricLabel?: string
   metricValue?: number
+  /** Total leads in this bucket (for context alongside submission count) */
+  sampleSize?: number
+  /** Formatted submission rate, e.g. "94%" */
+  submissionRate?: string
   breakdown?: Level1StatBreakdown[]
   enoughData: boolean
 }
@@ -110,6 +114,58 @@ function pickFieldValue(
   return null
 }
 
+/** Wilson score lower bound — ranks by credible efficiency, not raw rate. */
+function calculateCredibleRate(
+  submitted: number,
+  total: number,
+  z = 1.64
+): number {
+  if (total <= 0 || submitted <= 0) return 0
+  const p = submitted / total
+  const z2 = z * z
+  const denominator = 1 + z2 / total
+  const centerAdjusted = p + z2 / (2 * total)
+  const margin = z * Math.sqrt((p * (1 - p) + z2 / (4 * total)) / total)
+  return Math.max(0, (centerAdjusted - margin) / denominator)
+}
+
+type BucketCounter = {
+  label: string
+  total: number
+  submitted: number
+}
+
+function addBucket(
+  counts: Map<string, BucketCounter>,
+  label: string,
+  submitted: boolean
+): void {
+  const next = counts.get(label) ?? { label, total: 0, submitted: 0 }
+  next.total += 1
+  if (submitted) next.submitted += 1
+  counts.set(label, next)
+}
+
+function pickBestBucket(
+  counts: Map<string, BucketCounter>
+): BucketCounter | null {
+  let best: BucketCounter | null = null
+  let bestScore = -1
+  for (const bucket of counts.values()) {
+    if (bucket.submitted === 0) continue
+    const score = calculateCredibleRate(bucket.submitted, bucket.total)
+    if (
+      score > bestScore ||
+      (score === bestScore &&
+        (best === null || bucket.submitted > best.submitted))
+    ) {
+      best = bucket
+      bestScore = score
+    }
+  }
+  return best
+}
+
 function parseDobParts(
   raw: string
 ): { month: number; day: number; year: number } | null {
@@ -176,44 +232,19 @@ function resolveLeadAge(
   return age
 }
 
-function pickBestCountKey<T>(counts: Map<T, number>): {
-  key: T | null
-  count: number
-} {
-  let bestKey: T | null = null
-  let bestCount = 0
-  for (const [key, count] of counts) {
-    if (count > bestCount) {
-      bestKey = key
-      bestCount = count
-    }
-  }
-  return { key: bestKey, count: bestCount }
-}
-
-function bestSubmissionStat(
-  id: string,
-  label: string,
-  best: { key: string | null; count: number }
-): Level1Stat {
-  return {
-    id,
-    label,
-    value: best.count > 0 && best.key ? best.key : "—",
-    metricLabel: "Form submissions",
-    metricValue: best.count,
-    enoughData: best.count > 0,
-  }
-}
-
 export function computeLevel1StatsFromLeads(
   leads: DataExportLeadRow[]
 ): Level1Stat[] {
-  const hourCounts = new Map<number, number>()
-  const zipCounts = new Map<string, number>()
-  const ageGroupCounts = new Map<string, number>()
-  const cityCounts = new Map<string, number>()
-  const stateCounts = new Map<string, number>()
+  // Wilson-scored buckets for efficiency-ranked dimensions
+  const timeBuckets = new Map<string, BucketCounter>()
+  const ageGroupBuckets = new Map<string, BucketCounter>()
+  const cityBuckets = new Map<string, BucketCounter>()
+  const stateBuckets = new Map<string, BucketCounter>()
+
+  // ZIP stays as highest-submission-count (too granular for credible scoring),
+  // but we still track total leads so the UI can show "3 of 5" context.
+  const zipBuckets = new Map<string, BucketCounter>()
+
   let sampleDate: Date | null = null
   let yesCount = 0
   let noCount = 0
@@ -223,83 +254,130 @@ export function computeLevel1StatsFromLeads(
     if (lead.formSubmitted) yesCount += 1
     else noCount += 1
 
-    if (!lead.formSubmitted) continue
-
     const when = parseLeadWhen(lead.createdAt)
     if (when) {
       sampleDate ??= when
       const hour = getDashboardZonedParts(when).hour
-      hourCounts.set(hour, (hourCounts.get(hour) ?? 0) + 1)
-    }
-
-    const zip = normalizeLeadZip(lead.zip)
-    if (zip) {
-      zipCounts.set(zip, (zipCounts.get(zip) ?? 0) + 1)
+      const timeLabel = formatHourWindow(hour, when)
+      addBucket(timeBuckets, timeLabel, lead.formSubmitted)
     }
 
     const age = resolveLeadAge(lead.fields, now)
     const ageGroup = age != null ? ageGroupFromAge(age) : null
     if (ageGroup) {
-      ageGroupCounts.set(ageGroup, (ageGroupCounts.get(ageGroup) ?? 0) + 1)
+      addBucket(ageGroupBuckets, ageGroup, lead.formSubmitted)
     }
 
     const city = pickFieldValue(lead.fields, ["city"])
     if (city) {
-      cityCounts.set(city, (cityCounts.get(city) ?? 0) + 1)
+      addBucket(cityBuckets, city, lead.formSubmitted)
     }
 
     const stateRaw = pickFieldValue(lead.fields, ["state"])
     const state = stateRaw ? (normalizeUsStateName(stateRaw) ?? stateRaw) : null
     if (state) {
-      stateCounts.set(state, (stateCounts.get(state) ?? 0) + 1)
+      addBucket(stateBuckets, state, lead.formSubmitted)
+    }
+
+    const zip = normalizeLeadZip(lead.zip)
+    if (zip) addBucket(zipBuckets, zip, lead.formSubmitted)
+  }
+
+  const bestTime = pickBestBucket(timeBuckets)
+  const bestAgeGroup = pickBestBucket(ageGroupBuckets)
+  const bestCity = pickBestBucket(cityBuckets)
+  const bestState = pickBestBucket(stateBuckets)
+
+  // Best ZIP: highest submission count (not Wilson)
+  let bestZip: BucketCounter | null = null
+  for (const bucket of zipBuckets.values()) {
+    if (
+      !bestZip ||
+      bucket.submitted > bestZip.submitted ||
+      (bucket.submitted === bestZip.submitted && bucket.total > bestZip.total)
+    ) {
+      bestZip = bucket
     }
   }
 
-  const bestTime = pickBestCountKey(hourCounts)
-  const bestZip = pickBestCountKey(zipCounts)
-  const bestAgeGroup = pickBestCountKey(ageGroupCounts)
-  const bestCity = pickBestCountKey(cityCounts)
-  const bestState = pickBestCountKey(stateCounts)
   const totalLeads = yesCount + noCount
 
   return [
     {
       id: "best-time",
       label: "Best Time",
-      value:
-        bestTime.count > 0 && bestTime.key != null && sampleDate
-          ? formatHourWindow(bestTime.key, sampleDate)
-          : "—",
-      metricLabel: "Form submissions",
-      metricValue: bestTime.count,
-      enoughData: bestTime.count > 0,
+      value: bestTime ? bestTime.label : "—",
+      metricLabel: "Submitted leads",
+      metricValue: bestTime?.submitted ?? 0,
+      sampleSize: bestTime?.total,
+      submissionRate:
+        bestTime && bestTime.total > 0
+          ? formatPercentShare(bestTime.submitted, bestTime.total)
+          : undefined,
+      enoughData: (bestTime?.submitted ?? 0) > 0,
     },
-    bestSubmissionStat("best-zip", "Best ZIP", {
-      key: bestZip.key,
-      count: bestZip.count,
-    }),
+    {
+      id: "best-zip",
+      label: "Best ZIP",
+      value: bestZip?.label ?? "—",
+      metricLabel: "Submitted leads",
+      metricValue: bestZip?.submitted ?? 0,
+      sampleSize: bestZip?.total,
+      submissionRate:
+        bestZip && bestZip.total > 0
+          ? formatPercentShare(bestZip.submitted, bestZip.total)
+          : undefined,
+      enoughData: (bestZip?.submitted ?? 0) > 0,
+    },
     {
       id: "form-submission-ratio",
-      label: "Form Submission Ratio (Yes : No)",
+      label: "Form Submission Ratio",
       value: totalLeads > 0 ? formatYesNoRatio(yesCount, noCount) : "—",
       breakdown: [
-        { label: "Yes", value: yesCount },
-        { label: "No", value: noCount },
+        { label: "Submitted", value: yesCount },
+        { label: "Not submitted", value: noCount },
       ],
       enoughData: totalLeads > 0,
     },
-    bestSubmissionStat("best-age-group", "Best Age Group", {
-      key: bestAgeGroup.key,
-      count: bestAgeGroup.count,
-    }),
-    bestSubmissionStat("best-city", "Best City", {
-      key: bestCity.key,
-      count: bestCity.count,
-    }),
-    bestSubmissionStat("best-state", "Best State", {
-      key: bestState.key,
-      count: bestState.count,
-    }),
+    {
+      id: "best-age-group",
+      label: "Best Age Group",
+      value: bestAgeGroup?.label ?? "—",
+      metricLabel: "Submitted leads",
+      metricValue: bestAgeGroup?.submitted ?? 0,
+      sampleSize: bestAgeGroup?.total,
+      submissionRate:
+        bestAgeGroup && bestAgeGroup.total > 0
+          ? formatPercentShare(bestAgeGroup.submitted, bestAgeGroup.total)
+          : undefined,
+      enoughData: (bestAgeGroup?.submitted ?? 0) > 0,
+    },
+    {
+      id: "best-city",
+      label: "Best City",
+      value: bestCity?.label ?? "—",
+      metricLabel: "Submitted leads",
+      metricValue: bestCity?.submitted ?? 0,
+      sampleSize: bestCity?.total,
+      submissionRate:
+        bestCity && bestCity.total > 0
+          ? formatPercentShare(bestCity.submitted, bestCity.total)
+          : undefined,
+      enoughData: (bestCity?.submitted ?? 0) > 0,
+    },
+    {
+      id: "best-state",
+      label: "Best State",
+      value: bestState?.label ?? "—",
+      metricLabel: "Submitted leads",
+      metricValue: bestState?.submitted ?? 0,
+      sampleSize: bestState?.total,
+      submissionRate:
+        bestState && bestState.total > 0
+          ? formatPercentShare(bestState.submitted, bestState.total)
+          : undefined,
+      enoughData: (bestState?.submitted ?? 0) > 0,
+    },
   ]
 }
 
@@ -323,11 +401,11 @@ export function emptyLevel1Stats(): Level1Stat[] {
     },
     {
       id: "form-submission-ratio",
-      label: "Form Submission Ratio (Yes : No)",
+      label: "Form Submission Ratio",
       value: "—",
       breakdown: [
-        { label: "Yes", value: 0 },
-        { label: "No", value: 0 },
+        { label: "Submitted", value: 0 },
+        { label: "Not submitted", value: 0 },
       ],
       enoughData: false,
     },
@@ -365,6 +443,35 @@ export type Level1Payload = {
 
 export function emptyLevel1Payload(): Level1Payload {
   return { section: "level1", stats: emptyLevel1Stats() }
+}
+
+export function filterLevel1StatsToVisibleLeadColumns(
+  stats: Level1Stat[],
+  visibleLeadFieldKeys: string[]
+): Level1Stat[] {
+  const visibleKeys = new Set(
+    visibleLeadFieldKeys.map((key) => key.trim().toLowerCase())
+  )
+
+  return stats.filter((stat) => {
+    if (
+      stat.id === "best-time" ||
+      stat.id === "best-zip" ||
+      stat.id === "form-submission-ratio"
+    ) {
+      return true
+    }
+    if (stat.id === "best-age-group") {
+      return visibleKeys.has("dob")
+    }
+    if (stat.id === "best-city") {
+      return visibleKeys.has("city")
+    }
+    if (stat.id === "best-state") {
+      return visibleKeys.has("state")
+    }
+    return true
+  })
 }
 
 export function hasCompleteLevel1Stats(
