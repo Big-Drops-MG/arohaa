@@ -25,6 +25,8 @@ export type UtmDashboardData = {
   activeItems: UtmParamPair[]
   blockedItems: UtmParamPair[]
   items: UtmParamItem[]
+  previewLimit?: number
+  activeTruncated?: boolean
 }
 
 export function getUtmParamLabel(key: string): string {

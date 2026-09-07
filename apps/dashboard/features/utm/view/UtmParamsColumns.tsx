@@ -176,12 +176,14 @@ type UtmParamsColumnsProps = {
   projectId: string
   data: UtmDashboardData
   onDataChange: (data: UtmDashboardData) => void
+  readOnly?: boolean
 }
 
 export function UtmParamsColumns({
   projectId,
   data,
   onDataChange,
+  readOnly = false,
 }: UtmParamsColumnsProps) {
   const [cardFilter, setCardFilter] = useDashboardPreference(
     projectId,
@@ -322,6 +324,11 @@ export function UtmParamsColumns({
     }
   }, [isEditOpen, isAddBlockedOpen])
 
+  const activeTotal = data.stats.activeSource + data.stats.activeS1
+  const truncatedNote = data.activeTruncated
+    ? ` Showing latest ${data.activeItems.length.toLocaleString()} of ${activeTotal.toLocaleString()} active params. Use Add Manually to block a value not listed.`
+    : ""
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -330,12 +337,14 @@ export function UtmParamsColumns({
           <p className="mt-1 text-sm text-muted-foreground">
             Active params on the left, blocked on the right. Blocked values
             redirect visitors to <code className="text-xs">/access-denied</code>
-            .
+            .{truncatedNote}
           </p>
         </div>
-        <Button type="button" size="sm" onClick={openEditModal}>
-          Edit
-        </Button>
+        {!readOnly ? (
+          <Button type="button" size="sm" onClick={openEditModal}>
+            Edit
+          </Button>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -376,19 +385,21 @@ export function UtmParamsColumns({
           tone="danger"
           sectionFilter={cardFilter}
           headerActions={
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setAddBlockedError("")
-                setAddBlockedValue("")
-                setAddBlockedType("utm_source")
-                setIsAddBlockedOpen(true)
-              }}
-            >
-              Add Manually
-            </Button>
+            readOnly ? undefined : (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setAddBlockedError("")
+                  setAddBlockedValue("")
+                  setAddBlockedType("utm_source")
+                  setIsAddBlockedOpen(true)
+                }}
+              >
+                Add Manually
+              </Button>
+            )
           }
           emptyMessage="No blocked UTM params."
         />

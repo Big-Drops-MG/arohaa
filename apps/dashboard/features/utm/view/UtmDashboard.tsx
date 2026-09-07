@@ -20,20 +20,23 @@ export function UtmDashboard({
   projectId,
   isActive = true,
   isLoading: isTabLoading = false,
-  readOnly: _readOnly = false,
+  readOnly = false,
 }: UtmDashboardProps) {
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isFetching, setIsFetching] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     if (!isActive) return
     setIsFetching(true)
+    setLoadError(null)
     try {
       const res = await fetch(
         `/api/landing-pages/${encodeURIComponent(projectId)}/utm`,
         { cache: "no-store" }
       )
       if (!res.ok) {
+        setLoadError("Could not load UTM controls. Try refreshing.")
         setDashboardData(
           getUtmEmptyDashboardData(projectId, initialData.brandName)
         )
@@ -41,6 +44,7 @@ export function UtmDashboard({
       }
       setDashboardData((await res.json()) as UtmDashboardData)
     } catch {
+      setLoadError("Could not load UTM controls. Try refreshing.")
       setDashboardData(
         getUtmEmptyDashboardData(projectId, initialData.brandName)
       )
@@ -50,17 +54,20 @@ export function UtmDashboard({
   }, [initialData.brandName, isActive, projectId])
 
   const showSkeleton = isTabLoading || isFetching
+  const brandLabel = dashboardData.brandName.trim() || "this landing page"
 
   return (
     <div className="flex flex-col gap-6 pb-6">
       <div className="flex flex-col gap-1 border-b border-border pb-4">
         <h1 className="text-xl font-semibold text-foreground">UTM Control</h1>
         <p className="text-sm text-muted-foreground">
-          Block unwanted UTM traffic for {dashboardData.brandName}. Blocked
-          visitors are redirected to{" "}
-          <code className="text-xs">/access-denied</code> on your landing page
-          and are excluded from analytics.
+          Block unwanted UTM traffic for {brandLabel}. Blocked visitors are
+          redirected to <code className="text-xs">/access-denied</code> on your
+          landing page and are excluded from analytics.
         </p>
+        {loadError ? (
+          <p className="text-sm text-destructive">{loadError}</p>
+        ) : null}
       </div>
 
       {showSkeleton ? (
@@ -72,6 +79,7 @@ export function UtmDashboard({
           <UtmParamsColumns
             projectId={projectId}
             data={dashboardData}
+            readOnly={readOnly}
             onDataChange={(next) => {
               setDashboardData(next)
               void refresh()

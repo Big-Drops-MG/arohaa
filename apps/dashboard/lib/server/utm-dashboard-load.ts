@@ -1,5 +1,14 @@
-import { notFound } from "next/navigation"
-import { and, asc, eq, inArray, notInArray, or, like } from "drizzle-orm"
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  notInArray,
+  or,
+  like,
+  sql,
+} from "drizzle-orm"
 import { db, landingPageUtmParams } from "@workspace/database"
 import {
   STORED_UTM_PARAM_KEYS,
@@ -7,8 +16,12 @@ import {
   sanitizeUtmParamValue,
   type StoredUtmParamKey,
 } from "@workspace/lp-core/model"
-import type { UtmDashboardData, UtmParamItem } from "@/features/utm/model/utm"
-import { getUtmEmptyDashboardData } from "@/features/utm/controller/utm-empty-data"
+import type {
+  UtmDashboardData,
+  UtmDashboardStats,
+  UtmParamItem,
+  UtmParamPair,
+} from "@/features/utm/model/utm"
 import {
   resolveIngestApiBase,
   resolveInternalApiSecret,
@@ -19,9 +32,18 @@ import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
 export type UtmParamStatus = "active" | "blocked"
 
+export const UTM_UI_ACTIVE_PREVIEW_LIMIT = 250
+
+const UTM_DISCOVERY_SYNC_BATCH = 500
+
 type DiscoveredUtmParam = {
   key: string
   value: string
+}
+
+type LandingPageRef = {
+  id: string
+  brandName: string
 }
 
 async function fetchDiscoveredUtmParams(
@@ -41,8 +63,30 @@ async function fetchDiscoveredUtmParams(
     })
     if (!resp.ok) return []
     return (await resp.json()) as DiscoveredUtmParam[]
-  } catch {
+  } catch (err) {
+    console.error("[utm] discovery fetch failed", err)
     return []
+  }
+}
+
+async function invalidateApiBlockedUtmCache(landingPageId: string) {
+  const apiBase = resolveIngestApiBase()
+  const secret = resolveInternalApiSecret()
+  if (!apiBase || !secret) return
+
+  try {
+    await fetch(`${apiBase}/v1/internal/utm-blocked/invalidate`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-arohaa-internal": secret,
+      },
+      body: JSON.stringify({ landingPageId }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(5_000),
+    })
+  } catch (err) {
+    console.error("[utm] block-cache invalidate failed", err)
   }
 }
 
@@ -97,10 +141,11 @@ async function syncDiscoveredParams(
 ) {
   if (discovered.length === 0) return
 
+  const batch = discovered.slice(0, UTM_DISCOVERY_SYNC_BATCH)
   await db
     .insert(landingPageUtmParams)
     .values(
-      discovered.map((row) => ({
+      batch.map((row) => ({
         landingPageId,
         key: row.key,
         value: row.value,
@@ -116,74 +161,155 @@ async function syncDiscoveredParams(
     })
 }
 
-function countByKeyAndStatus(
-  items: UtmParamItem[],
-  key: "utm_source" | "utm_s1",
-  status: UtmParamItem["status"]
-): number {
-  return items.filter((item) => item.key === key && item.status === status)
-    .length
+async function loadUtmStats(landingPageId: string): Promise<UtmDashboardStats> {
+  const rows = await db
+    .select({
+      key: landingPageUtmParams.key,
+      status: landingPageUtmParams.status,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(landingPageUtmParams)
+    .where(
+      and(
+        eq(landingPageUtmParams.landingPageId, landingPageId),
+        inArray(landingPageUtmParams.key, [...STORED_UTM_PARAM_KEYS])
+      )
+    )
+    .groupBy(landingPageUtmParams.key, landingPageUtmParams.status)
+
+  const stats: UtmDashboardStats = {
+    total: 0,
+    activeSource: 0,
+    activeS1: 0,
+    blockedSource: 0,
+    blockedS1: 0,
+  }
+
+  for (const row of rows) {
+    const n = Number(row.count) || 0
+    stats.total += n
+    if (row.key === "utm_source" && row.status === "active") {
+      stats.activeSource = n
+    } else if (row.key === "utm_s1" && row.status === "active") {
+      stats.activeS1 = n
+    } else if (row.key === "utm_source" && row.status === "blocked") {
+      stats.blockedSource = n
+    } else if (row.key === "utm_s1" && row.status === "blocked") {
+      stats.blockedS1 = n
+    }
+  }
+
+  return stats
+}
+
+async function loadUtmPairs(
+  landingPageId: string,
+  status: UtmParamStatus,
+  limit?: number
+): Promise<UtmParamPair[]> {
+  const query = db
+    .select({
+      key: landingPageUtmParams.key,
+      value: landingPageUtmParams.value,
+    })
+    .from(landingPageUtmParams)
+    .where(
+      and(
+        eq(landingPageUtmParams.landingPageId, landingPageId),
+        eq(landingPageUtmParams.status, status),
+        inArray(landingPageUtmParams.key, [...STORED_UTM_PARAM_KEYS])
+      )
+    )
+    .orderBy(
+      desc(landingPageUtmParams.updatedAt),
+      asc(landingPageUtmParams.key),
+      asc(landingPageUtmParams.value)
+    )
+
+  const rows = limit ? await query.limit(limit) : await query
+  return rows.map((row) => ({ key: row.key, value: row.value }))
 }
 
 function buildDashboardData(
   brandName: string,
-  items: UtmParamItem[]
+  stats: UtmDashboardStats,
+  activeItems: UtmParamPair[],
+  blockedItems: UtmParamPair[]
 ): UtmDashboardData {
-  const active = items.filter((item) => item.status === "active")
-  const blocked = items.filter((item) => item.status === "blocked")
+  const items: UtmParamItem[] = [
+    ...activeItems.map((item) => ({ ...item, status: "active" as const })),
+    ...blockedItems.map((item) => ({ ...item, status: "blocked" as const })),
+  ]
 
   return {
     brandName,
-    stats: {
-      total: items.length,
-      activeSource: countByKeyAndStatus(items, "utm_source", "active"),
-      activeS1: countByKeyAndStatus(items, "utm_s1", "active"),
-      blockedSource: countByKeyAndStatus(items, "utm_source", "blocked"),
-      blockedS1: countByKeyAndStatus(items, "utm_s1", "blocked"),
-    },
-    activeItems: active.map(({ key, value }) => ({ key, value })),
-    blockedItems: blocked.map(({ key, value }) => ({ key, value })),
+    stats,
+    activeItems,
+    blockedItems,
     items,
+    previewLimit: UTM_UI_ACTIVE_PREVIEW_LIMIT,
+    activeTruncated: stats.activeSource + stats.activeS1 > activeItems.length,
   }
+}
+
+async function resolveLandingPageForActor(
+  landingPagePublicId: string
+): Promise<
+  | { ok: true; actorId: string; row: LandingPageRef }
+  | { ok: false; status: 401 | 404; error: string }
+> {
+  const actor = await requireLandingPageActor()
+  if (!actor) {
+    return { ok: false, status: 401, error: "Unauthorized" }
+  }
+
+  const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
+  if (!row) {
+    return { ok: false, status: 404, error: "Not found" }
+  }
+
+  return {
+    ok: true,
+    actorId: actor.id,
+    row: { id: row.id, brandName: row.brandName },
+  }
+}
+
+async function buildUtmDashboardForLandingPage(
+  row: LandingPageRef
+): Promise<UtmDashboardData> {
+  await purgeDisallowedUtmParams(row.id)
+  await purgeMalformedUtmParams(row.id)
+
+  try {
+    const discovered = sanitizeDiscovered(
+      await fetchDiscoveredUtmParams(row.id)
+    )
+    await syncDiscoveredParams(row.id, discovered)
+  } catch (err) {
+    console.error("[utm] discovery sync failed", err)
+  }
+
+  const [stats, activeItems, blockedItems] = await Promise.all([
+    loadUtmStats(row.id),
+    loadUtmPairs(row.id, "active", UTM_UI_ACTIVE_PREVIEW_LIMIT),
+    loadUtmPairs(row.id, "blocked"),
+  ])
+
+  return buildDashboardData(row.brandName, stats, activeItems, blockedItems)
 }
 
 export async function loadUtmDashboardData(
   landingPagePublicId: string
 ): Promise<UtmDashboardData> {
-  const actor = await requireLandingPageActor()
-  if (!actor) notFound()
+  const resolved = await resolveLandingPageForActor(landingPagePublicId)
+  if (!resolved.ok) {
+    const { notFound } = await import("next/navigation")
+    notFound()
+    throw new Error("Landing page not found")
+  }
 
-  const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
-  if (!row) notFound()
-
-  await purgeDisallowedUtmParams(row.id)
-  await purgeMalformedUtmParams(row.id)
-
-  const discovered = sanitizeDiscovered(await fetchDiscoveredUtmParams(row.id))
-  await syncDiscoveredParams(row.id, discovered)
-
-  const rows = await db
-    .select({
-      key: landingPageUtmParams.key,
-      value: landingPageUtmParams.value,
-      status: landingPageUtmParams.status,
-    })
-    .from(landingPageUtmParams)
-    .where(
-      and(
-        eq(landingPageUtmParams.landingPageId, row.id),
-        inArray(landingPageUtmParams.key, [...STORED_UTM_PARAM_KEYS])
-      )
-    )
-    .orderBy(asc(landingPageUtmParams.key), asc(landingPageUtmParams.value))
-
-  const items: UtmParamItem[] = rows.map((r) => ({
-    key: r.key,
-    value: r.value,
-    status: r.status,
-  }))
-
-  return buildDashboardData(row.brandName, items)
+  return buildUtmDashboardForLandingPage(resolved.row)
 }
 
 export async function updateUtmParamsForLandingPage({
@@ -220,7 +346,7 @@ export async function updateUtmParamsForLandingPage({
     .filter((item) => item.value)
 
   if (valid.length === 0) {
-    return { ok: true, data: await loadUtmDashboardData(landingPagePublicId) }
+    return { ok: true, data: await buildUtmDashboardForLandingPage(row) }
   }
 
   await db.transaction(async (tx) => {
@@ -247,7 +373,9 @@ export async function updateUtmParamsForLandingPage({
     }
   })
 
-  return { ok: true, data: await loadUtmDashboardData(landingPagePublicId) }
+  await invalidateApiBlockedUtmCache(row.id)
+
+  return { ok: true, data: await buildUtmDashboardForLandingPage(row) }
 }
 
 export async function loadUtmDashboardDataForApi(
@@ -256,23 +384,20 @@ export async function loadUtmDashboardDataForApi(
   | { ok: true; data: UtmDashboardData }
   | { ok: false; status: number; error: string }
 > {
-  const actor = await requireLandingPageActor()
-  if (!actor) {
-    return { ok: false, status: 401, error: "Unauthorized" }
-  }
-
-  const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
-  if (!row) {
-    return { ok: false, status: 404, error: "Not found" }
+  const resolved = await resolveLandingPageForActor(landingPagePublicId)
+  if (!resolved.ok) {
+    return { ok: false, status: resolved.status, error: resolved.error }
   }
 
   try {
-    const data = await loadUtmDashboardData(landingPagePublicId)
+    const data = await buildUtmDashboardForLandingPage(resolved.row)
     return { ok: true, data }
-  } catch {
+  } catch (err) {
+    console.error("[utm] dashboard load failed", err)
     return {
-      ok: true,
-      data: getUtmEmptyDashboardData(landingPagePublicId),
+      ok: false,
+      status: 500,
+      error: "Failed to load UTM controls",
     }
   }
 }

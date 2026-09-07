@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify'
+import { verifyInternalApiRequest } from '../lib/internal-api-secret.js'
 import {
   getBlockedUtmSets,
+  invalidateBlockedUtmCache,
   serializeBlockedUtmResponse,
 } from '../services/utm-block.service.js'
 
@@ -37,6 +39,31 @@ export async function utmRoutes(server: FastifyInstance) {
 
       const sets = await getBlockedUtmSets(wid)
       return reply.send(serializeBlockedUtmResponse(sets))
+    },
+  )
+
+  server.post<{ Body: { landingPageId?: string } }>(
+    '/v1/internal/utm-blocked/invalidate',
+    {
+      config: {
+        rateLimit: {
+          max: 60,
+          timeWindow: '1 minute',
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!verifyInternalApiRequest(request.headers['x-arohaa-internal'])) {
+        return reply.code(401).send({ error: 'Unauthorized' })
+      }
+
+      const landingPageId = request.body?.landingPageId?.trim()
+      if (!landingPageId || !UUID_RE.test(landingPageId)) {
+        return reply.code(400).send({ error: 'Invalid landingPageId' })
+      }
+
+      invalidateBlockedUtmCache(landingPageId)
+      return reply.send({ ok: true })
     },
   )
 }

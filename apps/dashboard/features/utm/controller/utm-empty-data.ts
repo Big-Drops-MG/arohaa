@@ -16,5 +16,7 @@ export function getUtmEmptyDashboardData(
     activeItems: [],
     blockedItems: [],
     items: [],
+    previewLimit: 250,
+    activeTruncated: false,
   }
 }
