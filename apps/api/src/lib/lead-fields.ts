@@ -8,6 +8,14 @@ const PEELABLE_BASE_RE =
 const EMAIL_KEY_RE = /^(email|e-mail|email_address|emailaddress)$/i
 const ZIP_KEY_RE = /^(zip|zipcode|zip_code|postal)$/i
 
+/** Alternate form names for first name (EN + ES). Canonical key: first_name */
+const FIRST_NAME_ALIAS_RE =
+  /^(first[_-]?name|fname|given[_-]?name|nombre_de_pila|nombredepila)$/i
+
+/** Alternate form names for last name (EN + ES). Canonical key: last_name */
+const LAST_NAME_ALIAS_RE =
+  /^(last[_-]?name|lname|surname|family[_-]?name|apellido[s]?)$/i
+
 const NOISE_FIELD_RE =
   /^(input|select|textarea|search|xxtrustedform\w*|trustedform\w*|jornaya_lead_id|leadid_token|universal_leadid|consent-confirmation-certificate-id)$/i
 
@@ -37,6 +45,40 @@ function peelRadioKey(
   return null
 }
 
+/**
+ * Map translated / alternate name inputs onto first_name and last_name, then
+ * drop the aliases so they do not appear as extra Leads-table columns.
+ */
+function canonicalizeNameFields(fields: Record<string, string>): void {
+  let firstName = fields.first_name?.trim() || ''
+  let lastName = fields.last_name?.trim() || ''
+  const aliasKeys: string[] = []
+
+  for (const [key, value] of Object.entries(fields)) {
+    const trimmed = value.trim()
+    if (!trimmed) continue
+    const lower = key.toLowerCase()
+
+    if (FIRST_NAME_ALIAS_RE.test(key) && lower !== 'first_name') {
+      if (!firstName) firstName = trimmed
+      aliasKeys.push(key)
+      continue
+    }
+
+    if (LAST_NAME_ALIAS_RE.test(key) && lower !== 'last_name') {
+      if (!lastName) lastName = trimmed
+      aliasKeys.push(key)
+    }
+  }
+
+  for (const key of aliasKeys) {
+    delete fields[key]
+  }
+
+  if (firstName) fields.first_name = firstName
+  if (lastName) fields.last_name = lastName
+}
+
 export function normalizeLeadFields(
   raw: Record<string, string>,
 ): Record<string, string> {
@@ -64,6 +106,7 @@ export function normalizeLeadFields(
 
   composeDob(out)
   dropDobParts(out)
+  canonicalizeNameFields(out)
   return out
 }
 

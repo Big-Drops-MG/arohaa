@@ -86,6 +86,46 @@ describe('normalizeLeadFields', () => {
       city: 'Austin',
     })
   })
+
+  it('maps Spanish Nombre_de_pila / Apellido onto first_name / last_name', () => {
+    expect(
+      normalizeLeadFields({
+        Nombre_de_pila: 'Raul',
+        Apellido: 'Garcia',
+        unit: 'Casa',
+      }),
+    ).toEqual({
+      first_name: 'Raul',
+      last_name: 'Garcia',
+      unit: 'Casa',
+    })
+  })
+
+  it('keeps explicit first_name / last_name over aliases', () => {
+    expect(
+      normalizeLeadFields({
+        first_name: 'Ada',
+        last_name: 'Lovelace',
+        Nombre_de_pila: 'Ignored',
+        Apellido: 'Ignored',
+      }),
+    ).toEqual({
+      first_name: 'Ada',
+      last_name: 'Lovelace',
+    })
+  })
+
+  it('maps common English name aliases', () => {
+    expect(
+      normalizeLeadFields({
+        'first-name': 'Sam',
+        lastname: 'Lee',
+      }),
+    ).toEqual({
+      first_name: 'Sam',
+      last_name: 'Lee',
+    })
+  })
 })
 
 describe('isDisplayableLead', () => {
