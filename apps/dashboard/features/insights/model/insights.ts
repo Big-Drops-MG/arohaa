@@ -1,3 +1,4 @@
+import type { Level1Stat } from "@/features/data-lab/model/level1"
 import type { InsightSectionId } from "@/features/insights/model/insights-section"
 import type {
   IntelligenceBoard,
@@ -52,6 +53,7 @@ export type InsightsSectionPayload = {
   winners?: IntelligenceWinner[]
   boards?: IntelligenceBoard[]
   actions?: string[]
+  level1Stats?: Level1Stat[]
 }
 
 export function emptyInsightsSection(
@@ -66,6 +68,9 @@ export function emptyInsightsSection(
       boards: [],
       actions: [],
     }
+  }
+  if (section === "level1") {
+    return { section, kpis: [], charts: [], level1Stats: [] }
   }
   return { section, kpis: [], charts: [] }
 }

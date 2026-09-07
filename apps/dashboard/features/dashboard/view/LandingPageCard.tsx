@@ -14,7 +14,7 @@ type LandingPageCardProps = {
 }
 
 export function LandingPageCard({ page }: LandingPageCardProps) {
-  const href = `/dashboard/${encodeURIComponent(page.publicId)}`
+  const href = `/dashboard/${encodeURIComponent(page.slug)}`
   const variantLabel = page.variantLabel
     ? experimentVariantDisplayLabel(page.variantLabel)
     : null

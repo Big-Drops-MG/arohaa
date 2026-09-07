@@ -1,6 +1,8 @@
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import { cn } from "@workspace/ui/lib/utils"
 import {
+  dashboardGridFunnelChartClassName,
+  dashboardGridTwoColClassName,
   overviewAnalyticCardContentPaddingClassName,
   overviewAnalyticCardHeaderClassName,
   overviewAnalyticCardShellClassName,
@@ -51,7 +53,7 @@ export function DashboardAnalyticCardSkeleton({
   return (
     <div
       className={cn(
-        "flex h-full min-h-[220px] flex-col overflow-hidden rounded-[15px] border border-foreground/10 bg-card",
+        "flex min-h-[220px] flex-col rounded-[15px] border border-foreground/10 bg-card",
         overviewAnalyticCardShellClassName,
         className
       )}
@@ -186,12 +188,7 @@ export function DashboardCardGridSkeleton({
   className?: string
 }) {
   return (
-    <div
-      className={cn(
-        "grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0",
-        className
-      )}
-    >
+    <div className={cn(dashboardGridTwoColClassName, className)}>
       {Array.from({ length: cards }, (_, i) => (
         <DashboardAnalyticCardSkeleton key={i} />
       ))}
@@ -213,7 +210,7 @@ export function OverviewDashboardSkeleton() {
   return (
     <div className="flex flex-col gap-4" aria-busy>
       <DashboardKpiRowSkeleton count={6} />
-      <div className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-[3fr_7fr] lg:items-stretch">
+      <div className={dashboardGridFunnelChartClassName}>
         <DashboardAnalyticCardSkeleton rows={5} />
         <DashboardChartSkeleton />
       </div>
@@ -348,6 +345,49 @@ export function SettingsDashboardSkeleton() {
           <DashboardAnalyticCardSkeleton rows={8} />
         </div>
       </div>
+    </div>
+  )
+}
+
+export function Level1StatsSkeleton({
+  count = 6,
+  className,
+}: {
+  count?: number
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        "grid auto-rows-fr grid-cols-1 items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-3",
+        className
+      )}
+      aria-busy
+      aria-hidden
+    >
+      {Array.from({ length: count }, (_, i) => (
+        <div
+          key={i}
+          className={cn(
+            "flex h-full min-h-36 flex-col rounded-[15px] border border-foreground/10 bg-card",
+            overviewAnalyticCardShellClassName,
+            "gap-0 pt-3 pb-3"
+          )}
+        >
+          <div className={overviewAnalyticCardHeaderClassName}>
+            <Skeleton className="h-4 w-28" />
+          </div>
+          <div
+            className={cn(
+              "flex flex-1 flex-col gap-3",
+              overviewAnalyticCardContentPaddingClassName
+            )}
+          >
+            <Skeleton className="h-7 w-36" />
+            <Skeleton className="h-4 w-44" />
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

@@ -73,7 +73,6 @@ export function InsightsChartCard({
     >
       <Card
         className={cn(
-          "flex h-full min-h-0 flex-col overflow-hidden",
           overviewCardPointerFocusResetClassName,
           overviewAnalyticCardShellClassName
         )}
@@ -90,7 +89,7 @@ export function InsightsChartCard({
         </CardHeader>
         <CardContent
           className={cn(
-            "relative flex min-h-0 flex-1 flex-col",
+            "relative flex flex-col",
             overviewAnalyticCardContentPaddingClassName
           )}
         >

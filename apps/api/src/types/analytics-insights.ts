@@ -1,3 +1,19 @@
+export type Level1Stat = {
+  id: string
+  label: string
+  value: string
+  metricLabel?: string
+  metricValue?: number
+  /** Total leads in this bucket (for context alongside submission count) */
+  sampleSize?: number
+  /** Formatted submission rate, e.g. "94%" */
+  submissionRate?: string
+  breakdown?: Array<{ label: string; value: number }>
+  enoughData: boolean
+}
+
+export type Level2Stat = Level1Stat
+
 export type InsightSectionId =
   | 'volume'
   | 'source'
@@ -11,6 +27,7 @@ export type InsightSectionId =
   | 'quality'
   | 'experiment'
   | 'intelligence'
+  | 'level1'
 
 export const INSIGHT_SECTION_IDS: readonly InsightSectionId[] = [
   'volume',
@@ -25,6 +42,7 @@ export const INSIGHT_SECTION_IDS: readonly InsightSectionId[] = [
   'quality',
   'experiment',
   'intelligence',
+  'level1',
 ] as const
 
 export function isInsightSectionId(value: string): value is InsightSectionId {
@@ -92,6 +110,13 @@ export type IntelligenceBoard = {
   takeaway: string
 }
 
+export type Level3Payload = {
+  section: 'level3'
+  winners: IntelligenceWinner[]
+  boards: IntelligenceBoard[]
+  actions: string[]
+}
+
 export type AnalyticsInsights = {
   section: InsightSectionId
   kpis: InsightKpi[]
@@ -99,6 +124,7 @@ export type AnalyticsInsights = {
   winners?: IntelligenceWinner[]
   boards?: IntelligenceBoard[]
   actions?: string[]
+  level1Stats?: Level1Stat[]
 }
 
 export function emptyAnalyticsInsights(
@@ -113,6 +139,9 @@ export function emptyAnalyticsInsights(
       boards: [],
       actions: [],
     }
+  }
+  if (section === 'level1') {
+    return { section, kpis: [], charts: [], level1Stats: [] }
   }
   return { section, kpis: [], charts: [] }
 }

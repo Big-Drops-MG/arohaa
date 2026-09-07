@@ -73,7 +73,7 @@ function auditSeverity(action: string): string {
   return "alert"
 }
 
-function auditHref(publicId: string, action: string): string {
+function auditHref(slug: string, action: string): string {
   if (action === "delete" || action === "archive") {
     return "/dashboard"
   }
@@ -82,15 +82,15 @@ function auditHref(publicId: string, action: string): string {
     action === "check_connection" ||
     action === "create"
   ) {
-    return `/dashboard/${encodeURIComponent(publicId)}?tab=settings&section=tracking`
+    return `/dashboard/${encodeURIComponent(slug)}?tab=settings&section=tracking`
   }
   if (action === "live_toggle") {
-    return `/dashboard/${encodeURIComponent(publicId)}?tab=settings&section=publishing`
+    return `/dashboard/${encodeURIComponent(slug)}?tab=settings&section=publishing`
   }
   if (action === "variant_link" || action === "variant_unlink") {
-    return `/dashboard/${encodeURIComponent(publicId)}?tab=settings&section=experiment`
+    return `/dashboard/${encodeURIComponent(slug)}?tab=settings&section=experiment`
   }
-  return `/dashboard/${encodeURIComponent(publicId)}?tab=settings&section=activity`
+  return `/dashboard/${encodeURIComponent(slug)}?tab=settings&section=activity`
 }
 
 export async function resolveNotificationUserIdForLandingPage(
@@ -121,6 +121,7 @@ export async function enqueueNotificationFromAuditLog(input: {
   const [landingPage] = await db
     .select({
       publicId: landingPages.publicId,
+      slug: landingPages.slug,
       brandName: landingPages.brandName,
     })
     .from(landingPages)
@@ -152,7 +153,7 @@ export async function enqueueNotificationFromAuditLog(input: {
     severity: auditSeverity(input.action),
     landingPageId: input.landingPageId,
     landingPagePublicId: landingPage.publicId,
-    href: auditHref(landingPage.publicId, input.action),
+    href: auditHref(landingPage.slug, input.action),
     sourceType: "audit_log",
     sourceId: input.auditLogId,
   })
@@ -161,6 +162,7 @@ export async function enqueueNotificationFromAuditLog(input: {
 export async function enqueueSdkConnectedNotification(input: {
   landingPageId: string
   publicId: string
+  slug: string
   brandName: string
   ownerUserId: string
 }): Promise<void> {
@@ -172,7 +174,7 @@ export async function enqueueSdkConnectedNotification(input: {
     severity: "info",
     landingPageId: input.landingPageId,
     landingPagePublicId: input.publicId,
-    href: `/dashboard/${encodeURIComponent(input.publicId)}?tab=settings&section=tracking`,
+    href: `/dashboard/${encodeURIComponent(input.slug)}?tab=settings&section=tracking`,
     sourceType: "sdk_connected",
     sourceId: input.landingPageId,
   })
@@ -273,6 +275,7 @@ export async function syncAnalyticsAlertNotifications(
     .select({
       id: landingPages.id,
       publicId: landingPages.publicId,
+      slug: landingPages.slug,
       brandName: landingPages.brandName,
       workspaceId: landingPages.workspaceId,
     })
@@ -296,7 +299,7 @@ export async function syncAnalyticsAlertNotifications(
           severity: mapAlertSeverity(alert.severity),
           landingPageId: page.id,
           landingPagePublicId: page.publicId,
-          href: `/dashboard/${encodeURIComponent(page.publicId)}?tab=alerts`,
+          href: `/dashboard/${encodeURIComponent(page.slug)}?tab=alerts`,
           sourceType: "analytics_alert",
           sourceId: `${page.publicId}:${alert.id}:${alert.message}`,
         })

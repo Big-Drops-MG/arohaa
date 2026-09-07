@@ -17,7 +17,10 @@ import {
   type ExternalPrivilegeGrant,
   type ExternalProjectScope,
 } from "@/features/team/model/external-privileges"
-import { mapLegacyInsightSectionToDataLab } from "@/features/data-lab/model/data-lab-sections"
+import {
+  mapLegacyInsightSectionToDataLab,
+  normalizeDataLabSectionId,
+} from "@/features/data-lab/model/data-lab-sections"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 
 type UserRow = InferSelectModel<typeof users>
@@ -57,6 +60,10 @@ function normalizePrivilegeGrant(row: {
   } else if (tab === "data-export") {
     tab = "data-lab"
     section = section || "leads"
+  }
+
+  if (tab === "data-lab" && section) {
+    section = normalizeDataLabSectionId(section)
   }
 
   const allowedTabs = new Set(EXTERNAL_PRIVILEGE_TABS.map((t) => t.value))
@@ -116,6 +123,13 @@ export async function getActorAccess(
     loadExternalProjectScopes(actor.id),
   ])
   return buildAccessFromGrants(grants, scopes)
+}
+
+export async function getAccessibleProjectIds(
+  actor: { id: string; teamKind?: string | null } | null | undefined
+): Promise<ReadonlySet<string> | null> {
+  const access = await getActorAccess(actor)
+  return access.isExternal ? access.projectIds : null
 }
 
 export function getForcedUtmSources(

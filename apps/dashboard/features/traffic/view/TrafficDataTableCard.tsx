@@ -109,7 +109,6 @@ export function TrafficDataTableCard({
   return (
     <TrafficExpandableCard
       title={section.title}
-      className="h-full min-h-0"
       expandedContent={
         <TrafficBreakdownTableView
           table={table}

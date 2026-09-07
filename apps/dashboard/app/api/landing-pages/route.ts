@@ -7,6 +7,7 @@ import {
   generateHtmlVerificationToken,
   generatePublicLandingId,
   isVariantLabelTaken,
+  landingPageSlugCandidate,
   landingPages,
   normalizeExperimentVariantLabel,
   normalizeLandingPageUrl,
@@ -52,11 +53,28 @@ function traceIdFrom(request: Request): string | null {
   return request.headers.get("x-trace-id")?.trim() || null
 }
 
+async function allocateLandingPageSlug(
+  name: string,
+  publicId: string
+): Promise<string> {
+  for (let sequence = 1; sequence <= 1_000; sequence += 1) {
+    const candidate = landingPageSlugCandidate(name, sequence, publicId)
+    const [existing] = await db
+      .select({ id: landingPages.id })
+      .from(landingPages)
+      .where(eq(landingPages.slug, candidate))
+      .limit(1)
+    if (!existing) return candidate
+  }
+  throw new Error("Could not allocate a unique landing page slug")
+}
+
 function toJson(row: LandingRow) {
   return {
     id: row.id,
     workspaceId: row.workspaceId,
     publicId: row.publicId,
+    slug: row.slug,
     brandName: row.brandName,
     landingPageUrl: row.landingPageUrl,
     normalizedUrl: row.normalizedUrl,
@@ -187,9 +205,11 @@ export const POST = route(
 
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const publicId = generatePublicLandingId()
+      const slug = await allocateLandingPageSlug(bn.brandName, publicId)
       const rowPayload = {
         id,
         publicId,
+        slug,
         workspaceId: ws.id,
         createdByUserId: actor.id,
         updatedByUserId: null as string | null,
@@ -270,6 +290,7 @@ export const POST = route(
           afterPayload: {
             workspaceId: ws.id,
             publicId,
+            slug,
             brandName: bn.brandName,
             normalizedUrl: nu.normalizedUrl,
             hostname: nu.hostname,

@@ -1,12 +1,8 @@
 "use server"
 
-import { auth } from "@/auth"
-import {
-  db,
-  normalizeUserEmail,
-  users,
-  whereUserEmail,
-} from "@workspace/database"
+import { z } from "zod"
+import { eq } from "drizzle-orm"
+import { db, users } from "@workspace/database"
 import {
   isValidRoleName,
   normalizeRoleName,
@@ -16,38 +12,46 @@ import {
   setUserAccessStatus,
 } from "@/lib/server/access-requests"
 import { getMemberRoleId } from "@/lib/server/actor-can"
+import { requireTwoFactorVerifiedUser } from "@/lib/server/landing-auth"
 import { ensureRoleExists } from "@/lib/server/roles"
+
+const onboardingSchema = z.object({
+  firstName: z.string().trim().min(1).max(80),
+  lastName: z.string().trim().min(1).max(80),
+  role: z.string().trim().min(2).max(80),
+})
 
 export async function completeOnboarding(formData: FormData): Promise<{
   error?: string
   success?: true
   redirectTo?: string
 }> {
-  const session = await auth()
-  if (!session?.user?.email) return { error: "Not authenticated." }
+  const existing = await requireTwoFactorVerifiedUser()
+  if (!existing) return { error: "Not authenticated." }
 
-  const firstNameRaw = formData.get("firstName")
-  const lastNameRaw = formData.get("lastName")
-  const roleRaw = formData.get("role")
-
-  const firstName = typeof firstNameRaw === "string" ? firstNameRaw.trim() : ""
-  const lastName = typeof lastNameRaw === "string" ? lastNameRaw.trim() : ""
-  const roleInput = typeof roleRaw === "string" ? roleRaw : ""
-  const jobTitle = normalizeRoleName(roleInput)
-
-  if (!firstName || !lastName || !jobTitle) {
+  const parsed = onboardingSchema.safeParse({
+    firstName: formData.get("firstName"),
+    lastName: formData.get("lastName"),
+    role: formData.get("role"),
+  })
+  if (!parsed.success) {
     return { error: "First name, last name, and role are required." }
   }
+
+  const { firstName, lastName, role } = parsed.data
+  const jobTitle = normalizeRoleName(role)
 
   if (!isValidRoleName(jobTitle)) {
     return { error: "Role must be between 2 and 80 characters." }
   }
 
-  const email = normalizeUserEmail(session.user.email)
-  const existing = await db.query.users.findFirst({
-    where: whereUserEmail(email),
-  })
-  if (!existing) return { error: "User not found." }
+  const profileComplete =
+    Boolean(existing.firstName?.trim()) &&
+    Boolean(existing.lastName?.trim()) &&
+    Boolean(existing.roleId)
+  if (profileComplete) {
+    return { error: "Profile is already complete." }
+  }
 
   let savedJobTitle: string
   try {
@@ -66,7 +70,7 @@ export async function completeOnboarding(formData: FormData): Promise<{
       role: savedJobTitle,
       roleId: memberRoleId,
     })
-    .where(whereUserEmail(email))
+    .where(eq(users.id, existing.id))
 
   if (existing.accessStatus === "approved") {
     return { success: true, redirectTo: "/dashboard" }
@@ -84,7 +88,7 @@ export async function completeOnboarding(formData: FormData): Promise<{
   void notifyApprovedUsersOfAccessRequest({
     requesterUserId: existing.id,
     requesterName,
-    requesterEmail: existing.email ?? email,
+    requesterEmail: existing.email ?? "",
   })
 
   return { success: true, redirectTo: "/pending-access" }

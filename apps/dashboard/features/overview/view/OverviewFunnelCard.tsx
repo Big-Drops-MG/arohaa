@@ -43,11 +43,9 @@ export function OverviewFunnelCard({ steps }: OverviewFunnelCardProps) {
       variants={overviewScaleIn}
       initial={reduceMotion ? false : "hidden"}
       animate="visible"
-      className="h-full min-h-0"
     >
       <Card
         className={cn(
-          "flex h-full min-h-0 flex-col overflow-hidden",
           overviewCardPointerFocusResetClassName,
           overviewAnalyticCardShellClassName
         )}
@@ -57,7 +55,7 @@ export function OverviewFunnelCard({ steps }: OverviewFunnelCardProps) {
             Funnel
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex min-h-0 flex-1 flex-col p-0">
+        <CardContent className="flex flex-col p-0">
           {steps.map((step, index) => (
             <motion.div
               key={step.label}
@@ -69,7 +67,7 @@ export function OverviewFunnelCard({ steps }: OverviewFunnelCardProps) {
                 ease: [0.22, 1, 0.36, 1],
               }}
               className={cn(
-                "flex min-h-0 flex-1 flex-col justify-center gap-2 px-5 py-3 sm:px-6 sm:py-4",
+                "flex flex-col gap-2 px-5 py-3 sm:px-6 sm:py-4",
                 index < steps.length - 1 && "border-b border-border"
               )}
             >

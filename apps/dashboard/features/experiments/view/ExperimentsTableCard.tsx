@@ -56,7 +56,6 @@ function ExperimentsTableCardBody({
       variants={overviewScaleIn}
       initial={reduceMotion ? false : "hidden"}
       animate="visible"
-      className="h-full min-h-0"
     >
       <Card
         className={cn(
@@ -71,7 +70,7 @@ function ExperimentsTableCardBody({
           </CardTitle>
         </CardHeader>
         <CardContent className={experimentsCardContentClassName}>
-          <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
+          <div className="overflow-x-auto">
             <ExperimentsBreakdownTableView
               table={table}
               emptyMessage={emptyMessage}
@@ -111,7 +110,6 @@ export function ExperimentsTableCard({
   return (
     <TrafficExpandableCard
       title={title}
-      className="h-full min-h-0"
       expandedContent={
         <ExperimentsBreakdownTableView
           table={table}

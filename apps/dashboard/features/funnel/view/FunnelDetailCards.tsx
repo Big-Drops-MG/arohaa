@@ -1,3 +1,4 @@
+import { dashboardGridTwoColClassName } from "@/features/overview/view/overview-card-density"
 import type { OverviewLandingFormType } from "@/features/overview/model/overview"
 import type {
   FunnelDropOffRow,
@@ -45,7 +46,7 @@ export function FunnelDetailCards({
     <div
       className={
         showMultiStep && showDropOff
-          ? "grid gap-4 lg:grid-cols-2 lg:items-stretch lg:*:min-h-0"
+          ? dashboardGridTwoColClassName
           : "grid grid-cols-1 gap-4"
       }
     >

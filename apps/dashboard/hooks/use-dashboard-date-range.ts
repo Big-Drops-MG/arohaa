@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { OverviewDateRangeId } from "@/features/overview/model/overview"
 import {
   parseDashboardCustomRange,
@@ -9,6 +9,7 @@ import {
 } from "@/features/traffic/model/traffic-range"
 import {
   readDashboardPreference,
+  subscribeDashboardPreference,
   writeDashboardPreference,
 } from "@/lib/dashboard/dashboard-preferences"
 import { useDashboardNavigation } from "@/hooks/use-dashboard-navigation"
@@ -23,32 +24,35 @@ function projectIdFromPath(pathname: string): string | null {
 }
 
 export function useDashboardDateRange() {
-  const { pathname, searchParams, replaceSearch, isPending } =
-    useDashboardNavigation()
+  const { pathname, searchParams, isPending } = useDashboardNavigation()
   const projectId = useMemo(() => projectIdFromPath(pathname), [pathname])
   const hydratedRef = useRef(false)
 
-  const dateRangeId = useMemo(
+  const legacyDateRangeId = useMemo(
     () => parseTrafficRangeId(searchParams.get("range_id")),
     [searchParams]
   )
-
-  const customRange = useMemo(() => {
-    if (dateRangeId !== "custom") return undefined
+  const legacyCustomRange = useMemo(() => {
+    if (legacyDateRangeId !== "custom") return undefined
     return parseDashboardCustomRange(
       searchParams.get("from"),
       searchParams.get("to")
     )
-  }, [dateRangeId, searchParams])
+  }, [legacyDateRangeId, searchParams])
+  const [dateRangeId, setDateRangeState] =
+    useState<OverviewDateRangeId>(legacyDateRangeId)
+  const [customRange, setCustomRangeState] = useState<
+    DashboardCustomRange | undefined
+  >(legacyCustomRange)
 
   const persist = useCallback(
     (rangeId: OverviewDateRangeId, custom?: DashboardCustomRange) => {
       if (!projectId) return
-      writeDashboardPreference(projectId, "range_id", rangeId)
       if (rangeId === "custom" && custom) {
         writeDashboardPreference(projectId, "range_from", custom.from)
         writeDashboardPreference(projectId, "range_to", custom.to)
       }
+      writeDashboardPreference(projectId, "range_id", rangeId)
     },
     [projectId]
   )
@@ -59,32 +63,28 @@ export function useDashboardDateRange() {
       if (nextRangeId === dateRangeId) return
 
       persist(nextRangeId)
-      replaceSearch((params) => {
-        params.set("range_id", nextRangeId)
-        params.delete("from")
-        params.delete("to")
-      })
+      setDateRangeState(nextRangeId)
+      setCustomRangeState(undefined)
     },
-    [dateRangeId, persist, replaceSearch]
+    [dateRangeId, persist]
   )
 
   const setCustomRange = useCallback(
     (next: DashboardCustomRange) => {
       persist("custom", next)
-      replaceSearch((params) => {
-        params.set("range_id", "custom")
-        params.set("from", next.from)
-        params.set("to", next.to)
-      })
+      setDateRangeState("custom")
+      setCustomRangeState(next)
     },
-    [persist, replaceSearch]
+    [persist]
   )
 
   useEffect(() => {
     if (!projectId || hydratedRef.current) return
 
     if (searchParams.has("range_id")) {
-      persist(dateRangeId, customRange)
+      persist(legacyDateRangeId, legacyCustomRange)
+      setDateRangeState(legacyDateRangeId)
+      setCustomRangeState(legacyCustomRange)
       hydratedRef.current = true
       return
     }
@@ -99,33 +99,33 @@ export function useDashboardDateRange() {
       const custom = parseDashboardCustomRange(from, to)
       if (!custom) return
       persist("custom", custom)
-      replaceSearch(
-        (params) => {
-          params.set("range_id", "custom")
-          params.set("from", custom.from)
-          params.set("to", custom.to)
-        },
-        { refresh: false }
-      )
+      setDateRangeState("custom")
+      setCustomRangeState(custom)
       return
     }
     persist(rangeId)
-    replaceSearch(
-      (params) => {
-        params.set("range_id", rangeId)
-        params.delete("from")
-        params.delete("to")
-      },
-      { refresh: false }
-    )
-  }, [
-    customRange,
-    dateRangeId,
-    persist,
-    projectId,
-    replaceSearch,
-    searchParams,
-  ])
+    setDateRangeState(rangeId)
+    setCustomRangeState(undefined)
+  }, [legacyCustomRange, legacyDateRangeId, persist, projectId, searchParams])
+
+  useEffect(() => {
+    if (!projectId) return
+    return subscribeDashboardPreference(projectId, "range_id", (raw) => {
+      const nextRangeId = parseTrafficRangeId(raw)
+      if (nextRangeId === "custom") {
+        const nextCustomRange = parseDashboardCustomRange(
+          readDashboardPreference(projectId, "range_from"),
+          readDashboardPreference(projectId, "range_to")
+        )
+        if (!nextCustomRange) return
+        setDateRangeState("custom")
+        setCustomRangeState(nextCustomRange)
+        return
+      }
+      setDateRangeState(nextRangeId)
+      setCustomRangeState(undefined)
+    })
+  }, [projectId])
 
   return {
     dateRangeId,

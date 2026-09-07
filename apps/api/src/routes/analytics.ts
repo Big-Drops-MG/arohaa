@@ -1245,6 +1245,8 @@ export async function analyticsRoutes(server: FastifyInstance) {
                 'vehicle',
                 'quality',
                 'experiment',
+                'intelligence',
+                'level1',
               ],
             },
             range_id: rangeIdSchema,

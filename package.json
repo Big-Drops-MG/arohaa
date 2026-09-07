@@ -19,6 +19,7 @@
     "test:load": "k6 run scripts/load/ingest.k6.js",
     "db:migrate": "pnpm --filter @workspace/database db:migrate",
     "db:push": "pnpm --filter @workspace/database db:push",
+    "vehicle-models:sync": "pnpm --filter @workspace/database vehicle-models:sync",
     "clickhouse:migrate": "tsx scripts/migrate-clickhouse-phase1.mts",
     "geo:build": "tsx scripts/geo/build-us-boundaries.mts && tsx scripts/geo/build-us-gazetteer.mts && tsx scripts/geo/build-us-zip-counties.mts",
     "prepare": "husky",

@@ -31,7 +31,6 @@ export const users = pgTable('user', {
   accessReviewedAt: timestamp('accessReviewedAt', { mode: 'date' }),
   accessReviewedByUserId: text('accessReviewedByUserId'),
   teamKind: text('teamKind').notNull().default('internal'),
-  accessLevel: text('accessLevel').notNull().default('full'),
   sessionsInvalidBefore: timestamp('sessionsInvalidBefore', { mode: 'date' }),
 });
 

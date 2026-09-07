@@ -83,6 +83,7 @@ export default async function ProjectPage({
   searchParams,
 }: ProjectPageProps) {
   const { project } = await params
+  const rawSearchParams = await searchParams
   const {
     range_id: rangeIdParam,
     from,
@@ -95,8 +96,7 @@ export default async function ProjectPage({
     utm_dim,
     utm_value,
     segment_id,
-    lab: labParam,
-  } = await searchParams
+  } = rawSearchParams
   const rangeId = parseTrafficRangeId(rangeIdParam)
   const customRange = parseDashboardCustomRange(from, to)
   const tab = parseProjectTab(tabParam)
@@ -112,26 +112,35 @@ export default async function ProjectPage({
   if (!actor) notFound()
 
   const access = await getActorAccess(actor)
-  if (!canAccessProject(access, project)) {
-    redirect("/dashboard")
-  }
-
   const row = await getActiveLandingPageForActor(actor.id, project)
   if (!row) notFound()
+  const publicId = row.publicId
+  if (!canAccessProject(access, publicId)) redirect("/dashboard")
 
-  const allowedTabs = allowedTabsForProject(access, project)
+  if (project !== row.slug) {
+    const legacyQuery = new URLSearchParams()
+    for (const [key, value] of Object.entries(rawSearchParams)) {
+      if (typeof value === "string" && value) legacyQuery.set(key, value)
+    }
+    const query = legacyQuery.toString()
+    redirect(
+      `/dashboard/${encodeURIComponent(row.slug)}${query ? `?${query}` : ""}`
+    )
+  }
+
+  const allowedTabs = allowedTabsForProject(access, publicId)
   let effectiveTab = tab
   if (allowedTabs) {
     if (allowedTabs.length === 0) {
       redirect("/dashboard")
     }
-    if (!canAccessTab(access, project, tab)) {
+    if (!canAccessTab(access, publicId, tab)) {
       effectiveTab = allowedTabs[0]!
     }
   }
 
   const formType = parseOverviewLandingFormType(row.formType)
-  const overviewPlaceholder = getOverviewPlaceholderData(project, formType)
+  const overviewPlaceholder = getOverviewPlaceholderData(publicId, formType)
   const actorReadOnly =
     access.isExternal || !(await canWriteLandingPages(actor))
   const allowDataExport = (await canAccessDataExport(actor)) && !actorReadOnly
@@ -152,14 +161,12 @@ export default async function ProjectPage({
 
   const wantsLeadsSeed =
     allowDataExport &&
-    (tabParam === "data-export" ||
-      (effectiveTab === "data-lab" &&
-        (labParam === "leads" || tabParam === "data-export")))
+    (tabParam === "data-export" || effectiveTab === "data-lab")
 
   switch (effectiveTab) {
     case "overview":
       overview = await loadOverviewDashboardData(
-        project,
+        publicId,
         rangeId,
         utmFilter,
         customRange
@@ -167,7 +174,7 @@ export default async function ProjectPage({
       break
     case "traffic":
       traffic = await loadTrafficDashboardData({
-        landingPagePublicId: project,
+        landingPagePublicId: publicId,
         rangeId,
         utmFilter,
         customRange,
@@ -175,7 +182,7 @@ export default async function ProjectPage({
       break
     case "funnel":
       funnel = await loadFunnelDashboardData({
-        landingPagePublicId: project,
+        landingPagePublicId: publicId,
         rangeId,
         utmFilter,
         customRange,
@@ -183,7 +190,7 @@ export default async function ProjectPage({
       break
     case "heatmap":
       heatmap = await loadHeatmapDashboardData({
-        landingPagePublicId: project,
+        landingPagePublicId: publicId,
         rangeId,
         customRange,
         mode: parseHeatmapMode(modeParam),
@@ -192,7 +199,7 @@ export default async function ProjectPage({
       break
     case "event-tracking":
       eventTracking = await loadEventTrackingDashboardData({
-        landingPagePublicId: project,
+        landingPagePublicId: publicId,
         rangeId,
         utmFilter,
         customRange,
@@ -200,7 +207,7 @@ export default async function ProjectPage({
       break
     case "segments":
       segments = await loadSegmentsDashboardData({
-        landingPagePublicId: project,
+        landingPagePublicId: publicId,
         rangeId,
         utmFilter,
         customRange,
@@ -208,7 +215,7 @@ export default async function ProjectPage({
       break
     case "experiments":
       experiments = await loadExperimentsDashboardData({
-        landingPagePublicId: project,
+        landingPagePublicId: publicId,
         rangeId,
         utmFilter,
         customRange,
@@ -216,31 +223,31 @@ export default async function ProjectPage({
       break
     case "seo":
       seo = await loadSeoDashboardData({
-        landingPagePublicId: project,
+        landingPagePublicId: publicId,
         rangeId,
         customRange,
       })
       break
     case "web-vital":
       webVital = await loadWebVitalDashboardData({
-        landingPagePublicId: project,
+        landingPagePublicId: publicId,
         rangeId,
         customRange,
       })
       break
     case "utm":
-      utm = await loadUtmDashboardData(project)
+      utm = await loadUtmDashboardData(publicId)
       break
     case "alerts":
       alerts = await loadAlertsDashboardData({
-        landingPagePublicId: project,
+        landingPagePublicId: publicId,
         rangeId,
         utmFilter,
         customRange,
       })
       break
     case "settings":
-      settings = await loadLandingPageSettingsData(project)
+      settings = await loadLandingPageSettingsData(publicId)
       break
     case "data-lab":
       break
@@ -248,7 +255,7 @@ export default async function ProjectPage({
 
   if (wantsLeadsSeed) {
     dataExport = await loadDataExportDashboardData({
-      landingPagePublicId: project,
+      landingPagePublicId: publicId,
       rangeId,
       customRange,
     })
@@ -258,18 +265,18 @@ export default async function ProjectPage({
     ? Object.fromEntries(
         (allowedTabs ?? []).map((tabValue) => [
           tabValue,
-          allowedSectionsForTab(access, project, tabValue) ?? [],
+          allowedSectionsForTab(access, publicId, tabValue) ?? [],
         ])
       )
     : null
 
-  const lockedUtmSources = getForcedUtmSources(access, project)
+  const lockedUtmSources = getForcedUtmSources(access, publicId)
 
   return (
     <Suspense>
       <ProjectDashboardView
-        key={project}
-        projectId={project}
+        key={publicId}
+        projectId={publicId}
         formType={formType}
         initialTab={effectiveTab}
         rangeId={rangeId}

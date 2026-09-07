@@ -296,7 +296,6 @@ export function WebVitalsUsaMap({ states, className }: WebVitalsUsaMapProps) {
   return (
     <Card
       className={cn(
-        "flex min-h-0 flex-col overflow-hidden",
         overviewCardPointerFocusResetClassName,
         overviewAnalyticCardShellClassName,
         className
@@ -319,11 +318,11 @@ export function WebVitalsUsaMap({ states, className }: WebVitalsUsaMapProps) {
       </CardHeader>
       <CardContent
         className={cn(
-          "relative flex min-h-0 flex-1 flex-col",
+          "relative flex flex-col",
           overviewAnalyticCardContentPaddingClassName
         )}
       >
-        <div className="relative min-h-[320px] w-full min-w-0 flex-1">
+        <div className="relative h-[320px] w-full min-w-0">
           <div className="absolute inset-0">
             {loadError ? (
               <div className="flex h-full min-h-0 items-center justify-center rounded-lg border border-dashed border-neutral-200 bg-neutral-50/60 px-6 text-sm text-neutral-500">

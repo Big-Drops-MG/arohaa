@@ -9,8 +9,12 @@ export function bootstrapDatabaseEnv(metaUrl: string): void {
     resolve(process.cwd(), ".env"),
     resolve(process.cwd(), "../../.env"),
     resolve(process.cwd(), "../../../.env"),
+    resolve(process.cwd(), "../../apps/dashboard/.env"),
+    resolve(process.cwd(), "../../apps/dashboard/.env.local"),
     resolve(moduleDir, "../../.env"),
     resolve(moduleDir, "../../../../.env"),
+    resolve(moduleDir, "../../../../apps/dashboard/.env"),
+    resolve(moduleDir, "../../../../apps/dashboard/.env.local"),
   ]
 
   for (const path of candidates) {

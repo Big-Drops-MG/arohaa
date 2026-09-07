@@ -70,7 +70,7 @@ function RowIcon({ severity }: { severity: OverviewAlertSeverity }) {
 }
 
 const tabsListClassName =
-  "h-auto w-auto shrink-0 justify-end gap-1 overflow-x-auto border-0 bg-transparent p-0"
+  "h-auto w-auto shrink-0 flex-wrap justify-end gap-1 border-0 bg-transparent p-0"
 
 const tabsTriggerClassName =
   "h-7 gap-1 rounded-md border-0 px-2 py-1 text-xs font-medium transition-colors data-[state=active]:bg-muted data-[state=active]:shadow-none"
@@ -158,13 +158,11 @@ export function AlertsListCard({ items, projectId }: AlertsListCardProps) {
       variants={overviewScaleIn}
       initial={reduceMotion ? false : "hidden"}
       animate="visible"
-      className="h-full min-h-0"
     >
       <Card
         className={cn(
           overviewCardPointerFocusResetClassName,
-          overviewAnalyticCardShellClassName,
-          "h-full min-h-0 flex-col"
+          overviewAnalyticCardShellClassName
         )}
       >
         <Tabs
@@ -172,7 +170,7 @@ export function AlertsListCard({ items, projectId }: AlertsListCardProps) {
           onValueChange={(value) =>
             setSeverityFilter(value as AlertsSeverityFilterValue)
           }
-          className="flex min-h-0 flex-1 flex-col gap-0"
+          className="flex flex-col gap-0"
         >
           <CardHeader
             className={cn(
@@ -228,7 +226,6 @@ export function AlertsListCard({ items, projectId }: AlertsListCardProps) {
           </CardHeader>
           <CardContent
             className={cn(
-              "min-h-0 flex-1 overflow-y-auto overscroll-y-contain",
               "flex flex-col gap-2",
               overviewAnalyticCardContentPaddingClassName
             )}

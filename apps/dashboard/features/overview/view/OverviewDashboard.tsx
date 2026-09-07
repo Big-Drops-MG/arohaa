@@ -17,6 +17,10 @@ import {
   type OverviewFunnelStep,
   type OverviewKpiMetricId,
 } from "@/features/overview/model/overview"
+import {
+  dashboardGridFunnelChartClassName,
+  dashboardGridTwoColClassName,
+} from "@/features/overview/view/overview-card-density"
 import { overviewChartPointsForRange } from "@/features/overview/utils/overview-chart-buckets"
 import { overviewKpisForDateRange } from "@/features/overview/utils/overview-kpi-row"
 import { overviewRechartsPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
@@ -328,7 +332,7 @@ export function OverviewDashboard({
           {showSection("funnel") || showSection("performance") ? (
             <motion.div
               variants={overviewStaggerItem}
-              className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-[3fr_7fr] lg:items-stretch lg:[&>*]:min-h-0"
+              className={dashboardGridFunnelChartClassName}
             >
               {showSection("funnel") ? (
                 isFunnelLoading ? (
@@ -362,9 +366,9 @@ export function OverviewDashboard({
           showSection("alerts") ? (
             <motion.div
               variants={overviewStaggerItem}
-              className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:[&>*]:min-h-0"
+              className={dashboardGridTwoColClassName}
             >
-              <div className="flex min-h-0 flex-col gap-4">
+              <div className="flex flex-col gap-4">
                 {showSection("traffic") ? (
                   <OverviewTrafficCard stats={overviewData.traffic} />
                 ) : null}

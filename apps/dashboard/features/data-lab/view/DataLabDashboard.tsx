@@ -10,26 +10,43 @@ import {
 import {
   DATA_LAB_SECTIONS,
   mapLegacyInsightSectionToDataLab,
+  normalizeDataLabSectionId,
   parseDataLabSection,
   type DataLabSectionId,
 } from "@/features/data-lab/model/data-lab-sections"
+import {
+  emptyLevel1Stats,
+  filterLevel1StatsToVisibleLeadColumns,
+  hasCompleteLevel1Stats,
+  type Level1Stat,
+} from "@/features/data-lab/model/level1"
+import {
+  emptyLevel2Stats,
+  filterLevel2StatsToVisibleLeadColumns,
+  type Level2Stat,
+} from "@/features/data-lab/model/level2"
+import {
+  dataLabStatsFromExportPayload,
+  fetchDataLabStatsFromLeadsTable,
+} from "@/features/data-lab/model/level1-from-leads"
+import { hasCompleteLevel3Stats } from "@/features/data-lab/model/level3"
 import type { IntelligenceCenterPayload } from "@/features/data-lab/model/intelligence"
-import { IntelligenceCenter } from "@/features/data-lab/view/IntelligenceCenter"
-import { DataLabInsightPanel } from "@/features/data-lab/view/DataLabInsightPanel"
+import { Level1Panel } from "@/features/data-lab/view/Level1Panel"
+import { Level2Panel } from "@/features/data-lab/view/Level2Panel"
+import { Level3Panel } from "@/features/data-lab/view/Level3Panel"
 import { DataLabLeadsPanel } from "@/features/data-lab/view/DataLabLeadsPanel"
 import type { DataExportDashboardData } from "@/features/data-export/model/data-export"
 import { getDataExportEmptyDashboardData } from "@/features/data-export/controller/data-export-empty-data"
-import type { InsightsSectionPayload } from "@/features/insights/model/insights"
-import { emptyInsightsSection } from "@/features/insights/model/insights"
-import type { InsightSectionId } from "@/features/insights/model/insights-section"
+import { discoverVisibleLeadFieldKeys } from "@/features/data-export/model/lead-field-columns"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-range"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
-import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
-import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import { useDashboardNavigation } from "@/hooks/use-dashboard-navigation"
 import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
-import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
+
+function emptyLevel3Data(): IntelligenceCenterPayload {
+  return { section: "level3", winners: [], boards: [], actions: [] }
+}
 
 type DataLabDashboardProps = {
   projectId: string
@@ -37,25 +54,7 @@ type DataLabDashboardProps = {
   canAccessDataExport: boolean
   allowedSections?: string[] | null
   initialDataExport?: DataExportDashboardData | null
-}
-
-function insightSectionsForLab(lab: DataLabSectionId): InsightSectionId[] {
-  switch (lab) {
-    case "intelligence":
-      return ["intelligence"]
-    case "glance":
-      return ["volume"]
-    case "sources":
-      return ["source"]
-    case "journey":
-      return ["dropoff"]
-    case "quality":
-      return ["quality", "risk", "vehicle"]
-    case "tests":
-      return ["experiment"]
-    default:
-      return []
-  }
+  initialDataExportLoading?: boolean
 }
 
 function parseLabWithLegacy(
@@ -64,8 +63,32 @@ function parseLabWithLegacy(
 ): DataLabSectionId {
   if (value) return parseDataLabSection(value)
   if (legacyTabHint === "data-export") return "leads"
-  if (legacyTabHint === "insights") return "intelligence"
-  return "intelligence"
+  if (legacyTabHint === "insights") return "level-1"
+  return "level-1"
+}
+
+function seedDataLabStats(initialDataExport: DataExportDashboardData | null) {
+  if (!initialDataExport) {
+    return {
+      level1Stats: emptyLevel1Stats(),
+      level2Stats: emptyLevel2Stats(),
+      level3: emptyLevel3Data(),
+    }
+  }
+  return dataLabStatsFromExportPayload(initialDataExport)
+}
+
+function hasCompleteDataLabStats(
+  data: DataExportDashboardData | null | undefined
+): boolean {
+  return Boolean(
+    data?.level1Complete &&
+    hasCompleteLevel1Stats(data.level1Stats) &&
+    data.level2Complete &&
+    Array.isArray(data.level2Stats) &&
+    data.level3Complete &&
+    hasCompleteLevel3Stats(data.level3)
+  )
 }
 
 export function DataLabDashboard({
@@ -74,18 +97,19 @@ export function DataLabDashboard({
   canAccessDataExport,
   allowedSections = null,
   initialDataExport = null,
+  initialDataExportLoading = false,
 }: DataLabDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
-  const { utmFilter } = useDashboardUtmFilter()
-  const { segmentId } = useDashboardSegmentFilter()
   const { searchParams } = useDashboardNavigation()
 
   const visibleSections = useMemo(() => {
     if (!allowedSections || allowedSections.length === 0) {
       return DATA_LAB_SECTIONS
     }
-    const allowed = new Set(allowedSections)
+    const allowed = new Set(
+      allowedSections.map((section) => normalizeDataLabSectionId(section))
+    )
     const filtered = DATA_LAB_SECTIONS.filter((s) => allowed.has(s.id))
     return filtered.length > 0 ? filtered : DATA_LAB_SECTIONS
   }, [allowedSections])
@@ -96,9 +120,11 @@ export function DataLabDashboard({
       if (
         allowedSections &&
         allowedSections.length > 0 &&
-        !allowedSections.includes(parsed)
+        !allowedSections
+          .map((section) => normalizeDataLabSectionId(section))
+          .includes(parsed)
       ) {
-        return (visibleSections[0]?.id ?? "intelligence") as DataLabSectionId
+        return (visibleSections[0]?.id ?? "level-1") as DataLabSectionId
       }
       return parsed
     },
@@ -114,127 +140,130 @@ export function DataLabDashboard({
     setLabSection(mapLegacyInsightSectionToDataLab(insightSection))
   }, [searchParams, setLabSection])
 
-  const [insightPayload, setInsightPayload] =
-    useState<InsightsSectionPayload | null>(null)
-  const [insightLoading, setInsightLoading] = useState(false)
-  const [fetchKey, setFetchKey] = useState("")
-
   const [exportData, setExportData] = useState<DataExportDashboardData | null>(
     initialDataExport
   )
   const [exportLoading, setExportLoading] = useState(false)
 
-  const loadInsight = useCallback(
-    async (sectionId: InsightSectionId, signal?: AbortSignal) => {
-      const path = buildAnalyticsApiPath(
-        `/api/landing-pages/${encodeURIComponent(projectId)}/insights`,
-        {
-          rangeId: dateRangeId,
-          customRange,
-          utmFilter,
-          segmentId,
-          extra: { section: sectionId },
-        }
-      )
-      const res = await fetch(path, { cache: "no-store", signal })
-      if (!res.ok) throw new Error(`insights ${res.status}`)
-      return (await res.json()) as InsightsSectionPayload
-    },
-    [projectId, dateRangeId, customRange, utmFilter, segmentId]
+  const seeded = seedDataLabStats(initialDataExport)
+  const [level1Stats, setLevel1Stats] = useState<Level1Stat[]>(
+    () => seeded.level1Stats
   )
-
-  const loadExport = useCallback(
-    async (signal?: AbortSignal) => {
-      const path = buildAnalyticsApiPath(
-        `/api/landing-pages/${encodeURIComponent(projectId)}/data-export`,
-        { rangeId: dateRangeId, customRange }
-      )
-      const res = await fetch(path, { cache: "no-store", signal })
-      if (!res.ok) throw new Error(`data-export ${res.status}`)
-      return (await res.json()) as DataExportDashboardData
-    },
-    [projectId, dateRangeId, customRange]
+  const [level2Stats, setLevel2Stats] = useState<Level2Stat[]>(
+    () => seeded.level2Stats
+  )
+  const [level3Data, setLevel3Data] = useState<IntelligenceCenterPayload>(
+    () => seeded.level3
+  )
+  const [statsLoading, setStatsLoading] = useState(
+    () =>
+      canAccessDataExport &&
+      (initialDataExportLoading || !hasCompleteDataLabStats(initialDataExport))
   )
 
   useEffect(() => {
-    if (!isActive) return
-    const sectionIds = insightSectionsForLab(labSection)
-    if (sectionIds.length === 0) {
-      setInsightPayload(null)
+    if (!isActive || !canAccessDataExport) return
+    if (initialDataExportLoading || !initialDataExport) {
+      setExportLoading(true)
+      setStatsLoading(true)
       return
     }
 
+    const payload = initialDataExport
     const controller = new AbortController()
-    setInsightLoading(true)
-    setInsightPayload(null)
-    void Promise.all(sectionIds.map((id) => loadInsight(id, controller.signal)))
-      .then((payloads) => {
-        if (controller.signal.aborted) return
-        const primary = payloads[0]!
-        const merged: InsightsSectionPayload = {
-          ...primary,
-          kpis: payloads.flatMap((p) => p.kpis),
-          charts: payloads.flatMap((p) => p.charts),
-          winners: primary.winners,
-          boards: primary.boards,
-          actions: primary.actions,
-        }
-        setInsightPayload(merged)
-        setFetchKey(
-          `${sectionIds.join("+")}:${dateRangeId}:${customRange?.from ?? ""}:${customRange?.to ?? ""}:${segmentId ?? ""}`
-        )
-      })
-      .catch((err) => {
-        if (controller.signal.aborted) return
-        console.error("[data-lab] insight fetch failed", err)
-        setInsightPayload(emptyInsightsSection(sectionIds[0]!))
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setInsightLoading(false)
-      })
+    let cancelled = false
+    setExportData(payload)
+    setExportLoading(false)
+    setStatsLoading(true)
 
-    return () => controller.abort()
+    async function resolveCompleteStats() {
+      try {
+        if (hasCompleteDataLabStats(payload)) {
+          const completeStats = dataLabStatsFromExportPayload(payload)
+          setLevel1Stats(completeStats.level1Stats)
+          setLevel2Stats(completeStats.level2Stats)
+          setLevel3Data(completeStats.level3)
+          setStatsLoading(false)
+          return
+        }
+
+        const refined = await fetchDataLabStatsFromLeadsTable({
+          projectId,
+          dateRangeId,
+          customRange,
+          signal: controller.signal,
+          seed: payload,
+          onProgress: (progressive) => {
+            if (cancelled || controller.signal.aborted) return
+            setLevel1Stats(progressive.level1Stats)
+            setLevel2Stats(progressive.level2Stats)
+            setLevel3Data(progressive.level3)
+          },
+        })
+        if (cancelled || controller.signal.aborted) return
+        setLevel1Stats(refined.level1Stats)
+        setLevel2Stats(refined.level2Stats)
+        setLevel3Data(refined.level3)
+        setStatsLoading(false)
+      } catch (err) {
+        if (cancelled || controller.signal.aborted) return
+        console.error("[data-lab] load failed", err)
+        setExportData(getDataExportEmptyDashboardData(dateRangeId))
+        setLevel1Stats(emptyLevel1Stats())
+        setLevel2Stats(emptyLevel2Stats())
+        setLevel3Data(emptyLevel3Data())
+      } finally {
+        if (!cancelled && !controller.signal.aborted) {
+          setExportLoading(false)
+        }
+      }
+    }
+
+    void resolveCompleteStats()
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
   }, [
     isActive,
-    labSection,
-    loadInsight,
+    canAccessDataExport,
+    projectId,
     dateRangeId,
-    customRange?.from,
-    customRange?.to,
-    segmentId,
+    customRange,
+    initialDataExport,
+    initialDataExportLoading,
   ])
 
-  useEffect(() => {
-    if (!isActive || labSection !== "leads" || !canAccessDataExport) return
+  const cardsLoading =
+    statsLoading || initialDataExportLoading || !initialDataExport
+  const leadsLoading =
+    exportLoading || initialDataExportLoading || !initialDataExport
 
-    const controller = new AbortController()
-    setExportLoading(true)
-    void loadExport(controller.signal)
-      .then((payload) => {
-        if (controller.signal.aborted) return
-        setExportData(payload)
-      })
-      .catch((err) => {
-        if (controller.signal.aborted) return
-        console.error("[data-lab] export fetch failed", err)
-        setExportData(getDataExportEmptyDashboardData(dateRangeId))
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setExportLoading(false)
-      })
+  const handleExportDataChange = useCallback(
+    (data: DataExportDashboardData) => {
+      setExportData(data)
+    },
+    []
+  )
+  const visibleLeadFieldKeys = useMemo(
+    () =>
+      exportData?.visibleLeadFieldKeys.length
+        ? exportData.visibleLeadFieldKeys
+        : discoverVisibleLeadFieldKeys(exportData?.leads ?? []),
+    [exportData?.leads, exportData?.visibleLeadFieldKeys]
+  )
 
-    return () => controller.abort()
-  }, [isActive, labSection, canAccessDataExport, loadExport, dateRangeId])
-
-  const intelligenceData: IntelligenceCenterPayload | null =
-    insightPayload?.section === "intelligence"
-      ? {
-          section: "intelligence",
-          winners: insightPayload.winners ?? [],
-          boards: insightPayload.boards ?? [],
-          actions: insightPayload.actions ?? [],
-        }
-      : null
+  const visibleLevel2Stats = useMemo(
+    () =>
+      filterLevel2StatsToVisibleLeadColumns(level2Stats, visibleLeadFieldKeys),
+    [level2Stats, visibleLeadFieldKeys]
+  )
+  const visibleLevel1Stats = useMemo(
+    () =>
+      filterLevel1StatsToVisibleLeadColumns(level1Stats, visibleLeadFieldKeys),
+    [level1Stats, visibleLeadFieldKeys]
+  )
 
   return (
     <div className="flex flex-col gap-5 pt-5 pb-6">
@@ -253,7 +282,7 @@ export function DataLabDashboard({
         onValueChange={(value) => setLabSection(parseDataLabSection(value))}
         className="w-full"
       >
-        <TabsList className="h-auto min-h-10 w-full justify-start gap-5 overflow-x-auto rounded-none border-0 border-b border-neutral-200 bg-transparent p-0">
+        <TabsList className="h-auto min-h-10 w-full flex-wrap justify-start gap-x-5 gap-y-1 rounded-none border-0 border-b border-neutral-200 bg-transparent p-0">
           {visibleSections.map((tab) => (
             <TabsTrigger
               key={tab.id}
@@ -265,22 +294,32 @@ export function DataLabDashboard({
           ))}
         </TabsList>
 
-        <TabsContent value="intelligence" className="mt-5 outline-none">
-          {labSection === "intelligence" ? (
-            <IntelligenceCenter
-              data={intelligenceData}
-              kpis={insightPayload?.kpis ?? []}
-              isLoading={insightLoading}
+        <TabsContent value="level-1" className="mt-5 outline-none">
+          {labSection === "level-1" ? (
+            <Level1Panel
+              stats={visibleLevel1Stats}
+              isLoading={cardsLoading}
+              canAccess={canAccessDataExport}
             />
           ) : null}
         </TabsContent>
 
-        <TabsContent value="glance" className="mt-5 outline-none">
-          {labSection === "glance" ? (
-            <DataLabInsightPanel
-              data={insightPayload}
-              isLoading={insightLoading}
-              animateKey={fetchKey}
+        <TabsContent value="level-2" className="mt-5 outline-none">
+          {labSection === "level-2" ? (
+            <Level2Panel
+              stats={visibleLevel2Stats}
+              isLoading={cardsLoading}
+              canAccess={canAccessDataExport}
+            />
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="level-3" className="mt-5 outline-none">
+          {labSection === "level-3" ? (
+            <Level3Panel
+              data={level3Data}
+              isLoading={cardsLoading}
+              canAccess={canAccessDataExport}
             />
           ) : null}
         </TabsContent>
@@ -291,48 +330,9 @@ export function DataLabDashboard({
               projectId={projectId}
               canAccess={canAccessDataExport}
               data={exportData}
-              isLoading={exportLoading}
+              isLoading={leadsLoading}
               isActive={isActive}
-            />
-          ) : null}
-        </TabsContent>
-
-        <TabsContent value="sources" className="mt-5 outline-none">
-          {labSection === "sources" ? (
-            <DataLabInsightPanel
-              data={insightPayload}
-              isLoading={insightLoading}
-              animateKey={fetchKey}
-            />
-          ) : null}
-        </TabsContent>
-
-        <TabsContent value="journey" className="mt-5 outline-none">
-          {labSection === "journey" ? (
-            <DataLabInsightPanel
-              data={insightPayload}
-              isLoading={insightLoading}
-              animateKey={fetchKey}
-            />
-          ) : null}
-        </TabsContent>
-
-        <TabsContent value="quality" className="mt-5 outline-none">
-          {labSection === "quality" ? (
-            <DataLabInsightPanel
-              data={insightPayload}
-              isLoading={insightLoading}
-              animateKey={fetchKey}
-            />
-          ) : null}
-        </TabsContent>
-
-        <TabsContent value="tests" className="mt-5 outline-none">
-          {labSection === "tests" ? (
-            <DataLabInsightPanel
-              data={insightPayload}
-              isLoading={insightLoading}
-              animateKey={fetchKey}
+              onDataChange={handleExportDataChange}
             />
           ) : null}
         </TabsContent>

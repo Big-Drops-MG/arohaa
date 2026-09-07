@@ -6,6 +6,7 @@ export type LandingPageRecord = {
   id: string
   workspaceId: string
   publicId: string
+  slug: string
   brandName: string
   landingPageUrl: string
   normalizedUrl: string

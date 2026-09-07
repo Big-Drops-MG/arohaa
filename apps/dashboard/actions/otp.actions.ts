@@ -10,6 +10,11 @@ import {
 import { generateSecret, generateURI } from "otplib"
 import QRCode from "qrcode"
 import { encryptField } from "@/lib/server/field-encryption"
+import {
+  authGenericError,
+  enforceAuthRateLimit,
+} from "@/lib/server/rate-limit-auth"
+import { clientIpFromNextHeaders } from "@/lib/server/request-client-meta"
 import { readTotpSecretFromRow } from "@/lib/server/totp-secrets"
 import { consumeTotp, issueTwoFactorSessionStamp } from "@/lib/server/totp"
 
@@ -28,6 +33,13 @@ export async function generateOTPSetup(params?: { stepUpCode?: string }) {
   }
 
   if (row.isTwoFactorEnabled) {
+    const limited = await enforceAuthRateLimit({
+      ip: (await clientIpFromNextHeaders()) ?? "unknown",
+      email: enrolledEmail,
+    })
+    if (limited) {
+      throw new Error(limited.error)
+    }
     const stepUp = params?.stepUpCode?.replace(/\D/g, "").slice(0, 6) ?? ""
     const activeSecret = await readTotpSecretFromRow(
       row.id,
@@ -83,6 +95,12 @@ export async function verifyAndEnableOTP(
   if (!session?.user?.email) return { error: "Not authenticated" }
 
   const enrolledEmail = normalizeUserEmail(session.user.email)
+  const limited = await enforceAuthRateLimit({
+    ip: (await clientIpFromNextHeaders()) ?? "unknown",
+    email: enrolledEmail,
+  })
+  if (limited) return { error: limited.error }
+
   const normalized = token.replace(/\D/g, "").slice(0, 6)
 
   const row = await db.query.users.findFirst({
@@ -113,10 +131,7 @@ export async function verifyAndEnableOTP(
 
   const consumed = await consumeTotp(row!.id, pendingSecret, normalized)
   if (!consumed) {
-    return {
-      error:
-        "Invalid code. Use the 6-digit code for the account labeled with your registered email.",
-    }
+    return { error: authGenericError() }
   }
 
   await db

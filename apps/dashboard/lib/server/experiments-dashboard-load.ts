@@ -29,6 +29,7 @@ import {
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import { getExperimentConfigForLandingPage } from "@/lib/server/experiments-store"
+import { getAccessibleProjectIds } from "@/lib/server/external-access"
 
 interface AnalyticsVariantPerformanceRow {
   variant: string
@@ -123,12 +124,6 @@ function buildDimensionPerformanceSection(
   }
 }
 
-/**
- * The linked landing pages in Postgres are the source of truth for which
- * variants belong to an experiment. Analytics only contributes metrics, so a
- * variant with no events yet (or an analytics response that could not resolve
- * the experiment) must never shrink the roster shown on the tab.
- */
 function mergeVariantRosterWithAnalytics(
   config: ExperimentsDashboardData["config"],
   analyticsRows: AnalyticsVariantPerformanceRow[],
@@ -427,7 +422,9 @@ export async function loadExperimentsDashboardData({
   if (!row) notFound()
 
   const formType = parseOverviewLandingFormType(row.formType)
-  const configBundle = await getExperimentConfigForLandingPage(row)
+  const configBundle = await getExperimentConfigForLandingPage(row, {
+    allowedPublicIds: await getAccessibleProjectIds(actor),
+  })
 
   const analytics = await fetchExperimentsAnalytics(
     row.id,
@@ -482,7 +479,9 @@ export async function loadExperimentsDashboardDataForApi(
   }
 
   const formType = parseOverviewLandingFormType(row.formType)
-  const configBundle = await getExperimentConfigForLandingPage(row)
+  const configBundle = await getExperimentConfigForLandingPage(row, {
+    allowedPublicIds: await getAccessibleProjectIds(actor),
+  })
 
   const analytics = await fetchExperimentsAnalytics(
     row.id,

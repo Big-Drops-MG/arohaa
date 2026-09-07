@@ -28,6 +28,7 @@ export type LandingPageAuditLogRow = {
   landingPageId?: string
   landingPageBrandName?: string | null
   landingPagePublicId?: string | null
+  landingPageSlug?: string | null
 }
 
 export async function writeLandingPageAuditLog(input: {
@@ -63,13 +64,13 @@ export async function writeLandingPageAuditLog(input: {
     const headerStore = await headers()
     const page = await db.query.landingPages.findFirst({
       where: eq(landingPages.id, input.landingPageId),
-      columns: { publicId: true, brandName: true },
+      columns: { publicId: true, slug: true, brandName: true },
     })
     await writeUserActivityLog({
       actorUserId: input.actorUserId,
       eventType: "action",
       summary: formatAuditLogAction(input.action),
-      path: page?.publicId ? `/dashboard/${page.publicId}` : null,
+      path: page?.slug ? `/dashboard/${page.slug}` : null,
       tab: "settings",
       projectPublicId: page?.publicId ?? null,
       ipAddress: await clientIpFromNextHeaders(),
@@ -145,6 +146,7 @@ export async function listAuditLogsByActorUserId(
       landingPageId: landingPageAuditLogs.landingPageId,
       landingPageBrandName: landingPages.brandName,
       landingPagePublicId: landingPages.publicId,
+      landingPageSlug: landingPages.slug,
     })
     .from(landingPageAuditLogs)
     .innerJoin(users, eq(landingPageAuditLogs.actorUserId, users.id))
@@ -170,5 +172,6 @@ export async function listAuditLogsByActorUserId(
     landingPageId: row.landingPageId,
     landingPageBrandName: row.landingPageBrandName,
     landingPagePublicId: row.landingPagePublicId,
+    landingPageSlug: row.landingPageSlug,
   }))
 }

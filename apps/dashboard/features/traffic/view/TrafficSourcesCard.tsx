@@ -124,7 +124,7 @@ function TrafficSourcesList({
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div>
       {rows.map((row, index) => (
         <div
           key={`${row.label}-${index}`}
@@ -297,7 +297,6 @@ export function TrafficSourcesCard({
   return (
     <TrafficExpandableCard
       title="Traffic sources"
-      className="h-full min-h-0"
       expandedContent={
         <TrafficSourcesCardContent
           referrers={referrers}

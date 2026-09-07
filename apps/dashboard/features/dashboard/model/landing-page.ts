@@ -25,12 +25,14 @@ export function emptyLandingPageMetrics(
 
 export type LandingPageNavItem = {
   publicId: string
+  slug: string
   brandName: string
   faviconUrl: string | null
 }
 
 export type LandingPageListItem = {
   publicId: string
+  slug: string
   brandName: string
   landingPageUrl: string
   faviconUrl: string | null

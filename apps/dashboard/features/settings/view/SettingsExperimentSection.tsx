@@ -24,10 +24,12 @@ import {
 import type { LandingPageRecord } from "@/features/settings/model/landing-page-settings"
 import { SettingsSectionCard } from "@/features/settings/view/SettingsSectionCard"
 import { formatLandingFormType } from "@/features/settings/utils/settings-format"
+import { writeDashboardPreference } from "@/lib/dashboard/dashboard-preferences"
 
 type MembershipVariant = {
   label: string
   publicId: string
+  slug: string
   brandName: string
   hostname: string
   isControl: boolean
@@ -41,12 +43,14 @@ type Membership = {
   label: string | null
   isHub: boolean
   hubPublicId: string | null
+  hubSlug: string | null
   hubBrandName: string | null
   variants: MembershipVariant[]
 }
 
 type Candidate = {
   publicId: string
+  slug: string
   brandName: string
   hostname: string
   formType: string
@@ -364,7 +368,14 @@ export function SettingsExperimentSection({
                       </span>
                       {variant.isCurrent ? null : (
                         <Link
-                          href={`/dashboard/${encodeURIComponent(variant.publicId)}?tab=experiments`}
+                          href={`/dashboard/${encodeURIComponent(variant.slug)}`}
+                          onClick={() =>
+                            writeDashboardPreference(
+                              variant.publicId,
+                              "tab",
+                              "experiments"
+                            )
+                          }
                           className="text-xs font-medium text-foreground underline underline-offset-2"
                         >
                           Open
@@ -411,7 +422,10 @@ export function SettingsExperimentSection({
                   </Button>
                   <Button asChild variant="outline">
                     <Link
-                      href={`/dashboard/${encodeURIComponent(publicId)}?tab=experiments`}
+                      href={`/dashboard/${encodeURIComponent(landingPage.slug)}`}
+                      onClick={() =>
+                        writeDashboardPreference(publicId, "tab", "experiments")
+                      }
                     >
                       Open Experiments tab
                     </Link>

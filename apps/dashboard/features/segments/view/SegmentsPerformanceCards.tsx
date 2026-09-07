@@ -1,6 +1,7 @@
 "use client"
 
 import type { SegmentsDashboardData } from "@/features/segments/model/segments"
+import { dashboardGridTwoColClassName } from "@/features/overview/view/overview-card-density"
 import { segmentsSectionToBreakdownTable } from "@/features/segments/utils/segments-section-to-table"
 import { SegmentsPerformanceBreakdownCard } from "@/features/segments/view/SegmentsPerformanceBreakdownCard"
 import { SEGMENTS_PREVIEW_ROW_LIMIT } from "@/features/segments/view/segments-performance-card-layout"
@@ -18,7 +19,7 @@ export function SegmentsPerformanceCards({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:*:min-h-0">
+      <div className={dashboardGridTwoColClassName}>
         <SegmentsPerformanceBreakdownCard
           title={data.performanceByLocation.title}
           table={byLocation}
@@ -33,7 +34,7 @@ export function SegmentsPerformanceCards({
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch lg:*:min-h-0">
+      <div className={dashboardGridTwoColClassName}>
         <div className="lg:col-span-2">
           <SegmentsPerformanceBreakdownCard
             title={data.performanceByDevice.title}

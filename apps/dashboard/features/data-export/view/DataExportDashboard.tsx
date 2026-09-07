@@ -15,6 +15,7 @@ import {
   DATA_EXPORT_PAGE_SIZE,
   type DataExportDashboardData,
 } from "@/features/data-export/model/data-export"
+import { discoverVisibleLeadFieldKeys } from "@/features/data-export/model/lead-field-columns"
 import {
   overviewAnalyticCardHeaderClassName,
   overviewAnalyticCardShellClassName,
@@ -40,16 +41,8 @@ type DataExportDashboardProps = {
   isLoading?: boolean
   /** When true, omit the page header (used inside Data Lab). */
   embedded?: boolean
+  onDataChange?: (data: DataExportDashboardData) => void
 }
-
-const PREFERRED_FIELD_ORDER = [
-  "dob",
-  "first_name",
-  "last_name",
-  "address",
-  "city",
-  "state",
-]
 
 const thClassName =
   "px-4 py-2.5 text-left text-xs font-semibold whitespace-nowrap text-muted-foreground"
@@ -72,20 +65,6 @@ function formatWhen(value: string): string {
     hour12: true,
   })
   return `${formatted} ${getDashboardTimezoneAbbreviation(d)}`
-}
-
-function sortFieldKeys(keys: string[]): string[] {
-  const preferred = new Map(
-    PREFERRED_FIELD_ORDER.map((key, index) => [key, index])
-  )
-  return [...keys].sort((a, b) => {
-    const ai = preferred.get(a.toLowerCase())
-    const bi = preferred.get(b.toLowerCase())
-    if (ai != null && bi != null) return ai - bi
-    if (ai != null) return -1
-    if (bi != null) return 1
-    return a.localeCompare(b)
-  })
 }
 
 function isAddressFieldKey(key: string): boolean {
@@ -184,6 +163,7 @@ export function DataExportDashboard({
   isActive = true,
   isLoading: isTabLoading = false,
   embedded = false,
+  onDataChange,
 }: DataExportDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
@@ -201,13 +181,13 @@ export function DataExportDashboard({
   const canGoPrev = pageOffset > 0 && total > 0
   const canGoNext = pageOffset + pageSize < total
 
-  const fieldKeys = useMemo(() => {
-    const keys = new Set<string>()
-    for (const lead of dashboardData.leads) {
-      for (const key of Object.keys(lead.fields)) keys.add(key)
-    }
-    return sortFieldKeys([...keys])
-  }, [dashboardData.leads])
+  const fieldKeys = useMemo(
+    () =>
+      dashboardData.visibleLeadFieldKeys.length > 0
+        ? dashboardData.visibleLeadFieldKeys
+        : discoverVisibleLeadFieldKeys(dashboardData.leads),
+    [dashboardData.leads, dashboardData.visibleLeadFieldKeys]
+  )
 
   const fieldColumns = useMemo(() => buildFieldColumns(fieldKeys), [fieldKeys])
 
@@ -250,6 +230,7 @@ export function DataExportDashboard({
         const next = (await res.json()) as DataExportDashboardData
         setDashboardData(next)
         setPageOffset(next.offset)
+        onDataChange?.(next)
       } catch {
         if (signal?.aborted) return
         if (!quiet) {
@@ -274,6 +255,7 @@ export function DataExportDashboard({
       dashboardData.brandName,
       dashboardData.hasRedirect,
       dateRangeId,
+      onDataChange,
       projectId,
     ]
   )
@@ -290,12 +272,13 @@ export function DataExportDashboard({
     ) {
       setDashboardData(initialData)
       setPageOffset(initialData.offset)
+      onDataChange?.(initialData)
       return
     }
     const controller = new AbortController()
     void fetchPage(0, controller.signal)
     return () => controller.abort()
-  }, [customRange, dateRangeId, fetchPage, initialData, isActive])
+  }, [customRange, dateRangeId, fetchPage, initialData, isActive, onDataChange])
 
   useEffect(() => {
     if (!isActive || !dashboardData.hasRedirect) return
