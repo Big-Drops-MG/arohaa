@@ -278,23 +278,39 @@ async function resolveLandingPageForActor(
 async function buildUtmDashboardForLandingPage(
   row: LandingPageRef
 ): Promise<UtmDashboardData> {
-  await purgeDisallowedUtmParams(row.id)
-  await purgeMalformedUtmParams(row.id)
-
-  try {
-    const discovered = sanitizeDiscovered(
-      await fetchDiscoveredUtmParams(row.id)
-    )
-    await syncDiscoveredParams(row.id, discovered)
-  } catch (err) {
-    console.error("[utm] discovery sync failed", err)
-  }
-
+  // Stats/preview first — never block the UI on discovery/purge work.
   const [stats, activeItems, blockedItems] = await Promise.all([
     loadUtmStats(row.id),
     loadUtmPairs(row.id, "active", UTM_UI_ACTIVE_PREVIEW_LIMIT),
     loadUtmPairs(row.id, "blocked"),
   ])
+
+  // Discovery sync is best-effort and skipped when the page already has params.
+  if (stats.total === 0) {
+    try {
+      await purgeDisallowedUtmParams(row.id)
+      await purgeMalformedUtmParams(row.id)
+      const discovered = sanitizeDiscovered(
+        await fetchDiscoveredUtmParams(row.id)
+      )
+      await syncDiscoveredParams(row.id, discovered)
+      if (discovered.length > 0) {
+        const [nextStats, nextActive, nextBlocked] = await Promise.all([
+          loadUtmStats(row.id),
+          loadUtmPairs(row.id, "active", UTM_UI_ACTIVE_PREVIEW_LIMIT),
+          loadUtmPairs(row.id, "blocked"),
+        ])
+        return buildDashboardData(
+          row.brandName,
+          nextStats,
+          nextActive,
+          nextBlocked
+        )
+      }
+    } catch (err) {
+      console.error("[utm] discovery sync failed", err)
+    }
+  }
 
   return buildDashboardData(row.brandName, stats, activeItems, blockedItems)
 }

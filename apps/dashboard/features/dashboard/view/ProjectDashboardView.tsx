@@ -390,6 +390,7 @@ function ProjectDashboardViewInner({
                   />
                 ) : tab.value === "utm" ? (
                   <UtmDashboard
+                    key={`${projectId}-utm-${utm.brandName}-${utm.stats.total}-${utm.activeItems.length}`}
                     data={utm}
                     projectId={projectId}
                     isActive

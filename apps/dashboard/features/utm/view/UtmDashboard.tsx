@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { UtmDashboardSkeleton } from "@/features/dashboard/view/dashboard-skeletons"
 import type { UtmDashboardData } from "@/features/utm/model/utm"
 import { getUtmEmptyDashboardData } from "@/features/utm/controller/utm-empty-data"
@@ -15,6 +15,20 @@ type UtmDashboardProps = {
   readOnly?: boolean
 }
 
+function utmDataSignature(data: UtmDashboardData): string {
+  return [
+    data.brandName,
+    data.stats.total,
+    data.stats.activeSource,
+    data.stats.activeS1,
+    data.stats.blockedSource,
+    data.stats.blockedS1,
+    data.activeItems.length,
+    data.blockedItems.length,
+    data.activeTruncated ? "1" : "0",
+  ].join("|")
+}
+
 export function UtmDashboard({
   data: initialData,
   projectId,
@@ -25,6 +39,16 @@ export function UtmDashboard({
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isFetching, setIsFetching] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const syncedSignatureRef = useRef(utmDataSignature(initialData))
+
+  // Lazy tab fetch updates the parent `data` prop after mount; sync local state.
+  useEffect(() => {
+    const nextSignature = utmDataSignature(initialData)
+    if (nextSignature === syncedSignatureRef.current) return
+    syncedSignatureRef.current = nextSignature
+    setDashboardData(initialData)
+    setLoadError(null)
+  }, [initialData])
 
   const refresh = useCallback(async () => {
     if (!isActive) return
@@ -42,7 +66,9 @@ export function UtmDashboard({
         )
         return
       }
-      setDashboardData((await res.json()) as UtmDashboardData)
+      const next = (await res.json()) as UtmDashboardData
+      syncedSignatureRef.current = utmDataSignature(next)
+      setDashboardData(next)
     } catch {
       setLoadError("Could not load UTM controls. Try refreshing.")
       setDashboardData(
@@ -81,6 +107,7 @@ export function UtmDashboard({
             data={dashboardData}
             readOnly={readOnly}
             onDataChange={(next) => {
+              syncedSignatureRef.current = utmDataSignature(next)
               setDashboardData(next)
               void refresh()
             }}
