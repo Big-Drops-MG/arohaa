@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useState } from "react"
-import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import { updateProfile } from "@/actions/profile.actions"
@@ -62,13 +61,12 @@ export function ProfilePersonalSection({
         <div className="flex items-center gap-4">
           <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-950 text-sm font-semibold text-white">
             {imagePreview ? (
-              <Image
+              // eslint-disable-next-line @next/next/no-img-element -- Google SSO avatars need referrerPolicy
+              <img
                 src={imagePreview}
                 alt=""
-                width={56}
-                height={56}
+                referrerPolicy="no-referrer"
                 className="size-full object-cover"
-                unoptimized
               />
             ) : (
               `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase() || "U"

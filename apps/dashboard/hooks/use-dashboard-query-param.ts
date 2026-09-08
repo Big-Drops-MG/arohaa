@@ -23,7 +23,9 @@ type UseDashboardQueryParamOptions<T extends string> = {
 
 /**
  * Sync a dashboard selection to the URL (shareable + reload-safe) and optionally
- * mirror it in localStorage so a bare project URL restores the last choice.
+ * mirror it in localStorage when `projectId` is set so a bare URL can restore
+ * the last choice (nested filters like heatmap mode). Top-level project tabs
+ * should omit `projectId` so `/dashboard` → project always opens Overview.
  * Updates apply optimistically so controlled UI (tabs, selects) switches on the
  * first click while the App Router URL catches up.
  */

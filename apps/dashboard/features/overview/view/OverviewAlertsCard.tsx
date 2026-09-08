@@ -112,7 +112,7 @@ function AlertTabPanel({
       <motion.p
         initial={reduceMotion ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="py-6 text-center text-sm text-muted-foreground"
+        className="flex min-h-0 flex-1 items-center justify-center py-6 text-center text-sm text-muted-foreground"
       >
         {emptyTabMessage(severity)}
       </motion.p>
@@ -176,17 +176,19 @@ export function OverviewAlertsCard({ alerts }: OverviewAlertsCardProps) {
       variants={overviewScaleIn}
       initial={reduceMotion ? false : "hidden"}
       animate="visible"
+      className="h-full min-h-0"
     >
       <Card
         className={cn(
           overviewCardPointerFocusResetClassName,
-          overviewAnalyticCardShellClassName
+          overviewAnalyticCardShellClassName,
+          "flex h-full flex-col"
         )}
       >
         <Tabs
           key={tabsResetKey}
           defaultValue={defaultTab}
-          className="flex flex-col gap-0"
+          className="flex h-full min-h-0 flex-col gap-0"
         >
           <CardHeader
             className={cn(
@@ -234,25 +236,25 @@ export function OverviewAlertsCard({ alerts }: OverviewAlertsCardProps) {
           </CardHeader>
           <CardContent
             className={cn(
-              "flex flex-col gap-2",
+              "flex min-h-0 flex-1 flex-col gap-2",
               overviewAnalyticCardContentPaddingClassName
             )}
           >
             <TabsContent
               value="warning"
-              className="mt-0 flex flex-col gap-2 outline-none focus:outline-none focus-visible:outline-none data-[state=inactive]:hidden"
+              className="mt-0 flex min-h-0 flex-1 flex-col gap-2 outline-none focus:outline-none focus-visible:outline-none data-[state=inactive]:hidden"
             >
               <AlertTabPanel items={bySeverity.warning} severity="warning" />
             </TabsContent>
             <TabsContent
               value="alert"
-              className="mt-0 flex flex-col gap-2 outline-none focus:outline-none focus-visible:outline-none data-[state=inactive]:hidden"
+              className="mt-0 flex min-h-0 flex-1 flex-col gap-2 outline-none focus:outline-none focus-visible:outline-none data-[state=inactive]:hidden"
             >
               <AlertTabPanel items={bySeverity.alert} severity="alert" />
             </TabsContent>
             <TabsContent
               value="error"
-              className="mt-0 flex flex-col gap-2 outline-none focus:outline-none focus-visible:outline-none data-[state=inactive]:hidden"
+              className="mt-0 flex min-h-0 flex-1 flex-col gap-2 outline-none focus:outline-none focus-visible:outline-none data-[state=inactive]:hidden"
             >
               <AlertTabPanel items={bySeverity.error} severity="error" />
             </TabsContent>

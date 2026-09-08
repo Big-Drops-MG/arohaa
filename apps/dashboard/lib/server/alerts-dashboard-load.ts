@@ -28,6 +28,17 @@ import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
 const analyticsAlertItemSchema = z.object({
   id: z.string(),
+  kind: z
+    .enum([
+      "traffic_drop",
+      "traffic_spike",
+      "traffic_spike_from_low",
+      "weekly_traffic_hike",
+      "monthly_form_hike",
+      "fsr_drop",
+      "form_starts_drop",
+    ])
+    .optional(),
   message: z.string(),
   date: z.string(),
   severity: z.enum(["warning", "info"]),

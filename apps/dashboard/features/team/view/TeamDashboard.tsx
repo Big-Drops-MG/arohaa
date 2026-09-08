@@ -28,6 +28,7 @@ import {
   INTERNAL_ACCESS_LEVELS,
   type InternalAccessLevel,
 } from "@/features/team/model/access-level"
+import { UserAvatar } from "@/features/dashboard/view/UserAvatar"
 import {
   TEAM_NAV_ITEMS,
   TeamNav,
@@ -125,9 +126,11 @@ function MemberList({
               )}
             >
               <div className="relative shrink-0">
-                <div className="flex size-9 items-center justify-center rounded-full bg-slate-950 text-xs font-semibold text-white">
-                  {member.initials}
-                </div>
+                <UserAvatar
+                  initials={member.initials}
+                  imageUrl={member.imageUrl}
+                  alt={member.name}
+                />
                 <span
                   className={cn(
                     "absolute right-0 bottom-0 size-2.5 rounded-full ring-2 ring-white",
@@ -302,9 +305,11 @@ function PendingRequestsSection({
                 className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center"
               >
                 <div className="flex min-w-0 flex-1 items-center gap-3">
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-950 text-xs font-semibold text-white">
-                    {request.initials}
-                  </div>
+                  <UserAvatar
+                    initials={request.initials}
+                    imageUrl={request.imageUrl}
+                    alt={request.name}
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-foreground">
                       {request.name}

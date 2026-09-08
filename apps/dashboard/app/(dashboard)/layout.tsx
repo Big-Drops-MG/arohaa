@@ -57,6 +57,7 @@ export default async function DashboardGroupLayout({
   const firstName = user.firstName?.trim() || "Dashboard"
   const lastName = user.lastName?.trim() || "User"
   const role = user.role?.trim() || "Profile"
+  const imageUrl = user.image?.trim() || null
   const showTeamAndOps = !isExternalTeamKind(user.teamKind)
 
   void touchUserLastSeen(user.id)
@@ -69,6 +70,7 @@ export default async function DashboardGroupLayout({
         firstName={firstName}
         lastName={lastName}
         role={role}
+        imageUrl={imageUrl}
         landingPageNavItems={landingPageNavItems}
         showTeamAndOps={showTeamAndOps}
       />

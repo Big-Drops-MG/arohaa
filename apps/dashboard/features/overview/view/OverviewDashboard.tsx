@@ -336,7 +336,7 @@ export function OverviewDashboard({
             >
               {showSection("funnel") ? (
                 isFunnelLoading ? (
-                  <DashboardAnalyticCardSkeleton rows={5} />
+                  <DashboardAnalyticCardSkeleton rows={5} className="h-full" />
                 ) : (
                   <OverviewFunnelCard steps={funnelSteps} />
                 )

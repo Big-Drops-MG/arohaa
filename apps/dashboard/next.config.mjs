@@ -9,6 +9,16 @@ const nextConfig = {
     "@workspace/lp-core",
   ],
 
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "lh3.googleusercontent.com",
+        pathname: "/**",
+      },
+    ],
+  },
+
   experimental: {
     extensionAlias: {
       ".js": [".ts", ".tsx", ".js", ".jsx"],

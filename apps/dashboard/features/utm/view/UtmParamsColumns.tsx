@@ -97,7 +97,7 @@ function ParamsPanel({
     <>
       <Card
         className={cn(
-          "group/status-card relative flex w-full max-w-none flex-col gap-0 py-0!"
+          "group/status-card relative flex h-[380px] w-full max-w-none flex-col gap-0 overflow-hidden py-0!"
         )}
       >
         <CardHeader className="shrink-0 border-b border-border px-5 py-4 sm:px-6">
@@ -115,7 +115,7 @@ function ParamsPanel({
             ) : null}
           </div>
         </CardHeader>
-        <CardContent className="px-5 pt-5 pb-4 sm:px-6">
+        <CardContent className="min-h-0 flex-1 overflow-y-auto px-5 pt-5 pb-14 sm:px-6">
           <UtmParamMasonryChips
             items={items}
             tone={tone}
@@ -324,21 +324,11 @@ export function UtmParamsColumns({
     }
   }, [isEditOpen, isAddBlockedOpen])
 
-  const activeTotal = data.stats.activeSource + data.stats.activeS1
-  const truncatedNote = data.activeTruncated
-    ? ` Showing up to ${(data.previewLimit ?? 250).toLocaleString()} latest values per type (Source / S1) of ${activeTotal.toLocaleString()} active params. Use Add Manually to block a value not listed.`
-    : ""
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className={overviewSectionHeadingClassName}>UTM Params Status</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Active params on the left, blocked on the right. Blocked values
-            redirect visitors to <code className="text-xs">/access-denied</code>
-            .{truncatedNote}
-          </p>
         </div>
         {!readOnly ? (
           <Button type="button" size="sm" onClick={openEditModal}>

@@ -88,6 +88,10 @@ function ProjectDashboardViewInner({
     return PROJECT_TABS
   }, [allowedTabs])
 
+  // URL is the source of truth for the project tab: /dashboard → project (no
+  // ?tab) always opens Overview, while reload keeps the current ?tab= value.
+  // Do not pass projectId — localStorage restore would reopen the last tab on
+  // every fresh visit from the project list.
   const [activeTab, setActiveTab] = useDashboardQueryParam("tab", {
     parse: (value) => {
       const parsed = parseProjectTab(value)
@@ -100,7 +104,6 @@ function ProjectDashboardViewInner({
       }
       return parsed
     },
-    projectId,
     omitDefault: true,
     // Tab bodies load via client fetch; refreshing RSC here races replace and
     // leaves the controlled Tabs on the previous value until a second click.

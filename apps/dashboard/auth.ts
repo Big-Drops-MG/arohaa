@@ -118,6 +118,7 @@ function drizzleAdapter(): Adapter {
         ...rest,
         firstName: mapped.firstName,
         lastName: mapped.lastName,
+        image: data.image ?? null,
         roleId,
       } as AdapterUser)
     },
@@ -135,6 +136,7 @@ function drizzleAdapter(): Adapter {
         id: data.id,
         firstName: mapped.firstName,
         lastName: mapped.lastName,
+        ...(data.image !== undefined ? { image: data.image } : {}),
       } as AdapterUser & { id: string })
     },
   }
@@ -166,7 +168,21 @@ const nextAuth = NextAuth({
           Google({
             clientId: process.env.GOOGLE_CLIENT_ID!,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-            authorization: { params: { prompt: "select_account" } },
+            authorization: {
+              params: {
+                prompt: "select_account",
+                scope: "openid email profile",
+              },
+            },
+            profile(profile) {
+              return {
+                id: profile.sub,
+                name: profile.name,
+                email: profile.email,
+                image: profile.picture,
+                emailVerified: profile.email_verified ? new Date() : null,
+              }
+            },
           }),
         ]
       : []),
@@ -244,7 +260,7 @@ const nextAuth = NextAuth({
       }
       return true
     },
-    async jwt({ token, user, account, trigger }) {
+    async jwt({ token, user, account, profile, trigger }) {
       if (!user) {
         if (
           shouldInvalidateJwtSession({
@@ -285,6 +301,21 @@ const nextAuth = NextAuth({
           const { touchUserLastSeen } =
             await import("@/lib/server/user-last-seen")
           void touchUserLastSeen(dbUser.id)
+
+          if (account?.provider === "google") {
+            const { syncGoogleProfileImageForUser } =
+              await import("@/lib/server/google-profile-image")
+            await syncGoogleProfileImageForUser({
+              userId: dbUser.id,
+              profile: profile as { picture?: unknown; image?: unknown } | null,
+              userImage:
+                typeof user.image === "string" ? user.image : dbUser.image,
+              accessToken:
+                typeof account.access_token === "string"
+                  ? account.access_token
+                  : null,
+            })
+          }
         }
       } else if (token.sub && token.isTwoFactorEnabled !== true) {
         const dbUser = await db.query.users.findFirst({

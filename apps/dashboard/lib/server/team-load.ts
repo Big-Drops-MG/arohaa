@@ -35,17 +35,20 @@ function toPersonFields(row: {
   lastName: string | null
   email: string | null
   role: string | null
+  image?: string | null
 }) {
   const firstName = row.firstName?.trim() ?? ""
   const lastName = row.lastName?.trim() ?? ""
   const email = row.email?.trim() ?? ""
   const name = `${firstName} ${lastName}`.trim() || email || "User"
+  const imageUrl = row.image?.trim() || null
   return {
     id: row.id,
     name,
     email,
     roleLabel: row.role?.trim() || "—",
     initials: buildInitials(firstName, lastName, email),
+    imageUrl,
   }
 }
 

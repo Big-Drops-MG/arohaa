@@ -22,6 +22,7 @@ import {
 } from "@/features/team/model/activity-log"
 import { SettingsSectionCard } from "@/features/settings/view/SettingsSectionCard"
 import type { TeamMember } from "@/features/team/model/team"
+import { UserAvatar } from "@/features/dashboard/view/UserAvatar"
 
 type TeamMemberLogsPanelProps = {
   member: TeamMember
@@ -95,9 +96,12 @@ export function TeamMemberLogsPanel({
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-slate-950 text-[11px] font-semibold text-white">
-              {member.initials}
-            </div>
+            <UserAvatar
+              initials={member.initials}
+              imageUrl={member.imageUrl}
+              alt={member.name}
+              size="sm"
+            />
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-foreground">
                 {member.name}

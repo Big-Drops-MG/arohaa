@@ -14,9 +14,14 @@ export type CreateNotificationInput = {
   sourceId?: string | null;
 };
 
+export type CreateNotificationResult = {
+  id: string;
+  created: boolean;
+};
+
 export async function createNotification(
   input: CreateNotificationInput,
-): Promise<string | null> {
+): Promise<CreateNotificationResult | null> {
   const hasSource =
     input.sourceType != null &&
     input.sourceType.length > 0 &&
@@ -37,7 +42,7 @@ export async function createNotification(
       .limit(1);
 
     if (existing) {
-      return existing.id;
+      return { id: existing.id, created: false };
     }
   }
 
@@ -57,7 +62,7 @@ export async function createNotification(
       sourceType: input.sourceType ?? null,
       sourceId: input.sourceId ?? null,
     });
-    return id;
+    return { id, created: true };
   } catch (err) {
     const e = err as { code?: string; cause?: { code?: string } };
     const code = e?.code ?? e?.cause?.code;
@@ -73,7 +78,7 @@ export async function createNotification(
           ),
         )
         .limit(1);
-      return existing?.id ?? null;
+      return existing ? { id: existing.id, created: false } : null;
     }
     throw err;
   }

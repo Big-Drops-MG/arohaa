@@ -8,6 +8,7 @@ import { logout } from "@/actions/auth.actions"
 import type { LandingPageNavItem } from "@/features/dashboard/model/landing-page"
 import { LandingPageProjectDropdown } from "@/features/dashboard/view/LandingPageProjectDropdown"
 import { NavbarClock } from "@/features/dashboard/view/NavbarClock"
+import { UserAvatar } from "@/features/dashboard/view/UserAvatar"
 import { NotificationBell } from "@/features/notifications/view/NotificationBell"
 import { dashboardPageInsetClassName } from "@/features/overview/view/overview-card-density"
 import { Button } from "@workspace/ui/components/button"
@@ -22,6 +23,7 @@ type NavbarProps = {
   firstName: string
   lastName: string
   role: string
+  imageUrl?: string | null
   landingPageNavItems: LandingPageNavItem[]
   showTeamAndOps?: boolean
 }
@@ -36,6 +38,7 @@ export function Navbar({
   firstName,
   lastName,
   role,
+  imageUrl = null,
   landingPageNavItems,
   showTeamAndOps = true,
 }: NavbarProps) {
@@ -82,9 +85,11 @@ export function Navbar({
                 className="flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
                 aria-label="Open profile menu"
               >
-                <div className="flex size-9 items-center justify-center rounded-full bg-slate-950 text-xs font-semibold text-white">
-                  {initials}
-                </div>
+                <UserAvatar
+                  initials={initials}
+                  imageUrl={imageUrl}
+                  alt={fullName}
+                />
                 <div className="hidden text-left sm:block">
                   <p className="text-sm leading-tight font-semibold text-foreground">
                     {fullName}

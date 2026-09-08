@@ -1,9 +1,10 @@
 export const dashboardPageInsetClassName = "px-4 sm:px-6 lg:px-8"
 
-export const dashboardGridTwoColClassName = "grid gap-4 lg:grid-cols-2"
+export const dashboardGridTwoColClassName =
+  "grid items-stretch gap-4 lg:grid-cols-2"
 
 export const dashboardGridFunnelChartClassName =
-  "grid grid-cols-1 gap-4 lg:grid-cols-[3fr_7fr]"
+  "grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[3fr_7fr]"
 
 export const overviewSectionHeadingClassName =
   "font-sans text-xs font-semibold uppercase leading-tight tracking-wider text-muted-foreground"

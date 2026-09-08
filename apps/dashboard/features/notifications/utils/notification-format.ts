@@ -19,10 +19,43 @@ export function formatNotificationTimestamp(iso: string): string {
     const hours = Math.floor(diffMs / 3_600_000)
     return `${hours}h ago`
   }
+  if (diffMs < 86_400_000 * 7) {
+    const days = Math.floor(diffMs / 86_400_000)
+    return `${days}d ago`
+  }
 
   return formatSettingsTimestamp(iso)
 }
 
+export function notificationAccentClass(
+  severity: NotificationRecord["severity"],
+  type?: string
+): string {
+  if (type === "access_request") return "bg-violet-500"
+  if (type === "connection") return "bg-emerald-500"
+  if (type === "project_action") {
+    if (severity === "error") return "bg-red-500"
+    if (severity === "warning") return "bg-amber-500"
+    return "bg-neutral-400"
+  }
+
+  switch (severity) {
+    case "warning":
+      return "bg-amber-500"
+    case "error":
+      return "bg-red-500"
+    case "info":
+      return "bg-sky-500"
+    default:
+      return "bg-neutral-400"
+  }
+}
+
+export function isAccessRequestNotification(type: string): boolean {
+  return type === "access_request"
+}
+
+/** @deprecated Prefer notificationAccentClass for the redesigned inbox. */
 export function notificationRowClassName(
   severity: NotificationRecord["severity"],
   type?: string
@@ -41,8 +74,4 @@ export function notificationRowClassName(
     default:
       return "border-border bg-background"
   }
-}
-
-export function isAccessRequestNotification(type: string): boolean {
-  return type === "access_request"
 }

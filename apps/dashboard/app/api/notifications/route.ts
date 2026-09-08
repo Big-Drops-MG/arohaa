@@ -13,12 +13,16 @@ export const GET = route(
     tab: "collection",
     rateLimit: "landing",
   },
-  async ({ actor }) => {
-    try {
-      await syncAnalyticsAlertNotifications(actor.id)
-    } catch (err) {
-      if (process.env.NODE_ENV === "development") {
-        console.error("[notifications] analytics sync failed", err)
+  async ({ actor, request }) => {
+    const shouldSync = new URL(request.url).searchParams.get("sync") === "1"
+
+    if (shouldSync) {
+      try {
+        await syncAnalyticsAlertNotifications(actor.id)
+      } catch (err) {
+        if (process.env.NODE_ENV === "development") {
+          console.error("[notifications] analytics sync failed", err)
+        }
       }
     }
 

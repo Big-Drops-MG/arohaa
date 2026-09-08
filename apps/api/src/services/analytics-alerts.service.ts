@@ -2,6 +2,7 @@ import { getClickHouseClient } from './clickhouse.service.js'
 import type { RangeId } from '../types/analytics-experiments.js'
 import type {
   AnalyticsAlertItem,
+  AnalyticsAlertKind,
   AnalyticsAlertsResponse,
 } from '../types/analytics-alerts.js'
 import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
@@ -38,6 +39,22 @@ function formatSignedPct(pct: number): string {
   return capped >= 0 ? `+${capped}%` : `${capped}%`
 }
 
+function pushAlert(
+  items: AnalyticsAlertItem[],
+  kind: AnalyticsAlertKind,
+  message: string,
+  date: string,
+  severity: AnalyticsAlertItem['severity'],
+) {
+  items.push({
+    id: kind,
+    kind,
+    message,
+    date,
+    severity,
+  })
+}
+
 export async function getAnalyticsAlerts({
   workspaceId,
   lpPublicId,
@@ -54,7 +71,7 @@ export async function getAnalyticsAlerts({
   const now = new Date()
   const window = resolveAnalyticsWindow(rangeId, now, custom)
   const utmKey = utmFilterCacheKey(utmFilter)
-  const cacheKey = `analytics:alerts:v2-abs:${workspaceId}:${lpPublicId}:${rangeCacheKey(window, utmKey)}`
+  const cacheKey = `analytics:alerts:v3-kind:${workspaceId}:${lpPublicId}:${rangeCacheKey(window, utmKey)}`
   const cached = await readAnalyticsCache<AnalyticsAlertsResponse>(cacheKey)
   if (cached) return cached
 
@@ -143,9 +160,6 @@ export async function getAnalyticsAlerts({
 
   const items: AnalyticsAlertItem[] = []
 
-  let idCounter = 1
-  const nextId = () => String(idCounter++)
-
   const today = new Date().toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -156,73 +170,80 @@ export async function getAnalyticsAlerts({
 
   if (sessPct !== null && curSess > prevSess && sessPct >= 15) {
     if (window.rangeId === '7d') {
-      items.push({
-        id: nextId(),
-        message: `Best weekly hike: ${formatSignedPct(sessPct)} sessions vs prior 7 days`,
-        date: today,
-        severity: 'info',
-      })
+      pushAlert(
+        items,
+        'weekly_traffic_hike',
+        `Best weekly hike: ${formatSignedPct(sessPct)} sessions vs prior 7 days`,
+        today,
+        'info',
+      )
     } else if (sessPct >= 20) {
-      items.push({
-        id: nextId(),
-        message: `Traffic increased (${formatSignedPct(sessPct)} sessions)`,
-        date: today,
-        severity: 'info',
-      })
+      pushAlert(
+        items,
+        'traffic_spike',
+        `Traffic increased (${formatSignedPct(sessPct)} sessions)`,
+        today,
+        'info',
+      )
     }
   } else if (sessPct !== null && sessPct <= -20) {
-    items.push({
-      id: nextId(),
-      message: `Traffic dropped significantly (${formatSignedPct(sessPct)} sessions)`,
-      date: today,
-      severity: 'warning',
-    })
+    pushAlert(
+      items,
+      'traffic_drop',
+      `Traffic dropped significantly (${formatSignedPct(sessPct)} sessions)`,
+      today,
+      'warning',
+    )
   } else if (
     prevSess > 0 &&
     prevSess < MIN_SESSION_BASELINE &&
     sessDelta >= 100
   ) {
-    items.push({
-      id: nextId(),
-      message: `Traffic increased significantly (+${sessDelta.toLocaleString('en-US')} sessions vs prior period)`,
-      date: today,
-      severity: 'info',
-    })
+    pushAlert(
+      items,
+      'traffic_spike_from_low',
+      `Traffic increased significantly (+${sessDelta.toLocaleString('en-US')} sessions vs prior period)`,
+      today,
+      'info',
+    )
   }
 
   if (window.rangeId === 'last_month' && prevFS >= MIN_FORM_BASELINE) {
     const fsPct = Math.round(((curFS - prevFS) / prevFS) * 100)
     if (fsPct >= 10 && curFS > prevFS) {
-      items.push({
-        id: nextId(),
-        message: `Best monthly hike: ${formatSignedPct(fsPct)} form submissions vs prior month`,
-        date: today,
-        severity: 'info',
-      })
+      pushAlert(
+        items,
+        'monthly_form_hike',
+        `Best monthly hike: ${formatSignedPct(fsPct)} form submissions vs prior month`,
+        today,
+        'info',
+      )
     }
   }
 
   if (prevFSR > 0.05) {
     const fsrDiff = (curFSR - prevFSR) / prevFSR
     if (fsrDiff < -0.1) {
-      items.push({
-        id: nextId(),
-        message: `Form Submission Rate (FSR) dropped by ${Math.round(Math.abs(fsrDiff) * 100)}%`,
-        date: today,
-        severity: 'warning',
-      })
+      pushAlert(
+        items,
+        'fsr_drop',
+        `Form Submission Rate (FSR) dropped by ${Math.round(Math.abs(fsrDiff) * 100)}%`,
+        today,
+        'warning',
+      )
     }
   }
 
   if (prevStarts >= MIN_FORM_BASELINE) {
     const startsDiff = (curStarts - prevStarts) / prevStarts
     if (startsDiff < -0.15) {
-      items.push({
-        id: nextId(),
-        message: `Form starts decreased by ${Math.round(Math.abs(startsDiff) * 100)}%`,
-        date: today,
-        severity: 'warning',
-      })
+      pushAlert(
+        items,
+        'form_starts_drop',
+        `Form starts decreased by ${Math.round(Math.abs(startsDiff) * 100)}%`,
+        today,
+        'warning',
+      )
     }
   }
 

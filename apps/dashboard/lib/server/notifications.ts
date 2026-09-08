@@ -10,7 +10,55 @@ import type { NotificationRecord } from "@/features/notifications/model/notifica
 import { fetchAlertsAnalytics } from "@/lib/server/alerts-dashboard-load"
 import { dispatchWorkspaceAlertWebhooks } from "@/lib/server/workspace-alert-webhooks"
 
-const SKIP_AUDIT_ACTIONS = new Set(["check_connection"])
+const SKIP_AUDIT_ACTIONS = new Set([
+  "check_connection",
+  // Routine settings saves are noisy; keep lifecycle / connection / experiment events.
+  "update",
+])
+
+const MEANINGFUL_ALERT_KINDS = new Set([
+  "traffic_drop",
+  "fsr_drop",
+  "form_starts_drop",
+  "weekly_traffic_hike",
+  "monthly_form_hike",
+  "traffic_spike_from_low",
+])
+
+const ALERT_KIND_TITLES: Record<string, string> = {
+  traffic_drop: "Traffic drop",
+  traffic_spike: "Traffic spike",
+  traffic_spike_from_low: "Traffic spike",
+  weekly_traffic_hike: "Weekly traffic high",
+  monthly_form_hike: "Monthly submissions high",
+  fsr_drop: "Conversion drop",
+  form_starts_drop: "Form starts drop",
+}
+
+function alertDayKey(date = new Date()): string {
+  return date.toISOString().slice(0, 10)
+}
+
+function resolveAlertKind(alert: {
+  id: string
+  kind?: string
+  severity: "warning" | "info"
+  message: string
+}): string | null {
+  if (alert.kind) return alert.kind
+  // Legacy payloads without kind: only promote warnings, keyed by id.
+  if (alert.severity === "warning") return `legacy_${alert.id}`
+  return null
+}
+
+function isMeaningfulInboxAlert(alert: {
+  kind?: string
+  severity: "warning" | "info"
+}): boolean {
+  if (alert.severity === "warning") return true
+  if (alert.kind && MEANINGFUL_ALERT_KINDS.has(alert.kind)) return true
+  return false
+}
 
 const AUDIT_ACTION_TITLES: Record<string, string> = {
   create: "Project created",
@@ -265,7 +313,7 @@ export async function markAllNotificationsRead(
 }
 
 function mapAlertSeverity(severity: "warning" | "info"): string {
-  return severity === "info" ? "alert" : "warning"
+  return severity === "info" ? "info" : "warning"
 }
 
 export async function syncAnalyticsAlertNotifications(
@@ -285,31 +333,47 @@ export async function syncAnalyticsAlertNotifications(
       and(eq(workspaces.ownerUserId, userId), isNull(landingPages.deletedAt))
     )
 
+  const dayKey = alertDayKey()
+
   await Promise.all(
     pages.map(async (page) => {
-      const analytics = await fetchAlertsAnalytics(page.id, page.publicId, "7d")
+      const analytics = await fetchAlertsAnalytics(
+        page.workspaceId,
+        page.publicId,
+        "7d"
+      )
       if (!analytics?.items.length) return
 
       for (const alert of analytics.items) {
-        await createNotification({
+        if (!isMeaningfulInboxAlert(alert)) continue
+
+        const kind = resolveAlertKind(alert)
+        if (!kind) continue
+
+        const title = ALERT_KIND_TITLES[kind] ?? "Analytics alert"
+        const body = `${page.brandName}: ${alert.message}`
+        const result = await createNotification({
           userId,
           type: "analytics_alert",
-          title: "Analytics alert",
-          body: `${page.brandName}: ${alert.message}`,
+          title,
+          body,
           severity: mapAlertSeverity(alert.severity),
           landingPageId: page.id,
           landingPagePublicId: page.publicId,
           href: `/dashboard/${encodeURIComponent(page.slug)}?tab=alerts`,
           sourceType: "analytics_alert",
-          sourceId: `${page.publicId}:${alert.id}:${alert.message}`,
+          // One inbox item per page + alert kind per calendar day (stable; no % in key).
+          sourceId: `${page.publicId}:${kind}:${dayKey}`,
         })
 
-        void dispatchWorkspaceAlertWebhooks(page.workspaceId, {
-          title: "Analytics alert",
-          body: `${page.brandName}: ${alert.message}`,
-          severity: alert.severity === "info" ? "info" : "warning",
-          source: `analytics:${page.publicId}`,
-        }).catch(() => undefined)
+        if (result?.created) {
+          void dispatchWorkspaceAlertWebhooks(page.workspaceId, {
+            title,
+            body,
+            severity: alert.severity === "info" ? "info" : "warning",
+            source: `analytics:${page.publicId}:${kind}`,
+          }).catch(() => undefined)
+        }
       }
     })
   )

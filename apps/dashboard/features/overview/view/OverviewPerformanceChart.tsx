@@ -112,11 +112,13 @@ export function OverviewPerformanceChart({
       variants={overviewScaleIn}
       initial={reduceMotion ? false : "hidden"}
       animate="visible"
+      className="h-full min-h-0"
     >
       <Card
         className={cn(
           overviewCardPointerFocusResetClassName,
-          overviewAnalyticCardShellClassName
+          overviewAnalyticCardShellClassName,
+          "flex h-full flex-col"
         )}
       >
         <CardHeader
@@ -180,11 +182,11 @@ export function OverviewPerformanceChart({
         </CardHeader>
         <CardContent
           className={cn(
-            "relative flex flex-col",
+            "relative flex min-h-0 flex-1 flex-col",
             overviewAnalyticCardContentPaddingClassName
           )}
         >
-          <div className="relative h-[320px] w-full min-w-0">
+          <div className="relative h-[320px] min-h-[320px] w-full min-w-0 flex-1">
             {viewMode === "map" ? (
               <div className="absolute inset-0">
                 <OverviewUsaMap

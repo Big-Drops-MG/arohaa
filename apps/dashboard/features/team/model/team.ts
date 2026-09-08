@@ -10,6 +10,8 @@ export type TeamMember = {
   email: string
   roleLabel: string
   initials: string
+  /** Google SSO / profile photo URL when available. */
+  imageUrl: string | null
   isCurrentUser: boolean
   status: TeamMemberStatus
   kind: TeamMemberKind
@@ -24,6 +26,7 @@ export type AccessRequestItem = {
   email: string
   roleLabel: string
   initials: string
+  imageUrl: string | null
 }
 
 export type TeamDashboardData = {
