@@ -33,6 +33,7 @@ import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 export type UtmParamStatus = "active" | "blocked"
 
 export const UTM_UI_ACTIVE_PREVIEW_LIMIT = 250
+export const UTM_UI_ACTIVE_PREVIEW_LIMIT_PER_KEY = 250
 
 const UTM_DISCOVERY_SYNC_BATCH = 500
 
@@ -205,8 +206,12 @@ async function loadUtmStats(landingPageId: string): Promise<UtmDashboardStats> {
 async function loadUtmPairs(
   landingPageId: string,
   status: UtmParamStatus,
-  limit?: number
+  options?: {
+    limit?: number
+    key?: StoredUtmParamKey
+  }
 ): Promise<UtmParamPair[]> {
+  const keys = options?.key ? [options.key] : [...STORED_UTM_PARAM_KEYS]
   const query = db
     .select({
       key: landingPageUtmParams.key,
@@ -217,7 +222,7 @@ async function loadUtmPairs(
       and(
         eq(landingPageUtmParams.landingPageId, landingPageId),
         eq(landingPageUtmParams.status, status),
-        inArray(landingPageUtmParams.key, [...STORED_UTM_PARAM_KEYS])
+        inArray(landingPageUtmParams.key, keys)
       )
     )
     .orderBy(
@@ -226,8 +231,22 @@ async function loadUtmPairs(
       asc(landingPageUtmParams.value)
     )
 
-  const rows = limit ? await query.limit(limit) : await query
+  const rows = options?.limit ? await query.limit(options.limit) : await query
   return rows.map((row) => ({ key: row.key, value: row.value }))
+}
+
+async function loadActivePreviewPairs(
+  landingPageId: string
+): Promise<UtmParamPair[]> {
+  const perKey = await Promise.all(
+    STORED_UTM_PARAM_KEYS.map((key) =>
+      loadUtmPairs(landingPageId, "active", {
+        key,
+        limit: UTM_UI_ACTIVE_PREVIEW_LIMIT_PER_KEY,
+      })
+    )
+  )
+  return perKey.flat()
 }
 
 function buildDashboardData(
@@ -241,14 +260,20 @@ function buildDashboardData(
     ...blockedItems.map((item) => ({ ...item, status: "blocked" as const })),
   ]
 
+  const previewedSource = activeItems.filter(
+    (item) => item.key === "utm_source"
+  ).length
+  const previewedS1 = activeItems.filter((item) => item.key === "utm_s1").length
+
   return {
     brandName,
     stats,
     activeItems,
     blockedItems,
     items,
-    previewLimit: UTM_UI_ACTIVE_PREVIEW_LIMIT,
-    activeTruncated: stats.activeSource + stats.activeS1 > activeItems.length,
+    previewLimit: UTM_UI_ACTIVE_PREVIEW_LIMIT_PER_KEY,
+    activeTruncated:
+      stats.activeSource > previewedSource || stats.activeS1 > previewedS1,
   }
 }
 
@@ -278,14 +303,12 @@ async function resolveLandingPageForActor(
 async function buildUtmDashboardForLandingPage(
   row: LandingPageRef
 ): Promise<UtmDashboardData> {
-  // Stats/preview first — never block the UI on discovery/purge work.
   const [stats, activeItems, blockedItems] = await Promise.all([
     loadUtmStats(row.id),
-    loadUtmPairs(row.id, "active", UTM_UI_ACTIVE_PREVIEW_LIMIT),
+    loadActivePreviewPairs(row.id),
     loadUtmPairs(row.id, "blocked"),
   ])
 
-  // Discovery sync is best-effort and skipped when the page already has params.
   if (stats.total === 0) {
     try {
       await purgeDisallowedUtmParams(row.id)
@@ -297,7 +320,7 @@ async function buildUtmDashboardForLandingPage(
       if (discovered.length > 0) {
         const [nextStats, nextActive, nextBlocked] = await Promise.all([
           loadUtmStats(row.id),
-          loadUtmPairs(row.id, "active", UTM_UI_ACTIVE_PREVIEW_LIMIT),
+          loadActivePreviewPairs(row.id),
           loadUtmPairs(row.id, "blocked"),
         ])
         return buildDashboardData(

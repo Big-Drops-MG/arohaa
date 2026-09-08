@@ -326,7 +326,7 @@ export function UtmParamsColumns({
 
   const activeTotal = data.stats.activeSource + data.stats.activeS1
   const truncatedNote = data.activeTruncated
-    ? ` Showing latest ${data.activeItems.length.toLocaleString()} of ${activeTotal.toLocaleString()} active params. Use Add Manually to block a value not listed.`
+    ? ` Showing up to ${(data.previewLimit ?? 250).toLocaleString()} latest values per type (Source / S1) of ${activeTotal.toLocaleString()} active params. Use Add Manually to block a value not listed.`
     : ""
 
   return (
