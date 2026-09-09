@@ -88,10 +88,6 @@ function ProjectDashboardViewInner({
     return PROJECT_TABS
   }, [allowedTabs])
 
-  // URL is the source of truth for the project tab: /dashboard → project (no
-  // ?tab) always opens Overview, while reload keeps the current ?tab= value.
-  // Do not pass projectId — localStorage restore would reopen the last tab on
-  // every fresh visit from the project list.
   const [activeTab, setActiveTab] = useDashboardQueryParam("tab", {
     parse: (value) => {
       const parsed = parseProjectTab(value)
@@ -105,8 +101,7 @@ function ProjectDashboardViewInner({
       return parsed
     },
     omitDefault: true,
-    // Tab bodies load via client fetch; refreshing RSC here races replace and
-    // leaves the controlled Tabs on the previous value until a second click.
+
     refreshOnChange: false,
   })
   const { dateRangeId, customRange } = useDashboardDateRange()
@@ -115,12 +110,12 @@ function ProjectDashboardViewInner({
   const dataLabPath = useMemo(() => {
     const path = buildAnalyticsApiPath(
       `/api/landing-pages/${encodeURIComponent(projectId)}/data-export`,
-      { rangeId: dateRangeId, customRange }
+      { rangeId: dateRangeId, customRange, utmFilter }
     )
     const url = new URL(path, "http://local.invalid")
     url.searchParams.set("limit", "50")
     return `${url.pathname}${url.search}`
-  }, [customRange, dateRangeId, projectId])
+  }, [customRange, dateRangeId, projectId, utmFilter])
   const [dataLabPreload, setDataLabPreload] = useState<{
     requestKey: string
     data: ProjectTabData["data-export"] | null

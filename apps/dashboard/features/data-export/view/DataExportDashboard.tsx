@@ -24,6 +24,7 @@ import {
 import { overviewCardPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import {
   buildAnalyticsApiPath,
   shouldUseInitialTabData,
@@ -39,7 +40,6 @@ type DataExportDashboardProps = {
   projectId: string
   isActive?: boolean
   isLoading?: boolean
-  /** When true, omit the page header (used inside Data Lab). */
   embedded?: boolean
   onDataChange?: (data: DataExportDashboardData) => void
 }
@@ -167,6 +167,7 @@ export function DataExportDashboard({
 }: DataExportDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
+  const { utmFilter } = useDashboardUtmFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [pageOffset, setPageOffset] = useState(initialData.offset)
   const [isBlockingLoad, setIsBlockingLoad] = useState(false)
@@ -204,7 +205,7 @@ export function DataExportDashboard({
 
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/data-export`,
-        { rangeId: dateRangeId, customRange }
+        { rangeId: dateRangeId, customRange, utmFilter }
       )
       const withPaging = new URL(url, window.location.origin)
       withPaging.searchParams.set("limit", String(DATA_EXPORT_PAGE_SIZE))
@@ -257,6 +258,7 @@ export function DataExportDashboard({
       dateRangeId,
       onDataChange,
       projectId,
+      utmFilter,
     ]
   )
 
@@ -266,7 +268,7 @@ export function DataExportDashboard({
       shouldUseInitialTabData(
         dateRangeId,
         initialData.defaultDateRangeId,
-        undefined,
+        utmFilter,
         customRange
       )
     ) {
@@ -278,7 +280,15 @@ export function DataExportDashboard({
     const controller = new AbortController()
     void fetchPage(0, controller.signal)
     return () => controller.abort()
-  }, [customRange, dateRangeId, fetchPage, initialData, isActive, onDataChange])
+  }, [
+    customRange,
+    dateRangeId,
+    fetchPage,
+    initialData,
+    isActive,
+    onDataChange,
+    utmFilter,
+  ])
 
   useEffect(() => {
     if (!isActive || !dashboardData.hasRedirect) return

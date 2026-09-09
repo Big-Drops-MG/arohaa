@@ -24,7 +24,11 @@ import {
 import { canAccessDataExport } from "@/lib/server/data-export-acl"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
-import { appendDashboardCustomRangeParams } from "@/lib/server/analytics-utm-params"
+import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
+import {
+  appendDashboardCustomRangeParams,
+  appendDashboardUtmParams,
+} from "@/lib/server/analytics-utm-params"
 import {
   resolveLevel1Stats,
   type Level1Stat,
@@ -72,7 +76,8 @@ async function fetchLeads(
   rangeId: RangeId,
   customRange: DashboardCustomRange | undefined,
   limit: number,
-  offset: number
+  offset: number,
+  utmFilter?: DashboardUtmFilter
 ): Promise<LeadsApiResponse | null> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
@@ -93,6 +98,7 @@ async function fetchLeads(
     url.searchParams.set("limit", String(limit))
     url.searchParams.set("offset", String(offset))
     appendDashboardCustomRangeParams(url, rangeId, customRange)
+    appendDashboardUtmParams(url, utmFilter)
 
     const res = await fetch(url.toString(), {
       headers: {
@@ -128,12 +134,14 @@ export async function loadDataExportDashboardData({
   landingPagePublicId,
   rangeId = DEFAULT_TRAFFIC_RANGE_ID,
   customRange,
+  utmFilter,
   limit = DATA_EXPORT_PAGE_SIZE,
   offset = 0,
 }: {
   landingPagePublicId: string
   rangeId?: RangeId
   customRange?: DashboardCustomRange
+  utmFilter?: DashboardUtmFilter
   limit?: number
   offset?: number
 }): Promise<DataExportDashboardData> {
@@ -159,7 +167,8 @@ export async function loadDataExportDashboardData({
     rangeId,
     customRange,
     limit,
-    offset
+    offset,
+    utmFilter
   )
   if (!analytics) {
     return getDataExportEmptyDashboardData(rangeId, true, row.brandName)
@@ -219,7 +228,8 @@ export async function loadDataExportDashboardDataForApi(
   rangeIdRaw: string | null | undefined,
   customRange: DashboardCustomRange | undefined,
   limitRaw: string | null | undefined,
-  offsetRaw: string | null | undefined
+  offsetRaw: string | null | undefined,
+  utmFilter?: DashboardUtmFilter
 ): Promise<
   | { ok: true; data: DataExportDashboardData }
   | { ok: false; status: number; error: string }
@@ -251,6 +261,7 @@ export async function loadDataExportDashboardDataForApi(
     landingPagePublicId,
     rangeId,
     customRange,
+    utmFilter,
     limit,
     offset,
   })

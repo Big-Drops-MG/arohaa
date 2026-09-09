@@ -15,6 +15,7 @@ function lead(sessionId: string): FunnelLeadRow {
     email: `${sessionId}@example.com`,
     utmSource: '',
     utmId: '',
+    utmS1: '',
     trustedFormUrl: '',
     formSubmitted: false,
     fields: {},

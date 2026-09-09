@@ -43,6 +43,7 @@ import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-ran
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardNavigation } from "@/hooks/use-dashboard-navigation"
 import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
+import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 
 function emptyLevel3Data(): IntelligenceCenterPayload {
   return { section: "level3", winners: [], boards: [], actions: [] }
@@ -101,6 +102,7 @@ export function DataLabDashboard({
 }: DataLabDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
+  const { utmFilter } = useDashboardUtmFilter()
   const { searchParams } = useDashboardNavigation()
 
   const visibleSections = useMemo(() => {
@@ -191,6 +193,7 @@ export function DataLabDashboard({
           projectId,
           dateRangeId,
           customRange,
+          utmFilter,
           signal: controller.signal,
           seed: payload,
           onProgress: (progressive) => {
@@ -231,6 +234,7 @@ export function DataLabDashboard({
     projectId,
     dateRangeId,
     customRange,
+    utmFilter,
     initialDataExport,
     initialDataExportLoading,
   ])

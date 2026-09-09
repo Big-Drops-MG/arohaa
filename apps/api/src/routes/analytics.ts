@@ -645,6 +645,10 @@ export async function analyticsRoutes(server: FastifyInstance) {
       to?: string
       limit?: string
       offset?: string
+      utm_source?: string
+      utm_s1?: string
+      utm_dim?: string
+      utm_value?: string
     }
   }>(
     '/v1/analytics/funnel/leads',
@@ -657,6 +661,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
             workspace_id: { type: 'string', format: 'uuid' },
             range_id: rangeIdSchema,
             ...customRangeSchemaProps,
+            ...utmFilterSchemaProps,
             limit: { type: 'string', maxLength: 4 },
             offset: { type: 'string', maxLength: 8 },
           },
@@ -672,6 +677,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       }
       const limit = Number(request.query.limit ?? 15)
       const offset = Number(request.query.offset ?? 0)
+      const utmFilter = parseAnalyticsUtmFilter(request.query)
 
       await sendAnalyticsQuery({
         request,
@@ -686,6 +692,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
             custom: parsed.custom,
             limit,
             offset,
+            utmFilter,
           }),
         logLabel: 'analytics funnel leads query ok',
         logContext: { range_id: parsed.rangeId },

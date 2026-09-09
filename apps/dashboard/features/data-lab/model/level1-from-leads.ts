@@ -22,6 +22,7 @@ import type { IntelligenceCenterPayload } from "@/features/data-lab/model/intell
 import { discoverVisibleLeadFieldKeys } from "@/features/data-export/model/lead-field-columns"
 import type { OverviewDateRangeId } from "@/features/overview/model/overview"
 import type { DashboardCustomRange } from "@/features/traffic/model/traffic-range"
+import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
 import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
 
 const LEVEL1_PAGE_SIZE = 50
@@ -173,6 +174,7 @@ async function fetchDataExportPage({
   projectId,
   dateRangeId,
   customRange,
+  utmFilter,
   limit,
   offset,
   signal,
@@ -180,13 +182,14 @@ async function fetchDataExportPage({
   projectId: string
   dateRangeId: OverviewDateRangeId
   customRange?: DashboardCustomRange
+  utmFilter?: DashboardUtmFilter
   limit: number
   offset: number
   signal?: AbortSignal
 }): Promise<Level1PagePayload> {
   const path = buildAnalyticsApiPath(
     `/api/landing-pages/${encodeURIComponent(projectId)}/data-export`,
-    { rangeId: dateRangeId, customRange }
+    { rangeId: dateRangeId, customRange, utmFilter }
   )
   const url = new URL(path, "http://local.invalid")
   url.searchParams.set("limit", String(limit))
@@ -232,15 +235,11 @@ function apiStatsComplete(
   return null
 }
 
-/**
- * Returns range-wide Level 1 + Level 2 stats from the leads table.
- * Uses API complete stats when present; otherwise walks pages in parallel and
- * reports progressive partial stats so the UI can paint after the first page.
- */
 export async function fetchDataLabStatsFromLeadsTable({
   projectId,
   dateRangeId,
   customRange,
+  utmFilter,
   signal,
   seed,
   onProgress,
@@ -248,6 +247,7 @@ export async function fetchDataLabStatsFromLeadsTable({
   projectId: string
   dateRangeId: OverviewDateRangeId
   customRange?: DashboardCustomRange
+  utmFilter?: DashboardUtmFilter
   signal?: AbortSignal
   seed?: Pick<
     DataExportDashboardData,
@@ -318,6 +318,7 @@ export async function fetchDataLabStatsFromLeadsTable({
             projectId,
             dateRangeId,
             customRange,
+            utmFilter,
             limit: LEVEL1_PAGE_SIZE,
             offset,
             signal,
@@ -343,6 +344,7 @@ export async function fetchDataLabStatsFromLeadsTable({
     projectId,
     dateRangeId,
     customRange,
+    utmFilter,
     limit: LEVEL1_PAGE_SIZE,
     offset: seed?.leads?.length
       ? (seed.offset ?? 0) + (seed.limit || seed.leads.length)
@@ -387,6 +389,7 @@ export async function fetchDataLabStatsFromLeadsTable({
           projectId,
           dateRangeId,
           customRange,
+          utmFilter,
           limit: pageLimit,
           offset,
           signal,

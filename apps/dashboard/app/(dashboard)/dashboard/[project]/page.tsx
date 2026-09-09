@@ -258,6 +258,7 @@ export default async function ProjectPage({
       landingPagePublicId: publicId,
       rangeId,
       customRange,
+      utmFilter,
     })
   }
 

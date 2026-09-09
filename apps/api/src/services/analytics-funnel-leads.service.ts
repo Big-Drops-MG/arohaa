@@ -18,6 +18,10 @@ import {
   pickLeadZip,
   pickTrustedFormUrl,
 } from '../lib/lead-fields.js'
+import {
+  normalizeAnalyticsUtmFilter,
+  type AnalyticsUtmFilter,
+} from '../lib/analytics-utm-filter.js'
 import type {
   IntelligenceBoard,
   IntelligenceWinner,
@@ -40,6 +44,7 @@ export type FunnelLeadRow = {
   email: string
   utmSource: string
   utmId: string
+  utmS1: string
   trustedFormUrl: string
   formSubmitted: boolean
   fields: Record<string, string>
@@ -69,9 +74,9 @@ type RawLeadSessionRow = {
   zip_val: string
   utm_source: string
   utm_id: string
+  utm_s1: string
 }
 
-/** Max raw sessions scanned per request (safety ceiling for a date window). */
 const MAX_RAW_SESSIONS = 20_000
 const LEVEL3_MIN_SAMPLE = 6
 
@@ -114,8 +119,9 @@ function pickQueryParam(url: string, keys: string[]): string {
 function resolveLeadUtm(input: {
   utmSource?: string
   utmId?: string
+  utmS1?: string
   url?: string
-}): { utmSource: string; utmId: string } {
+}): { utmSource: string; utmId: string; utmS1: string } {
   const url = input.url || ''
   return {
     utmSource:
@@ -124,7 +130,30 @@ function resolveLeadUtm(input: {
     utmId:
       (input.utmId || '').trim() ||
       pickQueryParam(url, ['utm_id', 'tid', 'uid']),
+    utmS1:
+      (input.utmS1 || '').trim() || pickQueryParam(url, ['utm_s1', 's1']),
   }
+}
+
+function leadMatchesUtmFilter(
+  lead: FunnelLeadRow,
+  filter?: AnalyticsUtmFilter,
+): boolean {
+  const normalized = normalizeAnalyticsUtmFilter(filter)
+  if (!normalized) return true
+  if (
+    normalized.utm_source?.length &&
+    !normalized.utm_source.includes(lead.utmSource)
+  ) {
+    return false
+  }
+  if (
+    normalized.utm_s1?.length &&
+    !normalized.utm_s1.includes(lead.utmS1)
+  ) {
+    return false
+  }
+  return true
 }
 
 function isLeadFormSubmitted(value: number | boolean | string): boolean {
@@ -159,6 +188,7 @@ function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
   const utm = resolveLeadUtm({
     utmSource: row.utm_source,
     utmId: row.utm_id,
+    utmS1: row.utm_s1,
     url: row.sample_url,
   })
   const formSubmitted = isLeadFormSubmitted(row.form_submitted)
@@ -174,13 +204,13 @@ function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
     email,
     utmSource: utm.utmSource,
     utmId: utm.utmId,
+    utmS1: utm.utmS1,
     trustedFormUrl: pickTrustedFormUrl(rawFields),
     formSubmitted,
     fields: fieldsWithoutReserved(fields),
   }
 }
 
-/** Same parsing as the leads table When column. */
 function parseLeadWhen(value: string): Date | null {
   const trimmed = value.trim()
   if (!trimmed || trimmed.startsWith('1970-')) return null
@@ -498,7 +528,6 @@ function level2RatioStat(
   }
 }
 
-/** Same source as the Leads table dynamic columns: keys present on lead.fields. */
 function discoverVisibleLeadFieldKeys(leads: FunnelLeadRow[]): string[] {
   const keys = new Set<string>()
   for (const lead of leads) {
@@ -527,9 +556,7 @@ export function computeLevel2StatsFromLeads(leads: FunnelLeadRow[]): Level2Stat[
   const columnKeys = discoverLevel2ColumnKeys(leads)
   if (columnKeys.length === 0) return []
 
-  // For ratio columns: count submitted leads per value (unchanged)
   const submittedCountsByColumn = new Map<string, Map<string, number>>()
-  // For best-X columns: track total+submitted per value for Wilson scoring
   type L2Bucket = { value: string; total: number; submitted: number }
   const efficiencyByColumn = new Map<string, Map<string, L2Bucket>>()
 
@@ -618,14 +645,12 @@ function formatPercentShare(part: number, total: number): string {
   return `${rounded}%`
 }
 
-/** Yes:No share of all leads, as percentages of the total. */
 function formatYesNoRatio(yesCount: number, noCount: number): string {
   const total = yesCount + noCount
   if (total <= 0) return '—'
   return `${formatPercentShare(yesCount, total)} : ${formatPercentShare(noCount, total)}`
 }
 
-/** Wilson score lower bound for credible efficiency ranking. */
 function calculateL1CredibleRate(
   submitted: number,
   total: number,
@@ -677,14 +702,12 @@ function pickBestL1Bucket(
 }
 
 export function computeLevel1StatsFromLeads(leads: FunnelLeadRow[]): Level1Stat[] {
-  // Wilson-scored buckets for efficiency-ranked dimensions
   const timeBuckets = new Map<string, L1BucketCounter>()
   const ageGroupBuckets = new Map<string, L1BucketCounter>()
   const cityBuckets = new Map<string, L1BucketCounter>()
   const stateBuckets = new Map<string, L1BucketCounter>()
 
-  // ZIP stays as highest-submission-count (too granular for credible scoring),
-  // but we still track total leads so the UI can show "3 of 5" context.
+
   const zipBuckets = new Map<string, L1BucketCounter>()
 
   let yesCount = 0
@@ -897,9 +920,7 @@ function finalizeLevel3Buckets(
       }
     })
     .sort((a, b) => {
-      // Prefer buckets with enough sample for a reliable read, then Wilson score.
-      // This keeps tiny 100% cells from beating real volume, without letting a
-      // weak large bucket (e.g. 3/8) outrank a stronger mid-size bucket (e.g. 5/6).
+
       const aQualified = a.total >= LEVEL3_MIN_SAMPLE && a.submitted > 0 ? 1 : 0
       const bQualified = b.total >= LEVEL3_MIN_SAMPLE && b.submitted > 0 ? 1 : 0
       if (bQualified !== aQualified) return bQualified - aQualified
@@ -1465,12 +1486,14 @@ export async function getFunnelLeads({
   custom,
   limit = 15,
   offset = 0,
+  utmFilter,
 }: {
   workspaceId: string
   rangeId: AnalyticsRangeId
   custom?: AnalyticsCustomRange
   limit?: number
   offset?: number
+  utmFilter?: AnalyticsUtmFilter
 }): Promise<FunnelLeadsResponse> {
   const window = resolveAnalyticsWindow(rangeId, new Date(), custom)
   const ch = getClickHouseClient()
@@ -1499,7 +1522,8 @@ export async function getFunnelLeads({
         l.sample_url AS sample_url,
         z.zip_val AS zip_val,
         u.utm_source AS utm_source,
-        u.utm_id AS utm_id
+        u.utm_id AS utm_id,
+        u.utm_s1 AS utm_s1
       FROM (
         SELECT
           session_id,
@@ -1533,7 +1557,8 @@ export async function getFunnelLeads({
         SELECT
           session_id,
           anyIf(utm_source, utm_source != '') AS utm_source,
-          anyIf(utm_id, utm_id != '') AS utm_id
+          anyIf(utm_id, utm_id != '') AS utm_id,
+          anyIf(utm_s1, utm_s1 != '') AS utm_s1
         FROM events_raw
         WHERE ${rangeFilter()}
         GROUP BY session_id
@@ -1549,6 +1574,7 @@ export async function getFunnelLeads({
   const normalizedLeads = rows
     .map((row) => toFunnelLead(row))
     .filter((lead) => isDisplayableLead(lead))
+    .filter((lead) => leadMatchesUtmFilter(lead, utmFilter))
   let displayable = normalizedLeads
   try {
     displayable = await resolveVehicleNamesInLeads(normalizedLeads)
