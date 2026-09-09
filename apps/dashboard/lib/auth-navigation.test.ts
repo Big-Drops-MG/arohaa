@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest"
 import {
   consumeAuthHistoryTrap,
+  getAuthHistoryFloor,
   markAuthHistoryTrap,
+  setAuthHistoryFloor,
 } from "@/lib/auth-navigation"
 
 type MutableGlobal = { window?: unknown }
@@ -45,5 +47,25 @@ describe("auth history trap", () => {
 
   it("no-ops without a window", () => {
     expect(consumeAuthHistoryTrap("app")).toBe(false)
+    expect(getAuthHistoryFloor()).toBeNull()
+  })
+})
+
+describe("auth history floor", () => {
+  it("persists the floor so a reload does not lose it", () => {
+    stubSessionStorage()
+
+    expect(getAuthHistoryFloor()).toBeNull()
+    setAuthHistoryFloor("/dashboard")
+    expect(getAuthHistoryFloor()).toBe("/dashboard")
+    expect(getAuthHistoryFloor()).toBe("/dashboard")
+  })
+
+  it("moves the floor when a later auth step lands elsewhere", () => {
+    stubSessionStorage()
+
+    setAuthHistoryFloor("/dashboard")
+    setAuthHistoryFloor("/login")
+    expect(getAuthHistoryFloor()).toBe("/login")
   })
 })

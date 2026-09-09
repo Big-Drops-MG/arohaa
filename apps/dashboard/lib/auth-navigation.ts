@@ -1,4 +1,5 @@
 const AUTH_HISTORY_TRAP_KEY = "arohaa:auth-history-trap"
+const AUTH_HISTORY_FLOOR_KEY = "arohaa:auth-history-floor"
 
 export type AuthHistoryTrapTarget = "login" | "app"
 
@@ -21,6 +22,24 @@ export function consumeAuthHistoryTrap(target: AuthHistoryTrapTarget): boolean {
     return true
   } catch {
     return false
+  }
+}
+
+export function setAuthHistoryFloor(path: string): void {
+  if (typeof window === "undefined") return
+  try {
+    window.sessionStorage.setItem(AUTH_HISTORY_FLOOR_KEY, path)
+  } catch {
+    /* private mode / storage disabled */
+  }
+}
+
+export function getAuthHistoryFloor(): string | null {
+  if (typeof window === "undefined") return null
+  try {
+    return window.sessionStorage.getItem(AUTH_HISTORY_FLOOR_KEY)
+  } catch {
+    return null
   }
 }
 

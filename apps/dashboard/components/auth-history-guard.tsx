@@ -3,8 +3,16 @@
 import { useEffect } from "react"
 import {
   consumeAuthHistoryTrap,
+  getAuthHistoryFloor,
+  setAuthHistoryFloor,
   type AuthHistoryTrapTarget,
 } from "@/lib/auth-navigation"
+
+function isBufferState(state: unknown): boolean {
+  return (
+    typeof state === "object" && state !== null && "arohaaAuthTrap" in state
+  )
+}
 
 export function AuthHistoryGuard({
   trapTarget,
@@ -22,24 +30,26 @@ export function AuthHistoryGuard({
   }, [])
 
   useEffect(() => {
-    if (!consumeAuthHistoryTrap(trapTarget)) return
+    if (consumeAuthHistoryTrap(trapTarget)) {
+      setAuthHistoryFloor(window.location.pathname)
+    }
 
-    const href = window.location.href
-    let absorbed = false
+    const floor = getAuthHistoryFloor()
+    if (!floor || window.location.pathname !== floor) return
 
     const pushBuffer = () => {
       window.history.pushState(
         { ...(window.history.state ?? {}), arohaaAuthTrap: true },
         "",
-        href
+        window.location.href
       )
     }
 
-    pushBuffer()
+    if (!isBufferState(window.history.state)) pushBuffer()
 
     const onPopState = () => {
-      if (absorbed) return
-      absorbed = true
+      if (window.location.pathname !== floor) return
+      if (isBufferState(window.history.state)) return
       pushBuffer()
     }
 
