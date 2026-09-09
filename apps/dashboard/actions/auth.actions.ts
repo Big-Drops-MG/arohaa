@@ -148,10 +148,24 @@ export async function loginWithGoogle() {
 }
 
 export async function logout() {
-  const session = await auth()
-  if (session?.jti && session.user?.id) {
-    const { revokeSessionJti } = await import("@/lib/server/session-revocation")
-    await revokeSessionJti({ jti: session.jti, userId: session.user.id })
+  try {
+    const session = await auth()
+    if (session?.jti && session.user?.id) {
+      const { revokeSessionJti } =
+        await import("@/lib/server/session-revocation")
+      await revokeSessionJti({ jti: session.jti, userId: session.user.id })
+    }
+  } catch (error) {
+    console.error("[auth] logout revoke failed", error)
   }
-  await signOut({ redirect: false })
+
+  try {
+    await signOut({ redirect: false })
+  } catch (error) {
+    console.error("[auth] signOut failed", error)
+  }
+
+  const { clearAuthSessionCookies } =
+    await import("@/lib/server/auth-session-cookies")
+  await clearAuthSessionCookies()
 }

@@ -22,5 +22,6 @@ declare module "next-auth/jwt" {
     twoFactorAt?: number | null
     jti?: string
     sessionExpiresAt?: number
+    sessionSchemaVersion?: number
   }
 }

@@ -23,6 +23,7 @@ import { readTotpSecretFromRow } from "@/lib/server/totp-secrets"
 import { DUMMY_PASSWORD_HASH } from "@/lib/server/auth-timing"
 import {
   SESSION_MAX_AGE_SECONDS,
+  SESSION_SCHEMA_VERSION,
   sessionExpiresAtFromNow,
   shouldInvalidateJwtSession,
 } from "@/lib/server/session-token-utils"
@@ -265,9 +266,11 @@ const nextAuth = NextAuth({
         if (
           shouldInvalidateJwtSession({
             sessionExpiresAt: token.sessionExpiresAt,
+            sessionSchemaVersion: token.sessionSchemaVersion,
+            jti: token.jti,
           })
         ) {
-          return {}
+          return null
         }
 
         const { isSessionTokenRevoked } =
@@ -279,13 +282,14 @@ const nextAuth = NextAuth({
             iat: typeof token.iat === "number" ? token.iat : undefined,
           })
         ) {
-          return {}
+          return null
         }
       }
 
       if (user) {
         token.jti = crypto.randomUUID()
         token.sessionExpiresAt = sessionExpiresAtFromNow()
+        token.sessionSchemaVersion = SESSION_SCHEMA_VERSION
         const dbUser = await db.query.users.findFirst({
           where: whereUserEmail(normalizeUserEmail(user.email || "")),
         })
