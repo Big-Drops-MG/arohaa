@@ -15,10 +15,12 @@ import { overviewCardPointerFocusResetClassName } from "@/features/overview/view
 
 type EventTrackingSubmissionTableCardProps = {
   rows: EventTrackingSubmissionRow[]
+  formType?: string
 }
 
 export function EventTrackingSubmissionTableCard({
   rows,
+  formType,
 }: EventTrackingSubmissionTableCardProps) {
   return (
     <Card
@@ -39,7 +41,7 @@ export function EventTrackingSubmissionTableCard({
             Date
           </span>
           <span className="text-center text-sm font-medium text-muted-foreground">
-            Form Submitted
+            {formType === "zip" ? "Zip Submitted" : "Form Submitted"}
           </span>
           <span className="text-right text-sm font-medium text-muted-foreground">
             FSR
