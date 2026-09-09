@@ -12,7 +12,10 @@ import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import type { FormEvent } from "react"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { replaceToAuthPath } from "@/lib/auth-navigation"
+import {
+  redirectToExternalAuth,
+  replaceToAuthPath,
+} from "@/lib/auth-navigation"
 import { Button } from "@workspace/ui/components/button"
 import { Card, CardContent, CardHeader } from "@workspace/ui/components/card"
 import { Input } from "@workspace/ui/components/input"
@@ -179,9 +182,21 @@ export function LoginPage() {
     event.preventDefault()
     if (isProcessing || isGoogleProcessing) return
     setIsGoogleProcessing(true)
+    setServerError(null)
     try {
-      await signIn("google", { callbackUrl: "/dashboard" })
+      const result = await signIn("google", {
+        redirectTo: "/dashboard",
+        redirect: false,
+      })
+      const url = typeof result?.url === "string" ? result.url : null
+      if (url) {
+        redirectToExternalAuth(url)
+        return
+      }
+      setServerError("Could not start Google sign-in. Please try again.")
+      setIsGoogleProcessing(false)
     } catch {
+      setServerError("Could not start Google sign-in. Please try again.")
       setIsGoogleProcessing(false)
     }
   }

@@ -147,8 +147,12 @@ export function Navbar({
                     event.preventDefault()
                     closeMenu()
                     void logout()
-                      .then(() => replaceToAuthPath("/login"))
-                      .catch(() => replaceToAuthPath("/login"))
+                      .then(() =>
+                        replaceToAuthPath("/login", { trapBack: true })
+                      )
+                      .catch(() =>
+                        replaceToAuthPath("/login", { trapBack: true })
+                      )
                   }}
                 >
                   <Button
