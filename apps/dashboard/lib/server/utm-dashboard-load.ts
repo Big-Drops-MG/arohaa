@@ -1,14 +1,4 @@
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  inArray,
-  notInArray,
-  or,
-  like,
-  sql,
-} from "drizzle-orm"
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
 import { db, landingPageUtmParams } from "@workspace/database"
 import {
   STORED_UTM_PARAM_KEYS,
@@ -106,60 +96,36 @@ function sanitizeDiscovered(rows: DiscoveredUtmParam[]): DiscoveredUtmParam[] {
   return out
 }
 
-async function purgeDisallowedUtmParams(landingPageId: string) {
-  await db
-    .delete(landingPageUtmParams)
-    .where(
-      and(
-        eq(landingPageUtmParams.landingPageId, landingPageId),
-        notInArray(landingPageUtmParams.key, [...STORED_UTM_PARAM_KEYS])
-      )
-    )
-}
-
-async function purgeMalformedUtmParams(landingPageId: string) {
-  await db
-    .delete(landingPageUtmParams)
-    .where(
-      and(
-        eq(landingPageUtmParams.landingPageId, landingPageId),
-        inArray(landingPageUtmParams.key, [...STORED_UTM_PARAM_KEYS]),
-        or(
-          like(landingPageUtmParams.value, "%&%"),
-          like(landingPageUtmParams.value, "%?%"),
-          and(
-            eq(landingPageUtmParams.key, "utm_source"),
-            like(landingPageUtmParams.value, "%=%")
-          )
-        )
-      )
-    )
-}
-
 async function syncDiscoveredParams(
   landingPageId: string,
   discovered: DiscoveredUtmParam[]
 ) {
   if (discovered.length === 0) return
 
-  const batch = discovered.slice(0, UTM_DISCOVERY_SYNC_BATCH)
-  await db
-    .insert(landingPageUtmParams)
-    .values(
-      batch.map((row) => ({
-        landingPageId,
-        key: row.key,
-        value: row.value,
-        status: "active" as const,
-      }))
-    )
-    .onConflictDoNothing({
-      target: [
-        landingPageUtmParams.landingPageId,
-        landingPageUtmParams.key,
-        landingPageUtmParams.value,
-      ],
-    })
+  for (const key of STORED_UTM_PARAM_KEYS) {
+    const batch = discovered
+      .filter((row) => row.key === key)
+      .slice(0, UTM_DISCOVERY_SYNC_BATCH)
+    if (batch.length === 0) continue
+
+    await db
+      .insert(landingPageUtmParams)
+      .values(
+        batch.map((row) => ({
+          landingPageId,
+          key: row.key,
+          value: row.value,
+          status: "active" as const,
+        }))
+      )
+      .onConflictDoNothing({
+        target: [
+          landingPageUtmParams.landingPageId,
+          landingPageUtmParams.key,
+          landingPageUtmParams.value,
+        ],
+      })
+  }
 }
 
 async function loadUtmStats(landingPageId: string): Promise<UtmDashboardStats> {
@@ -303,37 +269,20 @@ async function resolveLandingPageForActor(
 async function buildUtmDashboardForLandingPage(
   row: LandingPageRef
 ): Promise<UtmDashboardData> {
+  try {
+    const discovered = sanitizeDiscovered(
+      await fetchDiscoveredUtmParams(row.id)
+    )
+    await syncDiscoveredParams(row.id, discovered)
+  } catch (err) {
+    console.error("[utm] discovery sync failed", err)
+  }
+
   const [stats, activeItems, blockedItems] = await Promise.all([
     loadUtmStats(row.id),
     loadActivePreviewPairs(row.id),
     loadUtmPairs(row.id, "blocked"),
   ])
-
-  if (stats.total === 0) {
-    try {
-      await purgeDisallowedUtmParams(row.id)
-      await purgeMalformedUtmParams(row.id)
-      const discovered = sanitizeDiscovered(
-        await fetchDiscoveredUtmParams(row.id)
-      )
-      await syncDiscoveredParams(row.id, discovered)
-      if (discovered.length > 0) {
-        const [nextStats, nextActive, nextBlocked] = await Promise.all([
-          loadUtmStats(row.id),
-          loadActivePreviewPairs(row.id),
-          loadUtmPairs(row.id, "blocked"),
-        ])
-        return buildDashboardData(
-          row.brandName,
-          nextStats,
-          nextActive,
-          nextBlocked
-        )
-      }
-    } catch (err) {
-      console.error("[utm] discovery sync failed", err)
-    }
-  }
 
   return buildDashboardData(row.brandName, stats, activeItems, blockedItems)
 }
