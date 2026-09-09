@@ -137,7 +137,7 @@ function ProjectDashboardViewInner({
     const controller = new AbortController()
     setDataLabPreload((current) => ({
       requestKey: dataLabPath,
-      data: current.requestKey === dataLabPath ? current.data : null,
+      data: current.data,
       loading: true,
     }))
 
@@ -156,6 +156,7 @@ function ProjectDashboardViewInner({
             projectId,
             dateRangeId,
             customRange,
+            utmFilter,
             signal: controller.signal,
             seed: data,
           })
@@ -205,13 +206,13 @@ function ProjectDashboardViewInner({
     dataLabPath,
     dateRangeId,
     projectId,
+    utmFilter,
     visibleTabs,
   ])
 
-  const preloadedDataLab =
-    dataLabPreload.requestKey === dataLabPath ? dataLabPreload.data : null
+  const preloadedDataLab = dataLabPreload.data
   const preloadedDataLabLoading =
-    dataLabPreload.requestKey !== dataLabPath || dataLabPreload.loading
+    dataLabPreload.loading || dataLabPreload.requestKey !== dataLabPath
 
   useEffect(() => {
     if (!lockedUtmSources || lockedUtmSources.length === 0) return

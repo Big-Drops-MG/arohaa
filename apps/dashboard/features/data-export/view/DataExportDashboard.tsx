@@ -264,6 +264,12 @@ export function DataExportDashboard({
 
   useEffect(() => {
     if (!isActive) return
+    if (embedded) {
+      if (isTabLoading) return
+      setDashboardData(initialData)
+      setPageOffset(initialData.offset)
+      return
+    }
     if (
       shouldUseInitialTabData(
         dateRangeId,
@@ -274,7 +280,6 @@ export function DataExportDashboard({
     ) {
       setDashboardData(initialData)
       setPageOffset(initialData.offset)
-      onDataChange?.(initialData)
       return
     }
     const controller = new AbortController()
@@ -283,10 +288,11 @@ export function DataExportDashboard({
   }, [
     customRange,
     dateRangeId,
+    embedded,
     fetchPage,
     initialData,
     isActive,
-    onDataChange,
+    isTabLoading,
     utmFilter,
   ])
 
@@ -323,7 +329,10 @@ export function DataExportDashboard({
     />
   )
 
-  if (isTabLoading || isBlockingLoad) {
+  const showBlockingSkeleton =
+    (isTabLoading || isBlockingLoad) && !(embedded && dashboardData.hasRedirect)
+
+  if (showBlockingSkeleton) {
     return (
       <div className="space-y-4">
         {header}

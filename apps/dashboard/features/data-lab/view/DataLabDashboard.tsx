@@ -165,7 +165,12 @@ export function DataLabDashboard({
 
   useEffect(() => {
     if (!isActive || !canAccessDataExport) return
-    if (initialDataExportLoading || !initialDataExport) {
+    if (initialDataExportLoading) {
+      if (!exportData) setExportLoading(true)
+      setStatsLoading(true)
+      return
+    }
+    if (!initialDataExport) {
       setExportLoading(true)
       setStatsLoading(true)
       return
@@ -242,7 +247,8 @@ export function DataLabDashboard({
   const cardsLoading =
     statsLoading || initialDataExportLoading || !initialDataExport
   const leadsLoading =
-    exportLoading || initialDataExportLoading || !initialDataExport
+    !exportData &&
+    (exportLoading || initialDataExportLoading || !initialDataExport)
 
   const handleExportDataChange = useCallback(
     (data: DataExportDashboardData) => {
