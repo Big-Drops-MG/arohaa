@@ -1,12 +1,32 @@
+"use client"
+
 import { logout } from "@/actions/auth.actions"
+import { replaceToAuthPath } from "@/lib/auth-navigation"
 import { Button } from "@workspace/ui/components/button"
+import { useState } from "react"
 
 export function SignOutButton() {
+  const [pending, setPending] = useState(false)
+
   return (
-    <form action={logout}>
-      <Button type="submit" variant="outline" size="sm">
-        Sign out
-      </Button>
-    </form>
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      disabled={pending}
+      aria-busy={pending}
+      onClick={() => {
+        if (pending) return
+        setPending(true)
+        void logout()
+          .then(() => replaceToAuthPath("/login"))
+          .catch(() => {
+            setPending(false)
+            replaceToAuthPath("/login")
+          })
+      }}
+    >
+      Sign out
+    </Button>
   )
 }

@@ -1,9 +1,10 @@
 "use client"
 
-import { useRouter, useSearchParams } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { useEffect, useState, type FormEvent } from "react"
 import { acceptExternalMemberInvite } from "@/actions/accept-external-invite.actions"
 import { AuthBrandHeader, AuthScreen } from "@/features/auth/view/AuthScreen"
+import { replaceToAuthPath } from "@/lib/auth-navigation"
 import { Button } from "@workspace/ui/components/button"
 import { Card, CardContent, CardHeader } from "@workspace/ui/components/card"
 import { Input } from "@workspace/ui/components/input"
@@ -15,7 +16,6 @@ const iconWrap =
   "pointer-events-none absolute inset-y-0 left-0 flex w-10 items-center justify-center text-muted-foreground"
 
 export function AcceptExternalInvite() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const token = searchParams.get("token")?.trim() ?? ""
 
@@ -57,7 +57,8 @@ export function AcceptExternalInvite() {
         setServerError(result.error)
         return
       }
-      router.push("/login?invite=accepted")
+      replaceToAuthPath("/login?invite=accepted")
+      return
     } finally {
       setIsProcessing(false)
     }

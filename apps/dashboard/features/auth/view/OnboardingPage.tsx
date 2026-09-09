@@ -3,7 +3,7 @@
 import { completeOnboarding } from "@/actions/onboarding.actions"
 import { AuthBrandHeader, AuthScreen } from "./AuthScreen"
 import { CUSTOM_ROLE_VALUE } from "../model/role-options"
-import { useRouter } from "next/navigation"
+import { replaceToAuthPath } from "@/lib/auth-navigation"
 import type { FormEvent } from "react"
 import { useState } from "react"
 import { Button } from "@workspace/ui/components/button"
@@ -23,7 +23,6 @@ type OnboardingPageProps = {
 }
 
 export function OnboardingPage({ roleOptions }: OnboardingPageProps) {
-  const router = useRouter()
   const [firstName, setFirstName] = useState("")
   const [lastName, setLastName] = useState("")
   const [roleSelection, setRoleSelection] = useState("")
@@ -53,7 +52,7 @@ export function OnboardingPage({ roleOptions }: OnboardingPageProps) {
         return
       }
 
-      router.replace(result.redirectTo ?? "/pending-access")
+      replaceToAuthPath(result.redirectTo ?? "/pending-access")
     } finally {
       setIsSubmitting(false)
     }

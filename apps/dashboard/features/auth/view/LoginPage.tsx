@@ -9,9 +9,10 @@ import { isOtpComplete } from "../model/otp"
 import { signIn } from "next-auth/react"
 import { AuthBrandHeader, AuthScreen } from "./AuthScreen"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import type { FormEvent } from "react"
 import { useCallback, useEffect, useRef, useState } from "react"
+import { replaceToAuthPath } from "@/lib/auth-navigation"
 import { Button } from "@workspace/ui/components/button"
 import { Card, CardContent, CardHeader } from "@workspace/ui/components/card"
 import { Input } from "@workspace/ui/components/input"
@@ -34,7 +35,6 @@ const iconWrap =
   "pointer-events-none absolute inset-y-0 left-0 flex w-10 items-center justify-center text-muted-foreground"
 
 export function LoginPage() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const requiresTwoFactorParam =
     searchParams.get("requiresTwoFactor") === "true"
@@ -106,8 +106,8 @@ export function LoginPage() {
         "redirectTo" in result &&
         typeof result.redirectTo === "string"
       ) {
-        router.push(result.redirectTo)
-        router.refresh()
+        replaceToAuthPath(result.redirectTo)
+        return
       }
     } finally {
       setIsProcessing(false)
@@ -144,8 +144,8 @@ export function LoginPage() {
           "redirectTo" in result &&
           typeof result.redirectTo === "string"
         ) {
-          router.push(result.redirectTo)
-          router.refresh()
+          replaceToAuthPath(result.redirectTo)
+          return
         }
       } else {
         const result = await verifyTwoFactorCode(digits)
@@ -154,15 +154,15 @@ export function LoginPage() {
           return
         }
         if (result.success) {
-          router.push(result.redirectTo ?? "/onboarding")
-          router.refresh()
+          replaceToAuthPath(result.redirectTo ?? "/onboarding")
+          return
         }
       }
     } finally {
       otpSubmitInFlightRef.current = false
       setIsProcessing(false)
     }
-  }, [email, normalizedEmail, otpCode, password, router])
+  }, [email, normalizedEmail, otpCode, password])
 
   useEffect(() => {
     if (shouldAutoSubmitOtp(otpCode, { enabled: showTwoFactor })) {

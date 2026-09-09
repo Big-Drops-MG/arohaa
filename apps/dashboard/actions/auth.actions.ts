@@ -153,5 +153,5 @@ export async function logout() {
     const { revokeSessionJti } = await import("@/lib/server/session-revocation")
     await revokeSessionJti({ jti: session.jti, userId: session.user.id })
   }
-  await signOut({ redirectTo: "/login" })
+  await signOut({ redirect: false })
 }

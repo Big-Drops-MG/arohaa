@@ -1,4 +1,5 @@
 import { auth } from "@/auth"
+import { AuthHistoryGuard } from "@/components/auth-history-guard"
 import { LoginPage } from "@/features/auth/view/LoginPage"
 import { resolvePostAuthPath } from "@/lib/server/access-status"
 import { pageMetadata } from "@/lib/site-metadata"
@@ -34,6 +35,7 @@ export default async function AuthPage(props: {
   }
   return (
     <Suspense fallback={<div>Loading...</div>}>
+      <AuthHistoryGuard />
       <LoginPage />
     </Suspense>
   )

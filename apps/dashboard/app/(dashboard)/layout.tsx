@@ -1,4 +1,5 @@
 import { auth } from "@/auth"
+import { AuthHistoryGuard } from "@/components/auth-history-guard"
 import { Navbar } from "@/features/dashboard/view/Navbar"
 import { DashboardNavigationShell } from "@/features/dashboard/view/DashboardNavigationShell"
 import { getLandingPageNavItems } from "@/features/dashboard/controller/landing-pages"
@@ -66,6 +67,7 @@ export default async function DashboardGroupLayout({
 
   return (
     <div className="flex min-h-svh flex-col bg-background">
+      <AuthHistoryGuard />
       <Navbar
         firstName={firstName}
         lastName={lastName}

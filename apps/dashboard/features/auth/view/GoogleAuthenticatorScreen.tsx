@@ -6,8 +6,8 @@ import { isOtpComplete } from "../model/otp"
 import { AuthBrandHeader, AuthScreen } from "./AuthScreen"
 import Image from "next/image"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
+import { replaceToAuthPath } from "@/lib/auth-navigation"
 import { Button } from "@workspace/ui/components/button"
 import { Card, CardContent, CardHeader } from "@workspace/ui/components/card"
 import {
@@ -23,7 +23,6 @@ const otpSlotClass =
   "relative flex size-11 items-center justify-center rounded-md border border-input bg-white text-lg font-medium text-neutral-900 shadow-xs transition-colors data-[active=true]:z-10 data-[active=true]:border-ring data-[active=true]:ring-3 data-[active=true]:ring-ring/50 sm:size-12 sm:text-xl"
 
 export function GoogleAuthenticatorScreen() {
-  const router = useRouter()
   const [code, setCode] = useState("")
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState("")
   const [enrolledEmail, setEnrolledEmail] = useState("")
@@ -90,14 +89,14 @@ export function GoogleAuthenticatorScreen() {
       } else {
         setVerifyStatus("success")
         await new Promise((resolve) => setTimeout(resolve, 500))
-        router.push(result.redirectTo)
-        router.refresh()
+        replaceToAuthPath(result.redirectTo)
+        return
       }
     } finally {
       otpSubmitInFlightRef.current = false
       setIsProcessing(false)
     }
-  }, [code, qrCodeDataUrl, router])
+  }, [code, qrCodeDataUrl])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()

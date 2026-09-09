@@ -5,6 +5,7 @@ import Image from "next/image"
 import { CircleUserRound, LogOut, Server, User, Users } from "lucide-react"
 import Link from "next/link"
 import { logout } from "@/actions/auth.actions"
+import { replaceToAuthPath } from "@/lib/auth-navigation"
 import type { LandingPageNavItem } from "@/features/dashboard/model/landing-page"
 import { LandingPageProjectDropdown } from "@/features/dashboard/view/LandingPageProjectDropdown"
 import { NavbarClock } from "@/features/dashboard/view/NavbarClock"
@@ -141,7 +142,15 @@ export function Navbar({
                     Profile
                   </Link>
                 </Button>
-                <form action={logout} onSubmit={closeMenu}>
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    closeMenu()
+                    void logout()
+                      .then(() => replaceToAuthPath("/login"))
+                      .catch(() => replaceToAuthPath("/login"))
+                  }}
+                >
                   <Button
                     type="submit"
                     variant="ghost"

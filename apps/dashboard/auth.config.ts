@@ -55,7 +55,21 @@ export const authConfig = {
       }
 
       if (path.startsWith("/login")) {
-        return true
+        if (!isLoggedIn) return true
+
+        const wantsTwoFactorChallenge =
+          nextUrl.searchParams.get("requiresTwoFactor") === "true"
+        const needsTwoFactor =
+          hasTwoFactorEnabled(auth.user) && !hasTwoFactorAt(auth)
+
+        if (needsTwoFactor) {
+          if (wantsTwoFactorChallenge) return true
+          return Response.redirect(
+            new URL("/login?requiresTwoFactor=true", nextUrl)
+          )
+        }
+
+        return Response.redirect(new URL("/dashboard", nextUrl))
       }
 
       if (isLoggedIn && !isAuthenticate && !isOnboarding && !isPendingAccess) {
