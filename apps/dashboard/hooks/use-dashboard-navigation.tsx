@@ -34,6 +34,17 @@ type DashboardNavigationValue = {
 const DashboardNavigationContext =
   createContext<DashboardNavigationValue | null>(null)
 
+const LEGACY_PROJECT_FILTER_QUERY_KEYS = [
+  "range_id",
+  "from",
+  "to",
+  "utm_source",
+  "utm_s1",
+  "utm_dim",
+  "utm_value",
+  "segment_id",
+] as const
+
 /**
  * Modern App Router navigation for dashboard filters:
  * URL replace + soft refresh inside a transition (no hard window.reload).
@@ -49,11 +60,26 @@ export function DashboardNavigationProvider({
   const searchParams = useSearchParams()
   const [isPending, startTransition] = useTransition()
 
+  // Filters live in localStorage now. Strip only legacy filter query keys from
+  // project URLs so shared links stay clean — never wipe intentional UI state
+  // like ?tab=, ?lab=, heatmap mode/device, etc.
   useEffect(() => {
     const match = pathname.match(/^\/dashboard\/([^/]+)\/?$/)
-    if (!match?.[1] || !searchParams.toString()) return
+    if (!match?.[1]) return
     if (["new-landing", "ops", "profile", "team"].includes(match[1])) return
-    router.replace(pathname, { scroll: false })
+
+    const hasLegacy = LEGACY_PROJECT_FILTER_QUERY_KEYS.some((key) =>
+      searchParams.has(key)
+    )
+    if (!hasLegacy) return
+
+    const next = new URLSearchParams(searchParams.toString())
+    for (const key of LEGACY_PROJECT_FILTER_QUERY_KEYS) {
+      next.delete(key)
+    }
+    const query = next.toString()
+    const href = query ? `${pathname}?${query}` : pathname
+    router.replace(href, { scroll: false })
   }, [pathname, router, searchParams])
 
   const replaceSearch = useCallback(
