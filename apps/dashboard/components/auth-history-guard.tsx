@@ -1,9 +1,16 @@
 "use client"
 
 import { useEffect } from "react"
-import { consumeAuthHistoryTrap } from "@/lib/auth-navigation"
+import {
+  consumeAuthHistoryTrap,
+  type AuthHistoryTrapTarget,
+} from "@/lib/auth-navigation"
 
-export function AuthHistoryGuard() {
+export function AuthHistoryGuard({
+  trapTarget,
+}: {
+  trapTarget: AuthHistoryTrapTarget
+}) {
   useEffect(() => {
     const onPageShow = (event: PageTransitionEvent) => {
       if (event.persisted) {
@@ -15,7 +22,7 @@ export function AuthHistoryGuard() {
   }, [])
 
   useEffect(() => {
-    if (!consumeAuthHistoryTrap()) return
+    if (!consumeAuthHistoryTrap(trapTarget)) return
 
     const href = window.location.href
     let absorbed = false
@@ -38,7 +45,7 @@ export function AuthHistoryGuard() {
 
     window.addEventListener("popstate", onPopState)
     return () => window.removeEventListener("popstate", onPopState)
-  }, [])
+  }, [trapTarget])
 
   return null
 }

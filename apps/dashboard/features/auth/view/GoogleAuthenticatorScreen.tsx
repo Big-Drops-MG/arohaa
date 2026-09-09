@@ -89,7 +89,7 @@ export function GoogleAuthenticatorScreen() {
       } else {
         setVerifyStatus("success")
         await new Promise((resolve) => setTimeout(resolve, 500))
-        replaceToAuthPath(result.redirectTo)
+        replaceToAuthPath(result.redirectTo, { trapBack: "app" })
         return
       }
     } finally {

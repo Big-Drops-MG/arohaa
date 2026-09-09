@@ -35,7 +35,7 @@ export default async function AuthPage(props: {
   }
   return (
     <Suspense fallback={<div>Loading...</div>}>
-      <AuthHistoryGuard />
+      <AuthHistoryGuard trapTarget="login" />
       <LoginPage />
     </Suspense>
   )

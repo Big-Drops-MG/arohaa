@@ -19,10 +19,10 @@ export function SignOutButton() {
         if (pending) return
         setPending(true)
         void logout()
-          .then(() => replaceToAuthPath("/login", { trapBack: true }))
+          .then(() => replaceToAuthPath("/login", { trapBack: "login" }))
           .catch(() => {
             setPending(false)
-            replaceToAuthPath("/login", { trapBack: true })
+            replaceToAuthPath("/login", { trapBack: "login" })
           })
       }}
     >

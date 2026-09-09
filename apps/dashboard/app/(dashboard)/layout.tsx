@@ -67,7 +67,7 @@ export default async function DashboardGroupLayout({
 
   return (
     <div className="flex min-h-svh flex-col bg-background">
-      <AuthHistoryGuard />
+      <AuthHistoryGuard trapTarget="app" />
       <Navbar
         firstName={firstName}
         lastName={lastName}

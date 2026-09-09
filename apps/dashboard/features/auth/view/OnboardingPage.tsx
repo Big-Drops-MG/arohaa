@@ -52,7 +52,9 @@ export function OnboardingPage({ roleOptions }: OnboardingPageProps) {
         return
       }
 
-      replaceToAuthPath(result.redirectTo ?? "/pending-access")
+      replaceToAuthPath(result.redirectTo ?? "/pending-access", {
+        trapBack: "app",
+      })
     } finally {
       setIsSubmitting(false)
     }

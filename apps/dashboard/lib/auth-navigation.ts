@@ -1,20 +1,24 @@
 const AUTH_HISTORY_TRAP_KEY = "arohaa:auth-history-trap"
 
-export function markAuthHistoryTrap(): void {
+export type AuthHistoryTrapTarget = "login" | "app"
+
+export function markAuthHistoryTrap(target: AuthHistoryTrapTarget): void {
   if (typeof window === "undefined") return
   try {
-    window.sessionStorage.setItem(AUTH_HISTORY_TRAP_KEY, "1")
+    window.sessionStorage.setItem(AUTH_HISTORY_TRAP_KEY, target)
   } catch {
     /* private mode / storage disabled */
   }
 }
 
-export function consumeAuthHistoryTrap(): boolean {
+export function consumeAuthHistoryTrap(target: AuthHistoryTrapTarget): boolean {
   if (typeof window === "undefined") return false
   try {
-    const value = window.sessionStorage.getItem(AUTH_HISTORY_TRAP_KEY)
-    if (value) window.sessionStorage.removeItem(AUTH_HISTORY_TRAP_KEY)
-    return Boolean(value)
+    if (window.sessionStorage.getItem(AUTH_HISTORY_TRAP_KEY) !== target) {
+      return false
+    }
+    window.sessionStorage.removeItem(AUTH_HISTORY_TRAP_KEY)
+    return true
   } catch {
     return false
   }
@@ -22,15 +26,15 @@ export function consumeAuthHistoryTrap(): boolean {
 
 export function replaceToAuthPath(
   path: string,
-  options?: { trapBack?: boolean }
+  options?: { trapBack?: AuthHistoryTrapTarget }
 ): void {
   if (typeof window === "undefined") return
-  if (options?.trapBack) markAuthHistoryTrap()
+  if (options?.trapBack) markAuthHistoryTrap(options.trapBack)
   window.location.replace(path)
 }
 
 export function redirectToExternalAuth(url: string): void {
   if (typeof window === "undefined") return
-  markAuthHistoryTrap()
+  markAuthHistoryTrap("app")
   window.location.replace(url)
 }

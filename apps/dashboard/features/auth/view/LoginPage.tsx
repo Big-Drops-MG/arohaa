@@ -109,7 +109,7 @@ export function LoginPage() {
         "redirectTo" in result &&
         typeof result.redirectTo === "string"
       ) {
-        replaceToAuthPath(result.redirectTo)
+        replaceToAuthPath(result.redirectTo, { trapBack: "app" })
         return
       }
     } finally {
@@ -147,7 +147,7 @@ export function LoginPage() {
           "redirectTo" in result &&
           typeof result.redirectTo === "string"
         ) {
-          replaceToAuthPath(result.redirectTo)
+          replaceToAuthPath(result.redirectTo, { trapBack: "app" })
           return
         }
       } else {
@@ -157,7 +157,9 @@ export function LoginPage() {
           return
         }
         if (result.success) {
-          replaceToAuthPath(result.redirectTo ?? "/onboarding")
+          replaceToAuthPath(result.redirectTo ?? "/onboarding", {
+            trapBack: "app",
+          })
           return
         }
       }

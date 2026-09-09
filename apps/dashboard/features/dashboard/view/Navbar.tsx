@@ -148,10 +148,10 @@ export function Navbar({
                     closeMenu()
                     void logout()
                       .then(() =>
-                        replaceToAuthPath("/login", { trapBack: true })
+                        replaceToAuthPath("/login", { trapBack: "login" })
                       )
                       .catch(() =>
-                        replaceToAuthPath("/login", { trapBack: true })
+                        replaceToAuthPath("/login", { trapBack: "login" })
                       )
                   }}
                 >
