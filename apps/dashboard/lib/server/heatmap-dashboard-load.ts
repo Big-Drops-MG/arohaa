@@ -19,7 +19,10 @@ import {
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
 import { appendDashboardCustomRangeParams } from "@/lib/server/analytics-utm-params"
-import { sanitizeHeatmapPageUrl } from "@/lib/server/route-query-limits"
+import {
+  resolveHeatmapPageUrl,
+  sanitizeHeatmapPageUrl,
+} from "@/lib/server/route-query-limits"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 
@@ -152,7 +155,7 @@ export async function loadHeatmapDashboardData({
   const analytics = await fetchHeatmapAnalytics(row.id, rangeId, {
     mode,
     device,
-    pageUrl,
+    pageUrl: resolveHeatmapPageUrl(pageUrl, row.landingPageUrl),
     customRange,
   })
   if (!analytics) {
@@ -197,7 +200,7 @@ export async function loadHeatmapDashboardDataForApi(
   const analytics = await fetchHeatmapAnalytics(row.id, rangeId, {
     mode,
     device,
-    pageUrl: options.pageUrl,
+    pageUrl: resolveHeatmapPageUrl(options.pageUrl, row.landingPageUrl),
     customRange: options.customRange,
   })
   if (!analytics) {

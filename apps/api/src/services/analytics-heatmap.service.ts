@@ -441,6 +441,49 @@ async function queryFormPoints(
   }))
 }
 
+function heatmapPathKey(url: string): string {
+  try {
+    const u = new URL(canonicalizeHeatmapPageUrl(url))
+    u.hash = ''
+    let path = u.pathname
+    if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1)
+    u.pathname = path || '/'
+    return `${u.origin}${u.pathname}`
+  } catch {
+    return canonicalizeHeatmapPageUrl(url).replace(/\/$/, '')
+  }
+}
+
+function hasHash(url: string): boolean {
+  try {
+    return Boolean(new URL(url).hash)
+  } catch {
+    return url.includes('#')
+  }
+}
+
+/**
+ * Prefer an explicit page_url (e.g. project landing page). If that exact key is
+ * missing from ClickHouse but the same origin+path exists, use that match —
+ * preferring the no-hash "start" step for SPA funnels.
+ */
+export function resolveAnalyticsHeatmapPageUrl(
+  pageUrlInput: string | null | undefined,
+  pageUrls: string[],
+): string | null {
+  const requested = canonicalizeHeatmapPageUrl(pageUrlInput ?? '') || null
+  if (!requested) return pageUrls[0] || null
+  if (pageUrls.includes(requested)) return requested
+
+  const key = heatmapPathKey(requested)
+  const samePath = pageUrls.filter((url) => heatmapPathKey(url) === key)
+  if (samePath.length > 0) {
+    return samePath.find((url) => !hasHash(url)) ?? samePath[0] ?? requested
+  }
+
+  return requested
+}
+
 export async function getAnalyticsHeatmap({
   workspaceId,
   mode,
@@ -460,8 +503,7 @@ export async function getAnalyticsHeatmap({
   const rangeParams = rangeQueryParams(window)
   const pageUrls = await listPageUrls(workspaceId, rangeParams)
 
-  const requested = canonicalizeHeatmapPageUrl(pageUrlInput ?? '') || null
-  const pageUrl = requested || pageUrls[0] || null
+  const pageUrl = resolveAnalyticsHeatmapPageUrl(pageUrlInput, pageUrls)
   const urls =
     pageUrl && !pageUrls.includes(pageUrl)
       ? [pageUrl, ...pageUrls]
