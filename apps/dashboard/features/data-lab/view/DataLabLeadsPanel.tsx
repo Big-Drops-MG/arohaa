@@ -13,6 +13,8 @@ type DataLabLeadsPanelProps = {
   isLoading: boolean
   isActive: boolean
   onDataChange?: (data: DataExportDashboardData) => void
+  leadFilter?: "all" | "returning"
+  title?: string
 }
 
 export function DataLabLeadsPanel({
@@ -22,8 +24,12 @@ export function DataLabLeadsPanel({
   isLoading,
   isActive,
   onDataChange,
+  leadFilter = "all",
+  title,
 }: DataLabLeadsPanelProps) {
   const { dateRangeId } = useDashboardDateRange()
+  const isRetention = leadFilter === "returning"
+  const restrictedLabel = isRetention ? "Retention" : "Leads table"
 
   if (!canAccess) {
     return (
@@ -31,7 +37,7 @@ export function DataLabLeadsPanel({
         <Lock className="size-5 text-neutral-400" aria-hidden />
         <div>
           <p className="text-sm font-medium text-foreground">
-            Leads table is restricted
+            {restrictedLabel} is restricted
           </p>
           <p className="mt-1 max-w-md text-sm text-muted-foreground">
             Raw lead rows and CSV export are only available to approved
@@ -48,7 +54,9 @@ export function DataLabLeadsPanel({
       projectId={projectId}
       isActive={isActive}
       isLoading={isLoading}
-      embedded
+      embedded={!isRetention}
+      leadFilter={leadFilter}
+      title={title ?? (isRetention ? "Retention" : "Captured leads")}
       onDataChange={onDataChange}
     />
   )

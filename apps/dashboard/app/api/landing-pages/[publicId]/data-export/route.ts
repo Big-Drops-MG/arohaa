@@ -23,6 +23,10 @@ export const GET = route(
   },
   async ({ params, request }) => {
     const { searchParams } = new URL(request.url)
+    const returningRaw = (
+      searchParams.get("returning_only") ?? ""
+    ).toLowerCase()
+    const returningOnly = returningRaw === "1" || returningRaw === "true"
     const res = await loadDataExportDashboardDataForApi(
       params.publicId!,
       searchParams.get("range_id"),
@@ -32,7 +36,8 @@ export const GET = route(
       ),
       searchParams.get("limit"),
       String(parseRouteOffset(searchParams.get("offset"))),
-      parseUtmFilterFromSearchParams(searchParams)
+      parseUtmFilterFromSearchParams(searchParams),
+      returningOnly
     )
 
     if (!res.ok) {

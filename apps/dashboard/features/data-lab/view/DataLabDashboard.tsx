@@ -112,6 +112,7 @@ export function DataLabDashboard({
     const allowed = new Set(
       allowedSections.map((section) => normalizeDataLabSectionId(section))
     )
+    if (allowed.has("leads")) allowed.add("retention")
     const filtered = DATA_LAB_SECTIONS.filter((s) => allowed.has(s.id))
     return filtered.length > 0 ? filtered : DATA_LAB_SECTIONS
   }, [allowedSections])
@@ -343,6 +344,20 @@ export function DataLabDashboard({
               isLoading={leadsLoading}
               isActive={isActive}
               onDataChange={handleExportDataChange}
+            />
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="retention" className="mt-5 outline-none">
+          {labSection === "retention" ? (
+            <DataLabLeadsPanel
+              projectId={projectId}
+              canAccess={canAccessDataExport}
+              data={null}
+              isLoading={false}
+              isActive={isActive}
+              leadFilter="returning"
+              title="Retention"
             />
           ) : null}
         </TabsContent>

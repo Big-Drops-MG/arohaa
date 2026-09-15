@@ -42,6 +42,8 @@ type DataExportDashboardProps = {
   isLoading?: boolean
   embedded?: boolean
   onDataChange?: (data: DataExportDashboardData) => void
+  leadFilter?: "all" | "returning"
+  title?: string
 }
 
 const thClassName =
@@ -164,6 +166,8 @@ export function DataExportDashboard({
   isLoading: isTabLoading = false,
   embedded = false,
   onDataChange,
+  leadFilter = "all",
+  title = "Captured leads",
 }: DataExportDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
@@ -172,6 +176,7 @@ export function DataExportDashboard({
   const [pageOffset, setPageOffset] = useState(initialData.offset)
   const [isBlockingLoad, setIsBlockingLoad] = useState(false)
   const [isPageLoading, setIsPageLoading] = useState(false)
+  const returningOnly = leadFilter === "returning"
 
   const pageSize = dashboardData.limit || DATA_EXPORT_PAGE_SIZE
   const total = dashboardData.total
@@ -210,6 +215,9 @@ export function DataExportDashboard({
       const withPaging = new URL(url, window.location.origin)
       withPaging.searchParams.set("limit", String(DATA_EXPORT_PAGE_SIZE))
       withPaging.searchParams.set("offset", String(offset))
+      if (returningOnly) {
+        withPaging.searchParams.set("returning_only", "1")
+      }
       try {
         const res = await fetch(withPaging.pathname + withPaging.search, {
           cache: "no-store",
@@ -258,6 +266,7 @@ export function DataExportDashboard({
       dateRangeId,
       onDataChange,
       projectId,
+      returningOnly,
       utmFilter,
     ]
   )
@@ -271,6 +280,7 @@ export function DataExportDashboard({
       return
     }
     if (
+      !returningOnly &&
       shouldUseInitialTabData(
         dateRangeId,
         initialData.defaultDateRangeId,
@@ -293,6 +303,7 @@ export function DataExportDashboard({
     initialData,
     isActive,
     isTabLoading,
+    returningOnly,
     utmFilter,
   ])
 
@@ -384,7 +395,7 @@ export function DataExportDashboard({
         >
           <div className="min-w-0">
             <CardTitle className={overviewSectionHeadingClassName}>
-              Captured leads
+              {title}
             </CardTitle>
             <p className="mt-0.5 truncate text-sm font-medium text-foreground">
               {projectLabel}
@@ -434,7 +445,8 @@ export function DataExportDashboard({
                       className="px-4 py-10 text-center text-sm text-muted-foreground"
                       colSpan={colCount}
                     >
-                      No captured rows for this range yet.
+                      No {returningOnly ? "retention" : "captured"} rows for
+                      this range yet.
                     </td>
                   </tr>
                 ) : (

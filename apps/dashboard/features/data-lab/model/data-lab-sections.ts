@@ -3,6 +3,7 @@ export const DATA_LAB_SECTIONS = [
   { id: "level-2", label: "Level 2" },
   { id: "level-3", label: "Level 3" },
   { id: "leads", label: "Leads table" },
+  { id: "retention", label: "Retention" },
 ] as const
 
 export type DataLabSectionId = (typeof DATA_LAB_SECTIONS)[number]["id"]
@@ -26,7 +27,6 @@ export function mapLegacyInsightSectionToDataLab(
   return normalizeDataLabSectionId(section ?? "")
 }
 
-/** Map stored section ids (including legacy Data Lab tabs) to current tabs. */
 export function normalizeDataLabSectionId(section: string): DataLabSectionId {
   if (SECTION_IDS.has(section)) return section as DataLabSectionId
   if (section === "export") return "leads"

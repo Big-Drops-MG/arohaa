@@ -78,7 +78,8 @@ async function fetchLeads(
   customRange: DashboardCustomRange | undefined,
   limit: number,
   offset: number,
-  utmFilter?: DashboardUtmFilter
+  utmFilter?: DashboardUtmFilter,
+  returningOnly = false
 ): Promise<LeadsApiResponse | null> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
@@ -98,6 +99,9 @@ async function fetchLeads(
     url.searchParams.set("range_id", rangeId)
     url.searchParams.set("limit", String(limit))
     url.searchParams.set("offset", String(offset))
+    if (returningOnly) {
+      url.searchParams.set("returning_only", "1")
+    }
     appendDashboardCustomRangeParams(url, rangeId, customRange)
     appendDashboardUtmParams(url, utmFilter)
 
@@ -138,6 +142,7 @@ export async function loadDataExportDashboardData({
   utmFilter,
   limit = DATA_EXPORT_PAGE_SIZE,
   offset = 0,
+  returningOnly = false,
 }: {
   landingPagePublicId: string
   rangeId?: RangeId
@@ -145,6 +150,7 @@ export async function loadDataExportDashboardData({
   utmFilter?: DashboardUtmFilter
   limit?: number
   offset?: number
+  returningOnly?: boolean
 }): Promise<DataExportDashboardData> {
   if (offset > DEFAULT_ROUTE_MAX_OFFSET) notFound()
 
@@ -175,7 +181,8 @@ export async function loadDataExportDashboardData({
     customRange,
     limit,
     offset,
-    scopedUtmFilter
+    scopedUtmFilter,
+    returningOnly
   )
   if (!analytics) {
     return getDataExportEmptyDashboardData(rangeId, true, row.brandName)
@@ -236,7 +243,8 @@ export async function loadDataExportDashboardDataForApi(
   customRange: DashboardCustomRange | undefined,
   limitRaw: string | null | undefined,
   offsetRaw: string | null | undefined,
-  utmFilter?: DashboardUtmFilter
+  utmFilter?: DashboardUtmFilter,
+  returningOnly = false
 ): Promise<
   | { ok: true; data: DataExportDashboardData }
   | { ok: false; status: number; error: string }
@@ -271,6 +279,7 @@ export async function loadDataExportDashboardDataForApi(
     utmFilter,
     limit,
     offset,
+    returningOnly,
   })
   return { ok: true, data }
 }

@@ -1495,6 +1495,7 @@ export async function getFunnelLeads({
   limit = 15,
   offset = 0,
   utmFilter,
+  returningOnly = false,
 }: {
   workspaceId: string
   rangeId: AnalyticsRangeId
@@ -1502,6 +1503,7 @@ export async function getFunnelLeads({
   limit?: number
   offset?: number
   utmFilter?: AnalyticsUtmFilter
+  returningOnly?: boolean
 }): Promise<FunnelLeadsResponse> {
   const window = resolveAnalyticsWindow(rangeId, new Date(), custom)
   const ch = getClickHouseClient()
@@ -1511,6 +1513,27 @@ export async function getFunnelLeads({
       positionCaseInsensitive(properties, '"fields"') > 0
       OR positionCaseInsensitive(properties, '"_k"') > 0
     )`
+
+  const returningJoin = returningOnly
+    ? `
+      INNER JOIN (
+        SELECT DISTINCT session_id
+        FROM (
+          SELECT
+            session_id,
+            if(
+              min(created_at) OVER (
+                PARTITION BY coalesce(nullIf(user_id, ''), nullIf(fingerprint, ''), session_id)
+              ) < created_at - INTERVAL 1 DAY,
+              1,
+              0
+            ) AS is_return
+          FROM events_raw
+          WHERE workspace_id = {wid:UUID}
+        )
+        WHERE is_return = 1
+      ) AS ret ON ret.session_id = l.session_id`
+    : ''
 
   const p = {
     wid: workspaceId,
@@ -1547,6 +1570,7 @@ export async function getFunnelLeads({
         WHERE ${where}
         GROUP BY session_id
       ) AS l
+      ${returningJoin}
       LEFT JOIN (
         SELECT
           session_id,
