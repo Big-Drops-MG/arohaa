@@ -1,15 +1,24 @@
 "use server"
 
+import bcrypt from "bcryptjs"
+import { and, eq, gt } from "drizzle-orm"
 import { redirect } from "next/navigation"
+import {
+  db,
+  passwordResetTokens,
+  users,
+  whereUserEmail,
+} from "@workspace/database"
+import { hashPasswordResetToken } from "@/lib/server/password-reset-token"
 
 export type SubmitResetPasswordResult = { error: string }
 
 export async function submitResetPasswordAttempt(input: {
-  code: string
+  token: string
   newPassword: string
   confirmPassword: string
 }): Promise<SubmitResetPasswordResult | void> {
-  const code = input.code.trim()
+  const token = input.token.trim()
   const { newPassword, confirmPassword } = input
 
   if (newPassword.length < 8) {
@@ -18,19 +27,38 @@ export async function submitResetPasswordAttempt(input: {
   if (newPassword !== confirmPassword) {
     return { error: "Passwords do not match." }
   }
-  if (code.length !== 6) {
-    return { error: "Enter the full 6-digit code." }
+  if (!token) {
+    return { error: "This reset link is invalid or has expired." }
   }
 
-  const devPlaceholder = process.env.DEV_PASSWORD_RESET_OTP?.trim()
-  const codeAcceptedInDevOnly =
-    process.env.NODE_ENV !== "production" &&
-    devPlaceholder?.length === 6 &&
-    code === devPlaceholder
+  const tokenHash = hashPasswordResetToken(token)
+  const row = await db.query.passwordResetTokens.findFirst({
+    where: and(
+      eq(passwordResetTokens.token, tokenHash),
+      gt(passwordResetTokens.expires, new Date())
+    ),
+  })
 
-  if (!codeAcceptedInDevOnly) {
-    return { error: "That code did not match. Please try again." }
+  if (!row) {
+    return { error: "This reset link is invalid or has expired." }
   }
+
+  const user = await db.query.users.findFirst({
+    where: whereUserEmail(row.email),
+    columns: { id: true },
+  })
+  if (!user) {
+    await db
+      .delete(passwordResetTokens)
+      .where(eq(passwordResetTokens.token, tokenHash))
+    return { error: "This reset link is invalid or has expired." }
+  }
+
+  const hashed = await bcrypt.hash(newPassword, 12)
+  await db.update(users).set({ password: hashed }).where(eq(users.id, user.id))
+  await db
+    .delete(passwordResetTokens)
+    .where(eq(passwordResetTokens.email, row.email))
 
   redirect("/reset-password/success")
 }

@@ -17,8 +17,12 @@ import {
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { requireWritableLandingPageActor } from "@/lib/server/external-access"
+import {
+  requireWritableLandingPageActor,
+  getActorAccess,
+} from "@/lib/server/external-access"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
+import { resolveUtmFilterForActor } from "@/lib/server/analytics-utm-params"
 
 export type UtmParamStatus = "active" | "blocked"
 
@@ -246,7 +250,12 @@ function buildDashboardData(
 async function resolveLandingPageForActor(
   landingPagePublicId: string
 ): Promise<
-  | { ok: true; actorId: string; row: LandingPageRef }
+  | {
+      ok: true
+      actorId: string
+      row: LandingPageRef
+      actor: Awaited<ReturnType<typeof requireLandingPageActor>>
+    }
   | { ok: false; status: 401 | 404; error: string }
 > {
   const actor = await requireLandingPageActor()
@@ -262,12 +271,26 @@ async function resolveLandingPageForActor(
   return {
     ok: true,
     actorId: actor.id,
+    actor,
     row: { id: row.id, brandName: row.brandName },
   }
 }
 
+function filterUtmPairsForSources(
+  pairs: UtmParamPair[],
+  allowedSources: string[] | null
+): UtmParamPair[] {
+  if (!allowedSources) return pairs
+  const allowed = new Set(allowedSources.map((s) => s.toLowerCase()))
+  return pairs.filter((pair) => {
+    if (pair.key !== "utm_source") return true
+    return allowed.has(pair.value.toLowerCase())
+  })
+}
+
 async function buildUtmDashboardForLandingPage(
-  row: LandingPageRef
+  row: LandingPageRef,
+  allowedSources: string[] | null = null
 ): Promise<UtmDashboardData> {
   try {
     const discovered = sanitizeDiscovered(
@@ -278,13 +301,30 @@ async function buildUtmDashboardForLandingPage(
     console.error("[utm] discovery sync failed", err)
   }
 
-  const [stats, activeItems, blockedItems] = await Promise.all([
+  const [stats, activeItemsRaw, blockedItemsRaw] = await Promise.all([
     loadUtmStats(row.id),
     loadActivePreviewPairs(row.id),
     loadUtmPairs(row.id, "blocked"),
   ])
 
-  return buildDashboardData(row.brandName, stats, activeItems, blockedItems)
+  const activeItems = filterUtmPairsForSources(activeItemsRaw, allowedSources)
+  const blockedItems = filterUtmPairsForSources(blockedItemsRaw, allowedSources)
+
+  const scopedStats: UtmDashboardStats = allowedSources
+    ? {
+        ...stats,
+        activeSource: activeItems.filter((i) => i.key === "utm_source").length,
+        blockedSource: blockedItems.filter((i) => i.key === "utm_source")
+          .length,
+      }
+    : stats
+
+  return buildDashboardData(
+    row.brandName,
+    scopedStats,
+    activeItems,
+    blockedItems
+  )
 }
 
 export async function loadUtmDashboardData(
@@ -297,7 +337,20 @@ export async function loadUtmDashboardData(
     throw new Error("Landing page not found")
   }
 
-  return buildUtmDashboardForLandingPage(resolved.row)
+  const access = await getActorAccess(resolved.actor)
+  const scoped = await resolveUtmFilterForActor(
+    resolved.actor,
+    landingPagePublicId,
+    null
+  )
+  const allowedSources =
+    access.isExternal && scoped?.utm_source?.length
+      ? scoped.utm_source
+      : access.isExternal
+        ? []
+        : null
+
+  return buildUtmDashboardForLandingPage(resolved.row, allowedSources)
 }
 
 export async function updateUtmParamsForLandingPage({
@@ -378,7 +431,22 @@ export async function loadUtmDashboardDataForApi(
   }
 
   try {
-    const data = await buildUtmDashboardForLandingPage(resolved.row)
+    const access = await getActorAccess(resolved.actor)
+    const scoped = await resolveUtmFilterForActor(
+      resolved.actor,
+      landingPagePublicId,
+      null
+    )
+    const allowedSources =
+      access.isExternal && scoped?.utm_source?.length
+        ? scoped.utm_source
+        : access.isExternal
+          ? []
+          : null
+    const data = await buildUtmDashboardForLandingPage(
+      resolved.row,
+      allowedSources
+    )
     return { ok: true, data }
   } catch (err) {
     console.error("[utm] dashboard load failed", err)

@@ -193,6 +193,7 @@ export default async function ProjectPage({
         landingPagePublicId: publicId,
         rangeId,
         customRange,
+        utmFilter,
         mode: parseHeatmapMode(modeParam),
         device: parseHeatmapDevice(deviceParam),
       })
@@ -226,6 +227,7 @@ export default async function ProjectPage({
         landingPagePublicId: publicId,
         rangeId,
         customRange,
+        utmFilter,
       })
       break
     case "web-vital":
@@ -233,6 +235,7 @@ export default async function ProjectPage({
         landingPagePublicId: publicId,
         rangeId,
         customRange,
+        utmFilter,
       })
       break
     case "utm":

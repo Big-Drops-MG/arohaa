@@ -12,9 +12,14 @@ import {
   resolveIngestApiBase,
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
-import { appendDashboardCustomRangeParams } from "@/lib/server/analytics-utm-params"
+import {
+  appendDashboardCustomRangeParams,
+  appendDashboardUtmParams,
+  resolveUtmFilterForActor,
+} from "@/lib/server/analytics-utm-params"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
+import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
 
 type AnalyticsWebVitalsResponse = Omit<
   WebVitalDashboardData,
@@ -41,7 +46,8 @@ export function buildWebVitalDashboardData(
 async function fetchWebVitalAnalytics(
   workspaceId: string,
   rangeId: RangeId,
-  customRange?: DashboardCustomRange
+  customRange?: DashboardCustomRange,
+  utmFilter?: DashboardUtmFilter
 ): Promise<AnalyticsWebVitalsResponse | null> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
@@ -55,6 +61,7 @@ async function fetchWebVitalAnalytics(
     url.searchParams.set("workspace_id", workspaceId)
     url.searchParams.set("range_id", rangeId)
     appendDashboardCustomRangeParams(url, rangeId, customRange)
+    appendDashboardUtmParams(url, utmFilter)
 
     const res = await fetch(url.toString(), {
       headers: { "x-arohaa-internal": secret },
@@ -74,18 +81,31 @@ export async function loadWebVitalDashboardData({
   landingPagePublicId,
   rangeId = DEFAULT_TRAFFIC_RANGE_ID,
   customRange,
+  utmFilter,
 }: {
   landingPagePublicId: string
   rangeId?: RangeId
   customRange?: DashboardCustomRange
+  utmFilter?: DashboardUtmFilter
 }): Promise<WebVitalDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
 
+  const scopedUtmFilter = await resolveUtmFilterForActor(
+    actor,
+    landingPagePublicId,
+    utmFilter
+  )
+
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
 
-  const analytics = await fetchWebVitalAnalytics(row.id, rangeId, customRange)
+  const analytics = await fetchWebVitalAnalytics(
+    row.id,
+    rangeId,
+    customRange,
+    scopedUtmFilter
+  )
   if (!analytics) {
     return getWebVitalEmptyDashboardData(landingPagePublicId, rangeId)
   }
@@ -96,7 +116,8 @@ export async function loadWebVitalDashboardData({
 export async function loadWebVitalDashboardDataForApi(
   landingPagePublicId: string,
   rangeIdRaw: string | null | undefined,
-  customRange?: DashboardCustomRange
+  customRange?: DashboardCustomRange,
+  utmFilter?: DashboardUtmFilter
 ): Promise<
   | { ok: true; data: WebVitalDashboardData }
   | { ok: false; status: number; error: string }
@@ -117,6 +138,7 @@ export async function loadWebVitalDashboardDataForApi(
     landingPagePublicId,
     rangeId,
     customRange,
+    utmFilter,
   })
   return { ok: true, data }
 }

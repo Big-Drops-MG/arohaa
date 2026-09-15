@@ -28,6 +28,7 @@ import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribut
 import {
   appendDashboardCustomRangeParams,
   appendDashboardUtmParams,
+  resolveUtmFilterForActor,
 } from "@/lib/server/analytics-utm-params"
 import {
   resolveLevel1Stats,
@@ -161,6 +162,12 @@ export async function loadDataExportDashboardData({
     return getDataExportEmptyDashboardData(rangeId, false, row.brandName)
   }
 
+  const scopedUtmFilter = await resolveUtmFilterForActor(
+    actor,
+    landingPagePublicId,
+    utmFilter
+  )
+
   const analytics = await fetchLeads(
     row.id,
     actor.id,
@@ -168,7 +175,7 @@ export async function loadDataExportDashboardData({
     customRange,
     limit,
     offset,
-    utmFilter
+    scopedUtmFilter
   )
   if (!analytics) {
     return getDataExportEmptyDashboardData(rangeId, true, row.brandName)

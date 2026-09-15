@@ -3,6 +3,7 @@ import {
   parseDashboardCustomRange,
   parseTrafficRangeId,
 } from "@/features/traffic/model/traffic-range"
+import { parseUtmFilterFromSearchParams } from "@/lib/server/analytics-utm-params"
 import { loadHeatmapDashboardDataForApi } from "@/lib/server/heatmap-dashboard-load"
 import { route } from "@/lib/server/route"
 import { MAX_DASHBOARD_CUSTOM_SPAN_DAYS } from "@/lib/server/route-query"
@@ -34,6 +35,7 @@ export const GET = route(
           searchParams.get("from"),
           searchParams.get("to")
         ),
+        utmFilter: parseUtmFilterFromSearchParams(searchParams),
       }
     )
     if (!result.ok) {

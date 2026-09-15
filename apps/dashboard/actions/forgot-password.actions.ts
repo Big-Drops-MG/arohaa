@@ -11,6 +11,7 @@ import {
 } from "@workspace/database"
 import { sendEmail } from "@/lib/server/email/send-email"
 import { PasswordResetEmail } from "@/emails/templates/PasswordResetEmail"
+import { hashPasswordResetToken } from "@/lib/server/password-reset-token"
 
 const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000
 
@@ -36,23 +37,21 @@ export async function requestPasswordReset(
     where: whereUserEmail(normalized),
   })
 
-  // Always return success to prevent email enumeration
   if (!user) {
     return {}
   }
 
-  // Delete any existing tokens for this email
   await db
     .delete(passwordResetTokens)
     .where(eq(passwordResetTokens.email, normalized))
 
-  // Generate new token
   const token = randomUUID()
+  const tokenHash = hashPasswordResetToken(token)
   const expires = new Date(Date.now() + RESET_TOKEN_EXPIRY_MS)
 
   await db.insert(passwordResetTokens).values({
     email: normalized,
-    token,
+    token: tokenHash,
     expires,
   })
 

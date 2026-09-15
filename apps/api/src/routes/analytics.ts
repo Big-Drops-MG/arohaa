@@ -174,6 +174,7 @@ const heatmapSchema = {
         enum: ['all', 'mobile', 'tablet', 'desktop'],
       },
       page_url: { type: 'string', maxLength: 4000 },
+      ...utmFilterSchemaProps,
     },
   },
 } as const
@@ -709,6 +710,10 @@ export async function analyticsRoutes(server: FastifyInstance) {
       mode?: string
       device?: string
       page_url?: string
+      utm_source?: string
+      utm_s1?: string
+      utm_dim?: string
+      utm_value?: string
     }
   }>(
     '/v1/analytics/heatmap',
@@ -721,6 +726,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       }
       const mode = parseHeatmapMode(request.query.mode)
       const device = parseHeatmapDevice(request.query.device)
+      const utmFilter = parseAnalyticsUtmFilter(request.query)
 
       await sendAnalyticsQuery({
         request,
@@ -735,6 +741,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
             pageUrl: page_url,
             rangeId: parsed.rangeId,
             custom: parsed.custom,
+            utmFilter,
           }),
         logLabel: 'analytics heatmap query ok',
         logContext: { range_id: parsed.rangeId, mode, device },
@@ -1177,6 +1184,10 @@ export async function analyticsRoutes(server: FastifyInstance) {
       range_id?: string
       from?: string
       to?: string
+      utm_source?: string
+      utm_s1?: string
+      utm_dim?: string
+      utm_value?: string
     }
   }>(
     '/v1/analytics/web-vitals',
@@ -1189,6 +1200,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
             workspace_id: { type: 'string', format: 'uuid' },
             range_id: rangeIdSchema,
             ...customRangeSchemaProps,
+            ...utmFilterSchemaProps,
           },
         },
       },
@@ -1200,6 +1212,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       if (!parsed.ok) {
         return reply.code(400).send({ error: parsed.error })
       }
+      const parsedUtm = parseAnalyticsUtmFilter(request.query)
 
       await sendAnalyticsQuery({
         request,
@@ -1211,6 +1224,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
             workspaceId: workspace_id,
             rangeId: parsed.rangeId,
             custom: parsed.custom,
+            utmFilter: parsedUtm,
           }),
         logLabel: 'analytics web-vitals query ok',
         logContext: { range_id: parsed.rangeId },

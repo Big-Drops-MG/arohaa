@@ -16,10 +16,17 @@ import {
   resolveIngestApiBase,
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
-import { appendDashboardCustomRangeParams } from "@/lib/server/analytics-utm-params"
+import {
+  appendDashboardCustomRangeParams,
+  resolveUtmFilterForActor,
+} from "@/lib/server/analytics-utm-params"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { requireWritableLandingPageActor } from "@/lib/server/external-access"
+import {
+  requireWritableLandingPageActor,
+  getActorAccess,
+} from "@/lib/server/external-access"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
+import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
 
 interface AnalyticsSeoResponse {
   summary: SeoDashboardData["summary"]
@@ -94,15 +101,23 @@ export async function loadSeoDashboardData({
   sortBy = "clicks",
   sortOrder = "desc",
   customRange,
+  utmFilter,
 }: {
   landingPagePublicId: string
   rangeId?: RangeId
   sortBy?: SeoSortField
   sortOrder?: SeoSortOrder
   customRange?: DashboardCustomRange
+  utmFilter?: DashboardUtmFilter
 }): Promise<SeoDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
+
+  const access = await getActorAccess(actor)
+  await resolveUtmFilterForActor(actor, landingPagePublicId, utmFilter)
+  if (access.isExternal) {
+    return getSeoEmptyDashboardData(landingPagePublicId, rangeId)
+  }
 
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
@@ -127,7 +142,8 @@ export async function loadSeoDashboardDataForApi(
   rangeIdRaw: string | null | undefined,
   sortByRaw: string | null | undefined,
   sortOrderRaw: string | null | undefined,
-  customRange?: DashboardCustomRange
+  customRange?: DashboardCustomRange,
+  utmFilter?: DashboardUtmFilter
 ): Promise<
   | { ok: true; data: SeoDashboardData }
   | { ok: false; status: number; error: string }
@@ -162,6 +178,7 @@ export async function loadSeoDashboardDataForApi(
     sortBy,
     sortOrder,
     customRange,
+    utmFilter,
   })
   return { ok: true, data }
 }

@@ -32,7 +32,7 @@ import { enforceLandingQuota } from "@/lib/server/landing-quota"
 import { parseOptionalFaviconUrl } from "@/lib/server/landing-page-validation"
 import { route } from "@/lib/server/route"
 import { landingPageCreateBodySchema } from "@/lib/server/route-schemas"
-import { getOrCreateOwnerWorkspace } from "@/lib/server/resolve-workspace"
+import { resolveLandingPageWorkspace } from "@/lib/server/resolve-workspace"
 
 type LandingRow = InferSelectModel<typeof landingPages>
 
@@ -126,7 +126,7 @@ export const POST = route(
     schema: landingPageCreateBodySchema,
   },
   async ({ actor, body, request }) => {
-    const ws = await getOrCreateOwnerWorkspace(actor.id)
+    const ws = await resolveLandingPageWorkspace(actor.id)
     const quota = await enforceLandingQuota(ws.id)
     if (quota) return quota
 

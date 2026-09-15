@@ -35,6 +35,7 @@ import {
 import { HeatmapCanvas } from "@/features/heatmap/view/HeatmapCanvas"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
+import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import type { AnalyticsFetchMode } from "@/lib/dashboard/analytics-fetch-mode"
 import {
   buildAnalyticsApiPath,
@@ -66,6 +67,7 @@ export function HeatmapDashboard({
   const defaultMode = visibleModes[0]?.value ?? "click"
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
+  const { utmFilter } = useDashboardUtmFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [mode, setMode] = useDashboardQueryParam("mode", {
     parse: (raw) => {
@@ -103,6 +105,7 @@ export function HeatmapDashboard({
         {
           rangeId,
           customRange,
+          utmFilter,
           extra: {
             mode: next.mode,
             device: next.device,
@@ -131,7 +134,7 @@ export function HeatmapDashboard({
         }
       }
     },
-    [projectId, customRange]
+    [projectId, customRange, utmFilter]
   )
 
   useEffect(() => {
@@ -142,7 +145,7 @@ export function HeatmapDashboard({
       shouldUseInitialTabData(
         dateRangeId,
         initialData.defaultDateRangeId,
-        undefined,
+        utmFilter,
         customRange
       ) &&
       mode === initialData.mode &&
@@ -170,6 +173,7 @@ export function HeatmapDashboard({
     fetchHeatmap,
     initialData,
     mode,
+    utmFilter,
   ])
 
   const pageUrl = canonicalizeHeatmapPageUrl(dashboardData.pageUrl ?? "")
