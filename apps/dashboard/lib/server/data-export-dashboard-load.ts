@@ -60,6 +60,7 @@ type LeadsApiResponse = {
     trustedFormUrl?: string
     formSubmitted?: boolean
     fields: Record<string, string>
+    returnCount?: number
   }>
   total?: number
   limit?: number

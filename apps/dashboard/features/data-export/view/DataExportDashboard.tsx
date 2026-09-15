@@ -273,7 +273,7 @@ export function DataExportDashboard({
 
   useEffect(() => {
     if (!isActive) return
-    if (embedded) {
+    if (embedded && !returningOnly) {
       if (isTabLoading) return
       setDashboardData(initialData)
       setPageOffset(initialData.offset)
@@ -373,7 +373,7 @@ export function DataExportDashboard({
     )
   }
 
-  const colCount = 10 + fieldColumns.length
+  const colCount = (returningOnly ? 11 : 10) + fieldColumns.length
   const projectLabel = dashboardData.brandName.trim() || "Project"
 
   return (
@@ -423,6 +423,9 @@ export function DataExportDashboard({
                   <th className={thClassName}>utm_id</th>
                   <th className={thClassName}>TrustedForm</th>
                   <th className={thClassName}>Form Submitted</th>
+                  {returningOnly ? (
+                    <th className={thClassName}>Returns</th>
+                  ) : null}
                   {fieldColumns.map((column) =>
                     column.kind === "age" ? (
                       <th key={`age-${column.dobKey}`} className={thClassName}>
@@ -503,6 +506,16 @@ export function DataExportDashboard({
                           {lead.formSubmitted ? "Yes" : "No"}
                         </span>
                       </td>
+                      {returningOnly ? (
+                        <td
+                          className={cn(
+                            tdClassName,
+                            "text-muted-foreground tabular-nums"
+                          )}
+                        >
+                          {lead.returnCount > 0 ? lead.returnCount : "—"}
+                        </td>
+                      ) : null}
                       {fieldColumns.map((column) =>
                         column.kind === "age" ? (
                           <td

@@ -31,6 +31,7 @@ function lead({
     utmS1: '',
     trustedFormUrl: '',
     formSubmitted,
+    returnCount: 0,
     fields,
   }
 }

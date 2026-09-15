@@ -77,6 +77,10 @@ export function mapDataExportLeadRow(
     formSubmitted: isLeadFormSubmittedFlag(
       raw.formSubmitted ?? raw.form_submitted
     ),
+    returnCount: (() => {
+      const value = Number(raw.returnCount ?? raw.return_count ?? 0)
+      return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
+    })(),
     fields,
   }
 }

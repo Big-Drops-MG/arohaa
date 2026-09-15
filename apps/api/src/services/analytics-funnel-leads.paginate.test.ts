@@ -18,6 +18,7 @@ function lead(sessionId: string): FunnelLeadRow {
     utmS1: '',
     trustedFormUrl: '',
     formSubmitted: false,
+    returnCount: 0,
     fields: {},
   }
 }

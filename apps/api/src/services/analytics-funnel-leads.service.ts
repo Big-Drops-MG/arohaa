@@ -48,6 +48,7 @@ export type FunnelLeadRow = {
   utmS1: string
   trustedFormUrl: string
   formSubmitted: boolean
+  returnCount: number
   fields: Record<string, string>
 }
 
@@ -76,6 +77,7 @@ type RawLeadSessionRow = {
   utm_source: string
   utm_id: string
   utm_s1: string
+  return_count?: number | string
 }
 
 const MAX_RAW_SESSIONS = 20_000
@@ -203,6 +205,11 @@ function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
   const submittedAt = isValidLeadTimestamp(row.submitted_at)
     ? row.submitted_at.trim()
     : null
+  const returnCountRaw = Number(row.return_count ?? 0)
+  const returnCount =
+    Number.isFinite(returnCountRaw) && returnCountRaw > 0
+      ? Math.floor(returnCountRaw)
+      : 0
   return {
     sessionId: row.session_id,
     macId: formatFingerprintAsMacId(row.fingerprint || ''),
@@ -215,6 +222,7 @@ function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
     utmS1: utm.utmS1,
     trustedFormUrl: pickTrustedFormUrl(rawFields),
     formSubmitted,
+    returnCount,
     fields: fieldsWithoutReserved(fields),
   }
 }
@@ -1517,23 +1525,42 @@ export async function getFunnelLeads({
   const returningJoin = returningOnly
     ? `
       INNER JOIN (
-        SELECT DISTINCT session_id
+        SELECT
+          session_id,
+          toUInt32(sum(is_return) OVER (PARTITION BY visitor_id)) AS return_count,
+          is_return
         FROM (
           SELECT
             session_id,
+            visitor_id,
             if(
-              min(created_at) OVER (
-                PARTITION BY coalesce(nullIf(user_id, ''), nullIf(fingerprint, ''), session_id)
-              ) < created_at - INTERVAL 1 DAY,
+              min(session_start) OVER (PARTITION BY visitor_id)
+                < session_end - INTERVAL 1 DAY,
               1,
               0
             ) AS is_return
-          FROM events_raw
-          WHERE workspace_id = {wid:UUID}
+          FROM (
+            SELECT
+              session_id,
+              coalesce(
+                nullIf(anyIf(user_id, user_id != ''), ''),
+                nullIf(anyIf(fingerprint, fingerprint != ''), ''),
+                session_id
+              ) AS visitor_id,
+              min(created_at) AS session_start,
+              max(created_at) AS session_end
+            FROM events_raw
+            WHERE workspace_id = {wid:UUID}
+            GROUP BY session_id
+          )
         )
         WHERE is_return = 1
       ) AS ret ON ret.session_id = l.session_id`
     : ''
+
+  const returnCountSelect = returningOnly
+    ? 'greatest(toUInt32(1), ret.return_count) AS return_count'
+    : 'toUInt32(0) AS return_count'
 
   const p = {
     wid: workspaceId,
@@ -1557,7 +1584,8 @@ export async function getFunnelLeads({
         z.zip_val AS zip_val,
         u.utm_source AS utm_source,
         u.utm_id AS utm_id,
-        u.utm_s1 AS utm_s1
+        u.utm_s1 AS utm_s1,
+        ${returnCountSelect}
       FROM (
         SELECT
           session_id,

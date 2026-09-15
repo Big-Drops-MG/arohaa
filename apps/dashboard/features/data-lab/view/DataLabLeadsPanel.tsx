@@ -54,7 +54,7 @@ export function DataLabLeadsPanel({
       projectId={projectId}
       isActive={isActive}
       isLoading={isLoading}
-      embedded={!isRetention}
+      embedded
       leadFilter={leadFilter}
       title={title ?? (isRetention ? "Retention" : "Captured leads")}
       onDataChange={onDataChange}
