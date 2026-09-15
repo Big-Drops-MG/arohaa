@@ -9,11 +9,23 @@ import {
   getBlockedUtmSets,
   isUtmBlocked,
 } from '../services/utm-block.service.js'
+import {
+  claimIngestEventId,
+  isValidEventId,
+  releaseIngestEventId,
+} from '../lib/ingest-idempotency.js'
 import { ingestBodyToEventRow, type IngestEventBody } from '../types/event.js'
 import { buildEnrichmentContext } from '../utils/enrichment.js'
 import { normalizeReferrer } from '../utils/referrer.js'
 
 const eventBodyProperties = {
+  event_id: {
+    type: 'string',
+    minLength: 8,
+    maxLength: 64,
+    pattern:
+      '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
+  },
   ev: {
     type: 'string',
     maxLength: 50,
@@ -128,6 +140,28 @@ async function ingestOne(
     }
   }
 
+  const eventId = body.event_id?.trim() ?? ''
+  if (eventId) {
+    if (!isValidEventId(eventId)) {
+      return { status: 'rejected', error: 'INVALID_EVENT_ID', code: 400 }
+    }
+    const claim = await claimIngestEventId(eventId)
+    if (claim === 'duplicate') {
+      request.log.info(
+        {
+          trace_id: traceId,
+          event: 'ingest_duplicate',
+          event_id: eventId,
+        },
+        'ingest duplicate event_id dropped',
+      )
+      return { status: 'dropped' }
+    }
+    if (claim === 'unavailable') {
+      return { status: 'unavailable', error: 'IDEMPOTENCY_UNAVAILABLE' }
+    }
+  }
+
   const originHeader = request.headers.origin
   const refererHeader = request.headers.referer ?? request.headers.referrer
   const landing = await reconcileLandingPageIngest({
@@ -141,6 +175,9 @@ async function ingestOne(
   })
 
   if (landing.outcome === 'reject') {
+    if (eventId) {
+      await releaseIngestEventId(eventId)
+    }
     request.log.warn(
       {
         trace_id: traceId,
@@ -206,6 +243,9 @@ async function ingestOne(
   try {
     await pushEvent(row)
   } catch (err) {
+    if (eventId) {
+      await releaseIngestEventId(eventId)
+    }
     request.log.error(
       { err, trace_id: traceId, event: 'ingest_redis_unavailable' },
       'ingest durable write failed',

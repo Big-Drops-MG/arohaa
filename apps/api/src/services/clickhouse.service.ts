@@ -5,6 +5,7 @@ import { chToDate } from '../lib/analytics-timezone.js'
 
 const CREATE_EVENTS_SQL = `
 CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_EVENTS_TABLE} (
+    event_id String DEFAULT '',
     event_name LowCardinality(String),
     workspace_id UUID,
     lp_public_id LowCardinality(String) DEFAULT '',
@@ -122,6 +123,10 @@ export async function ensureEventsTable(): Promise<void> {
   const ch = getClickHouseClient()
   await migrateLegacyEventsTable(ch)
   await ch.command({ query: CREATE_EVENTS_SQL })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS event_id String DEFAULT ''`,
+  })
   await ch.command({
     query:
       `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS lp_public_id LowCardinality(String) DEFAULT ''`,

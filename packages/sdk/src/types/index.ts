@@ -10,6 +10,7 @@ export interface SDKConfig {
 }
 
 export interface EventPayload {
+  event_id: string
   wid: string
   lp_id?: string
   uid: string

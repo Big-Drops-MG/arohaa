@@ -8,11 +8,14 @@ type LandingRowLite = {
   redirectHostname: string | null
   status: string
   verifiedAt: Date | null
+  lastSeenAt: Date | null
   publicId: string
   brandName: string
   sdkInstallStatus: string
   ownerUserId: string
 }
+
+const LANDING_TOUCH_THROTTLE_MS = 2 * 60 * 1000
 
 let sqlSingleton: ReturnType<typeof neon> | null = null
 
@@ -55,6 +58,12 @@ function refererAsUrl(refererRaw: string | undefined): string | undefined {
   }
 }
 
+function toMs(value: Date | string | null | undefined): number {
+  if (!value) return 0
+  const ms = value instanceof Date ? value.getTime() : new Date(value).getTime()
+  return Number.isFinite(ms) ? ms : 0
+}
+
 export async function reconcileLandingPageIngest(payload: {
   lpIdRaw: string | undefined
   wid: string
@@ -85,6 +94,7 @@ export async function reconcileLandingPageIngest(payload: {
             lp."redirectHostname" AS "redirectHostname",
             lp.status,
             lp."verifiedAt",
+            lp."lastSeenAt" AS "lastSeenAt",
             lp."publicId",
             lp."brandName",
             lp."sdkInstallStatus",
@@ -101,6 +111,7 @@ export async function reconcileLandingPageIngest(payload: {
             lp."redirectHostname" AS "redirectHostname",
             lp.status,
             lp."verifiedAt",
+            lp."lastSeenAt" AS "lastSeenAt",
             lp."publicId",
             lp."brandName",
             lp."sdkInstallStatus",
@@ -141,6 +152,16 @@ export async function reconcileLandingPageIngest(payload: {
   }
 
   const now = new Date()
+  const needsSdkFlip = row.sdkInstallStatus !== 'detected'
+  const needsStatusPromote = row.status !== 'verified' && row.status !== 'inactive'
+  const lastSeenMs = toMs(row.lastSeenAt)
+  const staleSeen =
+    lastSeenMs <= 0 || now.getTime() - lastSeenMs >= LANDING_TOUCH_THROTTLE_MS
+
+  if (!needsSdkFlip && !needsStatusPromote && !staleSeen) {
+    return { outcome: 'ok' }
+  }
+
   const nextVerifiedAt =
     row.verifiedAt != null ? new Date(row.verifiedAt) : now
   const nextStatus = row.status === 'inactive' ? 'inactive' : 'verified'

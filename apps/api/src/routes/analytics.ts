@@ -4,8 +4,9 @@ import {
   resolveInternalApiSecret,
   verifyInternalApiRequest,
 } from '../lib/internal-api-secret.js'
-import { verifyWorkspaceApiKeyForWorkspace } from '../lib/workspace-api-key-auth.js'
+import { verifyWorkspaceApiKeyForLandingPage } from '../lib/workspace-api-key-auth.js'
 import { guardFunnelLeadsRequest } from '../lib/funnel-leads-auth.js'
+import { WORKSPACE_API_KEY_SCOPE_ANALYTICS } from '@workspace/database'
 import {
   emptyAnalyticsFunnel,
   getAnalyticsFunnel,
@@ -243,9 +244,10 @@ async function guardAnalyticsRequest(
   }
 
   if (
-    await verifyWorkspaceApiKeyForWorkspace(
+    await verifyWorkspaceApiKeyForLandingPage(
       request.headers.authorization,
       workspaceId,
+      WORKSPACE_API_KEY_SCOPE_ANALYTICS,
     )
   ) {
     return true

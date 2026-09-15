@@ -6,6 +6,7 @@ import { sendAlertWebhook } from './alert-webhook.js';
 import { validateEvent, validateHeatmapEvent } from './processor/validator.js';
 import { anonymizeEvent } from './processor/pii.js';
 import { DbWriter } from './processor/dbWriter.js';
+import { startFailedEventsReplay } from './processor/dlq-replay.js';
 import { logger } from './logger.js';
 
 const LOCAL_REDIS_URL = 'redis://127.0.0.1:6379';
@@ -21,9 +22,7 @@ const PRIORITY_EVENT_NAMES = new Set([
   'zip_submit',
 ]);
 
-//
-// 1. Redis Connection Initialization
-//
+
 function resolveRedisUrl() {
   const candidates = [
     process.env.REDIS_URL,
@@ -47,7 +46,7 @@ const redis = new Redis(resolveRedisUrl(), {
   maxRetriesPerRequest: null,
   enableReadyCheck: true,
   retryStrategy(times) {
-    if (times > 3) return null; // stop retrying
+    if (times > 3) return null; 
     return Math.min(times * 50, 2000);
   }
 });
@@ -56,9 +55,7 @@ redis.on('error', (err) => {
   logger.error({ err }, 'redis connection error');
 });
 
-//
-// 2. ClickHouse Connection Initialization
-//
+
 function getClickHouseClient() {
   const url = process.env.CLICKHOUSE_URL?.trim();
   if (!url) throw new Error('CLICKHOUSE_URL is not configured.');
@@ -78,15 +75,14 @@ function getClickHouseClient() {
 let clickHouseClient = null;
 let dbWriter = null;
 
-//
-// 3. Worker State and Processing Logic
-//
+
 let isShuttingDown = false;
 let batch = [];
 let lastFlushTime = Date.now();
 
 let heatmapBatch = [];
 let lastHeatmapFlushTime = Date.now();
+let stopFailedEventsReplay = () => {};
 
 async function startQueueConsumption() {
   logger.info('starting queue consumption from analytics_queue');
@@ -176,6 +172,7 @@ async function shutdown(signal) {
   if (isShuttingDown) return; // Prevent double execution
   isShuttingDown = true;
   logger.info({ signal }, 'shutdown initiated');
+  stopFailedEventsReplay();
   
   try {
     if (batch.length > 0) {
@@ -241,10 +238,19 @@ async function start() {
     }
     logger.info('clickhouse connected');
 
+    try {
+      await clickHouseClient.command({
+        query: `ALTER TABLE events_raw ADD COLUMN IF NOT EXISTS event_id String DEFAULT ''`,
+      });
+    } catch (err) {
+      logger.warn({ err }, 'failed to ensure events_raw.event_id column');
+    }
+
     logger.info('worker ready');
     
     startQueueConsumption();
     startHeatmapConsumption();
+    stopFailedEventsReplay = startFailedEventsReplay(redis);
   } catch (err) {
     logger.error({ err }, 'worker startup failed');
     void sendAlertWebhook({

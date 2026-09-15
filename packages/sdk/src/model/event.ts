@@ -2,6 +2,7 @@ import type { EventPayload, MetricExtension } from "../types"
 import { getAttributionData } from "../utils/url"
 import { getConfig } from "./config"
 import { getIdentity } from "./identity"
+import { generateUUID } from "../utils/uuid"
 
 export function buildEvent(
   event: string,
@@ -13,6 +14,7 @@ export function buildEvent(
   const attribution = getAttributionData()
 
   return {
+    event_id: generateUUID(),
     wid: config.wid,
     ...(config.lpId.trim() ? { lp_id: config.lpId.trim() } : {}),
     uid: identity.uid,
