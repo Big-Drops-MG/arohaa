@@ -112,6 +112,7 @@ type IngestOneResult =
   | { status: 'accepted' }
   | { status: 'rejected'; error: string; code: number }
   | { status: 'dropped' }
+  | { status: 'unavailable'; error: string }
 
 async function ingestOne(
   body: IngestEventBody,
@@ -127,9 +128,13 @@ async function ingestOne(
     }
   }
 
+  const originHeader = request.headers.origin
+  const refererHeader = request.headers.referer ?? request.headers.referrer
   const landing = await reconcileLandingPageIngest({
     lpIdRaw: body.lp_id,
     wid: body.workspace_id ?? body.wid ?? '',
+    requestOrigin: typeof originHeader === 'string' ? originHeader : undefined,
+    requestReferer: typeof refererHeader === 'string' ? refererHeader : undefined,
     eventUrl: body.url,
     ev,
     props: body.props,
@@ -198,7 +203,16 @@ async function ingestOne(
     accuracyRadius: ctx.geo.accuracyRadius,
   })
 
-  pushEvent(row)
+  try {
+    await pushEvent(row)
+  } catch (err) {
+    request.log.error(
+      { err, trace_id: traceId, event: 'ingest_redis_unavailable' },
+      'ingest durable write failed',
+    )
+    return { status: 'unavailable', error: 'QUEUE_UNAVAILABLE' }
+  }
+
   return { status: 'accepted' }
 }
 
@@ -228,6 +242,14 @@ export async function ingestRoutes(server: FastifyInstance) {
         })
       }
 
+      if (result.status === 'unavailable') {
+        return reply.code(503).send({
+          status: 'unavailable',
+          trace_id: request.id,
+          reason: result.error,
+        })
+      }
+
       return reply.code(202).send({ status: 'accepted', trace_id: request.id })
     },
   )
@@ -242,6 +264,7 @@ export async function ingestRoutes(server: FastifyInstance) {
       const events = request.body.events
       let accepted = 0
       const rejected: Array<{ index: number; error: string }> = []
+      let unavailable = 0
 
       for (let i = 0; i < events.length; i++) {
         const body = events[i]!
@@ -253,7 +276,22 @@ export async function ingestRoutes(server: FastifyInstance) {
           continue
         }
 
+        if (result.status === 'unavailable') {
+          unavailable += 1
+          rejected.push({ index: i, error: result.error })
+          continue
+        }
+
         rejected.push({ index: i, error: result.error })
+      }
+
+      if (unavailable > 0 && accepted === 0) {
+        return reply.code(503).send({
+          status: 'unavailable',
+          trace_id: request.id,
+          accepted,
+          rejected,
+        })
       }
 
       return reply.code(202).send({

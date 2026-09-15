@@ -21,7 +21,7 @@ import {
   resolveIngestApiBase,
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
-import { canAccessDataExport } from "@/lib/server/data-export-acl"
+import { canAccessLeadsForLandingPage } from "@/lib/server/data-export-acl"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
@@ -150,7 +150,7 @@ export async function loadDataExportDashboardData({
 
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
-  if (!(await canAccessDataExport(actor))) {
+  if (!(await canAccessLeadsForLandingPage(actor, landingPagePublicId))) {
     notFound()
   }
 
@@ -245,7 +245,7 @@ export async function loadDataExportDashboardDataForApi(
   if (!actor) {
     return { ok: false, status: 401, error: "Unauthorized" }
   }
-  if (!(await canAccessDataExport(actor))) {
+  if (!(await canAccessLeadsForLandingPage(actor, landingPagePublicId))) {
     return { ok: false, status: 403, error: "Forbidden" }
   }
 

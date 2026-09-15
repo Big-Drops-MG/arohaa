@@ -28,20 +28,47 @@ function getSql(): ReturnType<typeof neon> | null {
 }
 
 type ReconcileResult =
-  | { outcome: 'skip' }
   | { outcome: 'reject'; reason: string }
   | { outcome: 'ok' }
+
+function requestOriginAsUrl(originRaw: string | undefined): string | undefined {
+  const origin = originRaw?.trim()
+  if (!origin) return undefined
+  try {
+    const u = new URL(origin)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return undefined
+    return u.origin
+  } catch {
+    return undefined
+  }
+}
+
+function refererAsUrl(refererRaw: string | undefined): string | undefined {
+  const referer = refererRaw?.trim()
+  if (!referer) return undefined
+  try {
+    const u = new URL(referer)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return undefined
+    return u.origin
+  } catch {
+    return undefined
+  }
+}
 
 export async function reconcileLandingPageIngest(payload: {
   lpIdRaw: string | undefined
   wid: string
+  requestOrigin?: string | undefined
+  requestReferer?: string | undefined
   eventUrl?: string | undefined
   ev?: string
   props?: Record<string, unknown>
 }): Promise<ReconcileResult> {
-  const raw = payload.lpIdRaw?.trim() ?? ''
-  if (!raw) {
-    return { outcome: 'skip' }
+  const lpId = payload.lpIdRaw?.trim() ?? ''
+  const wid = payload.wid?.trim() ?? ''
+
+  if (!lpId && !wid) {
+    return { outcome: 'reject', reason: 'MISSING_LANDING_PAGE_CONTEXT' }
   }
 
   const sql = getSql()
@@ -49,22 +76,42 @@ export async function reconcileLandingPageIngest(payload: {
     return { outcome: 'reject', reason: 'DATABASE_NOT_CONFIGURED' }
   }
 
-  const rows = (await sql`
-    SELECT
-      lp.id,
-      lp.hostname,
-      lp."redirectHostname" AS "redirectHostname",
-      lp.status,
-      lp."verifiedAt",
-      lp."publicId",
-      lp."brandName",
-      lp."sdkInstallStatus",
-      w."ownerUserId"
-    FROM landing_page lp
-    INNER JOIN workspace w ON w.id = lp."workspaceId"
-    WHERE lp."publicId" = ${raw} AND lp."deletedAt" IS NULL
-    LIMIT 1
-  `) as LandingRowLite[]
+  const rows = (
+    lpId
+      ? await sql`
+          SELECT
+            lp.id,
+            lp.hostname,
+            lp."redirectHostname" AS "redirectHostname",
+            lp.status,
+            lp."verifiedAt",
+            lp."publicId",
+            lp."brandName",
+            lp."sdkInstallStatus",
+            w."ownerUserId"
+          FROM landing_page lp
+          INNER JOIN workspace w ON w.id = lp."workspaceId"
+          WHERE lp."publicId" = ${lpId} AND lp."deletedAt" IS NULL
+          LIMIT 1
+        `
+      : await sql`
+          SELECT
+            lp.id,
+            lp.hostname,
+            lp."redirectHostname" AS "redirectHostname",
+            lp.status,
+            lp."verifiedAt",
+            lp."publicId",
+            lp."brandName",
+            lp."sdkInstallStatus",
+            w."ownerUserId"
+          FROM landing_page lp
+          INNER JOIN workspace w ON w.id = lp."workspaceId"
+          WHERE lp.id = ${wid} AND lp."deletedAt" IS NULL
+          LIMIT 1
+        `
+  ) as LandingRowLite[]
+
   const row = rows[0]
   if (!row) {
     return { outcome: 'reject', reason: 'UNKNOWN_LANDING_PAGE' }
@@ -74,13 +121,18 @@ export async function reconcileLandingPageIngest(payload: {
     return { outcome: 'reject', reason: 'LANDING_PAGE_INACTIVE' }
   }
 
-  if (row.id !== payload.wid) {
+  if (wid && row.id !== wid) {
     return { outcome: 'reject', reason: 'WID_MISMATCH' }
   }
 
+  const hostnameCandidate =
+    requestOriginAsUrl(payload.requestOrigin) ??
+    refererAsUrl(payload.requestReferer)
+
   if (
+    !hostnameCandidate ||
     !ingestHostnameMatchesLanding(
-      payload.eventUrl,
+      hostnameCandidate,
       row.hostname,
       row.redirectHostname,
     )

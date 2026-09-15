@@ -20,3 +20,13 @@ export function sessionNeedsTwoFactorChallenge(
   if (!enabled) return false
   return !sessionHasVerifiedTwoFactor(session)
 }
+
+export function sessionNeedsTwoFactorEnrollment(
+  session: Session | null | undefined
+): boolean {
+  if (!session?.user) return false
+  return (
+    (session.user as { isTwoFactorEnabled?: boolean }).isTwoFactorEnabled !==
+    true
+  )
+}

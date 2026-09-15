@@ -40,9 +40,6 @@ let logger: FastifyBaseLogger | undefined
 let flushIntervalMs = FLUSH_INTERVAL_MS
 let flushSizeThreshold = FLUSH_SIZE_THRESHOLD
 
-let bufferFullReportedAt = 0
-const BUFFER_FULL_REPORT_COOLDOWN_MS = 60_000
-
 function pushHeatmap(row: EventRow): void {
   const mapped = eventRowToHeatmapRow(row)
   if (!mapped) {
@@ -79,8 +76,8 @@ function pushHeatmap(row: EventRow): void {
   }
 }
 
-function pushPriorityEvent(row: EventRow): void {
-  void redis
+function pushPriorityEvent(row: EventRow): Promise<void> {
+  return redis
     .lpush('analytics_queue', JSON.stringify(row))
     .then(() => {
       logger?.info(
@@ -100,59 +97,69 @@ function pushPriorityEvent(row: EventRow): void {
       if (buffer.length >= flushSizeThreshold) {
         void scheduleFlush('priority_fallback')
       }
+      throw err
     })
 }
 
-export function pushEvent(row: EventRow): void {
-  if (shouldRouteToHeatmapQueue(row)) {
+async function pushHeatmapDurable(row: EventRow): Promise<void> {
+  const mapped = eventRowToHeatmapRow(row)
+  if (!mapped) {
+    logger?.warn(
+      { event_name: row.event_name, traceId: row.trace_id },
+      'heatmap event could not be mapped; dropping',
+    )
+    return
+  }
+
+  try {
+    await redis.lpush('heatmap_queue', JSON.stringify(mapped))
+  } catch (err) {
+    logger?.error(
+      { err, event_name: row.event_name, traceId: row.trace_id },
+      'heatmap redis push failed; falling back to buffer',
+    )
+    Sentry.captureException(err, {
+      tags: { component: 'event-buffer', reason: 'heatmap_push' },
+    })
     pushHeatmap(row)
+    throw err
+  }
+}
+
+async function pushAnalyticsDurable(row: EventRow): Promise<void> {
+  try {
+    await redis.lpush('analytics_queue', JSON.stringify(row))
+  } catch (err) {
+    logger?.error(
+      { err, event_name: row.event_name, traceId: row.trace_id },
+      'analytics redis push failed; falling back to buffer',
+    )
+    Sentry.captureException(err, {
+      tags: { component: 'event-buffer', reason: 'analytics_push' },
+    })
+    if (buffer.length < MAX_BUFFER_SIZE) {
+      buffer.push(row)
+      if (buffer.length >= flushSizeThreshold) {
+        void scheduleFlush('durable_fallback')
+      }
+    }
+    throw err
+  }
+}
+
+
+export async function pushEvent(row: EventRow): Promise<void> {
+  if (shouldRouteToHeatmapQueue(row)) {
+    await pushHeatmapDurable(row)
     if (isHeatmapOnlyEvent(row)) return
   }
 
   if (PRIORITY_EVENT_NAMES.has(row.event_name)) {
-    pushPriorityEvent(row)
+    await pushPriorityEvent(row)
     return
   }
 
-  if (buffer.length >= MAX_BUFFER_SIZE) {
-    logger?.warn(
-      { bufferSize: buffer.length, traceId: row.trace_id },
-      'event buffer is full; dropping event',
-    )
-
-    const now = Date.now()
-    if (now - bufferFullReportedAt > BUFFER_FULL_REPORT_COOLDOWN_MS) {
-      bufferFullReportedAt = now
-      Sentry.captureMessage('event buffer is full; dropping events', {
-        level: 'error',
-        tags: { component: 'event-buffer' },
-        contexts: {
-          buffer: {
-            size: buffer.length,
-            max: MAX_BUFFER_SIZE,
-          },
-        },
-      })
-    }
-
-    void redis
-      .lpush(
-        'failed_events',
-        JSON.stringify({
-          reason: 'api_buffer_full',
-          payload: row,
-          timestamp: Date.now(),
-        }),
-      )
-      .catch(() => {})
-    return
-  }
-
-  buffer.push(row)
-
-  if (buffer.length >= flushSizeThreshold) {
-    void scheduleFlush('size_threshold')
-  }
+  await pushAnalyticsDurable(row)
 }
 
 export function getBufferSize(): number {

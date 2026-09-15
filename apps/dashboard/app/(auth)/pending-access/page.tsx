@@ -4,7 +4,10 @@ import { isApprovedAccess } from "@/lib/server/access-status"
 import { pageMetadata } from "@/lib/site-metadata"
 import { db, normalizeUserEmail, whereUserEmail } from "@workspace/database"
 import { redirect } from "next/navigation"
-import { sessionNeedsTwoFactorChallenge } from "@/lib/server/session-2fa"
+import {
+  sessionNeedsTwoFactorChallenge,
+  sessionNeedsTwoFactorEnrollment,
+} from "@/lib/server/session-2fa"
 
 export const metadata = pageMetadata("Access Pending")
 
@@ -13,6 +16,10 @@ export default async function PendingAccessRoutePage() {
   const email = session?.user?.email
   if (!email) {
     redirect("/login")
+  }
+
+  if (sessionNeedsTwoFactorEnrollment(session)) {
+    redirect("/authenticate")
   }
 
   if (sessionNeedsTwoFactorChallenge(session)) {
@@ -25,6 +32,10 @@ export default async function PendingAccessRoutePage() {
 
   if (!user) {
     redirect("/login")
+  }
+
+  if (!user.isTwoFactorEnabled) {
+    redirect("/authenticate")
   }
 
   if (!user.firstName?.trim() || !user.lastName?.trim() || !user.role?.trim()) {

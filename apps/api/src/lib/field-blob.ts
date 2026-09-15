@@ -96,6 +96,18 @@ export function stripPhoneFields(
   return out
 }
 
+function coerceFieldMap(value: unknown): Record<string, string> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (k === 'fields' || k === OPAQUE_PROP_KEY) continue
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      out[k] = String(v)
+    }
+  }
+  return out
+}
+
 export function materializeOpaqueProps(
   props: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
@@ -113,6 +125,48 @@ export function materializeOpaqueProps(
     if (isPhoneFieldKey(key)) {
       delete next[key]
     }
+  }
+  return next
+}
+
+
+export function sealPropsForStorage(
+  props: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...(props ?? {}) }
+  const existingBlob =
+    typeof next[OPAQUE_PROP_KEY] === 'string'
+      ? (next[OPAQUE_PROP_KEY] as string)
+      : ''
+  const fromBlob = existingBlob ? decryptFieldBlob(existingBlob) : null
+  const fromFields = coerceFieldMap(next.fields)
+
+  delete next[OPAQUE_PROP_KEY]
+  delete next.fields
+
+  for (const key of Object.keys(next)) {
+    if (isPhoneFieldKey(key)) {
+      delete next[key]
+    }
+  }
+
+  const merged: Record<string, string> = {
+    ...(fromBlob ?? {}),
+    ...(fromFields ?? {}),
+  }
+  const stripped = stripPhoneFields(merged)
+  if (Object.keys(stripped).length === 0) {
+    if (existingBlob && !fromBlob && !fromFields) {
+      next[OPAQUE_PROP_KEY] = existingBlob
+    }
+    return next
+  }
+
+  const sealed = encryptFieldBlob(stripped)
+  if (sealed) {
+    next[OPAQUE_PROP_KEY] = sealed
+  } else if (existingBlob && !fromFields) {
+    next[OPAQUE_PROP_KEY] = existingBlob
   }
   return next
 }

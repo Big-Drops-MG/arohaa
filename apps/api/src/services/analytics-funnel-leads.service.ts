@@ -18,6 +18,7 @@ import {
   pickLeadZip,
   pickTrustedFormUrl,
 } from '../lib/lead-fields.js'
+import { decryptFieldBlob } from '../lib/field-blob.js'
 import {
   normalizeAnalyticsUtmFilter,
   type AnalyticsUtmFilter,
@@ -85,6 +86,13 @@ function extractRawFieldMap(raw: string): Record<string, string> {
     const parsed = JSON.parse(raw) as unknown
     if (!parsed || typeof parsed !== 'object') return {}
     const props = parsed as Record<string, unknown>
+
+    const blob = props._k
+    if (typeof blob === 'string' && blob.length > 0) {
+      const decrypted = decryptFieldBlob(blob)
+      if (decrypted) return decrypted
+    }
+
     const source =
       props.fields && typeof props.fields === 'object' && !Array.isArray(props.fields)
         ? (props.fields as Record<string, unknown>)
@@ -1499,7 +1507,10 @@ export async function getFunnelLeads({
   const ch = getClickHouseClient()
   const where = `${rangeFilter()}
     AND event_name IN ('form_success', 'form_step_complete', 'form_step_view')
-    AND positionCaseInsensitive(properties, '"fields"') > 0`
+    AND (
+      positionCaseInsensitive(properties, '"fields"') > 0
+      OR positionCaseInsensitive(properties, '"_k"') > 0
+    )`
 
   const p = {
     wid: workspaceId,

@@ -11,7 +11,7 @@ import {
 
 export const GET = route(
   {
-    permission: "data_export.read",
+    permission: "landing_pages.read",
     actor: "read",
     tab: "data-lab",
     section: "leads",

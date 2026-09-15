@@ -125,11 +125,9 @@ export async function userCanExportLeadsForLandingPage(params: {
   })
   if (!user || !isApprovedAccess(user.accessStatus)) return false
 
-  if (!(await actorCan(user, 'data_export.read'))) return false
-
   if (user.teamKind === 'external') {
     return externalCanAccessDataLabLeads(user.id, landingPage.publicId)
   }
 
-  return true
+  return actorCan(user, 'data_export.read')
 }

@@ -72,7 +72,23 @@ export const authConfig = {
         return Response.redirect(new URL("/dashboard", nextUrl))
       }
 
-      if (isLoggedIn && !isAuthenticate && !isOnboarding && !isPendingAccess) {
+      if (isOnboarding || isPendingAccess) {
+        if (!isLoggedIn) return false
+
+        if (!hasTwoFactorEnabled(auth.user)) {
+          return Response.redirect(new URL("/authenticate", nextUrl))
+        }
+
+        if (!hasTwoFactorAt(auth)) {
+          return Response.redirect(
+            new URL("/login?requiresTwoFactor=true", nextUrl)
+          )
+        }
+
+        return true
+      }
+
+      if (isLoggedIn && !isAuthenticate) {
         return Response.redirect(new URL("/dashboard", nextUrl))
       }
 
