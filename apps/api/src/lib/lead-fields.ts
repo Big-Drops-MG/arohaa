@@ -8,18 +8,114 @@ const PEELABLE_BASE_RE =
 const EMAIL_KEY_RE = /^(email|e-mail|email_address|emailaddress)$/i
 const ZIP_KEY_RE = /^(zip|zipcode|zip_code|postal)$/i
 
-/** Alternate form names for first name (EN + ES). Canonical key: first_name */
-const FIRST_NAME_ALIAS_RE =
-  /^(first[_-]?name|fname|given[_-]?name|nombre_de_pila|nombredepila)$/i
 
-/** Alternate form names for last name (EN + ES). Canonical key: last_name */
-const LAST_NAME_ALIAS_RE =
-  /^(last[_-]?name|lname|surname|family[_-]?name|apellido[s]?)$/i
+const FIRST_NAME_KEYS = new Set([
+  // EN
+  'first_name',
+  'firstname',
+  'fname',
+  'given_name',
+  'givenname',
+  'forename',
+  // ES
+  'nombre_de_pila',
+  'nombredepila',
+  // PT
+  'primeiro_nome',
+  'primeironome',
+  // FR
+  'prenom',
+  'prénom',
+  // DE
+  'vorname',
+  // VI
+  'tên',
+  'ho_ten',
+  // RU
+  'имя',
+  'imya',
+  // AR
+  'الاسم_الأول',
+  'الاسم_الاول',
+  'الاسم_الاوّل',
+  'الاسمالأول',
+  // KO
+  '이름',
+  // JA / ZH given name
+  '名',
+  'めい',
+  '名字',
+])
+
+const LAST_NAME_KEYS = new Set([
+  // EN
+  'last_name',
+  'lastname',
+  'lname',
+  'surname',
+  'family_name',
+  'familyname',
+  // ES
+  'apellido',
+  'apellidos',
+  // PT
+  'sobrenome',
+  'apelido',
+  // FR
+  'nom_de_famille',
+  // DE
+  'nachname',
+  'familienname',
+  // VI
+  'họ',
+  // RU
+  'фамилия',
+  'familiya',
+  // AR
+  'اسم_العائلة',
+  'اسمالعائلة',
+  'اللقب',
+  // KO
+  '성',
+  '성씨',
+  // JA / ZH family name
+  '姓',
+  'せい',
+  '姓氏',
+])
 
 const NOISE_FIELD_RE =
-  /^(input|select|textarea|search|xxtrustedform\w*|trustedform\w*|jornaya_lead_id|leadid_token|universal_leadid|consent-confirmation-certificate-id)$/i
+  /^(input|select|textarea|search|receipt|xxtrustedform\w*|trustedform\w*|jornaya_lead_id|leadid_token|universal_leadid|consent-confirmation-certificate-id)$/i
 
 const DOB_PART_RE = /^dob-0-(month|day|year)$/i
+
+export function normalizeFieldKey(key: string): string {
+  let out = key
+    .normalize('NFKC')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s\-./]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+  out = out.replace(/^(best|top|preferred)_/, '')
+  return out
+}
+
+function isFirstNameKey(key: string): boolean {
+  const n = normalizeFieldKey(key)
+  if (FIRST_NAME_KEYS.has(n)) return true
+  return /^(primeiro_?nome|nombre_?de_?pila|given_?name|first_?name|vorname|prenom|prénom)$/i.test(
+    n,
+  )
+}
+
+function isLastNameKey(key: string): boolean {
+  const n = normalizeFieldKey(key)
+  if (LAST_NAME_KEYS.has(n)) return true
+  return /^(sobre_?nome|family_?name|last_?name|nachname|nom_?de_?famille|apellido[s]?)$/i.test(
+    n,
+  )
+}
 
 function isDigestValue(value: string): boolean {
   return /^[a-f0-9]{64}$/i.test(value)
@@ -45,10 +141,7 @@ function peelRadioKey(
   return null
 }
 
-/**
- * Map translated / alternate name inputs onto first_name and last_name, then
- * drop the aliases so they do not appear as extra Leads-table columns.
- */
+
 function canonicalizeNameFields(fields: Record<string, string>): void {
   let firstName = fields.first_name?.trim() || ''
   let lastName = fields.last_name?.trim() || ''
@@ -57,15 +150,15 @@ function canonicalizeNameFields(fields: Record<string, string>): void {
   for (const [key, value] of Object.entries(fields)) {
     const trimmed = value.trim()
     if (!trimmed) continue
-    const lower = key.toLowerCase()
+    if (/^first_name$/i.test(key) || /^last_name$/i.test(key)) continue
 
-    if (FIRST_NAME_ALIAS_RE.test(key) && lower !== 'first_name') {
+    if (isFirstNameKey(key)) {
       if (!firstName) firstName = trimmed
       aliasKeys.push(key)
       continue
     }
 
-    if (LAST_NAME_ALIAS_RE.test(key) && lower !== 'last_name') {
+    if (isLastNameKey(key)) {
       if (!lastName) lastName = trimmed
       aliasKeys.push(key)
     }
