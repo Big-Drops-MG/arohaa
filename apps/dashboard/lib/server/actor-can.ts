@@ -5,6 +5,7 @@ import {
   permissionEnum,
   rolePermissions,
   SUPERADMIN_ROLE_KEY,
+  CEO_ROLE_KEY,
   VIEWER_ROLE_KEY,
   MEMBER_ROLE_KEY,
   type Permission,
@@ -80,6 +81,19 @@ export async function isSuperadmin(actor: Actor): Promise<boolean> {
   if (!actor.roleId) return false
   const role = await getRoleById(actor.roleId)
   return role?.key === SUPERADMIN_ROLE_KEY
+}
+
+export async function canRemoveInternalTeamMembers(
+  actor: Actor & {
+    accessStatus: string | null
+    teamKind: string | null
+  }
+): Promise<boolean> {
+  if (!isApprovedAccess(actor.accessStatus)) return false
+  if (isExternalTeamKind(actor.teamKind)) return false
+  if (!actor.roleId) return false
+  const role = await getRoleById(actor.roleId)
+  return role?.key === SUPERADMIN_ROLE_KEY || role?.key === CEO_ROLE_KEY
 }
 
 export async function canManageExternalTeam(

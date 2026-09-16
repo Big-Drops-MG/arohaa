@@ -36,4 +36,5 @@ export type TeamDashboardData = {
   canManageAccessLevels: boolean
   canViewMemberLogs: boolean
   canManageExternalMembers: boolean
+  canRemoveInternalMembers: boolean
 }

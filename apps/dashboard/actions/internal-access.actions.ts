@@ -1,19 +1,27 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import {
   db,
   users,
+  userActivityLogs,
   VIEWER_ROLE_KEY,
   MEMBER_ROLE_KEY,
+  SUPERADMIN_ROLE_KEY,
 } from "@workspace/database"
 import {
   type InternalAccessLevel,
   parseInternalAccessLevel,
 } from "@/features/team/model/access-level"
 import { isExternalTeamKind } from "@/features/team/model/external-privileges"
-import { actorCan, getRoleById } from "@/lib/server/actor-can"
+import {
+  actorCan,
+  canRemoveInternalTeamMembers,
+  getRoleById,
+  isSuperadmin,
+  type DbQueryClient,
+} from "@/lib/server/actor-can"
 import { isApprovedAccess } from "@/lib/server/access-status"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { assignRole } from "@/lib/server/role-management"
@@ -21,6 +29,10 @@ import {
   clientIpFromNextHeaders,
   userAgentFromHeaders,
 } from "@/lib/server/request-client-meta"
+import {
+  resolveInternalOwnershipRecipient,
+  transferOwnedAssetsBeforeUserDelete,
+} from "@/lib/server/transfer-ownership-on-user-remove"
 import { writeUserActivityLog } from "@/lib/server/user-activity-log"
 import { headers } from "next/headers"
 
@@ -86,6 +98,135 @@ export async function updateInternalMemberAccessLevel(input: {
       roleKey: targetRoleKey,
     },
   })
+
+  revalidatePath("/dashboard/team")
+  return { success: true }
+}
+
+export async function removeInternalTeamMember(
+  userId: string
+): Promise<{ error?: string; success?: true }> {
+  const actor = await requireLandingPageActor()
+  if (!actor || !(await canRemoveInternalTeamMembers(actor))) {
+    return { error: "Unauthorized." }
+  }
+
+  const targetId = typeof userId === "string" ? userId.trim() : ""
+  if (!targetId) return { error: "Invalid request." }
+  if (targetId === actor.id) {
+    return { error: "You cannot remove your own account." }
+  }
+
+  const target = await db.query.users.findFirst({
+    where: eq(users.id, targetId),
+  })
+  if (!target || isExternalTeamKind(target.teamKind)) {
+    return { error: "Internal member not found." }
+  }
+  if (!isApprovedAccess(target.accessStatus)) {
+    return { error: "Internal member not found." }
+  }
+
+  const targetRole = target.roleId ? await getRoleById(target.roleId) : null
+  const callerIsSuperadmin = await isSuperadmin(actor)
+  if (targetRole?.key === SUPERADMIN_ROLE_KEY && !callerIsSuperadmin) {
+    return { error: "Only a superadmin can remove a superadmin." }
+  }
+
+  const ownershipRecipientId = await resolveInternalOwnershipRecipient(
+    actor.id,
+    targetId
+  )
+  if (!ownershipRecipientId) {
+    return {
+      error:
+        "No superadmin or CEO is available to receive this member's projects.",
+    }
+  }
+
+  const headerStore = await headers()
+  const ipAddress = await clientIpFromNextHeaders()
+  const userAgent = userAgentFromHeaders(headerStore)
+
+  type RemoveTxResult = { error: string } | { success: true }
+
+  let txResult: RemoveTxResult
+  try {
+    txResult = await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext('superadmin_membership'))`
+      )
+
+      const [locked] = await tx
+        .select({
+          id: users.id,
+          email: users.email,
+          roleId: users.roleId,
+          accessStatus: users.accessStatus,
+          teamKind: users.teamKind,
+        })
+        .from(users)
+        .where(eq(users.id, targetId))
+        .for("update")
+
+      if (
+        !locked ||
+        isExternalTeamKind(locked.teamKind) ||
+        !isApprovedAccess(locked.accessStatus)
+      ) {
+        return { error: "Internal member not found." } satisfies RemoveTxResult
+      }
+
+      const lockedRole = locked.roleId
+        ? await getRoleById(locked.roleId, tx as DbQueryClient)
+        : null
+
+      if (lockedRole?.key === SUPERADMIN_ROLE_KEY && !callerIsSuperadmin) {
+        return {
+          error: "Only a superadmin can remove a superadmin.",
+        } satisfies RemoveTxResult
+      }
+
+      const transfer = await transferOwnedAssetsBeforeUserDelete({
+        tx,
+        fromUserId: targetId,
+        toUserId: ownershipRecipientId,
+      })
+
+      await tx.insert(userActivityLogs).values({
+        id: crypto.randomUUID(),
+        actorUserId: actor.id,
+        eventType: "action",
+        summary: `Removed internal member ${locked.email ?? targetId}`,
+        path: "/dashboard/team",
+        targetLabel: locked.email ?? targetId,
+        ipAddress,
+        userAgent,
+        metadata: {
+          targetUserId: targetId,
+          beforeRoleKey: lockedRole?.key ?? null,
+          ownershipRecipientId,
+          recipientWorkspaceId: transfer.recipientWorkspaceId,
+          transferredLandingPages: transfer.transferredLandingPages,
+          hardDelete: true,
+        },
+      })
+
+      await tx.delete(users).where(eq(users.id, targetId))
+
+      return { success: true } satisfies RemoveTxResult
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (message.includes("At least one superadmin required")) {
+      return { error: "Cannot remove the last superadmin." }
+    }
+    throw err
+  }
+
+  if ("error" in txResult) {
+    return { error: txResult.error }
+  }
 
   revalidatePath("/dashboard/team")
   return { success: true }

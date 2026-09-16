@@ -11,6 +11,7 @@ import { listPendingAccessRequests } from "@/lib/server/access-requests"
 import {
   actorCan,
   canManageExternalTeam,
+  canRemoveInternalTeamMembers,
   canWriteLandingPages,
 } from "@/lib/server/actor-can"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
@@ -74,6 +75,7 @@ export async function loadTeamDashboardData(): Promise<TeamDashboardData> {
     canAssignRoles,
     canReadAuditLogs,
     canManageExternalMembers,
+    canRemoveInternalMembers,
     actorCanWrite,
   ] = await Promise.all([
     db.query.users.findMany({
@@ -88,6 +90,7 @@ export async function loadTeamDashboardData(): Promise<TeamDashboardData> {
     actorCan(actor, "team.assign_roles"),
     actorCan(actor, "audit_logs.read"),
     canManageExternalTeam(actor),
+    canRemoveInternalTeamMembers(actor),
     canWriteLandingPages(actor),
   ])
 
@@ -125,5 +128,6 @@ export async function loadTeamDashboardData(): Promise<TeamDashboardData> {
     canManageAccessLevels: canAssignRoles && isInternalWriter,
     canViewMemberLogs: canReadAuditLogs,
     canManageExternalMembers,
+    canRemoveInternalMembers,
   }
 }

@@ -47,5 +47,6 @@ export const rolePermissions = pgTable(
 );
 
 export const SUPERADMIN_ROLE_KEY = 'superadmin' as const;
+export const CEO_ROLE_KEY = 'ceo' as const;
 export const VIEWER_ROLE_KEY = 'viewer' as const;
 export const MEMBER_ROLE_KEY = 'member' as const;

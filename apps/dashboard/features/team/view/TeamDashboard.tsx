@@ -43,7 +43,10 @@ import {
   acceptAccessRequest,
   rejectAccessRequest,
 } from "@/actions/access-request.actions"
-import { updateInternalMemberAccessLevel } from "@/actions/internal-access.actions"
+import {
+  updateInternalMemberAccessLevel,
+  removeInternalTeamMember,
+} from "@/actions/internal-access.actions"
 import { removeExternalTeamMember } from "@/actions/team-member.actions"
 import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
 import { overviewSelectTriggerClassName } from "@/features/overview/view/overview-select-styles"
@@ -236,7 +239,7 @@ function MemberList({
                     </span>
                   </Button>
                 ) : null}
-                {onRemoveMember ? (
+                {onRemoveMember && !member.isCurrentUser ? (
                   <Button
                     type="button"
                     variant="ghost"
@@ -383,6 +386,7 @@ export function TeamDashboard({ data }: TeamDashboardProps) {
   const canManageAccessLevels = data.canManageAccessLevels
   const canViewMemberLogs = data.canViewMemberLogs
   const canManageExternal = data.canManageExternalMembers
+  const canRemoveInternal = data.canRemoveInternalMembers
 
   const internalMembers = useMemo(
     () => data.members.filter((member) => member.kind === "internal"),
@@ -453,7 +457,10 @@ export function TeamDashboard({ data }: TeamDashboardProps) {
     setRemoveError(null)
     setRemovingMemberId(member.id)
     startTransition(async () => {
-      const result = await removeExternalTeamMember(member.id)
+      const result =
+        member.kind === "internal"
+          ? await removeInternalTeamMember(member.id)
+          : await removeExternalTeamMember(member.id)
       setRemovingMemberId(null)
       if (result.error) {
         setRemoveError(result.error)
@@ -518,6 +525,15 @@ export function TeamDashboard({ data }: TeamDashboardProps) {
                 canViewMemberLogs={canViewMemberLogs}
                 accessLevelUpdatingId={accessLevelUpdatingId}
                 onAccessLevelChange={handleAccessLevelChange}
+                onRemoveMember={
+                  canRemoveInternal
+                    ? (member) => {
+                        if (member.isCurrentUser) return
+                        setRemoveConfirmMember(member)
+                      }
+                    : undefined
+                }
+                removingMemberId={removingMemberId}
               />
             </SettingsSectionCard>
           ) : null}
@@ -635,10 +651,16 @@ export function TeamDashboard({ data }: TeamDashboardProps) {
       >
         <DialogContent className="max-w-md gap-4">
           <DialogHeader>
-            <DialogTitle>Remove external member</DialogTitle>
+            <DialogTitle>
+              {removeConfirmMember?.kind === "internal"
+                ? "Remove internal member"
+                : "Remove external member"}
+            </DialogTitle>
             <DialogDescription>
               {removeConfirmMember
-                ? `Remove ${removeConfirmMember.name}? Their account will be permanently deleted and they will lose dashboard access immediately.`
+                ? removeConfirmMember.kind === "internal"
+                  ? `Remove ${removeConfirmMember.name}? Their account will be permanently deleted. Any landing pages they own will transfer to a superadmin or CEO.`
+                  : `Remove ${removeConfirmMember.name}? Their account will be permanently deleted and they will lose dashboard access immediately.`
                 : "This member will lose dashboard access."}
             </DialogDescription>
           </DialogHeader>
