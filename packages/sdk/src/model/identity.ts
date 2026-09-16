@@ -130,3 +130,7 @@ export function getIdentity(): Identity {
 
   return cachedIdentity
 }
+
+export function __resetIdentityForTests(): void {
+  cachedIdentity = null
+}

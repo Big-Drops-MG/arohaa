@@ -12,7 +12,7 @@ type BlockedUtmResponse = {
 
 type StoredUtmParamKey = "utm_source" | "utm_s1"
 
-const UTM_BLOCK_FETCH_TIMEOUT_MS = 2_500
+export const UTM_BLOCK_FETCH_TIMEOUT_MS = 2_500
 
 function sanitizeUtmParamValue(key: StoredUtmParamKey, value: string): string {
   const trimmed = value.trim()
