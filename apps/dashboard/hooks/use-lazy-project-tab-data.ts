@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { AlertsDashboardData } from "@/features/alerts/model/alerts"
 import { getAlertsEmptyDashboardData } from "@/features/alerts/controller/alerts-empty-data"
+import type { NotificationCenterDashboardData } from "@/features/notification-center/model/notification-center"
+import { getNotificationCenterEmptyData } from "@/features/notification-center/controller/notification-center-empty-data"
 import type { EventTrackingDashboardData } from "@/features/event-tracking/model/event-tracking"
 import { getEventTrackingEmptyDashboardData } from "@/features/event-tracking/controller/event-tracking-empty-data"
 import type { ExperimentsDashboardData } from "@/features/experiments/model/experiments"
@@ -48,6 +50,7 @@ export type ProjectTabData = {
   "data-export": DataExportDashboardData
   utm: UtmDashboardData
   alerts: AlertsDashboardData
+  "notification-center": NotificationCenterDashboardData
   settings: LandingPageSettingsData
 }
 
@@ -66,6 +69,7 @@ function tabApiPath(
   const base = `/api/landing-pages/${encodeURIComponent(projectId)}`
   if (tab === "settings") return `${base}/settings`
   if (tab === "utm") return `${base}/utm`
+  if (tab === "notification-center") return `${base}/notification-center`
 
   const path = tab === "event-tracking" ? `${base}/events` : `${base}/${tab}`
 
@@ -104,6 +108,8 @@ function emptyTabData(
       return getUtmEmptyDashboardData(projectId)
     case "alerts":
       return getAlertsEmptyDashboardData(projectId, rangeId)
+    case "notification-center":
+      return getNotificationCenterEmptyData(projectId)
   }
 }
 
@@ -272,6 +278,8 @@ export function useLazyProjectTabData({
       cache["web-vital"] ?? getWebVitalEmptyDashboardData(projectId, rangeId),
     utm: cache.utm ?? getUtmEmptyDashboardData(projectId),
     alerts: cache.alerts ?? getAlertsEmptyDashboardData(projectId, rangeId),
+    notificationCenter:
+      cache["notification-center"] ?? getNotificationCenterEmptyData(projectId),
     settings: cache.settings ?? null,
     loadingTab,
   }

@@ -10,6 +10,7 @@ const DEFAULT_CONFIG: SDKConfig = {
   apiBase: "",
   utmBlockRedirect: "",
   utmDeniedPath: "/access-denied",
+  webPushProxy: "",
 }
 
 let config: SDKConfig = DEFAULT_CONFIG
@@ -59,6 +60,8 @@ export function initializeConfig(script?: HTMLScriptElement | null): SDKConfig {
     utmDeniedPath: normalizeDeniedPath(
       resolvedScript?.getAttribute("data-utm-denied-path"),
     ),
+    webPushProxy:
+      resolvedScript?.getAttribute("data-web-push-proxy")?.trim() ?? "",
   }
 
   initialized = true

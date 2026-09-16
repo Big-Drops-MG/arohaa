@@ -7,6 +7,8 @@ export interface SDKConfig {
   apiBase: string
   utmBlockRedirect: string
   utmDeniedPath: string
+  /** Same-origin LP push proxy, e.g. "/api/push" — enables visibility → Arohaa events */
+  webPushProxy: string
 }
 
 export interface EventPayload {

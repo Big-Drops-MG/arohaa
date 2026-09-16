@@ -18,6 +18,7 @@ import { devRoutes } from './routes/dev.js'
 import { analyticsRoutes } from './routes/analytics.js'
 import { segmentRoutes } from './routes/segments.js'
 import { utmRoutes } from './routes/utm.js'
+import { webPushRoutes } from './routes/web-push.js'
 import {
   closeClickHouseClient,
   ensureEventsTable,
@@ -191,6 +192,7 @@ server.register(utmRoutes)
 server.register(sdkConfigRoutes)
 server.register(analyticsRoutes)
 server.register(segmentRoutes)
+server.register(webPushRoutes)
 server.register(healthRoutes)
 if (isDev) {
   server.register(devRoutes)

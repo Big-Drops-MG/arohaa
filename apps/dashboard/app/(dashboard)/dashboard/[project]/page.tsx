@@ -15,6 +15,7 @@ import {
   parseDashboardCustomRange,
 } from "@/features/traffic/model/traffic-range"
 import { loadAlertsDashboardData } from "@/lib/server/alerts-dashboard-load"
+import { loadNotificationCenterDashboard } from "@/lib/server/web-push-dashboard"
 import { loadEventTrackingDashboardData } from "@/lib/server/event-tracking-dashboard-load"
 import { loadExperimentsDashboardData } from "@/lib/server/experiments-dashboard-load"
 import { loadFunnelDashboardData } from "@/lib/server/funnel-dashboard-load"
@@ -157,6 +158,7 @@ export default async function ProjectPage({
   let dataExport = null
   let utm = null
   let alerts = null
+  let notificationCenter = null
   let settings = null
 
   const wantsLeadsSeed =
@@ -246,6 +248,11 @@ export default async function ProjectPage({
         customRange,
       })
       break
+    case "notification-center": {
+      const res = await loadNotificationCenterDashboard(actor.id, publicId)
+      notificationCenter = res.ok ? res.data : null
+      break
+    }
     case "settings":
       settings = await loadLandingPageSettingsData(publicId)
       break
@@ -299,6 +306,7 @@ export default async function ProjectPage({
           "data-export": dataExport ?? undefined,
           utm: utm ?? undefined,
           alerts: alerts ?? undefined,
+          "notification-center": notificationCenter ?? undefined,
           settings: settings ?? undefined,
         }}
       />

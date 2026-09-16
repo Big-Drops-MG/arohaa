@@ -56,7 +56,7 @@ export function LandingPageCard({ page }: LandingPageCardProps) {
               target="_blank"
               rel="noopener noreferrer"
               title={`Open ${displayUrl}`}
-              className="pointer-events-auto mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:rounded focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              className="pointer-events-auto mt-1 inline-flex max-w-full items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:rounded focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               onClick={(event) => event.stopPropagation()}
             >
               <span className="min-w-0 truncate">{displayUrl}</span>

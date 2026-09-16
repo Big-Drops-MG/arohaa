@@ -9,6 +9,7 @@ import {
   TabsTrigger,
 } from "@workspace/ui/components/tabs"
 import { AlertsDashboard } from "@/features/alerts/view/AlertsDashboard"
+import { NotificationCenterDashboard } from "@/features/notification-center/view/NotificationCenterDashboard"
 import { DataLabDashboard } from "@/features/data-lab/view/DataLabDashboard"
 import { EventTrackingDashboard } from "@/features/event-tracking/view/EventTrackingDashboard"
 import { ExperimentsDashboard } from "@/features/experiments/view/ExperimentsDashboard"
@@ -249,6 +250,7 @@ function ProjectDashboardViewInner({
     webVital,
     utm,
     alerts,
+    notificationCenter,
     settings,
     loadingTab,
   } = useLazyProjectTabData({
@@ -406,6 +408,12 @@ function ProjectDashboardViewInner({
                     projectId={projectId}
                     isActive
                     isLoading={isTabLoading("alerts")}
+                  />
+                ) : tab.value === "notification-center" ? (
+                  <NotificationCenterDashboard
+                    data={notificationCenter}
+                    projectId={projectId}
+                    isLoading={isTabLoading("notification-center")}
                   />
                 ) : tab.value === "settings" && settings ? (
                   <SettingsDashboard

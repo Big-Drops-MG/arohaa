@@ -22,6 +22,7 @@ import * as twoFactorSchema from "./schema/two-factor.js"
 import * as delegationNonceSchema from "./schema/delegation-nonce.js"
 import * as externalInviteTokensSchema from "./schema/external-invite-tokens.js"
 import * as vehicleModelsSchema from "./schema/vehicle-models.js"
+import * as webPushSchema from "./schema/web-push.js"
 
 const schema = {
   ...authSchema,
@@ -44,6 +45,7 @@ const schema = {
   ...delegationNonceSchema,
   ...externalInviteTokensSchema,
   ...vehicleModelsSchema,
+  ...webPushSchema,
 }
 
 bootstrapDatabaseEnv(import.meta.url)
@@ -84,6 +86,13 @@ export * from "./schema/two-factor.js"
 export * from "./schema/delegation-nonce.js"
 export * from "./schema/external-invite-tokens.js"
 export * from "./schema/vehicle-models.js"
+export * from "./schema/web-push.js"
+export * from "./web-push/crypto.js"
+export * from "./web-push/click-url.js"
+export * from "./web-push/schedule.js"
+export * from "./web-push/hmac.js"
+export * from "./web-push/click-redirect.js"
+export * from "./web-push/service.js"
 export * from "./email.js"
 export * from "./notifications/create-notification.js"
 export * from "./landing/normalizeLandingPageUrl.js"

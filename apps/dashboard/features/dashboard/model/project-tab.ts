@@ -11,6 +11,7 @@ export const PROJECT_TABS = [
   { value: "web-vital", label: "Web Vitals" },
   { value: "utm", label: "UTM Control" },
   { value: "alerts", label: "Alerts" },
+  { value: "notification-center", label: "Notification Center" },
   { value: "settings", label: "Settings" },
 ] as const
 

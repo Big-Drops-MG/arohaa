@@ -14,6 +14,7 @@ import { drainOutbox, setupOutboxDrainTriggers } from "../network/retry"
 import { flushBatcher, setupBatcherUnloadHooks } from "./batcher"
 import { getConfig } from "../model/config"
 import { getRemoteRedirectHostname } from "./sdk-config"
+import { setupWebPushLifecycleBridge } from "./web-push-lifecycle"
 
 export function setupLifecycle(): void {
   setupOutboxDrainTriggers(attemptSend)
@@ -43,6 +44,7 @@ export function setupLifecycle(): void {
 
   startHeartbeat()
   monitorWebVitals()
+  setupWebPushLifecycleBridge()
 
   window.addEventListener("pagehide", () => {
     void flushBatcher()

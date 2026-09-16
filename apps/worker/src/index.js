@@ -6,6 +6,7 @@ import { sendAlertWebhook } from './alert-webhook.js';
 import { validateEvent, validateHeatmapEvent } from './processor/validator.js';
 import { anonymizeEvent } from './processor/pii.js';
 import { DbWriter } from './processor/dbWriter.js';
+import { startWebPushConsumption } from './processor/webPushSender.js';
 import { logger } from './logger.js';
 
 const LOCAL_REDIS_URL = 'redis://127.0.0.1:6379';
@@ -245,6 +246,7 @@ async function start() {
     
     startQueueConsumption();
     startHeatmapConsumption();
+    void startWebPushConsumption(redis, { isShuttingDown: () => isShuttingDown });
   } catch (err) {
     logger.error({ err }, 'worker startup failed');
     void sendAlertWebhook({

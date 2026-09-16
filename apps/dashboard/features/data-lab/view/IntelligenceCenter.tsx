@@ -25,6 +25,9 @@ const CORE_WINNER_IDS = new Set([
   "volume-vs-efficiency-gap",
 ])
 
+const COMBO_COLUMNS_CLASS =
+  "sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1.55fr)_4.75rem_9rem] sm:gap-x-4"
+
 function shortWinnerLabel(label: string): string {
   return label
     .replace(/^Best Converting\s+/i, "")
@@ -128,33 +131,58 @@ function ComboWinnerRow({ item }: { item: IntelligenceWinner }) {
   const ready = hasWinnerValue(item)
   const rateInfo = parseRateDisplay(item.secondaryValue)
   const title = shortWinnerLabel(item.label)
+  const volumeLabel =
+    typeof item.metricValue === "number"
+      ? `${item.metricValue.toLocaleString()} submitted`
+      : "—"
 
   return (
     <div
       className={cn(
-        "grid grid-cols-1 items-center gap-2 border-b border-neutral-100 px-4 py-3 last:border-0 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1.4fr)_auto_auto]",
+        "grid grid-cols-1 items-start gap-2 border-b border-neutral-100 px-4 py-3 last:border-0 sm:items-center",
+        COMBO_COLUMNS_CLASS,
         !item.enoughData && ready && "bg-amber-50/30"
       )}
     >
-      <p className="truncate text-xs font-medium text-muted-foreground">
-        {title}
-      </p>
+      <div className="min-w-0">
+        <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase sm:hidden">
+          Insight
+        </p>
+        <p className="truncate text-xs font-medium text-muted-foreground sm:text-[13px] sm:text-neutral-600">
+          {title}
+        </p>
+      </div>
       {ready ? (
         <>
-          <p className="truncate text-sm font-semibold text-foreground">
-            {item.value}
-          </p>
-          <p className="text-sm font-semibold text-emerald-700 tabular-nums sm:text-right">
-            {rateInfo?.rate ?? "—"}
-          </p>
-          <p className="text-xs text-muted-foreground tabular-nums sm:text-right">
-            {typeof item.metricValue === "number"
-              ? `${item.metricValue.toLocaleString()} submitted`
-              : "—"}
+          <div className="min-w-0">
+            <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase sm:hidden">
+              Winner
+            </p>
+            <p className="truncate text-sm font-semibold text-foreground">
+              {item.value}
+            </p>
+          </div>
+          <div className="min-w-0 sm:text-right">
+            <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase sm:hidden">
+              Rate
+            </p>
+            <p className="text-sm font-semibold text-emerald-700 tabular-nums">
+              {rateInfo?.rate ?? "—"}
+            </p>
+          </div>
+          <div className="min-w-0 sm:text-right">
+            <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase sm:hidden">
+              Volume
+            </p>
+            <p className="text-xs text-muted-foreground tabular-nums">
+              {volumeLabel}
+            </p>
             {!item.enoughData ? (
-              <span className="ml-2 text-amber-700">Low sample</span>
+              <p className="mt-0.5 text-[10px] font-medium text-amber-700">
+                Low sample
+              </p>
             ) : null}
-          </p>
+          </div>
         </>
       ) : (
         <p className="text-sm text-muted-foreground sm:col-span-3">
@@ -281,7 +309,12 @@ function WinnersSection({ winners }: { winners: IntelligenceWinner[] }) {
               inventory
             </p>
           </div>
-          <div className="hidden border-b border-neutral-100 bg-neutral-50/80 px-4 py-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase sm:grid sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1.4fr)_auto_auto] sm:gap-2">
+          <div
+            className={cn(
+              "hidden border-b border-neutral-100 bg-neutral-50/80 px-4 py-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase sm:grid",
+              COMBO_COLUMNS_CLASS
+            )}
+          >
             <span>Insight</span>
             <span>Winner</span>
             <span className="text-right">Rate</span>

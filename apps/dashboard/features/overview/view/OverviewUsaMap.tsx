@@ -33,7 +33,6 @@ import {
 } from "@/features/overview/model/us-states"
 import {
   buildCountyRegions,
-  countyRegionHoverSummary,
   type OverviewMapRegion,
 } from "@/features/overview/utils/overview-map-drill"
 import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
@@ -86,7 +85,7 @@ const EMPTY_FILL = "#f8fafc"
 const BOUNDARY_STROKE = "#334155"
 const INNER_BOUNDARY_STROKE = "#64748b"
 const IDENTITY_TRANSFORM: MapTransform = { k: 1, x: 0, y: 0 }
-const MAX_HOVER_CITIES = 8
+const CITY_LIST_MAX_HEIGHT_CLASS = "max-h-48"
 
 function metricValue(
   row: OverviewStateMetric | OverviewCityMetric,
@@ -168,6 +167,7 @@ export function OverviewUsaMap({
   const [countiesError, setCountiesError] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [hovered, setHovered] = useState<string | null>(null)
+  const [pinnedCounty, setPinnedCounty] = useState<string | null>(null)
   const [selectedState, setSelectedState] = useState<string | null>(null)
   const [cities, setCities] = useState<OverviewCityMetric[]>([])
   const [citiesLoading, setCitiesLoading] = useState(false)
@@ -312,6 +312,7 @@ export function OverviewUsaMap({
   useEffect(() => {
     setTransform(IDENTITY_TRANSFORM)
     setIsPanning(false)
+    setPinnedCounty(null)
     panRef.current = null
   }, [selectedState])
 
@@ -453,11 +454,13 @@ export function OverviewUsaMap({
     const normalized = normalizeUsStateName(stateName)
     if (!normalized) return
     setHovered(null)
+    setPinnedCounty(null)
     setSelectedState(normalized)
   }
 
   function backToUsa() {
     setHovered(null)
+    setPinnedCounty(null)
     setSelectedState(null)
   }
 
@@ -522,8 +525,13 @@ export function OverviewUsaMap({
   }
 
   function handleRegionClick(region: OverviewMapRegion) {
+    if (wasPanned()) return
     if (level === "usa") {
       drillIntoState(region.label)
+      return
+    }
+    if (level === "state") {
+      setPinnedCounty((current) => (current === region.key ? null : region.key))
     }
   }
 
@@ -558,12 +566,17 @@ export function OverviewUsaMap({
     )
   }
 
-  const hoveredRegion = hovered
-    ? (regions.find((region) => region.key === hovered) ?? null)
+  const activeRegionKey = hovered ?? pinnedCounty
+  const activeRegion = activeRegionKey
+    ? (regions.find((region) => region.key === activeRegionKey) ?? null)
     : null
   const showCountyCityBreakdown =
     level === "state" &&
-    Boolean(hoveredRegion?.cityEntries && hoveredRegion.cityEntries.length > 0)
+    Boolean(activeRegion?.cityEntries && activeRegion.cityEntries.length > 0)
+  const cityPanelInteractive =
+    level === "state" &&
+    pinnedCounty != null &&
+    activeRegionKey === pinnedCounty
   const canZoomIn = transform.k < MAX_ZOOM - 0.001
   const canZoomOut = transform.k > MIN_ZOOM + 0.001
   const canReset = transform.k !== 1 || transform.x !== 0 || transform.y !== 0
@@ -668,11 +681,14 @@ export function OverviewUsaMap({
             <g>
               {regions.map((region) => {
                 const isHovered = hovered === region.key
+                const isPinned =
+                  level === "state" && pinnedCounty === region.key
+                const isActive = isHovered || isPinned
                 const fill =
                   region.tier === null
                     ? EMPTY_FILL
                     : OVERVIEW_MAP_TIER_COLORS[region.tier]
-                const stroke = isHovered
+                const stroke = isActive
                   ? OVERVIEW_MAP_TIER_STROKES[
                       (region.tier ?? 3) as OverviewMapBubbleTier
                     ]
@@ -685,9 +701,12 @@ export function OverviewUsaMap({
                     d={region.pathD}
                     fill={fill}
                     stroke={stroke}
-                    strokeWidth={isHovered ? 2 : boundaryWidth}
+                    strokeWidth={isActive ? 2 : boundaryWidth}
                     vectorEffect="non-scaling-stroke"
-                    className={cn(canDrillFromLevel() && "cursor-pointer")}
+                    className={cn(
+                      (canDrillFromLevel() || level === "state") &&
+                        "cursor-pointer"
+                    )}
                     onMouseEnter={() => {
                       if (!wasPanned() && region.label) {
                         setHovered(region.key)
@@ -698,15 +717,7 @@ export function OverviewUsaMap({
                       event.stopPropagation()
                       handleRegionClick(region)
                     }}
-                  >
-                    {region.label ? (
-                      <title>
-                        {level === "state"
-                          ? `${countyRegionHoverSummary(region, formatValue)}\n${metricLabel} total: ${formatValue(region.value)}`
-                          : `${region.label}: ${formatValue(region.value)}`}
-                      </title>
-                    ) : null}
-                  </path>
+                  />
                 )
               })}
             </g>
@@ -741,62 +752,61 @@ export function OverviewUsaMap({
         </div>
       ) : null}
 
-      {hoveredRegion ? (
+      {activeRegion ? (
         <div
           className={cn(
-            "pointer-events-none absolute top-3 left-3 z-20 w-60 max-w-[calc(100%-1.5rem)] overflow-hidden rounded-lg border border-neutral-200 bg-white/97 shadow-md",
-            level !== "usa" && "mt-12"
+            "absolute top-3 left-3 z-20 w-60 max-w-[calc(100%-1.5rem)] overflow-hidden rounded-lg border border-neutral-200 bg-white/97 shadow-md",
+            level !== "usa" && "mt-12",
+            cityPanelInteractive ? "pointer-events-auto" : "pointer-events-none"
           )}
         >
           <div className="flex items-baseline justify-between gap-2 border-b border-neutral-100 px-3 py-2">
             <p className="truncate text-xs font-semibold text-neutral-900">
-              {hoveredRegion.label}
+              {activeRegion.label}
               {level === "state" ? " County" : ""}
             </p>
             {level === "state" ? (
               <span className="shrink-0 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600 tabular-nums">
-                {(hoveredRegion.totalZipCount ?? 0).toLocaleString("en-US")}{" "}
-                {hoveredRegion.totalZipCount === 1 ? "zip" : "zips"}
+                {(activeRegion.totalZipCount ?? 0).toLocaleString("en-US")}{" "}
+                {activeRegion.totalZipCount === 1 ? "zip" : "zips"}
               </span>
             ) : null}
           </div>
 
           {level === "state" ? (
             <div className="px-3 py-2">
-              {showCountyCityBreakdown && hoveredRegion.cityEntries ? (
-                <ul className="space-y-1">
-                  {hoveredRegion.cityEntries
-                    .slice(0, MAX_HOVER_CITIES)
-                    .map((entry) => (
-                      <li
-                        key={entry.label}
-                        className="flex items-baseline justify-between gap-3 text-[11px] leading-snug"
-                      >
-                        <span className="flex min-w-0 items-baseline gap-1.5">
-                          <span className="text-neutral-300" aria-hidden>
-                            •
-                          </span>
-                          <span className="truncate text-neutral-700">
-                            {entry.label}
-                          </span>
+              {showCountyCityBreakdown && activeRegion.cityEntries ? (
+                <ul
+                  className={cn(
+                    "space-y-1 overflow-y-auto overscroll-contain pr-1",
+                    CITY_LIST_MAX_HEIGHT_CLASS
+                  )}
+                  onWheel={(event) => event.stopPropagation()}
+                >
+                  {activeRegion.cityEntries.map((entry) => (
+                    <li
+                      key={entry.label}
+                      className="flex items-baseline justify-between gap-3 text-[11px] leading-snug"
+                    >
+                      <span className="flex min-w-0 items-baseline gap-1.5">
+                        <span className="text-neutral-300" aria-hidden>
+                          •
                         </span>
-                        <span className="shrink-0 tabular-nums">
-                          <span className="font-medium text-neutral-900">
-                            {formatValue(entry.value)}
-                          </span>
-                          <span className="ml-1.5 text-[10px] text-neutral-400">
-                            {entry.zipCount.toLocaleString("en-US")}{" "}
-                            {entry.zipCount === 1 ? "zip" : "zips"}
-                          </span>
+                        <span className="truncate text-neutral-700">
+                          {entry.label}
                         </span>
-                      </li>
-                    ))}
-                  {hoveredRegion.cityEntries.length > MAX_HOVER_CITIES ? (
-                    <li className="pt-0.5 pl-3 text-[10px] text-neutral-400">
-                      +{hoveredRegion.cityEntries.length - MAX_HOVER_CITIES}{" "}
-                      more cities
+                      </span>
+                      <span className="shrink-0 tabular-nums">
+                        <span className="font-medium text-neutral-900">
+                          {formatValue(entry.value)}
+                        </span>
+                        <span className="ml-1.5 text-[10px] text-neutral-400">
+                          {entry.zipCount.toLocaleString("en-US")}{" "}
+                          {entry.zipCount === 1 ? "zip" : "zips"}
+                        </span>
+                      </span>
                     </li>
-                  ) : null}
+                  ))}
                 </ul>
               ) : (
                 <p className="text-[11px] text-neutral-400">
@@ -815,7 +825,7 @@ export function OverviewUsaMap({
             <p className="flex items-baseline justify-between gap-3 text-[11px] text-neutral-600">
               <span className="truncate">{metricLabel}</span>
               <span className="shrink-0 font-medium text-neutral-900 tabular-nums">
-                {formatMetricValue(hoveredRegion.value, metricId)}
+                {formatMetricValue(activeRegion.value, metricId)}
                 {valueSuffix && metricId !== "fsr" && metricId !== "bounce-rate"
                   ? valueSuffix
                   : ""}
@@ -824,6 +834,12 @@ export function OverviewUsaMap({
             {canDrillFromLevel() ? (
               <p className="mt-1 text-[10px] text-neutral-400">
                 Click to expand
+              </p>
+            ) : level === "state" ? (
+              <p className="mt-1 text-[10px] text-neutral-400">
+                {pinnedCounty === activeRegion.key
+                  ? "Click county again to unpin"
+                  : "Click county to keep cities open"}
               </p>
             ) : null}
           </div>
