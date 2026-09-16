@@ -1,11 +1,7 @@
+import { isExternalTeamMemberScope } from "@/features/team/model/external-privileges"
+
 export type UtmFilterDimension = "utm_source" | "utm_s1"
 
-/**
- * Multi-select AND filters across UTM Source and UTM S1, plus an optional saved
- * segment. The segment rides along so it reaches the analytics API through the
- * same plumbing, but it is owned by a separate picker and is deliberately
- * excluded from `hasDashboardUtmFilter` / the UTM trigger label.
- */
 export type DashboardUtmFilter = {
   utm_source?: string[]
   utm_s1?: string[]
@@ -49,6 +45,7 @@ export function parseUtmValueList(
     .split(VALUE_SEPARATOR)
     .map((part) => sanitizeUtmValue(part))
     .filter((part): part is string => Boolean(part))
+    .filter((part) => !isExternalTeamMemberScope(part))
 
   const unique = [...new Set(parts)].slice(0, MAX_VALUES_PER_DIMENSION)
   return unique.length > 0 ? unique : undefined
@@ -81,10 +78,6 @@ export function normalizeDashboardUtmFilter(
   return hasDashboardUtmFilter(next) || next.segment_id ? next : undefined
 }
 
-/**
- * Prefer explicit `utm_source` / `utm_s1` (comma-separated multi values).
- * Falls back to legacy `utm_dim` + `utm_value`.
- */
 export function parseDashboardUtmFilterFromParams(params: {
   utm_source?: string | string[] | null
   utm_s1?: string | string[] | null

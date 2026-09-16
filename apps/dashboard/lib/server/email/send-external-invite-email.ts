@@ -5,17 +5,8 @@ import {
   ExternalMemberInviteEmail,
   type ExternalMemberAccessProject,
 } from "@/emails/templates"
+import { resolveAppBaseUrl } from "@/lib/server/app-base-url"
 import { sendEmail } from "@/lib/server/email/send-email"
-
-function resolveAppBaseUrl(): string {
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "")
-  }
-  if (process.env.NEXTAUTH_URL) {
-    return process.env.NEXTAUTH_URL.replace(/\/$/, "")
-  }
-  return "https://dashboard.arohaa.com"
-}
 
 type SendExternalMemberInviteEmailInput = {
   to: string

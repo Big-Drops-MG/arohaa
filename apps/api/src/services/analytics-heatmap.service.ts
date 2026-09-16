@@ -5,6 +5,11 @@ import {
   type AnalyticsCustomRange,
   type AnalyticsRangeId,
 } from '../lib/analytics-range.js'
+import {
+  utmFilterParams,
+  utmFilterSql,
+  type AnalyticsUtmFilter,
+} from '../lib/analytics-utm-filter.js'
 import { canonicalizeHeatmapPageUrl } from './heatmap-route.js'
 import type {
   AnalyticsHeatmapResponse,
@@ -22,14 +27,10 @@ type CHJson<T> = { data: T[] }
 const n = (v: string | number | null | undefined): number =>
   typeof v === 'number' ? v : Number(v ?? 0) || 0
 
-/** Cap cluster rows returned for paint — each row's value already sums all matching events. */
 const POINTS_LIMIT = 5000
 const MOVE_POINTS_LIMIT = 4000
 
-/**
- * Resolve the visitor device the same way ingest/MVs do so every event lands in
- * exactly one Desktop / Tablet / Mobile bucket (no viewport OR that drops/duplicates).
- */
+
 const RESOLVED_DEVICE_SQL = `
   multiIf(
     device IN ('mobile', 'tablet', 'desktop'), device,
@@ -60,20 +61,14 @@ export function emptyAnalyticsHeatmap(
   }
 }
 
-/**
- * Inclusive start / exclusive end on raw timestamps — matches every preset and
- * custom ET window from resolveAnalyticsWindow (today, 7d, custom, …).
- */
+
 const RAW_TIME_FILTER = `
   workspace_id = {wid:UUID}
   AND timestamp >= toDateTime64({range_from:String}, 3, 'UTC')
   AND timestamp < toDateTime64({range_to:String}, 3, 'UTC')
 `
 
-/**
- * Filter to one device bucket. Desktop preview = all desktop-captured events,
- * regardless of the dashboard viewer's screen size.
- */
+
 function deviceMatchSql(device: HeatmapDevice): string {
   if (device === 'all') return ''
   return ` AND (${RESOLVED_DEVICE_SQL}) = {device:String}`
@@ -89,18 +84,23 @@ function pageUrlSql(pageUrl: string | null): string {
 async function listPageUrls(
   workspaceId: string,
   rangeParams: { range_from: string; range_to: string },
+  utmFilter?: AnalyticsUtmFilter,
 ): Promise<string[]> {
   const ch = getClickHouseClient()
   const res = await ch.query({
     format: 'JSON',
-    query_params: { wid: workspaceId, ...rangeParams },
+    query_params: {
+      wid: workspaceId,
+      ...rangeParams,
+      ...utmFilterParams(utmFilter),
+    },
     query: `
       SELECT
         ${PAGE_KEY_SQL} AS page_key,
         count() AS c,
         min(timestamp) AS first_at
       FROM heatmap_events
-      WHERE ${RAW_TIME_FILTER}
+      WHERE ${RAW_TIME_FILTER}${utmFilterSql(utmFilter)}
         AND page_url != ''
       GROUP BY page_key
       HAVING page_key != ''
@@ -118,6 +118,7 @@ async function queryEventCount(
   device: HeatmapDevice,
   eventType: string,
   rangeParams: { range_from: string; range_to: string },
+  utmFilter?: AnalyticsUtmFilter,
 ): Promise<number> {
   const ch = getClickHouseClient()
   const res = await ch.query({
@@ -128,11 +129,12 @@ async function queryEventCount(
       device,
       etype: eventType,
       ...rangeParams,
+      ...utmFilterParams(utmFilter),
     },
     query: `
       SELECT count() AS value
       FROM heatmap_events
-      WHERE ${RAW_TIME_FILTER}
+      WHERE ${RAW_TIME_FILTER}${utmFilterSql(utmFilter)}
         AND event_type = {etype:String}${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
     `,
   })
@@ -161,10 +163,9 @@ async function queryClickPoints(
   pageUrl: string,
   device: HeatmapDevice,
   rangeParams: { range_from: string; range_to: string },
+  utmFilter?: AnalyticsUtmFilter,
 ): Promise<HeatmapPoint[]> {
   const ch = getClickHouseClient()
-  // Coarse clusters so every click contributes via count(), not only the top
-  // few thousand unique px/py fingerprints.
   const res = await ch.query({
     format: 'JSON',
     query_params: {
@@ -172,6 +173,7 @@ async function queryClickPoints(
       page_url: pageUrl,
       device,
       ...rangeParams,
+      ...utmFilterParams(utmFilter),
     },
     query: `
       SELECT
@@ -192,7 +194,7 @@ async function queryClickPoints(
         avg(JSONExtractFloat(properties, 'y')) AS ey,
         count() AS value
       FROM heatmap_events
-      WHERE ${RAW_TIME_FILTER}
+      WHERE ${RAW_TIME_FILTER}${utmFilterSql(utmFilter)}
         AND event_type = 'click'${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
       GROUP BY selector, gx, gy
       ORDER BY value DESC
@@ -222,9 +224,9 @@ async function queryMovePoints(
   pageUrl: string,
   device: HeatmapDevice,
   rangeParams: { range_from: string; range_to: string },
+  utmFilter?: AnalyticsUtmFilter,
 ): Promise<HeatmapPoint[]> {
   const ch = getClickHouseClient()
-  // ~100×100 page grid — all moves in a cell roll into value.
   const res = await ch.query({
     format: 'JSON',
     query_params: {
@@ -232,6 +234,7 @@ async function queryMovePoints(
       page_url: pageUrl,
       device,
       ...rangeParams,
+      ...utmFilterParams(utmFilter),
     },
     query: `
       SELECT
@@ -239,7 +242,7 @@ async function queryMovePoints(
         round(y, 2) AS py,
         count() AS value
       FROM heatmap_events
-      WHERE ${RAW_TIME_FILTER}
+      WHERE ${RAW_TIME_FILTER}${utmFilterSql(utmFilter)}
         AND event_type = 'mousemove'${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
       GROUP BY px, py
       ORDER BY value DESC
@@ -263,6 +266,7 @@ async function queryScrollBuckets(
   pageUrl: string,
   device: HeatmapDevice,
   rangeParams: { range_from: string; range_to: string },
+  utmFilter?: AnalyticsUtmFilter,
 ): Promise<HeatmapScrollBucket[]> {
   const ch = getClickHouseClient()
   const res = await ch.query({
@@ -272,13 +276,14 @@ async function queryScrollBuckets(
       page_url: pageUrl,
       device,
       ...rangeParams,
+      ...utmFilterParams(utmFilter),
     },
     query: `
       SELECT
         toInt32(floor(least(greatest(y, 0.), 0.9999) * 10.) * 10) AS bucket,
         count() AS value
       FROM heatmap_events
-      WHERE ${RAW_TIME_FILTER}
+      WHERE ${RAW_TIME_FILTER}${utmFilterSql(utmFilter)}
         AND event_type = 'scroll'${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
       GROUP BY bucket
       HAVING value > 0
@@ -300,6 +305,7 @@ async function querySections(
   pageUrl: string,
   device: HeatmapDevice,
   rangeParams: { range_from: string; range_to: string },
+  utmFilter?: AnalyticsUtmFilter,
 ): Promise<HeatmapSection[]> {
   const ch = getClickHouseClient()
   const res = await ch.query({
@@ -309,6 +315,7 @@ async function querySections(
       page_url: pageUrl,
       device,
       ...rangeParams,
+      ...utmFilterParams(utmFilter),
     },
     query: `
       SELECT
@@ -316,7 +323,7 @@ async function querySections(
         sum(JSONExtractFloat(properties, 'dwell_ms')) AS dwellMs,
         count() AS views
       FROM heatmap_events
-      WHERE ${RAW_TIME_FILTER}
+      WHERE ${RAW_TIME_FILTER}${utmFilterSql(utmFilter)}
         AND event_type = 'section'
         AND element_selector != ''${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
       GROUP BY element_selector
@@ -344,6 +351,7 @@ async function queryFormFields(
   pageUrl: string,
   device: HeatmapDevice,
   rangeParams: { range_from: string; range_to: string },
+  utmFilter?: AnalyticsUtmFilter,
 ): Promise<HeatmapField[]> {
   const ch = getClickHouseClient()
   const res = await ch.query({
@@ -353,6 +361,7 @@ async function queryFormFields(
       page_url: pageUrl,
       device,
       ...rangeParams,
+      ...utmFilterParams(utmFilter),
     },
     query: `
       SELECT
@@ -360,7 +369,7 @@ async function queryFormFields(
         anyHeavy(element_selector) AS selector,
         count() AS value
       FROM heatmap_events
-      WHERE ${RAW_TIME_FILTER}
+      WHERE ${RAW_TIME_FILTER}${utmFilterSql(utmFilter)}
         AND event_type IN ('field_focus', 'click')
         AND ${FIELD_NAME_EXPR} != ''${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
       GROUP BY field_name
@@ -386,6 +395,7 @@ async function queryFormPoints(
   pageUrl: string,
   device: HeatmapDevice,
   rangeParams: { range_from: string; range_to: string },
+  utmFilter?: AnalyticsUtmFilter,
 ): Promise<HeatmapPoint[]> {
   const ch = getClickHouseClient()
   const res = await ch.query({
@@ -395,6 +405,7 @@ async function queryFormPoints(
       page_url: pageUrl,
       device,
       ...rangeParams,
+      ...utmFilterParams(utmFilter),
     },
     query: `
       SELECT
@@ -415,7 +426,7 @@ async function queryFormPoints(
         avg(if(JSONHas(properties, 'y'), JSONExtractFloat(properties, 'y'), y)) AS ey,
         count() AS value
       FROM heatmap_events
-      WHERE ${RAW_TIME_FILTER}
+      WHERE ${RAW_TIME_FILTER}${utmFilterSql(utmFilter)}
         AND event_type IN ('field_focus', 'click')
         AND ${FIELD_NAME_EXPR} != ''${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
       GROUP BY selector, gx, gy
@@ -441,6 +452,45 @@ async function queryFormPoints(
   }))
 }
 
+function heatmapPathKey(url: string): string {
+  try {
+    const u = new URL(canonicalizeHeatmapPageUrl(url))
+    u.hash = ''
+    let path = u.pathname
+    if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1)
+    u.pathname = path || '/'
+    return `${u.origin}${u.pathname}`
+  } catch {
+    return canonicalizeHeatmapPageUrl(url).replace(/\/$/, '')
+  }
+}
+
+function hasHash(url: string): boolean {
+  try {
+    return Boolean(new URL(url).hash)
+  } catch {
+    return url.includes('#')
+  }
+}
+
+
+export function resolveAnalyticsHeatmapPageUrl(
+  pageUrlInput: string | null | undefined,
+  pageUrls: string[],
+): string | null {
+  const requested = canonicalizeHeatmapPageUrl(pageUrlInput ?? '') || null
+  if (!requested) return pageUrls[0] || null
+  if (pageUrls.includes(requested)) return requested
+
+  const key = heatmapPathKey(requested)
+  const samePath = pageUrls.filter((url) => heatmapPathKey(url) === key)
+  if (samePath.length > 0) {
+    return samePath.find((url) => !hasHash(url)) ?? samePath[0] ?? requested
+  }
+
+  return requested
+}
+
 export async function getAnalyticsHeatmap({
   workspaceId,
   mode,
@@ -448,6 +498,7 @@ export async function getAnalyticsHeatmap({
   pageUrl: pageUrlInput,
   rangeId,
   custom,
+  utmFilter,
 }: {
   workspaceId: string
   mode: HeatmapMode
@@ -455,13 +506,13 @@ export async function getAnalyticsHeatmap({
   pageUrl?: string | null
   rangeId: AnalyticsRangeId
   custom?: AnalyticsCustomRange
+  utmFilter?: AnalyticsUtmFilter
 }): Promise<AnalyticsHeatmapResponse> {
   const window = resolveAnalyticsWindow(rangeId, new Date(), custom)
   const rangeParams = rangeQueryParams(window)
-  const pageUrls = await listPageUrls(workspaceId, rangeParams)
+  const pageUrls = await listPageUrls(workspaceId, rangeParams, utmFilter)
 
-  const requested = canonicalizeHeatmapPageUrl(pageUrlInput ?? '') || null
-  const pageUrl = requested || pageUrls[0] || null
+  const pageUrl = resolveAnalyticsHeatmapPageUrl(pageUrlInput, pageUrls)
   const urls =
     pageUrl && !pageUrls.includes(pageUrl)
       ? [pageUrl, ...pageUrls]
@@ -480,8 +531,15 @@ export async function getAnalyticsHeatmap({
 
   if (mode === 'click') {
     const [clickPoints, count] = await Promise.all([
-      queryClickPoints(workspaceId, pageUrl, device, rangeParams),
-      queryEventCount(workspaceId, pageUrl, device, 'click', rangeParams),
+      queryClickPoints(workspaceId, pageUrl, device, rangeParams, utmFilter),
+      queryEventCount(
+        workspaceId,
+        pageUrl,
+        device,
+        'click',
+        rangeParams,
+        utmFilter,
+      ),
     ])
     points = clickPoints
     cells = cellsFromPoints(clickPoints)
@@ -492,12 +550,13 @@ export async function getAnalyticsHeatmap({
       pageUrl,
       device,
       rangeParams,
+      utmFilter,
     )
     totalEvents = scrollBuckets.reduce((s, b) => s + b.value, 0)
   } else if (mode === 'form') {
     const [formPoints, formFields] = await Promise.all([
-      queryFormPoints(workspaceId, pageUrl, device, rangeParams),
-      queryFormFields(workspaceId, pageUrl, device, rangeParams),
+      queryFormPoints(workspaceId, pageUrl, device, rangeParams, utmFilter),
+      queryFormFields(workspaceId, pageUrl, device, rangeParams, utmFilter),
     ])
     points = formPoints
     cells = cellsFromPoints(formPoints)
@@ -505,9 +564,16 @@ export async function getAnalyticsHeatmap({
     totalEvents = formFields.reduce((s, f) => s + f.count, 0)
   } else {
     const [movePoints, count, sectionRows] = await Promise.all([
-      queryMovePoints(workspaceId, pageUrl, device, rangeParams),
-      queryEventCount(workspaceId, pageUrl, device, 'mousemove', rangeParams),
-      querySections(workspaceId, pageUrl, device, rangeParams),
+      queryMovePoints(workspaceId, pageUrl, device, rangeParams, utmFilter),
+      queryEventCount(
+        workspaceId,
+        pageUrl,
+        device,
+        'mousemove',
+        rangeParams,
+        utmFilter,
+      ),
+      querySections(workspaceId, pageUrl, device, rangeParams, utmFilter),
     ])
     points = movePoints
     cells = cellsFromPoints(movePoints)

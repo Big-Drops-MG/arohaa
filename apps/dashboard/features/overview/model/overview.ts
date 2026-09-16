@@ -46,21 +46,18 @@ export function parseOverviewLandingFormType(
   return "single"
 }
 
-/** Whether this form type tracks form/zip submissions (not hub service clicks). */
 export function hasFormSubmissionMetrics(
   formType: OverviewLandingFormType
 ): boolean {
   return formType !== "none"
 }
 
-/** Hub pages convert via service/vertical clicks instead of forms. */
 export function hasServiceClickMetrics(
   formType: OverviewLandingFormType
 ): boolean {
   return formType === "none"
 }
 
-/** Form submits, zip submits, or service clicks — all conversion metrics. */
 export function hasConversionMetrics(
   formType: OverviewLandingFormType
 ): boolean {
@@ -169,7 +166,6 @@ export type OverviewTimeSeriesPoint = {
   value: number
 }
 
-/** US state KPI values for the overview performance map. */
 export type OverviewStateMetric = {
   state: string
   visitors: number
@@ -180,17 +176,13 @@ export type OverviewStateMetric = {
   bounceRate: number
 }
 
-/** City KPI values within a selected US state (map drill-down). */
 export type OverviewCityMetric = {
   city: string
   state: string
   latitude?: number
   longitude?: number
-  /** County FIPS resolved from zipcodes, for rows without usable coordinates. */
   countyFips?: string
-  /** Distinct zipcodes with events in this city (GeoIP postal + form-submitted). */
   zipCount: number
-  /** Distinct zipcode values backing `zipCount`, capped by the API. */
   zipcodes: string[]
   visitors: number
   sessions: number
@@ -200,7 +192,6 @@ export type OverviewCityMetric = {
   bounceRate: number
 }
 
-/** Zipcode KPI values within a selected US city (map drill-down). */
 export type OverviewZipcodeMetric = {
   zipcode: string
   city: string
@@ -228,7 +219,6 @@ export type OverviewAlert = {
   id: string
   message: string
   severity: OverviewAlertSeverity
-  /** Display date for the Alerts tab (e.g. "Apr 10"). */
   dateLabel?: string
 }
 
@@ -239,12 +229,7 @@ export type OverviewKpiSeriesByDateRange = Partial<
   >
 >
 
-/**
- * Full server payload for the project dashboard. The project page should load this
- * (e.g. from your API or database) and pass it to tab views.
- */
 export type OverviewDashboardData = {
-  /** From landing page `data-formtype` (`single` | `multiple` | `zip`). */
   formType: OverviewLandingFormType
   dateRangeOptions: OverviewDateRangeOption[]
   defaultDateRangeId: OverviewDateRangeId
@@ -256,7 +241,6 @@ export type OverviewDashboardData = {
   traffic: OverviewTrafficStat[]
   segments: OverviewTrafficStat[]
   alerts: OverviewAlert[]
-  /** Live count for the Traffic tab (e.g. "128 Users"). */
   activeUsersNow: string
   trafficTablesByDateRange: TrafficTablesByDateRange
   eventTrackingByDateRange: EventTrackingByDateRange
@@ -266,12 +250,8 @@ export type OverviewDashboardData = {
   segmentsPerformanceByDateRange: SegmentsPerformanceByDateRange
   experimentsByDateRange: ExperimentsByDateRange
   alertsByDateRange: AlertsByDateRange
-  /**
-   * Optional time series for the performance chart. When provided for the
-   * active date range and KPI, those points are used; otherwise the chart
-   * uses client-generated x-axis buckets with zero values.
-   */
+
   kpiSeriesByDateRange?: OverviewKpiSeriesByDateRange
-  /** Optional US state breakdown for the performance map view. */
   kpiByStateByDateRange?: OverviewKpiByStateByDateRange
+  analyticsUnavailable?: boolean
 }

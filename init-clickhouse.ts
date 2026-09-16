@@ -59,6 +59,7 @@ const EVENTS_TABLE = "events_raw"
 
 const CREATE_EVENTS = `
 CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
+    event_id String DEFAULT '',
     event_name LowCardinality(String),
     workspace_id UUID,
     lp_public_id LowCardinality(String) DEFAULT '',

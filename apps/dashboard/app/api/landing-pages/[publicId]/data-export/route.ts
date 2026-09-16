@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { parseDashboardCustomRange } from "@/features/traffic/model/traffic-range"
+import { parseUtmFilterFromSearchParams } from "@/lib/server/analytics-utm-params"
 import { loadDataExportDashboardDataForApi } from "@/lib/server/data-export-dashboard-load"
 import { route } from "@/lib/server/route"
 import {
@@ -10,7 +11,7 @@ import {
 
 export const GET = route(
   {
-    permission: "data_export.read",
+    permission: "landing_pages.read",
     actor: "read",
     tab: "data-lab",
     section: "leads",
@@ -22,6 +23,10 @@ export const GET = route(
   },
   async ({ params, request }) => {
     const { searchParams } = new URL(request.url)
+    const returningRaw = (
+      searchParams.get("returning_only") ?? ""
+    ).toLowerCase()
+    const returningOnly = returningRaw === "1" || returningRaw === "true"
     const res = await loadDataExportDashboardDataForApi(
       params.publicId!,
       searchParams.get("range_id"),
@@ -30,7 +35,9 @@ export const GET = route(
         searchParams.get("to")
       ),
       searchParams.get("limit"),
-      String(parseRouteOffset(searchParams.get("offset")))
+      String(parseRouteOffset(searchParams.get("offset"))),
+      parseUtmFilterFromSearchParams(searchParams),
+      returningOnly
     )
 
     if (!res.ok) {

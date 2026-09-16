@@ -1,14 +1,4 @@
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  inArray,
-  notInArray,
-  or,
-  like,
-  sql,
-} from "drizzle-orm"
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
 import { db, landingPageUtmParams } from "@workspace/database"
 import {
   STORED_UTM_PARAM_KEYS,
@@ -27,8 +17,12 @@ import {
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { requireWritableLandingPageActor } from "@/lib/server/external-access"
+import {
+  requireWritableLandingPageActor,
+  getActorAccess,
+} from "@/lib/server/external-access"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
+import { resolveUtmFilterForActor } from "@/lib/server/analytics-utm-params"
 
 export type UtmParamStatus = "active" | "blocked"
 
@@ -106,60 +100,36 @@ function sanitizeDiscovered(rows: DiscoveredUtmParam[]): DiscoveredUtmParam[] {
   return out
 }
 
-async function purgeDisallowedUtmParams(landingPageId: string) {
-  await db
-    .delete(landingPageUtmParams)
-    .where(
-      and(
-        eq(landingPageUtmParams.landingPageId, landingPageId),
-        notInArray(landingPageUtmParams.key, [...STORED_UTM_PARAM_KEYS])
-      )
-    )
-}
-
-async function purgeMalformedUtmParams(landingPageId: string) {
-  await db
-    .delete(landingPageUtmParams)
-    .where(
-      and(
-        eq(landingPageUtmParams.landingPageId, landingPageId),
-        inArray(landingPageUtmParams.key, [...STORED_UTM_PARAM_KEYS]),
-        or(
-          like(landingPageUtmParams.value, "%&%"),
-          like(landingPageUtmParams.value, "%?%"),
-          and(
-            eq(landingPageUtmParams.key, "utm_source"),
-            like(landingPageUtmParams.value, "%=%")
-          )
-        )
-      )
-    )
-}
-
 async function syncDiscoveredParams(
   landingPageId: string,
   discovered: DiscoveredUtmParam[]
 ) {
   if (discovered.length === 0) return
 
-  const batch = discovered.slice(0, UTM_DISCOVERY_SYNC_BATCH)
-  await db
-    .insert(landingPageUtmParams)
-    .values(
-      batch.map((row) => ({
-        landingPageId,
-        key: row.key,
-        value: row.value,
-        status: "active" as const,
-      }))
-    )
-    .onConflictDoNothing({
-      target: [
-        landingPageUtmParams.landingPageId,
-        landingPageUtmParams.key,
-        landingPageUtmParams.value,
-      ],
-    })
+  for (const key of STORED_UTM_PARAM_KEYS) {
+    const batch = discovered
+      .filter((row) => row.key === key)
+      .slice(0, UTM_DISCOVERY_SYNC_BATCH)
+    if (batch.length === 0) continue
+
+    await db
+      .insert(landingPageUtmParams)
+      .values(
+        batch.map((row) => ({
+          landingPageId,
+          key: row.key,
+          value: row.value,
+          status: "active" as const,
+        }))
+      )
+      .onConflictDoNothing({
+        target: [
+          landingPageUtmParams.landingPageId,
+          landingPageUtmParams.key,
+          landingPageUtmParams.value,
+        ],
+      })
+  }
 }
 
 async function loadUtmStats(landingPageId: string): Promise<UtmDashboardStats> {
@@ -277,10 +247,13 @@ function buildDashboardData(
   }
 }
 
-async function resolveLandingPageForActor(
-  landingPagePublicId: string
-): Promise<
-  | { ok: true; actorId: string; row: LandingPageRef }
+async function resolveLandingPageForActor(landingPagePublicId: string): Promise<
+  | {
+      ok: true
+      actorId: string
+      row: LandingPageRef
+      actor: Awaited<ReturnType<typeof requireLandingPageActor>>
+    }
   | { ok: false; status: 401 | 404; error: string }
 > {
   const actor = await requireLandingPageActor()
@@ -296,46 +269,60 @@ async function resolveLandingPageForActor(
   return {
     ok: true,
     actorId: actor.id,
+    actor,
     row: { id: row.id, brandName: row.brandName },
   }
 }
 
+function filterUtmPairsForSources(
+  pairs: UtmParamPair[],
+  allowedSources: string[] | null
+): UtmParamPair[] {
+  if (!allowedSources) return pairs
+  const allowed = new Set(allowedSources.map((s) => s.toLowerCase()))
+  return pairs.filter((pair) => {
+    if (pair.key !== "utm_source") return true
+    return allowed.has(pair.value.toLowerCase())
+  })
+}
+
 async function buildUtmDashboardForLandingPage(
-  row: LandingPageRef
+  row: LandingPageRef,
+  allowedSources: string[] | null = null
 ): Promise<UtmDashboardData> {
-  const [stats, activeItems, blockedItems] = await Promise.all([
+  try {
+    const discovered = sanitizeDiscovered(
+      await fetchDiscoveredUtmParams(row.id)
+    )
+    await syncDiscoveredParams(row.id, discovered)
+  } catch (err) {
+    console.error("[utm] discovery sync failed", err)
+  }
+
+  const [stats, activeItemsRaw, blockedItemsRaw] = await Promise.all([
     loadUtmStats(row.id),
     loadActivePreviewPairs(row.id),
     loadUtmPairs(row.id, "blocked"),
   ])
 
-  if (stats.total === 0) {
-    try {
-      await purgeDisallowedUtmParams(row.id)
-      await purgeMalformedUtmParams(row.id)
-      const discovered = sanitizeDiscovered(
-        await fetchDiscoveredUtmParams(row.id)
-      )
-      await syncDiscoveredParams(row.id, discovered)
-      if (discovered.length > 0) {
-        const [nextStats, nextActive, nextBlocked] = await Promise.all([
-          loadUtmStats(row.id),
-          loadActivePreviewPairs(row.id),
-          loadUtmPairs(row.id, "blocked"),
-        ])
-        return buildDashboardData(
-          row.brandName,
-          nextStats,
-          nextActive,
-          nextBlocked
-        )
-      }
-    } catch (err) {
-      console.error("[utm] discovery sync failed", err)
-    }
-  }
+  const activeItems = filterUtmPairsForSources(activeItemsRaw, allowedSources)
+  const blockedItems = filterUtmPairsForSources(blockedItemsRaw, allowedSources)
 
-  return buildDashboardData(row.brandName, stats, activeItems, blockedItems)
+  const scopedStats: UtmDashboardStats = allowedSources
+    ? {
+        ...stats,
+        activeSource: activeItems.filter((i) => i.key === "utm_source").length,
+        blockedSource: blockedItems.filter((i) => i.key === "utm_source")
+          .length,
+      }
+    : stats
+
+  return buildDashboardData(
+    row.brandName,
+    scopedStats,
+    activeItems,
+    blockedItems
+  )
 }
 
 export async function loadUtmDashboardData(
@@ -348,7 +335,20 @@ export async function loadUtmDashboardData(
     throw new Error("Landing page not found")
   }
 
-  return buildUtmDashboardForLandingPage(resolved.row)
+  const access = await getActorAccess(resolved.actor)
+  const scoped = await resolveUtmFilterForActor(
+    resolved.actor,
+    landingPagePublicId,
+    null
+  )
+  const allowedSources =
+    access.isExternal && scoped?.utm_source?.length
+      ? scoped.utm_source
+      : access.isExternal
+        ? []
+        : null
+
+  return buildUtmDashboardForLandingPage(resolved.row, allowedSources)
 }
 
 export async function updateUtmParamsForLandingPage({
@@ -429,7 +429,22 @@ export async function loadUtmDashboardDataForApi(
   }
 
   try {
-    const data = await buildUtmDashboardForLandingPage(resolved.row)
+    const access = await getActorAccess(resolved.actor)
+    const scoped = await resolveUtmFilterForActor(
+      resolved.actor,
+      landingPagePublicId,
+      null
+    )
+    const allowedSources =
+      access.isExternal && scoped?.utm_source?.length
+        ? scoped.utm_source
+        : access.isExternal
+          ? []
+          : null
+    const data = await buildUtmDashboardForLandingPage(
+      resolved.row,
+      allowedSources
+    )
     return { ok: true, data }
   } catch (err) {
     console.error("[utm] dashboard load failed", err)

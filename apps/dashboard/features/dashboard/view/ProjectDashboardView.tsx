@@ -45,6 +45,7 @@ import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
 import { DashboardAccessProvider } from "@/features/dashboard/view/dashboard-access-context"
 import { dashboardPageInsetClassName } from "@/features/overview/view/overview-card-density"
 import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
+import { isExternalTeamMemberScope } from "@/features/team/model/external-privileges"
 import {
   cacheDataLabResponse,
   fetchDataLabWithPriority,
@@ -89,10 +90,6 @@ function ProjectDashboardViewInner({
     return PROJECT_TABS
   }, [allowedTabs])
 
-  // URL is the source of truth for the project tab: /dashboard → project (no
-  // ?tab) always opens Overview, while reload keeps the current ?tab= value.
-  // Do not pass projectId — localStorage restore would reopen the last tab on
-  // every fresh visit from the project list.
   const [activeTab, setActiveTab] = useDashboardQueryParam("tab", {
     parse: (value) => {
       const parsed = parseProjectTab(value)
@@ -106,8 +103,7 @@ function ProjectDashboardViewInner({
       return parsed
     },
     omitDefault: true,
-    // Tab bodies load via client fetch; refreshing RSC here races replace and
-    // leaves the controlled Tabs on the previous value until a second click.
+
     refreshOnChange: false,
   })
   const { dateRangeId, customRange } = useDashboardDateRange()
@@ -116,12 +112,12 @@ function ProjectDashboardViewInner({
   const dataLabPath = useMemo(() => {
     const path = buildAnalyticsApiPath(
       `/api/landing-pages/${encodeURIComponent(projectId)}/data-export`,
-      { rangeId: dateRangeId, customRange }
+      { rangeId: dateRangeId, customRange, utmFilter }
     )
     const url = new URL(path, "http://local.invalid")
     url.searchParams.set("limit", "50")
     return `${url.pathname}${url.search}`
-  }, [customRange, dateRangeId, projectId])
+  }, [customRange, dateRangeId, projectId, utmFilter])
   const [dataLabPreload, setDataLabPreload] = useState<{
     requestKey: string
     data: ProjectTabData["data-export"] | null
@@ -143,7 +139,7 @@ function ProjectDashboardViewInner({
     const controller = new AbortController()
     setDataLabPreload((current) => ({
       requestKey: dataLabPath,
-      data: current.requestKey === dataLabPath ? current.data : null,
+      data: current.data,
       loading: true,
     }))
 
@@ -162,6 +158,7 @@ function ProjectDashboardViewInner({
             projectId,
             dateRangeId,
             customRange,
+            utmFilter,
             signal: controller.signal,
             seed: data,
           })
@@ -211,23 +208,33 @@ function ProjectDashboardViewInner({
     dataLabPath,
     dateRangeId,
     projectId,
+    utmFilter,
     visibleTabs,
   ])
 
-  const preloadedDataLab =
-    dataLabPreload.requestKey === dataLabPath ? dataLabPreload.data : null
+  const preloadedDataLab = dataLabPreload.data
   const preloadedDataLabLoading =
-    dataLabPreload.requestKey !== dataLabPath || dataLabPreload.loading
+    dataLabPreload.loading || dataLabPreload.requestKey !== dataLabPath
 
   useEffect(() => {
-    if (!lockedUtmSources || lockedUtmSources.length === 0) return
+    if (lockedUtmSources && lockedUtmSources.length > 0) {
+      const current = utmFilter?.utm_source ?? []
+      const sameSources =
+        current.length === lockedUtmSources.length &&
+        lockedUtmSources.every((source) => current.includes(source)) &&
+        !utmFilter?.utm_s1?.length
+      if (sameSources) return
+      setUtmFilter({ utm_source: lockedUtmSources })
+      return
+    }
+
     const current = utmFilter?.utm_source ?? []
-    const sameSources =
-      current.length === lockedUtmSources.length &&
-      lockedUtmSources.every((source) => current.includes(source)) &&
-      !utmFilter?.utm_s1?.length
-    if (sameSources) return
-    setUtmFilter({ utm_source: lockedUtmSources })
+    if (
+      current.length > 0 &&
+      current.every((source) => isExternalTeamMemberScope(source))
+    ) {
+      setUtmFilter(null)
+    }
   }, [lockedUtmSources, utmFilter, setUtmFilter])
 
   useEffect(() => {

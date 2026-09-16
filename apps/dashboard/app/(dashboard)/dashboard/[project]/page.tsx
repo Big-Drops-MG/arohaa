@@ -26,7 +26,7 @@ import { loadSegmentsDashboardData } from "@/lib/server/segments-dashboard-load"
 import { loadSeoDashboardData } from "@/lib/server/seo-dashboard-load"
 import { loadWebVitalDashboardData } from "@/lib/server/web-vital-dashboard-load"
 import { loadDataExportDashboardData } from "@/lib/server/data-export-dashboard-load"
-import { canAccessDataExport } from "@/lib/server/data-export-acl"
+import { canAccessLeadsForLandingPage } from "@/lib/server/data-export-acl"
 import { canWriteLandingPages } from "@/lib/server/actor-can"
 import { loadUtmDashboardData } from "@/lib/server/utm-dashboard-load"
 import { loadTrafficDashboardData } from "@/lib/server/traffic-dashboard-load"
@@ -144,7 +144,7 @@ export default async function ProjectPage({
   const overviewPlaceholder = getOverviewPlaceholderData(publicId, formType)
   const actorReadOnly =
     access.isExternal || !(await canWriteLandingPages(actor))
-  const allowDataExport = (await canAccessDataExport(actor)) && !actorReadOnly
+  const allowDataExport = await canAccessLeadsForLandingPage(actor, publicId)
 
   let overview = null
   let traffic = null
@@ -195,6 +195,7 @@ export default async function ProjectPage({
         landingPagePublicId: publicId,
         rangeId,
         customRange,
+        utmFilter,
         mode: parseHeatmapMode(modeParam),
         device: parseHeatmapDevice(deviceParam),
       })
@@ -228,6 +229,7 @@ export default async function ProjectPage({
         landingPagePublicId: publicId,
         rangeId,
         customRange,
+        utmFilter,
       })
       break
     case "web-vital":
@@ -235,6 +237,7 @@ export default async function ProjectPage({
         landingPagePublicId: publicId,
         rangeId,
         customRange,
+        utmFilter,
       })
       break
     case "utm":
@@ -265,6 +268,7 @@ export default async function ProjectPage({
       landingPagePublicId: publicId,
       rangeId,
       customRange,
+      utmFilter,
     })
   }
 

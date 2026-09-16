@@ -14,6 +14,7 @@ import { normalizeDashboardUtmFilter } from "@/features/dashboard/model/utm-attr
 import {
   EXTERNAL_PRIVILEGE_TABS,
   isExternalTeamKind,
+  isExternalTeamMemberScope,
   type ExternalPrivilegeGrant,
   type ExternalProjectScope,
 } from "@/features/team/model/external-privileges"
@@ -137,8 +138,11 @@ export function getForcedUtmSources(
   publicId: string
 ): string[] | null {
   if (!access.isExternal) return null
-  const sources = access.utmSourceByProject.get(publicId)
-  return sources && sources.length > 0 ? sources : null
+  const sources = access.utmSourceByProject.get(publicId) ?? []
+  if (sources.some((source) => isExternalTeamMemberScope(source))) {
+    return null
+  }
+  return sources.length > 0 ? sources : null
 }
 
 export function getForcedUtmSource(
@@ -159,15 +163,25 @@ export function applyExternalUtmScope(
   }
 
   const forced = access.utmSourceByProject.get(publicId) ?? []
+  if (forced.some((source) => isExternalTeamMemberScope(source))) {
+    return normalizeDashboardUtmFilter(filter) ?? undefined
+  }
   if (forced.length === 0) {
     return { utm_source: ["__external_unscoped__"] }
   }
 
+  const realForced = forced.filter(
+    (source) => !isExternalTeamMemberScope(source)
+  )
+  if (realForced.length === 0) {
+    return normalizeDashboardUtmFilter(filter) ?? undefined
+  }
+
   return (
     normalizeDashboardUtmFilter({
-      utm_source: forced,
+      utm_source: realForced,
       segment_id: filter?.segment_id,
-    }) ?? { utm_source: forced }
+    }) ?? { utm_source: realForced }
   )
 }
 

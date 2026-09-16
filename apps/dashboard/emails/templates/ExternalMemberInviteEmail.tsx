@@ -84,7 +84,7 @@ export const externalMemberInvitePreviewProps: ExternalMemberInviteEmailProps =
     recipientFirstName: "Alex",
     recipientLastName: "Partner",
     email: "alex@partner.com",
-    acceptLink: "https://dashboard.arohaa.com/accept-invite?token=example",
+    acceptLink: "https://www.arohaa.net/accept-invite?token=example",
     expiresInHours: 48,
   }
 

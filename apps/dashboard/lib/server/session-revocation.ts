@@ -3,6 +3,7 @@ import "server-only"
 import { eq, lt } from "drizzle-orm"
 import { db, revokedJti, users } from "@workspace/database"
 import {
+  getGlobalSessionsInvalidBefore,
   isTokenInvalidatedBySessionsInvalidBefore,
   SESSION_MAX_AGE_SECONDS,
 } from "@/lib/server/session-token-utils"
@@ -40,6 +41,17 @@ export async function isSessionTokenRevoked(token: {
   sub?: string
   iat?: number
 }): Promise<boolean> {
+  if (typeof token.iat === "number") {
+    if (
+      isTokenInvalidatedBySessionsInvalidBefore(
+        token.iat,
+        getGlobalSessionsInvalidBefore()
+      )
+    ) {
+      return true
+    }
+  }
+
   if (token.jti) {
     const row = await db.query.revokedJti.findFirst({
       where: eq(revokedJti.jti, token.jti),

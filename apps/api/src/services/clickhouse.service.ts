@@ -5,6 +5,7 @@ import { chToDate } from '../lib/analytics-timezone.js'
 
 const CREATE_EVENTS_SQL = `
 CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_EVENTS_TABLE} (
+    event_id String DEFAULT '',
     event_name LowCardinality(String),
     workspace_id UUID,
     lp_public_id LowCardinality(String) DEFAULT '',
@@ -124,6 +125,10 @@ export async function ensureEventsTable(): Promise<void> {
   await ch.command({ query: CREATE_EVENTS_SQL })
   await ch.command({
     query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS event_id String DEFAULT ''`,
+  })
+  await ch.command({
+    query:
       `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS lp_public_id LowCardinality(String) DEFAULT ''`,
   })
   await ch.command({
@@ -229,7 +234,9 @@ async function ensureHeatmapSchema(ch: ClickHouseClient): Promise<void> {
           viewport_height Int32 DEFAULT 0,
           device LowCardinality(String) DEFAULT '',
           element_selector String DEFAULT '',
-          properties String DEFAULT ''
+          properties String DEFAULT '',
+          utm_source LowCardinality(String) DEFAULT '',
+          utm_s1 LowCardinality(String) DEFAULT ''
       ) ENGINE = MergeTree()
       PARTITION BY toYYYYMM(timestamp)
       ORDER BY (workspace_id, page_url, event_type, timestamp)
@@ -238,6 +245,12 @@ async function ensureHeatmapSchema(ch: ClickHouseClient): Promise<void> {
   })
   await ch.command({
     query: `ALTER TABLE ${HEATMAP_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS device LowCardinality(String) DEFAULT ''`,
+  })
+  await ch.command({
+    query: `ALTER TABLE ${HEATMAP_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS utm_source LowCardinality(String) DEFAULT ''`,
+  })
+  await ch.command({
+    query: `ALTER TABLE ${HEATMAP_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS utm_s1 LowCardinality(String) DEFAULT ''`,
   })
   await ch.command({
     query: `ALTER TABLE ${HEATMAP_EVENTS_TABLE} MODIFY TTL toDateTime(timestamp) + toIntervalDay(180)`,

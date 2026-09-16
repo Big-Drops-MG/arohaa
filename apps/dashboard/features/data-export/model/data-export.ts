@@ -17,6 +17,7 @@ export type DataExportLeadRow = {
   utmId: string
   trustedFormUrl: string
   formSubmitted: boolean
+  returnCount: number
   fields: Record<string, string>
 }
 
@@ -32,13 +33,10 @@ export type DataExportDashboardData = {
   hasMore: boolean
   hasRedirect: boolean
   level1Stats: Level1Stat[]
-  /** True when level1Stats cover the whole range rather than just this page. */
   level1Complete: boolean
   level2Stats: Level2Stat[]
-  /** True when level2Stats cover the whole range rather than just this page. */
   level2Complete: boolean
   level3: IntelligenceCenterPayload | null
-  /** True when level3 covers the whole range rather than just this page. */
   level3Complete: boolean
 }
 

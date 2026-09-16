@@ -126,6 +126,49 @@ describe('normalizeLeadFields', () => {
       last_name: 'Lee',
     })
   })
+
+  it('maps multilingual and branded name labels onto first_name / last_name', () => {
+    expect(
+      normalizeLeadFields({
+        primeiro_nome: 'Andre',
+        sobrenome: 'Ribeiro',
+        tên: 'Chieu',
+        имя: 'Sergey',
+        фамилия: 'Bultukov',
+        'الاسم الأول': 'Mahmoud',
+        'اسم العائلة': 'A nofall',
+        이름: 'Michael',
+        성: 'Kim',
+        best_primeiro_nome: 'IgnoredBecauseCanonicalFilled',
+        unit: '1A',
+      }),
+    ).toEqual({
+      first_name: 'Andre',
+      last_name: 'Ribeiro',
+      unit: '1A',
+    })
+  })
+
+  it('maps a single non-English first-name label when no EN key exists', () => {
+    expect(
+      normalizeLeadFields({
+        이름: 'Michael',
+        성: 'Kim',
+      }),
+    ).toEqual({
+      first_name: 'Michael',
+      last_name: 'Kim',
+    })
+  })
+
+  it('drops receipt control labels as noise', () => {
+    expect(
+      normalizeLeadFields({
+        receipt: 'email',
+        first_name: 'Ada',
+      }),
+    ).toEqual({ first_name: 'Ada' })
+  })
 })
 
 describe('isDisplayableLead', () => {

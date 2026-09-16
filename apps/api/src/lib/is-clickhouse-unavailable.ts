@@ -31,7 +31,6 @@ function collectErrorText(err: unknown, depth = 0): string {
   return parts.filter(Boolean).join(' ')
 }
 
-/** True when analytics should fall back to empty payloads instead of 500. */
 export function isClickHouseUnavailableError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
 

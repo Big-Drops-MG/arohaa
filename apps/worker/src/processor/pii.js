@@ -2,11 +2,60 @@ import crypto from 'crypto';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const EMAIL_KEY_HINT = /email/i;
+const PII_FIELD_KEY_HINT =
+  /^(email|e_?mail|first_?name|last_?name|full_?name|name|dob|date_of_birth|ssn|phone|mobile|tel)$/i;
 
 const LEAD_FIELDS_KEY = 'fields';
+const OPAQUE_PROP_KEY = '_k';
+
+function hashOpaqueValue(value) {
+  return crypto.createHash('sha256').update(value.trim().toLowerCase()).digest('hex');
+}
 
 export function hashEmail(email) {
-  return crypto.createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
+  return hashOpaqueValue(email);
+}
+
+function resolveFieldBlobKey() {
+  const fromEnv = process.env.AROHAA_FIELD_BLOB_KEY?.trim();
+  if (fromEnv) {
+    try {
+      const buf = Buffer.from(fromEnv, 'base64');
+      if (buf.length === 32) return buf;
+    } catch {
+      // fall through
+    }
+    return crypto.createHash('sha256').update(fromEnv).digest();
+  }
+  const secret = process.env.AROHAA_INTERNAL_API_SECRET?.trim();
+  if (!secret) return null;
+  return crypto
+    .createHash('sha256')
+    .update(`arohaa-field-blob:${secret}`)
+    .digest();
+}
+
+function encryptFieldBlob(fields) {
+  const key = resolveFieldBlobKey();
+  if (!key) return null;
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const plaintext = Buffer.from(JSON.stringify(fields), 'utf8');
+  const enc = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, enc, tag]).toString('base64');
+}
+
+function coerceFieldMap(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (k === LEAD_FIELDS_KEY || k === OPAQUE_PROP_KEY) continue;
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      out[k] = String(v);
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 function maskEmailValue(value) {
@@ -14,14 +63,46 @@ function maskEmailValue(value) {
   return hashEmail(value);
 }
 
+function maskPlaintextLeadFields(fields) {
+  const next = { ...fields };
+  let modified = false;
+  for (const [key, value] of Object.entries(next)) {
+    if (typeof value !== 'string') continue;
+    if (EMAIL_KEY_HINT.test(key) || EMAIL_REGEX.test(value) || PII_FIELD_KEY_HINT.test(key)) {
+      next[key] = hashOpaqueValue(value);
+      modified = true;
+    }
+  }
+  return modified ? next : fields;
+}
+
+function sealOrMaskLeadFields(props) {
+  if (!props || typeof props !== 'object' || Array.isArray(props)) return props;
+  const fields = coerceFieldMap(props[LEAD_FIELDS_KEY]);
+  if (!fields) return props;
+
+  const next = { ...props };
+  delete next[LEAD_FIELDS_KEY];
+
+  const sealed = encryptFieldBlob(fields);
+  if (sealed) {
+    next[OPAQUE_PROP_KEY] = sealed;
+    return next;
+  }
+
+  next[LEAD_FIELDS_KEY] = maskPlaintextLeadFields(fields);
+  return next;
+}
+
 function maskPropertiesObject(props) {
   if (!props || typeof props !== 'object' || Array.isArray(props)) return props;
 
-  let modified = false;
-  const next = { ...props };
+  const sealed = sealOrMaskLeadFields(props);
+  let modified = sealed !== props;
+  const next = { ...sealed };
 
   for (const [key, value] of Object.entries(next)) {
-    if (key === LEAD_FIELDS_KEY) continue;
+    if (key === LEAD_FIELDS_KEY || key === OPAQUE_PROP_KEY) continue;
 
     if (typeof value === 'string') {
       if (EMAIL_KEY_HINT.test(key) || EMAIL_REGEX.test(value)) {

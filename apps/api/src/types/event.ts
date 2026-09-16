@@ -1,6 +1,10 @@
-import { materializeOpaqueProps } from '../lib/field-blob.js'
+import {
+  materializeOpaqueProps,
+  sealPropsForStorage,
+} from '../lib/field-blob.js'
 
 export interface IngestEventBody {
+  event_id?: string
   ev?: string
   event_name?: string
   wid?: string
@@ -28,6 +32,7 @@ export interface IngestEventBody {
 }
 
 export interface EventRow {
+  event_id: string
   event_name: string
   workspace_id: string
   lp_public_id: string
@@ -102,22 +107,35 @@ function zipFromProps(props: Record<string, unknown> | undefined): string {
   return ''
 }
 
+export function sanitizeEventUrl(raw: string | undefined | null): string {
+  const value = typeof raw === 'string' ? raw.trim() : ''
+  if (!value) return ''
+  try {
+    const url = new URL(value)
+    return `${url.origin}${url.pathname}${url.hash}`.slice(0, 2048)
+  } catch {
+    return (value.split('?')[0] ?? '').slice(0, 2048)
+  }
+}
+
 export function ingestBodyToEventRow(
   body: IngestEventBody,
   traceId: string,
   enrichment: EnrichmentForRow,
 ): EventRow {
-  const materialized = materializeOpaqueProps(body.props)
-  const submittedZip = zipFromProps(body.props) || zipFromProps(materialized)
+  const forZip = materializeOpaqueProps(body.props)
+  const submittedZip = zipFromProps(body.props) || zipFromProps(forZip)
+  const sealed = sealPropsForStorage(body.props)
 
   return {
+    event_id: body.event_id?.trim() ?? '',
     event_name: body.event_name ?? body.ev ?? '',
     workspace_id: body.workspace_id ?? body.wid ?? '',
     lp_public_id: body.lp_id?.trim() ?? '',
     user_id: body.uid,
     session_id: body.sid,
     fingerprint: body.fp ?? '',
-    url: body.url ?? '',
+    url: sanitizeEventUrl(body.url),
     utm_source: body.utm_source ?? '',
     utm_medium: body.utm_medium ?? '',
     utm_campaign: body.utm_campaign ?? '',
@@ -143,7 +161,7 @@ export function ingestBodyToEventRow(
     metric_value: typeof body.metric_value === 'number' && Number.isFinite(body.metric_value)
       ? body.metric_value
       : 0,
-    properties: serializeProps(materialized),
+    properties: serializeProps(sealed),
     trace_id: traceId,
     created_at: toClickHouseDateTime64(new Date()),
   }

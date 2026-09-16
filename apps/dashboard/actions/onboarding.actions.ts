@@ -48,7 +48,7 @@ export async function completeOnboarding(formData: FormData): Promise<{
   const profileComplete =
     Boolean(existing.firstName?.trim()) &&
     Boolean(existing.lastName?.trim()) &&
-    Boolean(existing.roleId)
+    Boolean(existing.role?.trim())
   if (profileComplete) {
     return { error: "Profile is already complete." }
   }

@@ -15,6 +15,7 @@ import {
 import {
   EXTERNAL_PRIVILEGE_TABS,
   isExternalTeamKind,
+  isExternalTeamMemberScope,
   type ExternalPrivilegeGrant,
   type ExternalProjectScope,
 } from "@/features/team/model/external-privileges"
@@ -216,7 +217,7 @@ export async function saveExternalMemberPrivileges(input: {
       if (!scopedProjects.has(id)) {
         return {
           error:
-            "Select at least one UTM Source for every project that has tabs enabled.",
+            "Set Team member to Yes, or select at least one UTM Source, for every project that has tabs enabled.",
         }
       }
     }
@@ -255,10 +256,13 @@ export async function saveExternalMemberPrivileges(input: {
     }
     accessProjects.push({
       brandName: brandById.get(publicId) ?? publicId,
-      utmSources: (utmByProject.get(publicId) ?? []).sort((a, b) =>
-        a.localeCompare(b)
-      ),
+      utmSources: (utmByProject.get(publicId) ?? [])
+        .filter((source) => !isExternalTeamMemberScope(source))
+        .sort((a, b) => a.localeCompare(b)),
       tabs: [...tabLabels],
+      teamMember: (utmByProject.get(publicId) ?? []).some((source) =>
+        isExternalTeamMemberScope(source)
+      ),
     })
   }
   accessProjects.sort((a, b) => a.brandName.localeCompare(b.brandName))

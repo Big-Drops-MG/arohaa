@@ -24,6 +24,7 @@ import {
 import { overviewCardPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import {
   buildAnalyticsApiPath,
   shouldUseInitialTabData,
@@ -39,9 +40,10 @@ type DataExportDashboardProps = {
   projectId: string
   isActive?: boolean
   isLoading?: boolean
-  /** When true, omit the page header (used inside Data Lab). */
   embedded?: boolean
   onDataChange?: (data: DataExportDashboardData) => void
+  leadFilter?: "all" | "returning"
+  title?: string
 }
 
 const thClassName =
@@ -164,13 +166,17 @@ export function DataExportDashboard({
   isLoading: isTabLoading = false,
   embedded = false,
   onDataChange,
+  leadFilter = "all",
+  title = "Captured leads",
 }: DataExportDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
+  const { utmFilter } = useDashboardUtmFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [pageOffset, setPageOffset] = useState(initialData.offset)
   const [isBlockingLoad, setIsBlockingLoad] = useState(false)
   const [isPageLoading, setIsPageLoading] = useState(false)
+  const returningOnly = leadFilter === "returning"
 
   const pageSize = dashboardData.limit || DATA_EXPORT_PAGE_SIZE
   const total = dashboardData.total
@@ -204,11 +210,14 @@ export function DataExportDashboard({
 
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/data-export`,
-        { rangeId: dateRangeId, customRange }
+        { rangeId: dateRangeId, customRange, utmFilter }
       )
       const withPaging = new URL(url, window.location.origin)
       withPaging.searchParams.set("limit", String(DATA_EXPORT_PAGE_SIZE))
       withPaging.searchParams.set("offset", String(offset))
+      if (returningOnly) {
+        withPaging.searchParams.set("returning_only", "1")
+      }
       try {
         const res = await fetch(withPaging.pathname + withPaging.search, {
           cache: "no-store",
@@ -257,28 +266,46 @@ export function DataExportDashboard({
       dateRangeId,
       onDataChange,
       projectId,
+      returningOnly,
+      utmFilter,
     ]
   )
 
   useEffect(() => {
     if (!isActive) return
+    if (embedded && !returningOnly) {
+      if (isTabLoading) return
+      setDashboardData(initialData)
+      setPageOffset(initialData.offset)
+      return
+    }
     if (
+      !returningOnly &&
       shouldUseInitialTabData(
         dateRangeId,
         initialData.defaultDateRangeId,
-        undefined,
+        utmFilter,
         customRange
       )
     ) {
       setDashboardData(initialData)
       setPageOffset(initialData.offset)
-      onDataChange?.(initialData)
       return
     }
     const controller = new AbortController()
     void fetchPage(0, controller.signal)
     return () => controller.abort()
-  }, [customRange, dateRangeId, fetchPage, initialData, isActive, onDataChange])
+  }, [
+    customRange,
+    dateRangeId,
+    embedded,
+    fetchPage,
+    initialData,
+    isActive,
+    isTabLoading,
+    returningOnly,
+    utmFilter,
+  ])
 
   useEffect(() => {
     if (!isActive || !dashboardData.hasRedirect) return
@@ -313,7 +340,10 @@ export function DataExportDashboard({
     />
   )
 
-  if (isTabLoading || isBlockingLoad) {
+  const showBlockingSkeleton =
+    (isTabLoading || isBlockingLoad) && !(embedded && dashboardData.hasRedirect)
+
+  if (showBlockingSkeleton) {
     return (
       <div className="space-y-4">
         {header}
@@ -343,7 +373,7 @@ export function DataExportDashboard({
     )
   }
 
-  const colCount = 10 + fieldColumns.length
+  const colCount = (returningOnly ? 11 : 10) + fieldColumns.length
   const projectLabel = dashboardData.brandName.trim() || "Project"
 
   return (
@@ -365,7 +395,7 @@ export function DataExportDashboard({
         >
           <div className="min-w-0">
             <CardTitle className={overviewSectionHeadingClassName}>
-              Captured leads
+              {title}
             </CardTitle>
             <p className="mt-0.5 truncate text-sm font-medium text-foreground">
               {projectLabel}
@@ -393,6 +423,9 @@ export function DataExportDashboard({
                   <th className={thClassName}>utm_id</th>
                   <th className={thClassName}>TrustedForm</th>
                   <th className={thClassName}>Form Submitted</th>
+                  {returningOnly ? (
+                    <th className={thClassName}>Returns</th>
+                  ) : null}
                   {fieldColumns.map((column) =>
                     column.kind === "age" ? (
                       <th key={`age-${column.dobKey}`} className={thClassName}>
@@ -415,7 +448,8 @@ export function DataExportDashboard({
                       className="px-4 py-10 text-center text-sm text-muted-foreground"
                       colSpan={colCount}
                     >
-                      No captured rows for this range yet.
+                      No {returningOnly ? "retention" : "captured"} rows for
+                      this range yet.
                     </td>
                   </tr>
                 ) : (
@@ -472,6 +506,16 @@ export function DataExportDashboard({
                           {lead.formSubmitted ? "Yes" : "No"}
                         </span>
                       </td>
+                      {returningOnly ? (
+                        <td
+                          className={cn(
+                            tdClassName,
+                            "text-muted-foreground tabular-nums"
+                          )}
+                        >
+                          {lead.returnCount > 0 ? lead.returnCount : "—"}
+                        </td>
+                      ) : null}
                       {fieldColumns.map((column) =>
                         column.kind === "age" ? (
                           <td

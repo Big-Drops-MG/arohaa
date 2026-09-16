@@ -43,6 +43,7 @@ import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-ran
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardNavigation } from "@/hooks/use-dashboard-navigation"
 import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
+import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 
 function emptyLevel3Data(): IntelligenceCenterPayload {
   return { section: "level3", winners: [], boards: [], actions: [] }
@@ -101,6 +102,7 @@ export function DataLabDashboard({
 }: DataLabDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
+  const { utmFilter } = useDashboardUtmFilter()
   const { searchParams } = useDashboardNavigation()
 
   const visibleSections = useMemo(() => {
@@ -110,6 +112,7 @@ export function DataLabDashboard({
     const allowed = new Set(
       allowedSections.map((section) => normalizeDataLabSectionId(section))
     )
+    if (allowed.has("leads")) allowed.add("retention")
     const filtered = DATA_LAB_SECTIONS.filter((s) => allowed.has(s.id))
     return filtered.length > 0 ? filtered : DATA_LAB_SECTIONS
   }, [allowedSections])
@@ -163,7 +166,12 @@ export function DataLabDashboard({
 
   useEffect(() => {
     if (!isActive || !canAccessDataExport) return
-    if (initialDataExportLoading || !initialDataExport) {
+    if (initialDataExportLoading) {
+      if (!exportData) setExportLoading(true)
+      setStatsLoading(true)
+      return
+    }
+    if (!initialDataExport) {
       setExportLoading(true)
       setStatsLoading(true)
       return
@@ -191,6 +199,7 @@ export function DataLabDashboard({
           projectId,
           dateRangeId,
           customRange,
+          utmFilter,
           signal: controller.signal,
           seed: payload,
           onProgress: (progressive) => {
@@ -231,6 +240,7 @@ export function DataLabDashboard({
     projectId,
     dateRangeId,
     customRange,
+    utmFilter,
     initialDataExport,
     initialDataExportLoading,
   ])
@@ -238,7 +248,8 @@ export function DataLabDashboard({
   const cardsLoading =
     statsLoading || initialDataExportLoading || !initialDataExport
   const leadsLoading =
-    exportLoading || initialDataExportLoading || !initialDataExport
+    !exportData &&
+    (exportLoading || initialDataExportLoading || !initialDataExport)
 
   const handleExportDataChange = useCallback(
     (data: DataExportDashboardData) => {
@@ -333,6 +344,20 @@ export function DataLabDashboard({
               isLoading={leadsLoading}
               isActive={isActive}
               onDataChange={handleExportDataChange}
+            />
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="retention" className="mt-5 outline-none">
+          {labSection === "retention" ? (
+            <DataLabLeadsPanel
+              projectId={projectId}
+              canAccess={canAccessDataExport}
+              data={null}
+              isLoading={false}
+              isActive={isActive}
+              leadFilter="returning"
+              title="Retention"
             />
           ) : null}
         </TabsContent>

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   parseRouteCustomRange,
   parseRouteOffset,
+  resolveHeatmapPageUrl,
   sanitizeHeatmapPageUrl,
 } from "./route-query-limits.js"
 
@@ -21,5 +22,18 @@ describe("route query limits", () => {
     )
     expect(sanitizeHeatmapPageUrl("/landing?x=1")).toBe("/landing")
     expect(sanitizeHeatmapPageUrl("javascript:alert(1)")).toBeNull()
+  })
+
+  it("defaults heatmap page to the project landing page", () => {
+    expect(
+      resolveHeatmapPageUrl(
+        "https://example.com/terms?x=1",
+        "https://example.com/"
+      )
+    ).toBe("https://example.com/terms")
+    expect(
+      resolveHeatmapPageUrl(null, "https://autoinsurance.quotifii.com/")
+    ).toBe("https://autoinsurance.quotifii.com/")
+    expect(resolveHeatmapPageUrl("javascript:alert(1)", "")).toBeNull()
   })
 })

@@ -18,10 +18,18 @@ import {
   resolveIngestApiBase,
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
-import { appendDashboardCustomRangeParams } from "@/lib/server/analytics-utm-params"
-import { sanitizeHeatmapPageUrl } from "@/lib/server/route-query-limits"
+import {
+  appendDashboardCustomRangeParams,
+  appendDashboardUtmParams,
+  resolveUtmFilterForActor,
+} from "@/lib/server/analytics-utm-params"
+import {
+  resolveHeatmapPageUrl,
+  sanitizeHeatmapPageUrl,
+} from "@/lib/server/route-query-limits"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
+import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
 
 type AnalyticsHeatmapResponse = {
   rangeId: string
@@ -68,6 +76,7 @@ export async function fetchHeatmapAnalytics(
     device: HeatmapDevice
     pageUrl?: string | null
     customRange?: DashboardCustomRange
+    utmFilter?: DashboardUtmFilter
   }
 ): Promise<AnalyticsHeatmapResponse | null> {
   const apiBase = resolveIngestApiBase()
@@ -89,6 +98,7 @@ export async function fetchHeatmapAnalytics(
       url.searchParams.set("page_url", pageUrl)
     }
     appendDashboardCustomRangeParams(url, rangeId, options.customRange)
+    appendDashboardUtmParams(url, options.utmFilter)
 
     const resp = await fetch(url.toString(), {
       headers: { "x-arohaa-internal": secret },
@@ -135,6 +145,7 @@ export async function loadHeatmapDashboardData({
   device = "desktop",
   pageUrl,
   customRange,
+  utmFilter,
 }: {
   landingPagePublicId: string
   rangeId?: RangeId
@@ -142,9 +153,16 @@ export async function loadHeatmapDashboardData({
   device?: HeatmapDevice
   pageUrl?: string | null
   customRange?: DashboardCustomRange
+  utmFilter?: DashboardUtmFilter
 }): Promise<HeatmapDashboardData> {
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
+
+  const scopedUtmFilter = await resolveUtmFilterForActor(
+    actor,
+    landingPagePublicId,
+    utmFilter
+  )
 
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
@@ -152,8 +170,9 @@ export async function loadHeatmapDashboardData({
   const analytics = await fetchHeatmapAnalytics(row.id, rangeId, {
     mode,
     device,
-    pageUrl,
+    pageUrl: resolveHeatmapPageUrl(pageUrl, row.landingPageUrl),
     customRange,
+    utmFilter: scopedUtmFilter,
   })
   if (!analytics) {
     return getHeatmapEmptyDashboardData(
@@ -175,6 +194,7 @@ export async function loadHeatmapDashboardDataForApi(
     deviceRaw?: string | null
     pageUrl?: string | null
     customRange?: DashboardCustomRange
+    utmFilter?: DashboardUtmFilter
   } = {}
 ): Promise<
   | { ok: true; data: HeatmapDashboardData }
@@ -189,6 +209,12 @@ export async function loadHeatmapDashboardDataForApi(
     return { ok: false, status: 401, error: "Unauthorized" }
   }
 
+  const scopedUtmFilter = await resolveUtmFilterForActor(
+    actor,
+    landingPagePublicId,
+    options.utmFilter
+  )
+
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) {
     return { ok: false, status: 404, error: "Not found" }
@@ -197,8 +223,9 @@ export async function loadHeatmapDashboardDataForApi(
   const analytics = await fetchHeatmapAnalytics(row.id, rangeId, {
     mode,
     device,
-    pageUrl: options.pageUrl,
+    pageUrl: resolveHeatmapPageUrl(options.pageUrl, row.landingPageUrl),
     customRange: options.customRange,
+    utmFilter: scopedUtmFilter,
   })
   if (!analytics) {
     return {

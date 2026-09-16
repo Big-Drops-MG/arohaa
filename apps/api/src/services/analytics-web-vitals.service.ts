@@ -17,6 +17,12 @@ import {
   scoreWebVital,
   webVitalUnit,
 } from '../lib/web-vitals-score.js'
+import {
+  utmFilterCacheKey,
+  utmFilterParams,
+  utmFilterSql,
+  type AnalyticsUtmFilter,
+} from '../lib/analytics-utm-filter.js'
 import type {
   AnalyticsWebVitals,
   WebVitalDeviceBreakdown,
@@ -120,14 +126,16 @@ export async function getAnalyticsWebVitals({
   workspaceId,
   rangeId,
   custom,
+  utmFilter,
 }: {
   workspaceId: string
   rangeId: AnalyticsRangeId
   custom?: AnalyticsCustomRange
+  utmFilter?: AnalyticsUtmFilter
 }): Promise<AnalyticsWebVitals> {
   const now = new Date()
   const window = resolveAnalyticsWindow(rangeId, now, custom)
-  const cacheKey = `analytics:web-vitals:v2:${workspaceId}:${rangeCacheKey(window)}`
+  const cacheKey = `analytics:web-vitals:v3:${workspaceId}:${rangeCacheKey(window)}:${utmFilterCacheKey(utmFilter)}`
   const cached = await readAnalyticsCache<AnalyticsWebVitals>(cacheKey)
   if (cached) return cached
 
@@ -135,11 +143,12 @@ export async function getAnalyticsWebVitals({
     AND event_name = 'web_vitals'
     AND metric_name IN ('LCP', 'FCP', 'CLS', 'INP')
     AND metric_value >= 0
-    AND metric_value = metric_value`
+    AND metric_value = metric_value${utmFilterSql(utmFilter)}`
 
   const p = {
     wid: workspaceId,
     ...rangeQueryParams(window),
+    ...utmFilterParams(utmFilter),
   }
 
   const ch = getClickHouseClient()

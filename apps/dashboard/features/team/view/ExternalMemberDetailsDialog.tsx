@@ -19,6 +19,7 @@ import {
 } from "@/actions/team-member.actions"
 import {
   EXTERNAL_PRIVILEGE_TABS,
+  isExternalTeamMemberScope,
   type ExternalPrivilegeGrant,
   type ExternalProjectScope,
 } from "@/features/team/model/external-privileges"
@@ -36,6 +37,7 @@ type ProjectAccessSummary = {
   publicId: string
   brandName: string
   utmSources: string[]
+  teamMember: boolean
   tabs: { label: string; sections: string[] }[]
 }
 
@@ -46,9 +48,14 @@ function buildAccessSummary(
 ): ProjectAccessSummary[] {
   const brandById = new Map(projects.map((p) => [p.publicId, p.brandName]))
   const utmById = new Map<string, string[]>()
+  const teamMemberById = new Set<string>()
   for (const scope of scopes) {
     const source = scope.utmSource.trim()
     if (!source) continue
+    if (isExternalTeamMemberScope(source)) {
+      teamMemberById.add(scope.landingPagePublicId)
+      continue
+    }
     const existing = utmById.get(scope.landingPagePublicId) ?? []
     if (!existing.includes(source)) {
       existing.push(source)
@@ -91,6 +98,7 @@ function buildAccessSummary(
       utmSources: (utmById.get(publicId) ?? []).sort((a, b) =>
         a.localeCompare(b)
       ),
+      teamMember: teamMemberById.has(publicId),
       tabs: tabSummaries,
     })
   }
@@ -289,7 +297,11 @@ export function ExternalMemberDetailsDialog({
                       <p className="text-sm font-medium text-foreground">
                         {project.brandName}
                       </p>
-                      {project.utmSources.length > 0 ? (
+                      {project.teamMember ? (
+                        <p className="text-xs text-muted-foreground">
+                          Team member (all traffic)
+                        </p>
+                      ) : project.utmSources.length > 0 ? (
                         <p className="text-xs text-muted-foreground">
                           utm_source: {project.utmSources.join(", ")}
                         </p>

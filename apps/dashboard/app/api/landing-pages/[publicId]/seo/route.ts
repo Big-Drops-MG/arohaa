@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { parseDashboardCustomRange } from "@/features/traffic/model/traffic-range"
+import { parseUtmFilterFromSearchParams } from "@/lib/server/analytics-utm-params"
 import {
   loadSeoDashboardDataForApi,
   syncSeoRowsForApi,
@@ -31,7 +32,8 @@ export const GET = route(
       rangeId,
       sortBy,
       sortOrder,
-      customRange
+      customRange,
+      parseUtmFilterFromSearchParams(searchParams)
     )
 
     if (!res.ok) {

@@ -19,6 +19,7 @@ export async function issueExternalMemberInviteToken(
   userId: string
 ): Promise<string> {
   const token = randomUUID()
+  const tokenHash = hashExternalInviteToken(token)
   const expires = new Date(Date.now() + EXTERNAL_INVITE_TTL_MS)
 
   await db
@@ -27,7 +28,7 @@ export async function issueExternalMemberInviteToken(
 
   await db.insert(externalMemberInviteTokens).values({
     userId,
-    token,
+    token: tokenHash,
     expires,
   })
 
@@ -40,9 +41,11 @@ export async function findExternalInviteUserId(
   const trimmed = token.trim()
   if (!trimmed) return null
 
+  const tokenHash = hashExternalInviteToken(trimmed)
+
   const row = await db.query.externalMemberInviteTokens.findFirst({
     where: and(
-      eq(externalMemberInviteTokens.token, trimmed),
+      eq(externalMemberInviteTokens.token, tokenHash),
       gt(externalMemberInviteTokens.expires, new Date())
     ),
     columns: { userId: true },
@@ -70,7 +73,7 @@ export async function consumeExternalInviteToken(
 
   await db
     .delete(externalMemberInviteTokens)
-    .where(eq(externalMemberInviteTokens.token, trimmed))
+    .where(eq(externalMemberInviteTokens.token, tokenHash))
 
   return true
 }

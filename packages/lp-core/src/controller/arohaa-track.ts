@@ -46,7 +46,17 @@ function beaconIngest(event: string, props?: Record<string, unknown>): boolean {
     uid,
     sid,
     ts: Date.now(),
-    url: typeof window !== "undefined" ? window.location.href : "",
+    url:
+      typeof window !== "undefined"
+        ? (() => {
+            try {
+              const u = new URL(window.location.href)
+              return `${u.origin}${u.pathname}${u.hash}`
+            } catch {
+              return window.location.href.split("?")[0] ?? ""
+            }
+          })()
+        : "",
     page: script?.getAttribute("data-page")?.trim() || "localhost",
     props: props ?? {},
   }

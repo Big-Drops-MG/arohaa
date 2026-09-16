@@ -21,10 +21,15 @@ import {
   resolveIngestApiBase,
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
-import { canAccessDataExport } from "@/lib/server/data-export-acl"
+import { canAccessLeadsForLandingPage } from "@/lib/server/data-export-acl"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
-import { appendDashboardCustomRangeParams } from "@/lib/server/analytics-utm-params"
+import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
+import {
+  appendDashboardCustomRangeParams,
+  appendDashboardUtmParams,
+  resolveUtmFilterForActor,
+} from "@/lib/server/analytics-utm-params"
 import {
   resolveLevel1Stats,
   type Level1Stat,
@@ -55,6 +60,7 @@ type LeadsApiResponse = {
     trustedFormUrl?: string
     formSubmitted?: boolean
     fields: Record<string, string>
+    returnCount?: number
   }>
   total?: number
   limit?: number
@@ -72,7 +78,9 @@ async function fetchLeads(
   rangeId: RangeId,
   customRange: DashboardCustomRange | undefined,
   limit: number,
-  offset: number
+  offset: number,
+  utmFilter?: DashboardUtmFilter,
+  returningOnly = false
 ): Promise<LeadsApiResponse | null> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
@@ -92,7 +100,11 @@ async function fetchLeads(
     url.searchParams.set("range_id", rangeId)
     url.searchParams.set("limit", String(limit))
     url.searchParams.set("offset", String(offset))
+    if (returningOnly) {
+      url.searchParams.set("returning_only", "1")
+    }
     appendDashboardCustomRangeParams(url, rangeId, customRange)
+    appendDashboardUtmParams(url, utmFilter)
 
     const res = await fetch(url.toString(), {
       headers: {
@@ -128,20 +140,24 @@ export async function loadDataExportDashboardData({
   landingPagePublicId,
   rangeId = DEFAULT_TRAFFIC_RANGE_ID,
   customRange,
+  utmFilter,
   limit = DATA_EXPORT_PAGE_SIZE,
   offset = 0,
+  returningOnly = false,
 }: {
   landingPagePublicId: string
   rangeId?: RangeId
   customRange?: DashboardCustomRange
+  utmFilter?: DashboardUtmFilter
   limit?: number
   offset?: number
+  returningOnly?: boolean
 }): Promise<DataExportDashboardData> {
   if (offset > DEFAULT_ROUTE_MAX_OFFSET) notFound()
 
   const actor = await requireLandingPageActor()
   if (!actor) notFound()
-  if (!(await canAccessDataExport(actor))) {
+  if (!(await canAccessLeadsForLandingPage(actor, landingPagePublicId))) {
     notFound()
   }
 
@@ -153,13 +169,21 @@ export async function loadDataExportDashboardData({
     return getDataExportEmptyDashboardData(rangeId, false, row.brandName)
   }
 
+  const scopedUtmFilter = await resolveUtmFilterForActor(
+    actor,
+    landingPagePublicId,
+    utmFilter
+  )
+
   const analytics = await fetchLeads(
     row.id,
     actor.id,
     rangeId,
     customRange,
     limit,
-    offset
+    offset,
+    scopedUtmFilter,
+    returningOnly
   )
   if (!analytics) {
     return getDataExportEmptyDashboardData(rangeId, true, row.brandName)
@@ -219,7 +243,9 @@ export async function loadDataExportDashboardDataForApi(
   rangeIdRaw: string | null | undefined,
   customRange: DashboardCustomRange | undefined,
   limitRaw: string | null | undefined,
-  offsetRaw: string | null | undefined
+  offsetRaw: string | null | undefined,
+  utmFilter?: DashboardUtmFilter,
+  returningOnly = false
 ): Promise<
   | { ok: true; data: DataExportDashboardData }
   | { ok: false; status: number; error: string }
@@ -228,7 +254,7 @@ export async function loadDataExportDashboardDataForApi(
   if (!actor) {
     return { ok: false, status: 401, error: "Unauthorized" }
   }
-  if (!(await canAccessDataExport(actor))) {
+  if (!(await canAccessLeadsForLandingPage(actor, landingPagePublicId))) {
     return { ok: false, status: 403, error: "Forbidden" }
   }
 
@@ -251,8 +277,10 @@ export async function loadDataExportDashboardDataForApi(
     landingPagePublicId,
     rangeId,
     customRange,
+    utmFilter,
     limit,
     offset,
+    returningOnly,
   })
   return { ok: true, data }
 }

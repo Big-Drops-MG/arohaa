@@ -15,6 +15,7 @@ import { SeoImportPanel } from "@/features/seo/view/SeoImportPanel"
 import { formatSeoSummaryLabel } from "@/features/seo/utils/seo-format"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
+import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import type { AnalyticsFetchMode } from "@/lib/dashboard/analytics-fetch-mode"
 import {
   buildAnalyticsApiPath,
@@ -56,6 +57,7 @@ export function SeoDashboard({
 }: SeoDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
+  const { utmFilter } = useDashboardUtmFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isBlockingLoad, setIsBlockingLoad] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -97,6 +99,7 @@ export function SeoDashboard({
         {
           rangeId,
           customRange,
+          utmFilter,
           extra: {
             sort_by: nextSortBy,
             sort_order: nextSortOrder,
@@ -126,7 +129,7 @@ export function SeoDashboard({
         }
       }
     },
-    [projectId, customRange]
+    [projectId, customRange, utmFilter]
   )
 
   useEffect(() => {
@@ -134,7 +137,7 @@ export function SeoDashboard({
       shouldUseInitialTabData(
         dateRangeId,
         initialData.defaultDateRangeId,
-        undefined,
+        utmFilter,
         customRange
       ) &&
       sortBy === initialData.defaultSortBy &&
@@ -157,6 +160,7 @@ export function SeoDashboard({
   }, [
     customRange,
     dateRangeId,
+    utmFilter,
     fetchSeoForRange,
     initialData,
     sortBy,

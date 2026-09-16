@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify'
 import { neon } from '@neondatabase/serverless'
-import { resolveFieldBlobKeyB64 } from '../lib/field-blob.js'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -142,12 +141,10 @@ export async function sdkConfigRoutes(server: FastifyInstance) {
       }
 
       const cfg = await getConfig(wid)
-      const ck = resolveFieldBlobKeyB64()
       return reply.send({
         heatmap_sample_rate: cfg.heatmapSampleRate,
         redirect_page_url: cfg.redirectPageUrl,
         redirect_hostname: cfg.redirectHostname,
-        ...(ck ? { ck } : {}),
       })
     },
   )

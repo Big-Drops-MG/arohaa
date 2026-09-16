@@ -19,6 +19,7 @@ import { LighthouseScoreGauge } from "@/features/web-vital/view/LighthouseScoreG
 import { WebVitalsUsaMap } from "@/features/web-vital/view/WebVitalsUsaMap"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
 import type { AnalyticsFetchMode } from "@/lib/dashboard/analytics-fetch-mode"
 import {
   buildAnalyticsApiPath,
@@ -45,6 +46,7 @@ export function WebVitalDashboard({
 }: WebVitalDashboardProps) {
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
+  const { utmFilter } = useDashboardUtmFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [isBlockingLoad, setIsBlockingLoad] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -59,7 +61,7 @@ export function WebVitalDashboard({
       else setIsRefreshing(true)
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/web-vital`,
-        { rangeId, customRange }
+        { rangeId, customRange, utmFilter }
       )
       try {
         const res = await fetch(url, { cache: "no-store", signal })
@@ -83,7 +85,7 @@ export function WebVitalDashboard({
         }
       }
     },
-    [projectId, customRange]
+    [projectId, customRange, utmFilter]
   )
 
   useEffect(() => {
@@ -93,7 +95,7 @@ export function WebVitalDashboard({
       shouldUseInitialTabData(
         dateRangeId,
         initialData.defaultDateRangeId,
-        undefined,
+        utmFilter,
         customRange
       )
     ) {
@@ -105,7 +107,14 @@ export function WebVitalDashboard({
     const controller = new AbortController()
     void fetchWebVital(dateRangeId, controller.signal, "background")
     return () => controller.abort()
-  }, [isActive, customRange, dateRangeId, fetchWebVital, initialData])
+  }, [
+    isActive,
+    customRange,
+    dateRangeId,
+    fetchWebVital,
+    initialData,
+    utmFilter,
+  ])
 
   const deviceRows =
     dashboardData.devices.length > 0

@@ -4,62 +4,50 @@ import {
   resolveInternalApiSecret,
   verifyInternalApiRequest,
 } from '../lib/internal-api-secret.js'
-import { verifyWorkspaceApiKeyForWorkspace } from '../lib/workspace-api-key-auth.js'
+import { verifyWorkspaceApiKeyForLandingPage } from '../lib/workspace-api-key-auth.js'
 import { guardFunnelLeadsRequest } from '../lib/funnel-leads-auth.js'
+import { WORKSPACE_API_KEY_SCOPE_ANALYTICS } from '@workspace/database'
 import {
-  emptyAnalyticsFunnel,
   getAnalyticsFunnel,
 } from '../services/analytics-funnel.service.js'
 import {
-  emptyFunnelLeads,
   getFunnelLeads,
 } from '../services/analytics-funnel-leads.service.js'
 import { landingPageHasRedirect } from '../lib/landing-redirect.js'
 import {
-  emptyAnalyticsTraffic,
   getAnalyticsTraffic,
 } from '../services/analytics-traffic.service.js'
 import {
-  emptyAnalyticsOverview,
-  emptyLandingPageCardMetrics,
   getAnalyticsOverview,
   getAnalyticsOverviewCities,
   getAnalyticsOverviewZipcodes,
   getLandingPageCardMetrics,
 } from '../services/analytics.service.js'
 import {
-  emptyAnalyticsEvents,
   getAnalyticsEvents,
 } from '../services/analytics-events.service.js'
 import {
-  emptyAnalyticsSegments,
   getAnalyticsSegments,
 } from '../services/analytics-segments.service.js'
 import {
-  emptyAnalyticsExperiments,
   getAnalyticsExperiments,
 } from '../services/analytics-experiments.service.js'
 import {
-  emptyAnalyticsAlerts,
   getAnalyticsAlerts,
 } from '../services/analytics-alerts.service.js'
 import {
-  emptyAnalyticsSeo,
   getAnalyticsSeo,
   syncSeoResults,
 } from '../services/analytics-seo.service.js'
 import {
-  emptyAnalyticsWebVitals,
   getAnalyticsWebVitals,
 } from '../services/analytics-web-vitals.service.js'
 import {
-  emptyAnalyticsInsights,
   getAnalyticsInsights,
 } from '../services/analytics-insights.service.js'
 import { isInsightSectionId } from '../types/analytics-insights.js'
 import { getDiscoveredUtmParams, getUtmDimensionValues } from '../services/analytics-utm-discover.service.js'
 import {
-  emptyAnalyticsHeatmap,
   getAnalyticsHeatmap,
 } from '../services/analytics-heatmap.service.js'
 import {
@@ -174,6 +162,7 @@ const heatmapSchema = {
         enum: ['all', 'mobile', 'tablet', 'desktop'],
       },
       page_url: { type: 'string', maxLength: 4000 },
+      ...utmFilterSchemaProps,
     },
   },
 } as const
@@ -242,9 +231,10 @@ async function guardAnalyticsRequest(
   }
 
   if (
-    await verifyWorkspaceApiKeyForWorkspace(
+    await verifyWorkspaceApiKeyForLandingPage(
       request.headers.authorization,
       workspaceId,
+      WORKSPACE_API_KEY_SCOPE_ANALYTICS,
     )
   ) {
     return true
@@ -259,11 +249,10 @@ async function guardAnalyticsRequest(
   return false
 }
 
-async function sendAnalyticsQuery<T>({
+async function sendAnalyticsQuery({
   request,
   reply,
   workspaceId,
-  emptyValue,
   run,
   logLabel,
   logContext,
@@ -272,8 +261,7 @@ async function sendAnalyticsQuery<T>({
   request: FastifyRequest
   reply: FastifyReply
   workspaceId: string
-  emptyValue: T
-  run: () => Promise<T>
+  run: () => Promise<unknown>
   logLabel: string
   logContext?: Record<string, unknown>
   guard?: (
@@ -292,9 +280,12 @@ async function sendAnalyticsQuery<T>({
     if (isClickHouseUnavailableError(err)) {
       request.log.warn(
         { err, workspace_id: workspaceId, ...logContext },
-        `${logLabel} fallback to empty analytics payload`,
+        `${logLabel} clickhouse unavailable`,
       )
-      await reply.send(emptyValue)
+      await reply.code(503).send({
+        error: 'analytics_unavailable',
+        code: 'CLICKHOUSE_DOWN',
+      })
       return
     }
 
@@ -371,11 +362,6 @@ export async function analyticsRoutes(server: FastifyInstance) {
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: emptyAnalyticsOverview(
-          parsed.rangeId,
-          parsed.custom,
-          formType,
-        ),
         run: () =>
           getAnalyticsOverview(
             workspace_id,
@@ -441,7 +427,6 @@ export async function analyticsRoutes(server: FastifyInstance) {
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: { state: state.trim(), cities: [] },
         run: () =>
           getAnalyticsOverviewCities({
             workspaceId: workspace_id,
@@ -510,7 +495,6 @@ export async function analyticsRoutes(server: FastifyInstance) {
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: { state: state.trim(), city: city.trim(), zipcodes: [] },
         run: () =>
           getAnalyticsOverviewZipcodes({
             workspaceId: workspace_id,
@@ -560,7 +544,6 @@ export async function analyticsRoutes(server: FastifyInstance) {
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: emptyAnalyticsTraffic(parsed.rangeId),
         run: () =>
           getAnalyticsTraffic({
             workspaceId: workspace_id,
@@ -621,7 +604,6 @@ export async function analyticsRoutes(server: FastifyInstance) {
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: emptyAnalyticsFunnel(parsed.rangeId, formType),
         run: () =>
           getAnalyticsFunnel({
             workspaceId: workspace_id,
@@ -645,6 +627,11 @@ export async function analyticsRoutes(server: FastifyInstance) {
       to?: string
       limit?: string
       offset?: string
+      utm_source?: string
+      utm_s1?: string
+      utm_dim?: string
+      utm_value?: string
+      returning_only?: string
     }
   }>(
     '/v1/analytics/funnel/leads',
@@ -657,8 +644,10 @@ export async function analyticsRoutes(server: FastifyInstance) {
             workspace_id: { type: 'string', format: 'uuid' },
             range_id: rangeIdSchema,
             ...customRangeSchemaProps,
+            ...utmFilterSchemaProps,
             limit: { type: 'string', maxLength: 4 },
             offset: { type: 'string', maxLength: 8 },
+            returning_only: { type: 'string', enum: ['0', '1', 'true', 'false'] },
           },
         },
       },
@@ -672,13 +661,16 @@ export async function analyticsRoutes(server: FastifyInstance) {
       }
       const limit = Number(request.query.limit ?? 15)
       const offset = Number(request.query.offset ?? 0)
+      const utmFilter = parseAnalyticsUtmFilter(request.query)
+      const returningRaw = (request.query.returning_only ?? '').toLowerCase()
+      const returningOnly =
+        returningRaw === '1' || returningRaw === 'true'
 
       await sendAnalyticsQuery({
         request,
         reply,
         workspaceId: workspace_id,
         guard: guardFunnelLeadsRequest,
-        emptyValue: emptyFunnelLeads(parsed.rangeId, limit, offset),
         run: () =>
           getFunnelLeads({
             workspaceId: workspace_id,
@@ -686,9 +678,11 @@ export async function analyticsRoutes(server: FastifyInstance) {
             custom: parsed.custom,
             limit,
             offset,
+            utmFilter,
+            returningOnly,
           }),
         logLabel: 'analytics funnel leads query ok',
-        logContext: { range_id: parsed.rangeId },
+        logContext: { range_id: parsed.rangeId, returning_only: returningOnly },
       })
     },
   )
@@ -702,6 +696,10 @@ export async function analyticsRoutes(server: FastifyInstance) {
       mode?: string
       device?: string
       page_url?: string
+      utm_source?: string
+      utm_s1?: string
+      utm_dim?: string
+      utm_value?: string
     }
   }>(
     '/v1/analytics/heatmap',
@@ -714,12 +712,12 @@ export async function analyticsRoutes(server: FastifyInstance) {
       }
       const mode = parseHeatmapMode(request.query.mode)
       const device = parseHeatmapDevice(request.query.device)
+      const utmFilter = parseAnalyticsUtmFilter(request.query)
 
       await sendAnalyticsQuery({
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: emptyAnalyticsHeatmap(parsed.rangeId, mode, device),
         run: () =>
           getAnalyticsHeatmap({
             workspaceId: workspace_id,
@@ -728,6 +726,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
             pageUrl: page_url,
             rangeId: parsed.rangeId,
             custom: parsed.custom,
+            utmFilter,
           }),
         logLabel: 'analytics heatmap query ok',
         logContext: { range_id: parsed.rangeId, mode, device },
@@ -768,7 +767,6 @@ export async function analyticsRoutes(server: FastifyInstance) {
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: emptyAnalyticsEvents(),
         run: () =>
           getAnalyticsEvents({
             workspaceId: workspace_id,
@@ -815,7 +813,6 @@ export async function analyticsRoutes(server: FastifyInstance) {
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: emptyAnalyticsSegments(),
         run: () =>
           getAnalyticsSegments({
             workspaceId: workspace_id,
@@ -873,7 +870,6 @@ export async function analyticsRoutes(server: FastifyInstance) {
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: [] as Awaited<ReturnType<typeof getCohortRetention>>,
         run: () => getCohortRetention(workspace_id, segmentGroup, split_by),
         logLabel: 'analytics cohorts query ok',
         logContext: {
@@ -934,7 +930,6 @@ export async function analyticsRoutes(server: FastifyInstance) {
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: emptyAnalyticsExperiments(),
         run: () =>
           getAnalyticsExperiments({
             workspaceId: workspace_id,
@@ -975,7 +970,6 @@ export async function analyticsRoutes(server: FastifyInstance) {
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: emptyLandingPageCardMetrics(),
         run: () => getLandingPageCardMetrics(workspace_id, form_type),
         logLabel: 'landing summary query ok',
       })
@@ -991,7 +985,6 @@ export async function analyticsRoutes(server: FastifyInstance) {
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: [] as Array<{ key: string; value: string }>,
         run: () => getDiscoveredUtmParams(workspace_id),
         logLabel: 'utm discovered query ok',
       })
@@ -1022,7 +1015,6 @@ export async function analyticsRoutes(server: FastifyInstance) {
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: [] as string[],
         run: () => getUtmDimensionValues(workspace_id, dim),
         logLabel: 'utm values query ok',
         logContext: { dim },
@@ -1080,7 +1072,6 @@ export async function analyticsRoutes(server: FastifyInstance) {
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: emptyAnalyticsAlerts(),
         run: () =>
           getAnalyticsAlerts({
             workspaceId: workspace_id,
@@ -1148,7 +1139,6 @@ export async function analyticsRoutes(server: FastifyInstance) {
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: emptyAnalyticsSeo(parsed.rangeId, sortBy, sortOrder),
         run: () =>
           getAnalyticsSeo({
             workspaceId: workspace_id,
@@ -1170,6 +1160,10 @@ export async function analyticsRoutes(server: FastifyInstance) {
       range_id?: string
       from?: string
       to?: string
+      utm_source?: string
+      utm_s1?: string
+      utm_dim?: string
+      utm_value?: string
     }
   }>(
     '/v1/analytics/web-vitals',
@@ -1182,6 +1176,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
             workspace_id: { type: 'string', format: 'uuid' },
             range_id: rangeIdSchema,
             ...customRangeSchemaProps,
+            ...utmFilterSchemaProps,
           },
         },
       },
@@ -1193,17 +1188,18 @@ export async function analyticsRoutes(server: FastifyInstance) {
       if (!parsed.ok) {
         return reply.code(400).send({ error: parsed.error })
       }
+      const parsedUtm = parseAnalyticsUtmFilter(request.query)
 
       await sendAnalyticsQuery({
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: emptyAnalyticsWebVitals(parsed.rangeId),
         run: () =>
           getAnalyticsWebVitals({
             workspaceId: workspace_id,
             rangeId: parsed.rangeId,
             custom: parsed.custom,
+            utmFilter: parsedUtm,
           }),
         logLabel: 'analytics web-vitals query ok',
         logContext: { range_id: parsed.rangeId },
@@ -1281,7 +1277,6 @@ export async function analyticsRoutes(server: FastifyInstance) {
         request,
         reply,
         workspaceId: workspace_id,
-        emptyValue: emptyAnalyticsInsights(section),
         run: () =>
           getAnalyticsInsights({
             workspaceId: workspace_id,

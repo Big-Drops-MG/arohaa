@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { parseDashboardCustomRange } from "@/features/traffic/model/traffic-range"
+import { parseUtmFilterFromSearchParams } from "@/lib/server/analytics-utm-params"
 import { loadWebVitalDashboardDataForApi } from "@/lib/server/web-vital-dashboard-load"
 import { route } from "@/lib/server/route"
 import { MAX_DASHBOARD_CUSTOM_SPAN_DAYS } from "@/lib/server/route-query"
@@ -20,7 +21,8 @@ export const GET = route(
       parseDashboardCustomRange(
         searchParams.get("from"),
         searchParams.get("to")
-      )
+      ),
+      parseUtmFilterFromSearchParams(searchParams)
     )
 
     if (!res.ok) {

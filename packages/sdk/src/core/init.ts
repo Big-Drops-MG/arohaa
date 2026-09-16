@@ -1,6 +1,5 @@
 import { initializeConfig } from "../model/config"
 import { initIdentity } from "../model/identity"
-import { installFormFetchTracking } from "../events/form-tracking"
 import { setupLifecycle } from "./lifecycle"
 import { setupFrameSizeReporter } from "./frame-size"
 import { loadSdkRemoteConfig } from "./sdk-config"
@@ -45,7 +44,6 @@ export async function initSDK(): Promise<void> {
 
   await loadSdkRemoteConfig()
 
-  installFormFetchTracking()
   initIdentity()
   setupLifecycle()
   isSDKInitialized = true

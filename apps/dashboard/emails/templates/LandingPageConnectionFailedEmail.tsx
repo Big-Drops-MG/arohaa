@@ -66,7 +66,7 @@ export const landingPageConnectionFailedPreviewProps: LandingPageConnectionFaile
     recipientFirstName: "Ishan",
     brandName: "Big Drops MG",
     landingPageUrl: "https://example.com/landing",
-    dashboardUrl: "https://dashboard.arohaa.com/dashboard/new-landing",
+    dashboardUrl: "https://www.arohaa.net/dashboard/new-landing",
   }
 
 const main = {

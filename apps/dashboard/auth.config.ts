@@ -55,10 +55,40 @@ export const authConfig = {
       }
 
       if (path.startsWith("/login")) {
+        if (!isLoggedIn) return true
+
+        const wantsTwoFactorChallenge =
+          nextUrl.searchParams.get("requiresTwoFactor") === "true"
+        const needsTwoFactor =
+          hasTwoFactorEnabled(auth.user) && !hasTwoFactorAt(auth)
+
+        if (needsTwoFactor) {
+          if (wantsTwoFactorChallenge) return true
+          return Response.redirect(
+            new URL("/login?requiresTwoFactor=true", nextUrl)
+          )
+        }
+
+        return Response.redirect(new URL("/dashboard", nextUrl))
+      }
+
+      if (isOnboarding || isPendingAccess) {
+        if (!isLoggedIn) return false
+
+        if (!hasTwoFactorEnabled(auth.user)) {
+          return Response.redirect(new URL("/authenticate", nextUrl))
+        }
+
+        if (!hasTwoFactorAt(auth)) {
+          return Response.redirect(
+            new URL("/login?requiresTwoFactor=true", nextUrl)
+          )
+        }
+
         return true
       }
 
-      if (isLoggedIn && !isAuthenticate && !isOnboarding && !isPendingAccess) {
+      if (isLoggedIn && !isAuthenticate) {
         return Response.redirect(new URL("/dashboard", nextUrl))
       }
 

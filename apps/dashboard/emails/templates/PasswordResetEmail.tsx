@@ -62,7 +62,7 @@ export function PasswordResetEmail({
 }
 
 export const passwordResetEmailPreviewProps: PasswordResetEmailProps = {
-  resetLink: "https://dashboard.arohaa.net/reset-password?token=abc123",
+  resetLink: "https://www.arohaa.net/reset-password?token=abc123",
   expiresInMinutes: 60,
 }
 

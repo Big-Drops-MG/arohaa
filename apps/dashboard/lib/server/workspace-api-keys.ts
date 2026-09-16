@@ -6,7 +6,7 @@ import {
   workspaceApiKeys,
   type WorkspaceApiKeyScope,
 } from "@workspace/database"
-import { getOrCreateOwnerWorkspace } from "@/lib/server/resolve-workspace"
+import { resolveTeamSettingsWorkspace } from "@/lib/server/resolve-workspace"
 import type { Actor } from "@/lib/server/actor-can"
 import { validateRequestedApiKeyScopes } from "@/lib/server/workspace-api-key-scopes"
 
@@ -24,7 +24,7 @@ export type WorkspaceApiKeyListItem = {
 export async function listWorkspaceApiKeys(
   ownerUserId: string
 ): Promise<WorkspaceApiKeyListItem[]> {
-  const workspace = await getOrCreateOwnerWorkspace(ownerUserId)
+  const workspace = await resolveTeamSettingsWorkspace(ownerUserId)
   const rows = await db
     .select({
       id: workspaceApiKeys.id,
@@ -68,7 +68,7 @@ export async function createWorkspaceApiKey(
   )
   if ("error" in scopeCheck) return { error: scopeCheck.error }
 
-  const workspace = await getOrCreateOwnerWorkspace(ownerUserId)
+  const workspace = await resolveTeamSettingsWorkspace(ownerUserId)
   const existing = await listWorkspaceApiKeys(ownerUserId)
   if (existing.length >= MAX_KEYS_PER_WORKSPACE) {
     return { error: `Maximum of ${MAX_KEYS_PER_WORKSPACE} active keys allowed` }
@@ -113,7 +113,7 @@ export async function revokeWorkspaceApiKey(
   ownerUserId: string,
   keyId: string
 ): Promise<{ ok: true } | { error: string }> {
-  const workspace = await getOrCreateOwnerWorkspace(ownerUserId)
+  const workspace = await resolveTeamSettingsWorkspace(ownerUserId)
   const [row] = await db
     .select({ id: workspaceApiKeys.id })
     .from(workspaceApiKeys)

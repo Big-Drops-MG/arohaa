@@ -103,8 +103,17 @@ function dropOffQuery(whereClause: string, mode: 'standard' | 'zipRedirect' = 's
         SELECT DISTINCT session_id
         FROM events_raw
         WHERE ${whereClause}
-          AND event_name = 'form_success'
-          AND JSONHas(properties, '_k')
+          AND (
+            (
+              event_name = 'form_success'
+              AND (
+                JSONHas(properties, 'lead_complete')
+                OR JSONHas(properties, '_k')
+                OR JSONHas(properties, 'fields')
+              )
+            )
+            OR event_name = 'service_click'
+          )
       `
       : `
         SELECT DISTINCT session_id

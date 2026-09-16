@@ -65,6 +65,7 @@ export const EXTERNAL_PRIVILEGE_TABS: PrivilegeTabDef[] = PROJECT_TABS.map(
             { id: "level-2", label: "Level 2" },
             { id: "level-3", label: "Level 3" },
             { id: "leads", label: "Leads table" },
+            { id: "retention", label: "Retention" },
           ]
         default:
           return []
@@ -88,6 +89,37 @@ export type ExternalPrivilegeGrant = {
 export type ExternalProjectScope = {
   landingPagePublicId: string
   utmSource: string
+}
+
+export const EXTERNAL_TEAM_MEMBER_SCOPE = "*" as const
+
+export function isExternalTeamMemberScope(utmSource: string): boolean {
+  return utmSource.trim() === EXTERNAL_TEAM_MEMBER_SCOPE
+}
+
+export function projectHasTeamMemberScope(
+  scopes: ExternalProjectScope[],
+  landingPagePublicId: string
+): boolean {
+  return scopes.some(
+    (scope) =>
+      scope.landingPagePublicId === landingPagePublicId &&
+      isExternalTeamMemberScope(scope.utmSource)
+  )
+}
+
+export function visibleUtmSourcesForProject(
+  scopes: ExternalProjectScope[],
+  landingPagePublicId: string
+): string[] {
+  return scopes
+    .filter(
+      (scope) =>
+        scope.landingPagePublicId === landingPagePublicId &&
+        scope.utmSource.trim() &&
+        !isExternalTeamMemberScope(scope.utmSource)
+    )
+    .map((scope) => scope.utmSource.trim())
 }
 
 export function isExternalTeamKind(

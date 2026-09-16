@@ -19,6 +19,8 @@ export type HeatmapRow = {
   device: string
   element_selector: string
   properties: string
+  utm_source: string
+  utm_s1: string
 }
 
 const HEATMAP_SDK_EVENTS = new Set([
@@ -147,7 +149,6 @@ export function eventRowToHeatmapRow(row: EventRow): HeatmapRow | null {
   if (!timestamp) return null
 
   const props = parseProps(row.properties)
-  // Always stamp the resolved device so Desktop/Tablet/Mobile heatmaps are complete.
   const device = resolveDevice(row, props)
 
   if (row.event_name === 'heatmap_click') {
@@ -163,6 +164,8 @@ export function eventRowToHeatmapRow(row: EventRow): HeatmapRow | null {
       device,
       element_selector: str(props.selector).slice(0, 500),
       properties: row.properties || '{}',
+      utm_source: row.utm_source ?? '',
+      utm_s1: row.utm_s1 ?? '',
     }
   }
 
@@ -179,6 +182,8 @@ export function eventRowToHeatmapRow(row: EventRow): HeatmapRow | null {
       device,
       element_selector: '',
       properties: row.properties || '{}',
+      utm_source: row.utm_source ?? '',
+      utm_s1: row.utm_s1 ?? '',
     }
   }
 
@@ -195,6 +200,8 @@ export function eventRowToHeatmapRow(row: EventRow): HeatmapRow | null {
       device,
       element_selector: str(props.selector).slice(0, 500),
       properties: row.properties || '{}',
+      utm_source: row.utm_source ?? '',
+      utm_s1: row.utm_s1 ?? '',
     }
   }
 
@@ -211,6 +218,8 @@ export function eventRowToHeatmapRow(row: EventRow): HeatmapRow | null {
       device,
       element_selector: str(props.selector).slice(0, 500),
       properties: row.properties || '{}',
+      utm_source: row.utm_source ?? '',
+      utm_s1: row.utm_s1 ?? '',
     }
   }
 
@@ -231,6 +240,8 @@ export function eventRowToHeatmapRow(row: EventRow): HeatmapRow | null {
       device,
       element_selector: '',
       properties: row.properties || '{}',
+      utm_source: row.utm_source ?? '',
+      utm_s1: row.utm_s1 ?? '',
     }
   }
 

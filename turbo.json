@@ -3,6 +3,7 @@
   "ui": "tui",
   "globalEnv": [
     "AUTH_SECRET",
+    "AUTH_SESSIONS_INVALID_BEFORE",
     "AUTH_URL",
     "DATABASE_URL",
     "DATABASE_URL_UNPOOLED",
@@ -51,6 +52,7 @@
       "outputs": [".next/**", "!.next/cache/**"],
       "env": [
         "AUTH_SECRET",
+        "AUTH_SESSIONS_INVALID_BEFORE",
         "AUTH_URL",
         "DATABASE_URL",
         "DATABASE_URL_UNPOOLED",

@@ -55,3 +55,13 @@ export function sanitizeHeatmapPageUrl(
     return trimmed.replace(/\?[^#]*/, "")
   }
 }
+
+/** Prefer an explicit page_url; otherwise the project's configured landing page. */
+export function resolveHeatmapPageUrl(
+  requested: string | null | undefined,
+  landingPageUrl: string
+): string | null {
+  return (
+    sanitizeHeatmapPageUrl(requested) ?? sanitizeHeatmapPageUrl(landingPageUrl)
+  )
+}

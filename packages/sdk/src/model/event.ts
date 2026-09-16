@@ -1,7 +1,8 @@
 import type { EventPayload, MetricExtension } from "../types"
-import { getAttributionData } from "../utils/url"
+import { getAttributionData, safePageUrl } from "../utils/url"
 import { getConfig } from "./config"
 import { getIdentity } from "./identity"
+import { generateUUID } from "../utils/uuid"
 
 export function buildEvent(
   event: string,
@@ -13,6 +14,7 @@ export function buildEvent(
   const attribution = getAttributionData()
 
   return {
+    event_id: generateUUID(),
     wid: config.wid,
     ...(config.lpId.trim() ? { lp_id: config.lpId.trim() } : {}),
     uid: identity.uid,
@@ -20,7 +22,7 @@ export function buildEvent(
     fp: identity.fp,
     ev: event,
     ts: Date.now(),
-    url: window.location.href,
+    url: safePageUrl(),
     page: config.page,
     variant: config.variant,
     formtype: config.formtype,

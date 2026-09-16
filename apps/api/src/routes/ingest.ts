@@ -9,11 +9,23 @@ import {
   getBlockedUtmSets,
   isUtmBlocked,
 } from '../services/utm-block.service.js'
+import {
+  claimIngestEventId,
+  isValidEventId,
+  releaseIngestEventId,
+} from '../lib/ingest-idempotency.js'
 import { ingestBodyToEventRow, type IngestEventBody } from '../types/event.js'
 import { buildEnrichmentContext } from '../utils/enrichment.js'
 import { normalizeReferrer } from '../utils/referrer.js'
 
 const eventBodyProperties = {
+  event_id: {
+    type: 'string',
+    minLength: 8,
+    maxLength: 64,
+    pattern:
+      '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
+  },
   ev: {
     type: 'string',
     maxLength: 50,
@@ -112,6 +124,7 @@ type IngestOneResult =
   | { status: 'accepted' }
   | { status: 'rejected'; error: string; code: number }
   | { status: 'dropped' }
+  | { status: 'unavailable'; error: string }
 
 async function ingestOne(
   body: IngestEventBody,
@@ -127,15 +140,44 @@ async function ingestOne(
     }
   }
 
+  const eventId = body.event_id?.trim() ?? ''
+  if (eventId) {
+    if (!isValidEventId(eventId)) {
+      return { status: 'rejected', error: 'INVALID_EVENT_ID', code: 400 }
+    }
+    const claim = await claimIngestEventId(eventId)
+    if (claim === 'duplicate') {
+      request.log.info(
+        {
+          trace_id: traceId,
+          event: 'ingest_duplicate',
+          event_id: eventId,
+        },
+        'ingest duplicate event_id dropped',
+      )
+      return { status: 'dropped' }
+    }
+    if (claim === 'unavailable') {
+      return { status: 'unavailable', error: 'IDEMPOTENCY_UNAVAILABLE' }
+    }
+  }
+
+  const originHeader = request.headers.origin
+  const refererHeader = request.headers.referer ?? request.headers.referrer
   const landing = await reconcileLandingPageIngest({
     lpIdRaw: body.lp_id,
     wid: body.workspace_id ?? body.wid ?? '',
+    requestOrigin: typeof originHeader === 'string' ? originHeader : undefined,
+    requestReferer: typeof refererHeader === 'string' ? refererHeader : undefined,
     eventUrl: body.url,
     ev,
     props: body.props,
   })
 
   if (landing.outcome === 'reject') {
+    if (eventId) {
+      await releaseIngestEventId(eventId)
+    }
     request.log.warn(
       {
         trace_id: traceId,
@@ -198,7 +240,19 @@ async function ingestOne(
     accuracyRadius: ctx.geo.accuracyRadius,
   })
 
-  pushEvent(row)
+  try {
+    await pushEvent(row)
+  } catch (err) {
+    if (eventId) {
+      await releaseIngestEventId(eventId)
+    }
+    request.log.error(
+      { err, trace_id: traceId, event: 'ingest_redis_unavailable' },
+      'ingest durable write failed',
+    )
+    return { status: 'unavailable', error: 'QUEUE_UNAVAILABLE' }
+  }
+
   return { status: 'accepted' }
 }
 
@@ -228,6 +282,14 @@ export async function ingestRoutes(server: FastifyInstance) {
         })
       }
 
+      if (result.status === 'unavailable') {
+        return reply.code(503).send({
+          status: 'unavailable',
+          trace_id: request.id,
+          reason: result.error,
+        })
+      }
+
       return reply.code(202).send({ status: 'accepted', trace_id: request.id })
     },
   )
@@ -242,6 +304,7 @@ export async function ingestRoutes(server: FastifyInstance) {
       const events = request.body.events
       let accepted = 0
       const rejected: Array<{ index: number; error: string }> = []
+      let unavailable = 0
 
       for (let i = 0; i < events.length; i++) {
         const body = events[i]!
@@ -253,7 +316,22 @@ export async function ingestRoutes(server: FastifyInstance) {
           continue
         }
 
+        if (result.status === 'unavailable') {
+          unavailable += 1
+          rejected.push({ index: i, error: result.error })
+          continue
+        }
+
         rejected.push({ index: i, error: result.error })
+      }
+
+      if (unavailable > 0 && accepted === 0) {
+        return reply.code(503).send({
+          status: 'unavailable',
+          trace_id: request.id,
+          accepted,
+          rejected,
+        })
       }
 
       return reply.code(202).send({
