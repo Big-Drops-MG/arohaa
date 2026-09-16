@@ -44,6 +44,7 @@ import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
 import { DashboardAccessProvider } from "@/features/dashboard/view/dashboard-access-context"
 import { dashboardPageInsetClassName } from "@/features/overview/view/overview-card-density"
 import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
+import { isExternalTeamMemberScope } from "@/features/team/model/external-privileges"
 import {
   cacheDataLabResponse,
   fetchDataLabWithPriority,
@@ -215,14 +216,24 @@ function ProjectDashboardViewInner({
     dataLabPreload.loading || dataLabPreload.requestKey !== dataLabPath
 
   useEffect(() => {
-    if (!lockedUtmSources || lockedUtmSources.length === 0) return
+    if (lockedUtmSources && lockedUtmSources.length > 0) {
+      const current = utmFilter?.utm_source ?? []
+      const sameSources =
+        current.length === lockedUtmSources.length &&
+        lockedUtmSources.every((source) => current.includes(source)) &&
+        !utmFilter?.utm_s1?.length
+      if (sameSources) return
+      setUtmFilter({ utm_source: lockedUtmSources })
+      return
+    }
+
     const current = utmFilter?.utm_source ?? []
-    const sameSources =
-      current.length === lockedUtmSources.length &&
-      lockedUtmSources.every((source) => current.includes(source)) &&
-      !utmFilter?.utm_s1?.length
-    if (sameSources) return
-    setUtmFilter({ utm_source: lockedUtmSources })
+    if (
+      current.length > 0 &&
+      current.every((source) => isExternalTeamMemberScope(source))
+    ) {
+      setUtmFilter(null)
+    }
   }, [lockedUtmSources, utmFilter, setUtmFilter])
 
   useEffect(() => {

@@ -107,7 +107,10 @@ export function useDashboardUtmFilter() {
       utm_source: source,
       utm_s1: s1,
     })
-    if (!hasDashboardUtmFilter(restored)) return
+    if (!hasDashboardUtmFilter(restored)) {
+      writeFilter(null)
+      return
+    }
     writeFilter(restored ?? null)
   }, [legacyUtmFilter, projectId, searchParams, writeFilter])
 

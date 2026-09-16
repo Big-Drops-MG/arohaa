@@ -170,11 +170,18 @@ export function applyExternalUtmScope(
     return { utm_source: ["__external_unscoped__"] }
   }
 
+  const realForced = forced.filter(
+    (source) => !isExternalTeamMemberScope(source)
+  )
+  if (realForced.length === 0) {
+    return normalizeDashboardUtmFilter(filter) ?? undefined
+  }
+
   return (
     normalizeDashboardUtmFilter({
-      utm_source: forced,
+      utm_source: realForced,
       segment_id: filter?.segment_id,
-    }) ?? { utm_source: forced }
+    }) ?? { utm_source: realForced }
   )
 }
 
