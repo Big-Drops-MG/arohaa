@@ -8,7 +8,6 @@ import { anonymizeEvent } from './processor/pii.js';
 import { DbWriter } from './processor/dbWriter.js';
 import { startWebPushConsumption } from './processor/webPushSender.js';
 import { startFailedEventsReplay } from './processor/dlq-replay.js';
-import { requeueInFlight as requeueInFlightPayload } from './processor/shutdown-requeue.js';
 import { logger } from './logger.js';
 
 const LOCAL_REDIS_URL = 'redis://127.0.0.1:6379';
@@ -101,7 +100,26 @@ let analyticsLoopDone = Promise.resolve();
 let heatmapLoopDone = Promise.resolve();
 
 async function requeueInFlight(queueName, payload) {
-  await requeueInFlightPayload(redis, queueName, payload, logger);
+  if (!payload) return;
+  try {
+    await redis.lpush(queueName, payload);
+    logger.info({ queue: queueName }, 'requeued in-flight payload on shutdown');
+  } catch (err) {
+    logger.error({ err, queue: queueName }, 'failed to requeue in-flight payload');
+    try {
+      await redis.lpush(
+        'failed_events',
+        JSON.stringify({
+          reason: 'shutdown_requeue_failed',
+          queue: queueName,
+          payload,
+          timestamp: Date.now(),
+        }),
+      );
+    } catch (dlqErr) {
+      logger.error({ err: dlqErr, queue: queueName }, 'failed to DLQ in-flight payload');
+    }
+  }
 }
 
 async function startQueueConsumption() {

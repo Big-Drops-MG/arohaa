@@ -8,9 +8,6 @@ export default defineConfig({
   test: {
     include: ["packages/**/*.test.ts", "apps/**/*.test.ts"],
     environment: "node",
-    environmentMatchGlobs: [
-      ["packages/sdk/**/*.test.ts", "happy-dom"],
-    ],
     passWithNoTests: false,
     testTimeout: 30_000,
     hookTimeout: 30_000,

@@ -73,11 +73,6 @@ export function hasFormSessionSucceeded(formIdValue?: string): boolean {
   return false
 }
 
-export function __resetFormSessionsForTests(): void {
-  sessions.clear()
-  fieldTrackingInstalled = false
-}
-
 export function trackFormFieldFocus(
   form: HTMLFormElement,
   field: HTMLElement,

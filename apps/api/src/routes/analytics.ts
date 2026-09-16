@@ -1,10 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { isClickHouseUnavailableError } from '../lib/is-clickhouse-unavailable.js'
 import {
-  ANALYTICS_UNAVAILABLE_BODY,
-  ANALYTICS_UNAVAILABLE_STATUS,
-} from '../lib/analytics-unavailable.js'
-import {
   resolveInternalApiSecret,
   verifyInternalApiRequest,
 } from '../lib/internal-api-secret.js'
@@ -286,9 +282,10 @@ async function sendAnalyticsQuery({
         { err, workspace_id: workspaceId, ...logContext },
         `${logLabel} clickhouse unavailable`,
       )
-      await reply
-        .code(ANALYTICS_UNAVAILABLE_STATUS)
-        .send(ANALYTICS_UNAVAILABLE_BODY)
+      await reply.code(503).send({
+        error: 'analytics_unavailable',
+        code: 'CLICKHOUSE_DOWN',
+      })
       return
     }
 
