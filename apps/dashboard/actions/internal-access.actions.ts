@@ -1,7 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { eq, sql } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import {
   db,
   users,
@@ -20,7 +20,6 @@ import {
   canRemoveInternalTeamMembers,
   getRoleById,
   isSuperadmin,
-  type DbQueryClient,
 } from "@/lib/server/actor-can"
 import { isApprovedAccess } from "@/lib/server/access-status"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
@@ -30,6 +29,7 @@ import {
   userAgentFromHeaders,
 } from "@/lib/server/request-client-meta"
 import {
+  countSuperadminsExcluding,
   resolveInternalOwnershipRecipient,
   transferOwnedAssetsBeforeUserDelete,
 } from "@/lib/server/transfer-ownership-on-user-remove"
@@ -133,6 +133,13 @@ export async function removeInternalTeamMember(
     return { error: "Only a superadmin can remove a superadmin." }
   }
 
+  if (targetRole?.key === SUPERADMIN_ROLE_KEY) {
+    const remaining = await countSuperadminsExcluding(targetId)
+    if (remaining < 1) {
+      return { error: "Cannot remove the last superadmin." }
+    }
+  }
+
   const ownershipRecipientId = await resolveInternalOwnershipRecipient(
     actor.id,
     targetId
@@ -148,84 +155,38 @@ export async function removeInternalTeamMember(
   const ipAddress = await clientIpFromNextHeaders()
   const userAgent = userAgentFromHeaders(headerStore)
 
-  type RemoveTxResult = { error: string } | { success: true }
-
-  let txResult: RemoveTxResult
   try {
-    txResult = await db.transaction(async (tx) => {
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtext('superadmin_membership'))`
-      )
-
-      const [locked] = await tx
-        .select({
-          id: users.id,
-          email: users.email,
-          roleId: users.roleId,
-          accessStatus: users.accessStatus,
-          teamKind: users.teamKind,
-        })
-        .from(users)
-        .where(eq(users.id, targetId))
-        .for("update")
-
-      if (
-        !locked ||
-        isExternalTeamKind(locked.teamKind) ||
-        !isApprovedAccess(locked.accessStatus)
-      ) {
-        return { error: "Internal member not found." } satisfies RemoveTxResult
-      }
-
-      const lockedRole = locked.roleId
-        ? await getRoleById(locked.roleId, tx as DbQueryClient)
-        : null
-
-      if (lockedRole?.key === SUPERADMIN_ROLE_KEY && !callerIsSuperadmin) {
-        return {
-          error: "Only a superadmin can remove a superadmin.",
-        } satisfies RemoveTxResult
-      }
-
-      const transfer = await transferOwnedAssetsBeforeUserDelete({
-        tx,
-        fromUserId: targetId,
-        toUserId: ownershipRecipientId,
-      })
-
-      await tx.insert(userActivityLogs).values({
-        id: crypto.randomUUID(),
-        actorUserId: actor.id,
-        eventType: "action",
-        summary: `Removed internal member ${locked.email ?? targetId}`,
-        path: "/dashboard/team",
-        targetLabel: locked.email ?? targetId,
-        ipAddress,
-        userAgent,
-        metadata: {
-          targetUserId: targetId,
-          beforeRoleKey: lockedRole?.key ?? null,
-          ownershipRecipientId,
-          recipientWorkspaceId: transfer.recipientWorkspaceId,
-          transferredLandingPages: transfer.transferredLandingPages,
-          hardDelete: true,
-        },
-      })
-
-      await tx.delete(users).where(eq(users.id, targetId))
-
-      return { success: true } satisfies RemoveTxResult
+    const transfer = await transferOwnedAssetsBeforeUserDelete({
+      fromUserId: targetId,
+      toUserId: ownershipRecipientId,
     })
+
+    await db.insert(userActivityLogs).values({
+      id: crypto.randomUUID(),
+      actorUserId: actor.id,
+      eventType: "action",
+      summary: `Removed internal member ${target.email ?? targetId}`,
+      path: "/dashboard/team",
+      targetLabel: target.email ?? targetId,
+      ipAddress,
+      userAgent,
+      metadata: {
+        targetUserId: targetId,
+        beforeRoleKey: targetRole?.key ?? null,
+        ownershipRecipientId,
+        recipientWorkspaceId: transfer.recipientWorkspaceId,
+        transferredLandingPages: transfer.transferredLandingPages,
+        hardDelete: true,
+      },
+    })
+
+    await db.delete(users).where(eq(users.id, targetId))
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (message.includes("At least one superadmin required")) {
       return { error: "Cannot remove the last superadmin." }
     }
     throw err
-  }
-
-  if ("error" in txResult) {
-    return { error: txResult.error }
   }
 
   revalidatePath("/dashboard/team")

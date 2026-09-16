@@ -1,6 +1,6 @@
 import "server-only"
 
-import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm"
+import { and, count, eq, inArray, isNull, ne, sql } from "drizzle-orm"
 import {
   accessRoles,
   CEO_ROLE_KEY,
@@ -14,8 +14,6 @@ import {
   workspaceApiKeys,
   workspaces,
 } from "@workspace/database"
-
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 async function resolveOwnershipRecipientUserId(
   preferredUserId: string,
@@ -60,11 +58,8 @@ async function resolveOwnershipRecipientUserId(
   return candidates[0]?.id ?? null
 }
 
-async function ensureOwnerWorkspaceId(
-  tx: Tx,
-  ownerUserId: string
-): Promise<string> {
-  const existing = await tx
+async function ensureOwnerWorkspaceId(ownerUserId: string): Promise<string> {
+  const existing = await db
     .select({ id: workspaces.id })
     .from(workspaces)
     .where(
@@ -74,7 +69,7 @@ async function ensureOwnerWorkspaceId(
 
   if (existing[0]) return existing[0].id
 
-  const [created] = await tx
+  const [created] = await db
     .insert(workspaces)
     .values({
       ownerUserId,
@@ -88,37 +83,56 @@ async function ensureOwnerWorkspaceId(
   return created.id
 }
 
-async function reassignUserFks(tx: Tx, fromUserId: string, toUserId: string) {
-  await tx
+async function reassignUserFks(fromUserId: string, toUserId: string) {
+  await db
     .update(landingPages)
     .set({ createdByUserId: toUserId, updatedAt: new Date() })
     .where(eq(landingPages.createdByUserId, fromUserId))
 
-  await tx
+  await db
     .update(landingPageAuditLogs)
     .set({ actorUserId: toUserId })
     .where(eq(landingPageAuditLogs.actorUserId, fromUserId))
 
-  await tx
+  await db
     .update(workspaceApiKeys)
     .set({ createdByUserId: toUserId })
     .where(eq(workspaceApiKeys.createdByUserId, fromUserId))
 
-  await tx
+  await db
     .update(users)
     .set({ accessReviewedByUserId: null })
     .where(eq(users.accessReviewedByUserId, fromUserId))
 }
 
+export async function countSuperadminsExcluding(
+  excludeUserId: string
+): Promise<number> {
+  const [row] = await db
+    .select({ value: count() })
+    .from(users)
+    .innerJoin(accessRoles, eq(accessRoles.id, users.roleId))
+    .where(
+      and(eq(accessRoles.key, SUPERADMIN_ROLE_KEY), ne(users.id, excludeUserId))
+    )
+  return Number(row?.value ?? 0)
+}
+
+/**
+ * Moves the removed user's projects into the recipient's workspace so a hard
+ * delete cannot cascade-destroy landing pages.
+ *
+ * Uses sequential neon-http queries (no transactions — neon-http does not
+ * support them).
+ */
 export async function transferOwnedAssetsBeforeUserDelete(params: {
-  tx: Tx
   fromUserId: string
   toUserId: string
 }): Promise<{ recipientWorkspaceId: string; transferredLandingPages: number }> {
-  const { tx, fromUserId, toUserId } = params
-  const recipientWorkspaceId = await ensureOwnerWorkspaceId(tx, toUserId)
+  const { fromUserId, toUserId } = params
+  const recipientWorkspaceId = await ensureOwnerWorkspaceId(toUserId)
 
-  const ownedWorkspaces = await tx
+  const ownedWorkspaces = await db
     .select({ id: workspaces.id })
     .from(workspaces)
     .where(eq(workspaces.ownerUserId, fromUserId))
@@ -127,7 +141,7 @@ export async function transferOwnedAssetsBeforeUserDelete(params: {
   let transferredLandingPages = 0
 
   if (ownedWorkspaceIds.length > 0) {
-    const recipientActiveUrls = await tx
+    const recipientActiveUrls = await db
       .select({ normalizedUrl: landingPages.normalizedUrl })
       .from(landingPages)
       .where(
@@ -140,7 +154,7 @@ export async function transferOwnedAssetsBeforeUserDelete(params: {
       recipientActiveUrls.map((row) => row.normalizedUrl)
     )
 
-    const sourcePages = await tx
+    const sourcePages = await db
       .select({
         id: landingPages.id,
         normalizedUrl: landingPages.normalizedUrl,
@@ -152,7 +166,7 @@ export async function transferOwnedAssetsBeforeUserDelete(params: {
     for (const page of sourcePages) {
       const conflicts =
         page.deletedAt == null && takenUrls.has(page.normalizedUrl)
-      await tx
+      await db
         .update(landingPages)
         .set({
           workspaceId: recipientWorkspaceId,
@@ -167,12 +181,12 @@ export async function transferOwnedAssetsBeforeUserDelete(params: {
       }
     }
 
-    await tx
+    await db
       .update(segments)
       .set({ workspaceId: recipientWorkspaceId, updatedAt: new Date() })
       .where(inArray(segments.workspaceId, ownedWorkspaceIds))
 
-    await tx
+    await db
       .update(workspaceApiKeys)
       .set({
         workspaceId: recipientWorkspaceId,
@@ -180,18 +194,18 @@ export async function transferOwnedAssetsBeforeUserDelete(params: {
       })
       .where(inArray(workspaceApiKeys.workspaceId, ownedWorkspaceIds))
 
-    await tx
+    await db
       .update(workspaceAlertWebhooks)
       .set({ workspaceId: recipientWorkspaceId })
       .where(inArray(workspaceAlertWebhooks.workspaceId, ownedWorkspaceIds))
 
-    await tx
+    await db
       .update(workspaces)
       .set({ deletedAt: new Date(), updatedAt: new Date() })
       .where(inArray(workspaces.id, ownedWorkspaceIds))
   }
 
-  await reassignUserFks(tx, fromUserId, toUserId)
+  await reassignUserFks(fromUserId, toUserId)
 
   return { recipientWorkspaceId, transferredLandingPages }
 }
