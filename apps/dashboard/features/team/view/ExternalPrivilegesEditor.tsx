@@ -460,14 +460,87 @@ export function ExternalPrivilegesEditor({
     onScopesChange(next)
   }
 
-  function setTeamMember(publicId: string, enabled: boolean) {
-    const next = scopes.filter((s) => s.landingPagePublicId !== publicId)
-    if (enabled) {
-      next.push({
-        landingPagePublicId: publicId,
-        utmSource: EXTERNAL_TEAM_MEMBER_SCOPE,
-      })
+  function findTeamMemberTemplatePublicId(
+    excludePublicId?: string
+  ): string | null {
+    const grantCounts = new Map<string, number>()
+    for (const grant of grants) {
+      if (!teamMemberByProject.has(grant.landingPagePublicId)) continue
+      if (excludePublicId && grant.landingPagePublicId === excludePublicId) {
+        continue
+      }
+      grantCounts.set(
+        grant.landingPagePublicId,
+        (grantCounts.get(grant.landingPagePublicId) ?? 0) + 1
+      )
     }
+
+    let bestId: string | null = null
+    let bestCount = 0
+    for (const [id, count] of grantCounts) {
+      if (count > bestCount) {
+        bestId = id
+        bestCount = count
+      }
+    }
+    return bestId
+  }
+
+  function copyGrantsFromTemplate(
+    targetPublicId: string,
+    templatePublicId: string,
+    base: Set<string>
+  ): Set<string> {
+    const next = new Set(base)
+    for (const key of [...next]) {
+      if (key.startsWith(`${targetPublicId}::`)) next.delete(key)
+    }
+    for (const key of base) {
+      if (!key.startsWith(`${templatePublicId}::`)) continue
+      next.add(`${targetPublicId}${key.slice(templatePublicId.length)}`)
+    }
+    return next
+  }
+
+  function expandCopiedTabs(targetPublicId: string, keys: Set<string>) {
+    setExpandedTabs((prev) => {
+      const copy = new Set(prev)
+      for (const key of keys) {
+        if (!key.startsWith(`${targetPublicId}::`)) continue
+        const parts = key.split("::")
+        const tab = parts[1]
+        const section = parts[2] ?? ""
+        if (tab && section) {
+          copy.add(`${targetPublicId}::${tab}`)
+        }
+      }
+      return copy
+    })
+  }
+
+  function enableTeamMemberAndCopyPrivileges(publicId: string) {
+    const templateId = findTeamMemberTemplatePublicId(publicId)
+    const nextScopes = scopes.filter((s) => s.landingPagePublicId !== publicId)
+    nextScopes.push({
+      landingPagePublicId: publicId,
+      utmSource: EXTERNAL_TEAM_MEMBER_SCOPE,
+    })
+    onScopesChange(nextScopes)
+
+    const hasOwnGrants = grants.some((g) => g.landingPagePublicId === publicId)
+    if (!templateId || hasOwnGrants) return
+
+    const nextGrants = copyGrantsFromTemplate(publicId, templateId, grantSet)
+    setGrantsFromKeys(nextGrants)
+    expandCopiedTabs(publicId, nextGrants)
+  }
+
+  function setTeamMember(publicId: string, enabled: boolean) {
+    if (enabled) {
+      enableTeamMemberAndCopyPrivileges(publicId)
+      return
+    }
+    const next = scopes.filter((s) => s.landingPagePublicId !== publicId)
     onScopesChange(next)
   }
 
@@ -485,6 +558,10 @@ export function ExternalPrivilegesEditor({
 
     if (checked) {
       setExpandedProjects((prev) => new Set(prev).add(publicId))
+      const templateId = findTeamMemberTemplatePublicId(publicId)
+      if (templateId) {
+        enableTeamMemberAndCopyPrivileges(publicId)
+      }
       return
     }
 
@@ -590,7 +667,8 @@ export function ExternalPrivilegesEditor({
       <p className="text-xs text-muted-foreground">
         Access is read-only. Choose a project, set Team member to Yes for full
         traffic (no UTM lock) or pick UTM Sources, then enable tabs and
-        sections. Team and Ops are never available to external members.
+        sections. With Team member Yes, selecting another project copies the
+        same tabs. Team and Ops are never available to external members.
       </p>
       <div className="relative">
         <Search
