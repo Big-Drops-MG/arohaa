@@ -15,6 +15,7 @@ export type ExternalMemberAccessProject = {
   brandName: string
   utmSources: string[]
   tabs: string[]
+  teamMember?: boolean
 }
 
 type ExternalMemberAccessEmailProps = {
@@ -54,7 +55,11 @@ export function ExternalMemberAccessEmail({
             projects.map((project) => (
               <Section key={project.brandName} style={projectBox}>
                 <Text style={projectTitle}>{project.brandName}</Text>
-                {project.utmSources.length > 0 ? (
+                {project.teamMember ? (
+                  <Text style={projectMeta}>
+                    Team member access (all traffic)
+                  </Text>
+                ) : project.utmSources.length > 0 ? (
                   <Text style={projectMeta}>
                     UTM Source: {project.utmSources.join(", ")}
                   </Text>

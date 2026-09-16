@@ -186,12 +186,12 @@ export function AddExternalMemberDialog({
 
   const description =
     mode.kind === "edit"
-      ? "Choose projects, a UTM Source per project, then tabs and sections."
+      ? "Choose projects, set Team member or a UTM Source per project, then tabs and sections."
       : step === "details"
         ? "Create the account — a secure invite link is emailed automatically."
         : emailSent === false
           ? "Account created, but the invite email failed to send. Resend from Details, then assign privileges."
-          : "Invite email sent. They set a password from the link, then finish authenticator setup on first sign-in. Choose projects, UTM Sources, then tabs and sections."
+          : "Invite email sent. They set a password from the link, then finish authenticator setup on first sign-in. Choose projects, Team member or UTM Sources, then tabs and sections."
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>

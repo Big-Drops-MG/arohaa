@@ -7,6 +7,8 @@ import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import {
   EXTERNAL_PRIVILEGE_TABS,
+  EXTERNAL_TEAM_MEMBER_SCOPE,
+  isExternalTeamMemberScope,
   type ExternalPrivilegeGrant,
   type ExternalProjectScope,
 } from "@/features/team/model/external-privileges"
@@ -403,7 +405,7 @@ export function ExternalPrivilegesEditor({
     const map = new Map<string, string[]>()
     for (const scope of scopes) {
       const source = scope.utmSource.trim()
-      if (!source) continue
+      if (!source || isExternalTeamMemberScope(source)) continue
       const existing = map.get(scope.landingPagePublicId) ?? []
       if (!existing.includes(source)) {
         existing.push(source)
@@ -419,6 +421,16 @@ export function ExternalPrivilegesEditor({
       )
     }
     return map
+  }, [scopes])
+
+  const teamMemberByProject = useMemo(() => {
+    const set = new Set<string>()
+    for (const scope of scopes) {
+      if (isExternalTeamMemberScope(scope.utmSource)) {
+        set.add(scope.landingPagePublicId)
+      }
+    }
+    return set
   }, [scopes])
 
   const selectedProjects = useMemo(() => {
@@ -442,8 +454,19 @@ export function ExternalPrivilegesEditor({
     const next = scopes.filter((s) => s.landingPagePublicId !== publicId)
     for (const source of utmSources) {
       const trimmed = source.trim()
-      if (!trimmed) continue
+      if (!trimmed || isExternalTeamMemberScope(trimmed)) continue
       next.push({ landingPagePublicId: publicId, utmSource: trimmed })
+    }
+    onScopesChange(next)
+  }
+
+  function setTeamMember(publicId: string, enabled: boolean) {
+    const next = scopes.filter((s) => s.landingPagePublicId !== publicId)
+    if (enabled) {
+      next.push({
+        landingPagePublicId: publicId,
+        utmSource: EXTERNAL_TEAM_MEMBER_SCOPE,
+      })
     }
     onScopesChange(next)
   }
@@ -494,7 +517,9 @@ export function ExternalPrivilegesEditor({
   }
 
   function toggleTab(publicId: string, tab: ProjectTabValue, checked: boolean) {
-    if (checked && !(utmByProject.get(publicId)?.length ?? 0)) return
+    const teamMember = teamMemberByProject.has(publicId)
+    const hasUtm = (utmByProject.get(publicId)?.length ?? 0) > 0
+    if (checked && !teamMember && !hasUtm) return
 
     const next = new Set(grantSet)
     const tabDef = EXTERNAL_PRIVILEGE_TABS.find((t) => t.value === tab)
@@ -539,7 +564,9 @@ export function ExternalPrivilegesEditor({
     sectionId: string,
     checked: boolean
   ) {
-    if (checked && !(utmByProject.get(publicId)?.length ?? 0)) return
+    const teamMember = teamMemberByProject.has(publicId)
+    const hasUtm = (utmByProject.get(publicId)?.length ?? 0) > 0
+    if (checked && !teamMember && !hasUtm) return
 
     const next = new Set(grantSet)
     next.delete(grantKey(publicId, tab, ""))
@@ -561,9 +588,9 @@ export function ExternalPrivilegesEditor({
   return (
     <div className="space-y-3 p-0.5">
       <p className="text-xs text-muted-foreground">
-        Access is read-only. Choose a project, pick one or more UTM Sources,
-        then enable tabs and sections. Team and Ops are never available to
-        external members.
+        Access is read-only. Choose a project, set Team member to Yes for full
+        traffic (no UTM lock) or pick UTM Sources, then enable tabs and
+        sections. Team and Ops are never available to external members.
       </p>
       <div className="relative">
         <Search
@@ -589,7 +616,8 @@ export function ExternalPrivilegesEditor({
             const projectOn = selectedProjects.has(project.publicId)
             const expanded = expandedProjects.has(project.publicId)
             const utmSources = utmByProject.get(project.publicId) ?? []
-            const tabsEnabled = utmSources.length > 0
+            const isTeamMember = teamMemberByProject.has(project.publicId)
+            const tabsEnabled = isTeamMember || utmSources.length > 0
             return (
               <li key={project.publicId}>
                 <div className="flex items-center gap-2 px-3 py-2.5">
@@ -625,7 +653,11 @@ export function ExternalPrivilegesEditor({
                       <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                     )}
                     <span className="truncate">{project.brandName}</span>
-                    {projectOn && utmSources.length > 0 ? (
+                    {projectOn && isTeamMember ? (
+                      <span className="truncate text-xs font-normal text-muted-foreground">
+                        · Team member
+                      </span>
+                    ) : projectOn && utmSources.length > 0 ? (
                       <span className="truncate text-xs font-normal text-muted-foreground">
                         ·{" "}
                         {utmSources.length === 1
@@ -638,17 +670,64 @@ export function ExternalPrivilegesEditor({
 
                 {projectOn && expanded ? (
                   <div className="space-y-2 border-t border-border bg-neutral-50/80 px-3 py-2 pl-9">
-                    <ProjectUtmSourceMultiSelect
-                      publicId={project.publicId}
-                      values={utmSources}
-                      onChange={(next) => setUtmSources(project.publicId, next)}
-                      disabled={disabled}
-                    />
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-foreground">
+                        Team member
+                      </p>
+                      <div
+                        className="inline-flex rounded-lg border border-neutral-200 bg-white p-0.5 shadow-xs"
+                        role="group"
+                        aria-label={`Team member for ${project.brandName}`}
+                      >
+                        <button
+                          type="button"
+                          disabled={disabled}
+                          className={cn(
+                            "h-7 rounded-md px-3 text-xs font-medium transition-colors",
+                            isTeamMember
+                              ? "bg-neutral-900 text-white"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                          onClick={() => setTeamMember(project.publicId, true)}
+                        >
+                          Yes
+                        </button>
+                        <button
+                          type="button"
+                          disabled={disabled}
+                          className={cn(
+                            "h-7 rounded-md px-3 text-xs font-medium transition-colors",
+                            !isTeamMember
+                              ? "bg-neutral-900 text-white"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                          onClick={() => setTeamMember(project.publicId, false)}
+                        >
+                          No
+                        </button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {isTeamMember
+                          ? "This collaborator can use all traffic for the tabs you enable. No UTM Source is required."
+                          : "This collaborator only sees traffic for the selected sources."}
+                      </p>
+                    </div>
+
+                    {!isTeamMember ? (
+                      <ProjectUtmSourceMultiSelect
+                        publicId={project.publicId}
+                        values={utmSources}
+                        onChange={(next) =>
+                          setUtmSources(project.publicId, next)
+                        }
+                        disabled={disabled}
+                      />
+                    ) : null}
 
                     {!tabsEnabled ? (
                       <p className="pb-1 text-xs text-muted-foreground">
-                        Select at least one UTM Source to enable tabs for this
-                        project.
+                        Set Team member to Yes, or select at least one UTM
+                        Source, to enable tabs for this project.
                       </p>
                     ) : null}
 

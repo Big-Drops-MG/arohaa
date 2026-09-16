@@ -91,6 +91,37 @@ export type ExternalProjectScope = {
   utmSource: string
 }
 
+export const EXTERNAL_TEAM_MEMBER_SCOPE = "*" as const
+
+export function isExternalTeamMemberScope(utmSource: string): boolean {
+  return utmSource.trim() === EXTERNAL_TEAM_MEMBER_SCOPE
+}
+
+export function projectHasTeamMemberScope(
+  scopes: ExternalProjectScope[],
+  landingPagePublicId: string
+): boolean {
+  return scopes.some(
+    (scope) =>
+      scope.landingPagePublicId === landingPagePublicId &&
+      isExternalTeamMemberScope(scope.utmSource)
+  )
+}
+
+export function visibleUtmSourcesForProject(
+  scopes: ExternalProjectScope[],
+  landingPagePublicId: string
+): string[] {
+  return scopes
+    .filter(
+      (scope) =>
+        scope.landingPagePublicId === landingPagePublicId &&
+        scope.utmSource.trim() &&
+        !isExternalTeamMemberScope(scope.utmSource)
+    )
+    .map((scope) => scope.utmSource.trim())
+}
+
 export function isExternalTeamKind(
   teamKind: string | null | undefined
 ): boolean {
