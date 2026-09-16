@@ -14,6 +14,7 @@ import {
   workspaceApiKeys,
   workspaces,
 } from "@workspace/database"
+import { resolveCompanyWorkspace } from "@/lib/server/resolve-workspace"
 
 async function resolveOwnershipRecipientUserId(
   preferredUserId: string,
@@ -58,29 +59,9 @@ async function resolveOwnershipRecipientUserId(
   return candidates[0]?.id ?? null
 }
 
-async function ensureOwnerWorkspaceId(ownerUserId: string): Promise<string> {
-  const existing = await db
-    .select({ id: workspaces.id })
-    .from(workspaces)
-    .where(
-      and(eq(workspaces.ownerUserId, ownerUserId), isNull(workspaces.deletedAt))
-    )
-    .limit(1)
-
-  if (existing[0]) return existing[0].id
-
-  const [created] = await db
-    .insert(workspaces)
-    .values({
-      ownerUserId,
-      name: "Personal",
-    })
-    .returning({ id: workspaces.id })
-
-  if (!created) {
-    throw new Error("Could not resolve workspace for ownership transfer.")
-  }
-  return created.id
+async function resolveTransferTargetWorkspaceId(): Promise<string> {
+  const company = await resolveCompanyWorkspace()
+  return company.id
 }
 
 async function reassignUserFks(fromUserId: string, toUserId: string) {
@@ -118,19 +99,12 @@ export async function countSuperadminsExcluding(
   return Number(row?.value ?? 0)
 }
 
-/**
- * Moves the removed user's projects into the recipient's workspace so a hard
- * delete cannot cascade-destroy landing pages.
- *
- * Uses sequential neon-http queries (no transactions — neon-http does not
- * support them).
- */
 export async function transferOwnedAssetsBeforeUserDelete(params: {
   fromUserId: string
   toUserId: string
 }): Promise<{ recipientWorkspaceId: string; transferredLandingPages: number }> {
   const { fromUserId, toUserId } = params
-  const recipientWorkspaceId = await ensureOwnerWorkspaceId(toUserId)
+  const recipientWorkspaceId = await resolveTransferTargetWorkspaceId()
 
   const ownedWorkspaces = await db
     .select({ id: workspaces.id })

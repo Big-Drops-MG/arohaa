@@ -1,6 +1,6 @@
 import { redis } from '../services/redis.service.js'
 
-const IDEMPOTENCY_TTL_SEC = 60 * 60 * 48 // 48h covers client outbox retries
+const IDEMPOTENCY_TTL_SEC = 60 * 60 * 24 * 30 
 const EVENT_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -28,6 +28,5 @@ export async function releaseIngestEventId(eventId: string): Promise<void> {
   try {
     await redis.del(key)
   } catch {
-    // Best-effort; TTL still expires the key.
   }
 }

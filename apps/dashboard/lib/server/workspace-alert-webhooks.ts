@@ -8,7 +8,7 @@ import {
   workspaceAlertWebhooks,
   type OutboundWebhookPayload,
 } from "@workspace/database"
-import { getOrCreateOwnerWorkspace } from "@/lib/server/resolve-workspace"
+import { resolveTeamSettingsWorkspace } from "@/lib/server/resolve-workspace"
 
 const MAX_WEBHOOKS_PER_WORKSPACE = 5
 
@@ -65,7 +65,7 @@ function toListItem(row: {
 export async function listWorkspaceAlertWebhooks(
   ownerUserId: string
 ): Promise<WorkspaceWebhookListItem[]> {
-  const workspace = await getOrCreateOwnerWorkspace(ownerUserId)
+  const workspace = await resolveTeamSettingsWorkspace(ownerUserId)
   const rows = await db
     .select({
       id: workspaceAlertWebhooks.id,
@@ -105,7 +105,7 @@ export async function createWorkspaceAlertWebhook(
     }
   }
 
-  const workspace = await getOrCreateOwnerWorkspace(ownerUserId)
+  const workspace = await resolveTeamSettingsWorkspace(ownerUserId)
   const existing = await listWorkspaceAlertWebhooks(ownerUserId)
   if (existing.length >= MAX_WEBHOOKS_PER_WORKSPACE) {
     return {
@@ -147,7 +147,7 @@ export async function setWorkspaceAlertWebhookEnabled(
   webhookId: string,
   enabled: boolean
 ): Promise<{ item: WorkspaceWebhookListItem } | { error: string }> {
-  const workspace = await getOrCreateOwnerWorkspace(ownerUserId)
+  const workspace = await resolveTeamSettingsWorkspace(ownerUserId)
   const [row] = await db
     .update(workspaceAlertWebhooks)
     .set({ enabled })
@@ -182,7 +182,7 @@ export async function testWorkspaceAlertWebhook(
   | { item: WorkspaceWebhookListItem; success: false; error: string }
   | { error: string }
 > {
-  const workspace = await getOrCreateOwnerWorkspace(ownerUserId)
+  const workspace = await resolveTeamSettingsWorkspace(ownerUserId)
   const [existing] = await db
     .select({
       id: workspaceAlertWebhooks.id,
@@ -296,7 +296,7 @@ export async function deleteWorkspaceAlertWebhook(
   ownerUserId: string,
   webhookId: string
 ): Promise<{ ok: true } | { error: string }> {
-  const workspace = await getOrCreateOwnerWorkspace(ownerUserId)
+  const workspace = await resolveTeamSettingsWorkspace(ownerUserId)
   const [row] = await db
     .select({ id: workspaceAlertWebhooks.id })
     .from(workspaceAlertWebhooks)

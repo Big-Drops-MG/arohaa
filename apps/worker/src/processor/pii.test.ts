@@ -12,16 +12,37 @@ describe('anonymizeEvent', () => {
     )
   })
 
-  it('leaves captured lead fields untouched', () => {
+  it('seals plaintext lead fields into _k when a blob key is available', () => {
+    process.env.AROHAA_INTERNAL_API_SECRET = 'test-secret-for-pii'
     const fields = {
       email: 'Lead@Example.com',
       first_name: 'David',
       dob: '03/09/1990',
     }
     const event = anonymizeEvent({
+      properties: JSON.stringify({ fields, step: 1 }),
+    })
+    const props = JSON.parse(event.properties)
+    expect(props.fields).toBeUndefined()
+    expect(typeof props._k).toBe('string')
+    expect(props._k.length).toBeGreaterThan(20)
+    expect(props.step).toBe(1)
+    delete process.env.AROHAA_INTERNAL_API_SECRET
+  })
+
+  it('hashes plaintext lead field values when no blob key is available', () => {
+    delete process.env.AROHAA_FIELD_BLOB_KEY
+    delete process.env.AROHAA_INTERNAL_API_SECRET
+    const fields = {
+      email: 'Lead@Example.com',
+      first_name: 'David',
+    }
+    const event = anonymizeEvent({
       properties: JSON.stringify({ fields }),
     })
-    expect(JSON.parse(event.properties).fields).toEqual(fields)
+    const props = JSON.parse(event.properties)
+    expect(props.fields.email).toBe(hashEmail('lead@example.com'))
+    expect(props.fields.first_name).toBe(hashEmail('David'))
   })
 
   it('still hashes user_id', () => {
