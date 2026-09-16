@@ -81,3 +81,17 @@ export function getAttributionData(): AttributionData {
     referrer: referrer.length > 0 ? referrer.slice(0, 2048) : "direct",
   }
 }
+
+export function safePageUrl(href?: string): string {
+  const raw =
+    href ??
+    (typeof window !== "undefined" ? window.location.href : "")
+  if (!raw) return ""
+  try {
+    const url = new URL(raw)
+    return `${url.origin}${url.pathname}${url.hash}`
+  } catch {
+    const noQuery = raw.split("?")[0] ?? ""
+    return noQuery.slice(0, 2048)
+  }
+}

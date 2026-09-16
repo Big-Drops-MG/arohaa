@@ -26,10 +26,12 @@ describe('field-blob sealPropsForStorage', () => {
     const sealed = sealPropsForStorage({
       fields: { email: 'a@b.com', phone: '5551234567', city: 'Austin' },
       stepIndex: 2,
+      lead_complete: true,
     })
     expect(sealed.fields).toBeUndefined()
     expect(typeof sealed._k).toBe('string')
     expect(sealed.stepIndex).toBe(2)
+    expect(sealed.lead_complete).toBe(true)
     expect(sealed.phone).toBeUndefined()
 
     const roundTrip = materializeOpaqueProps(sealed)

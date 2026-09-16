@@ -92,7 +92,6 @@ export class DbWriter {
       Sentry.captureException(err, {
         extra: {
           batchSize: batch.length,
-          firstEvent: batch[0]
         }
       });
 

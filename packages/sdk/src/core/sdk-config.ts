@@ -1,5 +1,4 @@
 import { getConfig } from "../model/config"
-import { setFieldBlobKeyFromB64 } from "../utils/field-blob"
 
 export type SdkRemoteConfig = {
   heatmapSampleRate: number
@@ -62,7 +61,6 @@ export async function loadSdkRemoteConfig(): Promise<void> {
         heatmap_sample_rate?: unknown
         redirect_page_url?: unknown
         redirect_hostname?: unknown
-        ck?: unknown
       }
       const rate = Number(data.heatmap_sample_rate)
       if (Number.isFinite(rate)) {
@@ -76,9 +74,6 @@ export async function loadSdkRemoteConfig(): Promise<void> {
         data.redirect_hostname
       ) {
         remoteConfig.redirectHostname = data.redirect_hostname
-      }
-      if (typeof data.ck === "string") {
-        setFieldBlobKeyFromB64(data.ck)
       }
     }
   } catch {

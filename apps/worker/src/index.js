@@ -46,13 +46,20 @@ const redis = new Redis(resolveRedisUrl(), {
   maxRetriesPerRequest: null,
   enableReadyCheck: true,
   retryStrategy(times) {
-    if (times > 3) return null; 
-    return Math.min(times * 50, 2000);
+    return Math.min(times * 200, 30_000);
   }
 });
 
 redis.on('error', (err) => {
   logger.error({ err }, 'redis connection error');
+});
+
+redis.on('close', () => {
+  logger.warn('redis connection closed; waiting for reconnect');
+});
+
+redis.on('reconnecting', (delay) => {
+  logger.info({ delay }, 'redis reconnecting');
 });
 
 

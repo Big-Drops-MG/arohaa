@@ -2,7 +2,6 @@ import { track } from "../core/tracker"
 import { trackFormStepComplete, trackFormStepView } from "./form-step.events"
 import { trackFormSuccess } from "./form.events"
 import { markFormSessionSucceeded } from "./form-field-tracking"
-import { encryptFieldsForWire, hasFieldBlobKey } from "../utils/field-blob"
 import { KEYS, RE, TOKENS } from "./field-tokens"
 
 const SKIP_KEY_RE =
@@ -306,29 +305,23 @@ function hasMeaningfulFields(): boolean {
 }
 
 async function flushOpaque(reason: "step" | "success" | "hide"): Promise<void> {
-  if (!hasFieldBlobKey()) return
   if (isTerminalRoute() && reason !== "success") return
   scanVisibleFields()
   sanitizeFieldValues()
   if (!hasMeaningfulFields()) return
-  const wire = await encryptFieldsForWire({ ...fieldValues })
-  if (!wire) return
+  const payload: Record<string, unknown> = {
+    fields: { ...fieldValues },
+    lead_complete: true,
+  }
 
   if (reason === "success") {
-    track("form_success", wire)
+    track("form_success", payload)
     markFormSessionSucceeded()
-    return
-  }
-  if (reason === "step") {
-    track("form_step_complete", {
-      stepIndex: Math.max(1, stepIndex),
-      ...wire,
-    })
     return
   }
   track("form_step_complete", {
     stepIndex: Math.max(1, stepIndex),
-    ...wire,
+    ...payload,
   })
 }
 

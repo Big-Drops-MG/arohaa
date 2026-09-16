@@ -107,6 +107,17 @@ function zipFromProps(props: Record<string, unknown> | undefined): string {
   return ''
 }
 
+export function sanitizeEventUrl(raw: string | undefined | null): string {
+  const value = typeof raw === 'string' ? raw.trim() : ''
+  if (!value) return ''
+  try {
+    const url = new URL(value)
+    return `${url.origin}${url.pathname}${url.hash}`.slice(0, 2048)
+  } catch {
+    return (value.split('?')[0] ?? '').slice(0, 2048)
+  }
+}
+
 export function ingestBodyToEventRow(
   body: IngestEventBody,
   traceId: string,
@@ -124,7 +135,7 @@ export function ingestBodyToEventRow(
     user_id: body.uid,
     session_id: body.sid,
     fingerprint: body.fp ?? '',
-    url: body.url ?? '',
+    url: sanitizeEventUrl(body.url),
     utm_source: body.utm_source ?? '',
     utm_medium: body.utm_medium ?? '',
     utm_campaign: body.utm_campaign ?? '',
