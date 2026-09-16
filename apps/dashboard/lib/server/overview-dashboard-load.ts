@@ -47,8 +47,6 @@ import {
   resolveInternalApiSecret,
 } from "@/lib/server/analytics-env"
 
-// ── formatters ────────────────────────────────────────────────────────────────
-
 function fmtCount(v: number): string {
   if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`
   if (v >= 10_000) return `${(v / 1_000).toFixed(1)}K`
@@ -88,8 +86,6 @@ function funnelStepsFromOverviewApi(
     value: fmtCount(step.count),
   }))
 }
-
-// ── transform ─────────────────────────────────────────────────────────────────
 
 function buildOverviewFromAnalytics(
   data: AnalyticsOverview,
@@ -215,8 +211,6 @@ export function buildEmptyOverviewForRange(
   }
 }
 
-// ── loader ────────────────────────────────────────────────────────────────────
-
 export async function loadOverviewDashboardData(
   landingPagePublicId: string,
   rangeId: RangeId = DEFAULT_TRAFFIC_RANGE_ID,
@@ -267,6 +261,15 @@ export async function loadOverviewDashboardData(
           `[overview] analytics API ${overviewResp.status} ${url.pathname}`,
           body.slice(0, 200)
         )
+      }
+      if (overviewResp.status === 503 || overviewResp.status === 502) {
+        const empty = buildEmptyOverviewForRange(
+          landingPagePublicId,
+          formType,
+          rangeId,
+          customRange
+        )
+        return { ...empty, analyticsUnavailable: true }
       }
       return buildEmptyOverviewForRange(
         landingPagePublicId,
@@ -325,6 +328,13 @@ export async function loadOverviewDashboardDataForApi(
     scopedUtmFilter,
     customRange
   )
+  if (data.analyticsUnavailable) {
+    return {
+      ok: false,
+      status: 503,
+      error: "Analytics temporarily unavailable",
+    }
+  }
   return { ok: true, data }
 }
 

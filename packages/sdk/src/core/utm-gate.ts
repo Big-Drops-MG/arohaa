@@ -12,6 +12,8 @@ type BlockedUtmResponse = {
 
 type StoredUtmParamKey = "utm_source" | "utm_s1"
 
+const UTM_BLOCK_FETCH_TIMEOUT_MS = 2_500
+
 function sanitizeUtmParamValue(key: StoredUtmParamKey, value: string): string {
   const trimmed = value.trim()
   if (!trimmed) return ""
@@ -75,17 +77,22 @@ async function fetchBlockedUtms(
 ): Promise<BlockedUtmResponse | null> {
   const base = apiBase.replace(/\/$/, "")
   const url = `${base}/v1/utm-blocked?wid=${encodeURIComponent(wid)}`
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), UTM_BLOCK_FETCH_TIMEOUT_MS)
 
   try {
     const response = await fetch(url, {
       method: "GET",
       credentials: "omit",
       cache: "no-store",
+      signal: controller.signal,
     })
     if (!response.ok) return null
     return (await response.json()) as BlockedUtmResponse
   } catch {
     return null
+  } finally {
+    clearTimeout(timer)
   }
 }
 
@@ -99,21 +106,16 @@ export async function enforceUtmBlockGate(config: SDKConfig): Promise<boolean> {
   if (!hasUtm) return false
 
   const restoreVisibility = hidePageWhileChecking()
+  let keepHidden = false
 
   try {
     const blocked = await fetchBlockedUtms(config.apiBase, config.wid)
-    if (!blocked) {
-      restoreVisibility()
-      return false
-    }
+    if (!blocked) return false
 
     const hasBlockedRules =
       (blocked.utm_source?.length ?? 0) > 0 ||
       (blocked.utm_s1?.length ?? 0) > 0
-    if (!hasBlockedRules) {
-      restoreVisibility()
-      return false
-    }
+    if (!hasBlockedRules) return false
 
     if (
       !isCurrentUtmBlocked(
@@ -122,7 +124,6 @@ export async function enforceUtmBlockGate(config: SDKConfig): Promise<boolean> {
         attribution.utm_s1,
       )
     ) {
-      restoreVisibility()
       return false
     }
 
@@ -133,6 +134,7 @@ export async function enforceUtmBlockGate(config: SDKConfig): Promise<boolean> {
       redirect &&
       !isAccessDeniedPath(window.location.pathname, redirect)
     ) {
+      keepHidden = true
       try {
         window.location.replace(redirect)
       } catch {
@@ -141,10 +143,12 @@ export async function enforceUtmBlockGate(config: SDKConfig): Promise<boolean> {
       return true
     }
 
+    keepHidden = true
     renderBlockedPage()
     return true
   } catch {
-    restoreVisibility()
     return false
+  } finally {
+    if (!keepHidden) restoreVisibility()
   }
 }

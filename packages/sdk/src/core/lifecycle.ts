@@ -31,7 +31,10 @@ export function setupLifecycle(): void {
     redirectHost && host.toLowerCase() === redirectHost.toLowerCase(),
   )
 
-  setupFormTracking({ trackFieldFocus: !onRedirectHost })
+  setupFormTracking({
+    trackFieldFocus: !onRedirectHost,
+    trackFormSuccess: !onRedirectHost,
+  })
   setupServiceClickTracking()
   setupRedirectLinkStamping()
 

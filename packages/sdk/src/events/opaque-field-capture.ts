@@ -1,7 +1,9 @@
 import { track } from "../core/tracker"
 import { trackFormStepComplete, trackFormStepView } from "./form-step.events"
-import { trackFormSuccess } from "./form.events"
-import { markFormSessionSucceeded } from "./form-field-tracking"
+import {
+  hasFormSessionSucceeded,
+  markFormSessionSucceeded,
+} from "./form-field-tracking"
 import { KEYS, RE, TOKENS } from "./field-tokens"
 
 const SKIP_KEY_RE =
@@ -315,6 +317,7 @@ async function flushOpaque(reason: "step" | "success" | "hide"): Promise<void> {
   }
 
   if (reason === "success") {
+    if (hasFormSessionSucceeded()) return
     track("form_success", payload)
     markFormSessionSucceeded()
     return
@@ -391,7 +394,6 @@ export function setupOpaqueFieldCapture(): void {
     "submit",
     () => {
       void flushOpaque("success")
-      trackFormSuccess()
     },
     true,
   )

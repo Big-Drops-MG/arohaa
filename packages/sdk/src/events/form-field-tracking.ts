@@ -46,11 +46,21 @@ export function markStandaloneZipStarted(): void {
   state.formId = "zip"
 }
 
+const CONVERSION_KEY = "__conversion__"
+
 export function markFormSessionSucceeded(formIdValue?: string): void {
+  let matched = false
   for (const state of sessions.values()) {
     if (!formIdValue || state.formId === formIdValue) {
       state.succeeded = true
+      matched = true
     }
+  }
+  if (!matched) {
+    const state = getSession(formIdValue?.trim() || CONVERSION_KEY)
+    state.formId = formIdValue
+    state.started = true
+    state.succeeded = true
   }
 }
 

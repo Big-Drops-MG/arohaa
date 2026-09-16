@@ -315,6 +315,18 @@ export function OverviewDashboard({
         />
       </motion.div>
 
+      {overviewData.analyticsUnavailable ? (
+        <motion.div variants={overviewStaggerItem}>
+          <div
+            role="alert"
+            className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+          >
+            Analytics is temporarily unavailable. Figures below may be empty
+            until the data store recovers.
+          </div>
+        </motion.div>
+      ) : null}
+
       {showSkeleton ? (
         <OverviewDashboardSkeleton />
       ) : (

@@ -14,6 +14,7 @@ const MAX_BATCH_SIZE = 1000;
 const FLUSH_INTERVAL_MS = 5000;
 const MAX_HEATMAP_BATCH_SIZE = 5000;
 const HEATMAP_FLUSH_INTERVAL_MS = 2000;
+const SHUTDOWN_DRAIN_MS = 8_000;
 
 const PRIORITY_EVENT_NAMES = new Set([
   'form_success',
@@ -91,6 +92,35 @@ let heatmapBatch = [];
 let lastHeatmapFlushTime = Date.now();
 let stopFailedEventsReplay = () => {};
 
+let inFlightAnalyticsPayload = null;
+let inFlightHeatmapPayload = null;
+
+let analyticsLoopDone = Promise.resolve();
+let heatmapLoopDone = Promise.resolve();
+
+async function requeueInFlight(queueName, payload) {
+  if (!payload) return;
+  try {
+    await redis.lpush(queueName, payload);
+    logger.info({ queue: queueName }, 'requeued in-flight payload on shutdown');
+  } catch (err) {
+    logger.error({ err, queue: queueName }, 'failed to requeue in-flight payload');
+    try {
+      await redis.lpush(
+        'failed_events',
+        JSON.stringify({
+          reason: 'shutdown_requeue_failed',
+          queue: queueName,
+          payload,
+          timestamp: Date.now(),
+        }),
+      );
+    } catch (dlqErr) {
+      logger.error({ err: dlqErr, queue: queueName }, 'failed to DLQ in-flight payload');
+    }
+  }
+}
+
 async function startQueueConsumption() {
   logger.info('starting queue consumption from analytics_queue');
   
@@ -101,20 +131,24 @@ async function startQueueConsumption() {
       let priorityFlush = false;
       if (result) {
         const [, payload] = result;
+        inFlightAnalyticsPayload = payload;
         try {
           const rawEvent = JSON.parse(payload);
           if (validateEvent(rawEvent)) {
             const safeEvent = anonymizeEvent(rawEvent);
             batch.push(safeEvent);
+            inFlightAnalyticsPayload = null;
             if (PRIORITY_EVENT_NAMES.has(safeEvent.event_name)) {
               priorityFlush = true;
             }
           } else {
             await redis.lpush('failed_events', JSON.stringify({ reason: 'validation_failed', payload, timestamp: Date.now() }));
+            inFlightAnalyticsPayload = null;
           }
         } catch (parseErr) {
           logger.warn({ payload }, 'invalid JSON payload received');
           await redis.lpush('failed_events', JSON.stringify({ reason: 'json_parse_error', payload, timestamp: Date.now() }));
+          inFlightAnalyticsPayload = null;
         }
       }
 
@@ -131,6 +165,7 @@ async function startQueueConsumption() {
       }
       
     } catch (err) {
+      if (isShuttingDown) break;
       logger.error({ err }, 'error in queue consumption loop');
       await new Promise(resolve => setTimeout(resolve, 1000)); 
     }
@@ -146,16 +181,20 @@ async function startHeatmapConsumption() {
       
       if (result) {
         const [, payload] = result;
+        inFlightHeatmapPayload = payload;
         try {
           const rawEvent = JSON.parse(payload);
           if (validateHeatmapEvent(rawEvent)) {
             heatmapBatch.push(rawEvent);
+            inFlightHeatmapPayload = null;
           } else {
             await redis.lpush('failed_events', JSON.stringify({ reason: 'validation_failed', payload, timestamp: Date.now(), type: 'heatmap' }));
+            inFlightHeatmapPayload = null;
           }
         } catch (parseErr) {
           logger.warn({ payload }, 'invalid JSON payload received in heatmap_queue');
           await redis.lpush('failed_events', JSON.stringify({ reason: 'json_parse_error', payload, timestamp: Date.now(), type: 'heatmap' }));
+          inFlightHeatmapPayload = null;
         }
       }
 
@@ -168,6 +207,7 @@ async function startHeatmapConsumption() {
       }
       
     } catch (err) {
+      if (isShuttingDown) break;
       logger.error({ err }, 'error in heatmap queue consumption loop');
       await new Promise(resolve => setTimeout(resolve, 1000)); 
     }
@@ -176,12 +216,24 @@ async function startHeatmapConsumption() {
 
 
 async function shutdown(signal) {
-  if (isShuttingDown) return; // Prevent double execution
+  if (isShuttingDown) return;
   isShuttingDown = true;
   logger.info({ signal }, 'shutdown initiated');
   stopFailedEventsReplay();
   
   try {
+    await Promise.race([
+      Promise.all([analyticsLoopDone, heatmapLoopDone]),
+      new Promise((resolve) => setTimeout(resolve, SHUTDOWN_DRAIN_MS)),
+    ]);
+
+    const pendingAnalytics = inFlightAnalyticsPayload;
+    inFlightAnalyticsPayload = null;
+    const pendingHeatmap = inFlightHeatmapPayload;
+    inFlightHeatmapPayload = null;
+    await requeueInFlight('analytics_queue', pendingAnalytics);
+    await requeueInFlight('heatmap_queue', pendingHeatmap);
+
     if (batch.length > 0) {
       logger.info({ rows: batch.length }, 'flushing pending events before shutdown');
       const currentBatch = [...batch];
@@ -217,7 +269,9 @@ async function shutdown(signal) {
 }
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => shutdown(signal));
+  process.once(signal, () => {
+    void shutdown(signal);
+  });
 }
 
 
@@ -255,8 +309,8 @@ async function start() {
 
     logger.info('worker ready');
     
-    startQueueConsumption();
-    startHeatmapConsumption();
+    analyticsLoopDone = startQueueConsumption();
+    heatmapLoopDone = startHeatmapConsumption();
     stopFailedEventsReplay = startFailedEventsReplay(redis);
   } catch (err) {
     logger.error({ err }, 'worker startup failed');
