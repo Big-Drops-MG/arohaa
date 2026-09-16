@@ -94,7 +94,7 @@ export const externalMemberAccessPreviewProps: ExternalMemberAccessEmailProps =
         tabs: ["Overview", "Traffic", "Funnel"],
       },
     ],
-    dashboardUrl: "https://dashboard.arohaa.com/dashboard",
+    dashboardUrl: "https://www.arohaa.net/dashboard",
   }
 
 const main = {

@@ -71,7 +71,7 @@ export const landingPageConnectedPreviewProps: LandingPageConnectedEmailProps =
     recipientFirstName: "Ishan",
     brandName: "Big Drops MG",
     landingPageUrl: "https://example.com/landing",
-    dashboardUrl: "https://dashboard.arohaa.com/dashboard",
+    dashboardUrl: "https://www.arohaa.net/dashboard",
   }
 
 const main = {

@@ -75,8 +75,8 @@ export const accessRequestDecisionPreviewProps: AccessRequestDecisionEmailProps 
   {
     recipientFirstName: "Sami",
     decision: "accepted",
-    dashboardUrl: "https://dashboard.arohaa.com/dashboard",
-    loginUrl: "https://dashboard.arohaa.com/login",
+    dashboardUrl: "https://www.arohaa.net/dashboard",
+    loginUrl: "https://www.arohaa.net/login",
   }
 
 const main = {

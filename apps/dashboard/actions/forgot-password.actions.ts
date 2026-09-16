@@ -11,19 +11,10 @@ import {
 } from "@workspace/database"
 import { sendEmail } from "@/lib/server/email/send-email"
 import { PasswordResetEmail } from "@/emails/templates/PasswordResetEmail"
+import { resolveAppBaseUrl } from "@/lib/server/app-base-url"
 import { hashPasswordResetToken } from "@/lib/server/password-reset-token"
 
 const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000
-
-function getAppBaseUrl(): string {
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "")
-  }
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}`
-  }
-  return "http://localhost:3000"
-}
 
 export async function requestPasswordReset(
   email: string
@@ -55,8 +46,7 @@ export async function requestPasswordReset(
     expires,
   })
 
-  const baseUrl = getAppBaseUrl()
-  const resetLink = `${baseUrl}/reset-password?token=${token}`
+  const resetLink = `${resolveAppBaseUrl()}/reset-password?token=${token}`
 
   try {
     await sendEmail({
