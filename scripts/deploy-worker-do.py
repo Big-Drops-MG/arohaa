@@ -52,21 +52,25 @@ def main() -> None:
     def pick(key: str) -> str:
         return os.environ.get(key, "").strip() or merged.get(key, "")
 
-    database_url = pick("DATABASE_URL")
-    vapid_key = (
-        pick("WEB_PUSH_VAPID_ENCRYPTION_KEY")
-        or pick("AUTH_SECRET")
-        or pick("NEXTAUTH_SECRET")
-    )
+    database_url = pick("DATABASE_URL") or pick("POSTGRES_URL")
     if not database_url:
-        print("DATABASE_URL required for web push consumer", file=sys.stderr)
-        sys.exit(1)
-    if not vapid_key:
         print(
-            "WEB_PUSH_VAPID_ENCRYPTION_KEY (or AUTH_SECRET) required for web push",
+            "DATABASE_URL required for web-push delivery (and Neon access).",
             file=sys.stderr,
         )
         sys.exit(1)
+
+    vapid_key = pick("WEB_PUSH_VAPID_ENCRYPTION_KEY")
+    auth_secret = pick("AUTH_SECRET") or pick("NEXTAUTH_SECRET")
+    if not vapid_key and not auth_secret:
+        print(
+            "WEB_PUSH_VAPID_ENCRYPTION_KEY or AUTH_SECRET required to decrypt VAPID keys.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    click_base = pick("WEB_PUSH_CLICK_BASE_URL") or "https://api.arohaa.net"
+    encryption_key = vapid_key or auth_secret
 
     worker_env = f"""NODE_ENV=production
 REDIS_URL={pick("REDIS_URL") or pick("KV_URL")}
@@ -74,7 +78,10 @@ CLICKHOUSE_URL={pick("CLICKHOUSE_URL")}
 CLICKHOUSE_USER={pick("CLICKHOUSE_USER")}
 CLICKHOUSE_PASSWORD={pick("CLICKHOUSE_PASSWORD")}
 DATABASE_URL={database_url}
-WEB_PUSH_VAPID_ENCRYPTION_KEY={vapid_key}
+WEB_PUSH_VAPID_ENCRYPTION_KEY={encryption_key}
+AUTH_SECRET={auth_secret}
+WEB_PUSH_CLICK_BASE_URL={click_base}
+WEB_PUSH_VAPID_SUBJECT={pick("WEB_PUSH_VAPID_SUBJECT") or "mailto:ops@arohaa.net"}
 AROHAA_INTERNAL_API_SECRET={pick("AROHAA_INTERNAL_API_SECRET")}
 AROHAA_FIELD_BLOB_KEY={pick("AROHAA_FIELD_BLOB_KEY")}
 SENTRY_DSN={pick("SENTRY_DSN")}

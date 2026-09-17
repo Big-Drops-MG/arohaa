@@ -59,6 +59,7 @@ type Candidate = {
 type MembershipResponse = {
   membership: Membership | null
   candidates: Candidate[]
+  unassignedCandidates?: Candidate[]
 }
 
 type LabelPlan = {
@@ -87,6 +88,7 @@ export function SettingsExperimentSection({
   const [confirmLeave, setConfirmLeave] = useState(false)
 
   const [parentPublicId, setParentPublicId] = useState("")
+  const [childPublicId, setChildPublicId] = useState("")
   const [labelPlan, setLabelPlan] = useState<LabelPlan | null>(null)
   const [label, setLabel] = useState("")
   const [relabelDraft, setRelabelDraft] = useState("")
@@ -96,6 +98,7 @@ export function SettingsExperimentSection({
   const applyResponse = useCallback((next: MembershipResponse) => {
     setData(next)
     setParentPublicId("")
+    setChildPublicId("")
     setLabelPlan(null)
     setLabel("")
     setConfirmLeave(false)
@@ -130,8 +133,8 @@ export function SettingsExperimentSection({
   }, [membershipPath])
 
   // While joining, free labels come from the target project's experiment.
-  // Once linked, they come from this project's own experiment so the label can
-  // be changed without colliding with a sibling variant.
+  // Once linked (or when adding from the hub), they come from this project's
+  // experiment so labels do not collide with sibling variants.
   const labelPlanSource = data?.membership ? publicId : parentPublicId
 
   useEffect(() => {
@@ -147,9 +150,20 @@ export function SettingsExperimentSection({
         `/api/landing-pages/${encodeURIComponent(labelPlanSource)}/experiments/variant-labels`,
         { cache: "no-store" }
       )
-      if (!res.ok || cancelled) return
-      const plan = (await res.json().catch(() => null)) as LabelPlan | null
-      if (!plan || cancelled) return
+      const plan = (await res.json().catch(() => null)) as
+        | (LabelPlan & { error?: string })
+        | null
+      if (cancelled) return
+      if (!res.ok || !plan) {
+        setLabelPlan(null)
+        setError(
+          plan && "error" in plan && plan.error
+            ? plan.error
+            : "Could not load variant labels"
+        )
+        return
+      }
+      setError(null)
       setLabelPlan(plan)
       setLabel(plan.suggestedLabel)
     })()
@@ -191,6 +205,54 @@ export function SettingsExperimentSection({
       setIsSaving(false)
     }
   }, [applyResponse, label, membershipPath, parentPublicId, router])
+
+  const handleAddChild = useCallback(async () => {
+    if (!childPublicId) return
+
+    setError(null)
+    setSuccess(null)
+    setIsSaving(true)
+
+    try {
+      const res = await fetch(
+        `/api/landing-pages/${encodeURIComponent(childPublicId)}/experiments/membership`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ parentPublicId: publicId, label }),
+        }
+      )
+      const payload = (await res.json().catch(() => ({}))) as
+        | (MembershipResponse & { error?: string })
+        | Record<string, never>
+
+      if (!res.ok) {
+        setError(
+          ("error" in payload ? payload.error : null) ??
+            "Could not add that project as a variant"
+        )
+        return
+      }
+
+      // Reload membership from this hub project (POST returns the child's view).
+      const refreshed = await fetch(membershipPath, { cache: "no-store" })
+      const next = (await refreshed
+        .json()
+        .catch(() => null)) as MembershipResponse | null
+      if (!refreshed.ok || !next) {
+        setError("Variant linked, but could not refresh experiment details")
+        return
+      }
+
+      applyResponse(next)
+      setSuccess(
+        `Added ${experimentVariantDisplayLabel(label)} to this experiment.`
+      )
+      router.refresh()
+    } finally {
+      setIsSaving(false)
+    }
+  }, [applyResponse, childPublicId, label, membershipPath, publicId, router])
 
   const handleRelabel = useCallback(
     async (nextLabel: string) => {
@@ -272,6 +334,12 @@ export function SettingsExperimentSection({
 
   const membership = data?.membership ?? null
   const candidates = data?.candidates ?? []
+  const linkedPublicIds = new Set(
+    membership?.variants.map((variant) => variant.publicId) ?? []
+  )
+  const addableCandidates = (data?.unassignedCandidates ?? candidates).filter(
+    (candidate) => !linkedPublicIds.has(candidate.publicId)
+  )
   const joinLabelOptions = labelPlan
     ? Array.from(
         new Set([labelPlan.suggestedLabel, ...labelPlan.availableLabels])
@@ -288,9 +356,13 @@ export function SettingsExperimentSection({
   }, [membership?.label])
   const selectedCandidate =
     candidates.find((c) => c.publicId === parentPublicId) ?? null
+  const selectedChild =
+    addableCandidates.find((c) => c.publicId === childPublicId) ?? null
   const formTypeMismatch =
     selectedCandidate != null &&
     selectedCandidate.formType !== landingPage.formType
+  const addChildFormTypeMismatch =
+    selectedChild != null && selectedChild.formType !== landingPage.formType
 
   return (
     <SettingsSectionCard
@@ -430,6 +502,114 @@ export function SettingsExperimentSection({
                       Open Experiments tab
                     </Link>
                   </Button>
+                </div>
+              ) : null}
+
+              {membership.isHub ? (
+                <div className="space-y-3 rounded-lg border border-border p-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-foreground">
+                      Add an existing project as a variant
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Link another Arohaa landing page into this experiment. To
+                      create a brand-new page instead, use{" "}
+                      <Link
+                        href={`/dashboard/new-landing?mode=variant&parent=${encodeURIComponent(publicId)}`}
+                        className="font-medium text-foreground underline underline-offset-2"
+                      >
+                        New Variant
+                      </Link>
+                      .
+                    </p>
+                  </div>
+
+                  {addableCandidates.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No other unlinked landing pages are available. Create a
+                      new variant page, or open an existing project&rsquo;s
+                      Settings → Experiment variant and join from there after
+                      leaving its current experiment.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="grid gap-3 sm:grid-cols-[1fr_10rem]">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="add-child">Project to add</Label>
+                          <Select
+                            value={childPublicId || undefined}
+                            disabled={isSaving}
+                            onValueChange={setChildPublicId}
+                          >
+                            <SelectTrigger
+                              id="add-child"
+                              aria-label="Project to add as variant"
+                              className={cn(
+                                overviewSelectTriggerClassName,
+                                "w-full"
+                              )}
+                            >
+                              <SelectValue placeholder="Select a project…" />
+                            </SelectTrigger>
+                            <SelectContent
+                              position="popper"
+                              align="start"
+                              className={overviewSelectContentClassName}
+                            >
+                              {addableCandidates.map((candidate) => (
+                                <SelectItem
+                                  key={candidate.publicId}
+                                  value={candidate.publicId}
+                                  className={overviewSelectItemClassName}
+                                >
+                                  {candidate.brandName} ({candidate.hostname})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="add-child-label">Label</Label>
+                          <VariantLabelField
+                            id="add-child-label"
+                            value={label}
+                            onValueChange={setLabel}
+                            availableLabels={joinLabelOptions}
+                            disabled={!labelPlan || isSaving}
+                            placeholder="—"
+                          />
+                        </div>
+                      </div>
+
+                      {addChildFormTypeMismatch && selectedChild ? (
+                        <p className="text-sm text-amber-700" role="status">
+                          Form types differ (
+                          {formatLandingFormType(landingPage.formType)} vs{" "}
+                          {formatLandingFormType(selectedChild.formType)}). The
+                          variants will be compared on different conversion
+                          definitions.
+                        </p>
+                      ) : null}
+
+                      <Button
+                        type="button"
+                        onClick={() => void handleAddChild()}
+                        disabled={isSaving || !childPublicId || !label}
+                      >
+                        {isSaving ? (
+                          <>
+                            <Loader2
+                              className="mr-2 size-4 animate-spin"
+                              aria-hidden
+                            />
+                            Adding
+                          </>
+                        ) : (
+                          "Add as variant"
+                        )}
+                      </Button>
+                    </>
+                  )}
                 </div>
               ) : null}
 
