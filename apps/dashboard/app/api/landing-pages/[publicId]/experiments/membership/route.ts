@@ -53,56 +53,68 @@ export const POST = route(
     schema: experimentMembershipAttachBodySchema,
   },
   async ({ actor, params, body, request }) => {
-    const landingPage = await requirePage(actor.id, params.publicId!)
-    if (!landingPage) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 })
-    }
+    try {
+      const landingPage = await requirePage(actor.id, params.publicId!)
+      if (!landingPage) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 })
+      }
 
-    const parentPublicId = body.parentPublicId.trim()
-    if (parentPublicId === landingPage.publicId) {
-      return NextResponse.json(
-        { error: "A project cannot be a variant of itself" },
-        { status: 400 }
+      const parentPublicId = body.parentPublicId.trim()
+      if (parentPublicId === landingPage.publicId) {
+        return NextResponse.json(
+          { error: "A project cannot be a variant of itself" },
+          { status: 400 }
+        )
+      }
+
+      const parent = await getActiveLandingPageForActor(
+        actor.id,
+        parentPublicId
       )
+      if (!parent) {
+        return NextResponse.json(
+          { error: "Parent project not found" },
+          { status: 404 }
+        )
+      }
+
+      const attached = await attachLandingPageAsVariant({
+        parent,
+        child: landingPage,
+        label: body.label,
+      })
+      if (!attached.ok) {
+        return NextResponse.json(
+          { error: attached.error },
+          { status: attached.status ?? 409 }
+        )
+      }
+
+      await writeLandingPageAuditLog({
+        actorUserId: actor.id,
+        landingPageId: landingPage.id,
+        action: "variant_link",
+        beforePayload: null,
+        afterPayload: {
+          variantLabel: attached.label,
+          variantOfBrandName: parent.brandName,
+          experimentId: attached.experimentId,
+        },
+        traceId: request.headers.get("x-trace-id")?.trim() || null,
+      })
+
+      const data = await getExperimentMembershipForLandingPage(landingPage, {
+        allowedPublicIds: await getAccessibleProjectIds(actor),
+      })
+      return NextResponse.json(data, { status: 201 })
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message.trim()
+          ? err.message
+          : "Could not link this project as a variant"
+      console.error("[experiments/membership] attach failed", err)
+      return NextResponse.json({ error: message }, { status: 500 })
     }
-
-    const parent = await getActiveLandingPageForActor(actor.id, parentPublicId)
-    if (!parent) {
-      return NextResponse.json(
-        { error: "Parent project not found" },
-        { status: 404 }
-      )
-    }
-
-    const attached = await attachLandingPageAsVariant({
-      parent,
-      child: landingPage,
-      label: body.label,
-    })
-    if (!attached.ok) {
-      return NextResponse.json(
-        { error: attached.error },
-        { status: attached.status ?? 409 }
-      )
-    }
-
-    await writeLandingPageAuditLog({
-      actorUserId: actor.id,
-      landingPageId: landingPage.id,
-      action: "variant_link",
-      beforePayload: null,
-      afterPayload: {
-        variantLabel: attached.label,
-        variantOfBrandName: parent.brandName,
-        experimentId: attached.experimentId,
-      },
-      traceId: request.headers.get("x-trace-id")?.trim() || null,
-    })
-
-    const data = await getExperimentMembershipForLandingPage(landingPage, {
-      allowedPublicIds: await getAccessibleProjectIds(actor),
-    })
-    return NextResponse.json(data, { status: 201 })
   }
 )
 

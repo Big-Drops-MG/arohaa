@@ -74,6 +74,19 @@ type SettingsExperimentSectionProps = {
   landingPage: LandingPageRecord
 }
 
+function readApiError(payload: unknown, fallback: string): string {
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "error" in payload &&
+    typeof (payload as { error?: unknown }).error === "string"
+  ) {
+    const message = (payload as { error: string }).error.trim()
+    if (message) return message
+  }
+  return fallback
+}
+
 export function SettingsExperimentSection({
   landingPage,
 }: SettingsExperimentSectionProps) {
@@ -115,10 +128,7 @@ export function SettingsExperimentSection({
           | Record<string, never>
         if (cancelled) return
         if (!res.ok) {
-          setError(
-            ("error" in payload ? payload.error : null) ??
-              "Could not load experiment details"
-          )
+          setError(readApiError(payload, "Could not load experiment details"))
           return
         }
         setData(payload as MembershipResponse)
@@ -190,8 +200,7 @@ export function SettingsExperimentSection({
 
       if (!res.ok) {
         setError(
-          ("error" in payload ? payload.error : null) ??
-            "Could not link this project as a variant"
+          readApiError(payload, "Could not link this project as a variant")
         )
         return
       }
@@ -228,8 +237,7 @@ export function SettingsExperimentSection({
 
       if (!res.ok) {
         setError(
-          ("error" in payload ? payload.error : null) ??
-            "Could not add that project as a variant"
+          readApiError(payload, "Could not add that project as a variant")
         )
         return
       }
@@ -271,10 +279,7 @@ export function SettingsExperimentSection({
           | Record<string, never>
 
         if (!res.ok) {
-          setError(
-            ("error" in payload ? payload.error : null) ??
-              "Could not change the variant label"
-          )
+          setError(readApiError(payload, "Could not change the variant label"))
           return
         }
 
@@ -311,8 +316,10 @@ export function SettingsExperimentSection({
 
       if (!res.ok) {
         setError(
-          ("error" in payload ? payload.error : null) ??
+          readApiError(
+            payload,
             "Could not remove this project from the experiment"
+          )
         )
         setConfirmLeave(false)
         return

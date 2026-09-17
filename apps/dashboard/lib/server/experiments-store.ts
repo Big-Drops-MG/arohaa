@@ -342,12 +342,15 @@ export async function getVariantLabelPlanForLandingPage(
   }
 
   const links = normalizeExperimentVariantLinks(resolution.experiment.variants)
-  const takenLabels = links.map((link) => link.label)
+  const takenLabels = await listReservedVariantLabels(
+    resolution.experiment.id,
+    links.map((link) => link.label)
+  )
   const parentLabel =
     links.find((link) => link.landingPageId === parent.id)?.label ??
     nextAvailableVariantLabel(takenLabels)
 
-  const reserved = takenLabels.includes(parentLabel)
+  const reserved = isVariantLabelTaken(parentLabel, takenLabels)
     ? takenLabels
     : [...takenLabels, parentLabel]
 
@@ -361,6 +364,23 @@ export async function getVariantLabelPlanForLandingPage(
     ),
     suggestedLabel: nextAvailableVariantLabel(reserved),
   }
+}
+
+/** Labels reserved in JSON variants and/or the label table (may diverge). */
+async function listReservedVariantLabels(
+  experimentId: string,
+  linkLabels: string[]
+): Promise<string[]> {
+  const rows = await db
+    .select({ label: experimentVariantLabels.label })
+    .from(experimentVariantLabels)
+    .where(eq(experimentVariantLabels.experimentId, experimentId))
+
+  const reserved: string[] = []
+  for (const label of [...linkLabels, ...rows.map((row) => row.label)]) {
+    if (!isVariantLabelTaken(label, reserved)) reserved.push(label)
+  }
+  return reserved
 }
 
 function validateStatus(value: unknown): ExperimentStatus | null {
@@ -623,12 +643,21 @@ export async function attachLandingPageAsVariant({
     return { ok: false, error: "This landing page is already a variant" }
   }
 
+  const reservedLabels = await listReservedVariantLabels(
+    experiment.id,
+    variants.map((v) => v.label)
+  )
+  if (isVariantLabelTaken(parsedLabel.label, reservedLabels)) {
+    return {
+      ok: false,
+      error: `Variant ${parsedLabel.label} is already used in this experiment`,
+      status: 409,
+    }
+  }
+
   if (!variants.some((v) => v.landingPageId === parent.id)) {
     variants.unshift({
-      label: nextAvailableVariantLabel([
-        ...variants.map((v) => v.label),
-        parsedLabel.label,
-      ]),
+      label: nextAvailableVariantLabel([...reservedLabels, parsedLabel.label]),
       landingPageId: parent.id,
     })
   }

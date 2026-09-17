@@ -1,14 +1,22 @@
 export function isUniqueViolation(err: unknown): boolean {
-  const e = err as {
-    code?: string
-    cause?: { code?: string }
-    message?: string
+  let current: unknown = err
+  for (let depth = 0; depth < 6 && current; depth += 1) {
+    if (typeof current !== "object" || current === null) break
+    const record = current as {
+      code?: string
+      cause?: unknown
+      message?: string
+    }
+    if (record.code === "23505") return true
+    if (
+      typeof record.message === "string" &&
+      record.message.includes("duplicate key")
+    ) {
+      return true
+    }
+    current = record.cause
   }
-  const code = e?.code ?? e?.cause?.code
-  return (
-    code === "23505" ||
-    (typeof e?.message === "string" && e.message.includes("duplicate key"))
-  )
+  return false
 }
 
 export function uniqueViolationMessage(err: unknown, fallback: string): string {

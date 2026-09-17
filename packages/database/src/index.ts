@@ -1,6 +1,6 @@
-import { neon } from "@neondatabase/serverless"
-import { drizzle } from "drizzle-orm/neon-http"
 import { createClient, ClickHouseClient } from "@clickhouse/client"
+import { drizzle } from "drizzle-orm/node-postgres"
+import pg from "pg"
 import { bootstrapDatabaseEnv } from "./config/env.js"
 import * as authSchema from "./schema/auth.js"
 import * as landingSchema from "./schema/landing-pages.js"
@@ -51,20 +51,40 @@ const schema = {
 bootstrapDatabaseEnv(import.meta.url)
 
 function resolveDatabaseUrl(): string {
+  // Prefer a direct (unpooled) URL so multi-statement transactions work.
+  // neon-http cannot run db.transaction(); node-postgres can.
   const url =
+    process.env.DATABASE_URL_UNPOOLED ??
+    process.env.POSTGRES_URL_NON_POOLING ??
     process.env.DATABASE_URL ??
     process.env.POSTGRES_PRISMA_URL ??
     process.env.POSTGRES_URL
   if (!url) {
     throw new Error(
-      "No database URL. Set DATABASE_URL (or POSTGRES_PRISMA_URL / POSTGRES_URL for Neon/Vercel)."
+      "No database URL. Set DATABASE_URL_UNPOOLED / DATABASE_URL (or POSTGRES_* for Neon/Vercel)."
     )
   }
   return url
 }
 
-const sql = neon(resolveDatabaseUrl())
-export const db = drizzle(sql, { schema })
+type GlobalPg = typeof globalThis & { __arohaaPgPool?: pg.Pool }
+
+function getPool(): pg.Pool {
+  const globalStore = globalThis as GlobalPg
+  if (globalStore.__arohaaPgPool) return globalStore.__arohaaPgPool
+
+  const pool = new pg.Pool({
+    connectionString: resolveDatabaseUrl(),
+    // Serverless-friendly: avoid exhausting Neon connection limits.
+    max: Number(process.env.PG_POOL_MAX ?? 5),
+    idleTimeoutMillis: 10_000,
+    connectionTimeoutMillis: 15_000,
+  })
+  globalStore.__arohaaPgPool = pool
+  return pool
+}
+
+export const db = drizzle(getPool(), { schema })
 
 export * from "./schema/auth.js"
 export * from "./schema/landing-pages.js"
