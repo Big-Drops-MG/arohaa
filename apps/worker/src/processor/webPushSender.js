@@ -424,9 +424,14 @@ export async function processWebPushDelivery(deliveryId) {
     return
   }
 
-  if (row.campaignStatus !== 'active' && row.campaignStatus !== 'draft') {
-    // allow draft only for manual? Plan: send now can work on active. Manual send creates deliveries for any status from dashboard.
-    // Worker: only send if campaign is active OR we already queued (manual send). Allow sending unless paused/draft cancelled.
+  // Delayed deliveries are DB-polled; Redis may still deliver early — never send before due.
+  if (row.scheduledFor) {
+    const dueAt = new Date(row.scheduledFor).getTime()
+    if (Number.isFinite(dueAt) && dueAt > Date.now() + 1_000) {
+      await requeueDelivery(db, deliveryId, new Date(dueAt))
+      logger.info({ deliveryId, dueAt }, 'web push not due yet; requeued')
+      return
+    }
   }
 
   if (row.campaignStatus === 'paused') {
@@ -560,7 +565,19 @@ export async function processWebPushDelivery(deliveryId) {
 
 export async function startWebPushConsumption(redis, { isShuttingDown }) {
   if (!getSql()) {
-    logger.warn('web push consumer disabled: DATABASE_URL missing')
+    logger.error(
+      'web push consumer disabled: DATABASE_URL missing — queued deliveries will never send',
+    )
+    return
+  }
+
+  try {
+    resolveEncryptionKey()
+  } catch (err) {
+    logger.error(
+      { err },
+      'web push consumer disabled: WEB_PUSH_VAPID_ENCRYPTION_KEY or AUTH_SECRET missing',
+    )
     return
   }
 

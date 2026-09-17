@@ -32,5 +32,11 @@ jobs:
           CLICKHOUSE_URL: ${{ secrets.CLICKHOUSE_URL }}
           CLICKHOUSE_USER: ${{ secrets.CLICKHOUSE_USER }}
           CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          WEB_PUSH_VAPID_ENCRYPTION_KEY: ${{ secrets.WEB_PUSH_VAPID_ENCRYPTION_KEY }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          WEB_PUSH_CLICK_BASE_URL: ${{ secrets.WEB_PUSH_CLICK_BASE_URL }}
+          WEB_PUSH_VAPID_SUBJECT: ${{ secrets.WEB_PUSH_VAPID_SUBJECT }}
+          AROHAA_INTERNAL_API_SECRET: ${{ secrets.AROHAA_INTERNAL_API_SECRET }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: python scripts/deploy-worker-do.py

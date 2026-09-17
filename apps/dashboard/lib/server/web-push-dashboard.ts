@@ -633,3 +633,36 @@ export async function sendCampaignNow(
 
   return { ok: true, created: result.created }
 }
+
+export async function flushWebPushStats(
+  actorId: string,
+  routeSegment: string
+): Promise<
+  | {
+      ok: true
+      deletedSubscriptions: number
+      deletedDeliveries: number
+    }
+  | { ok: false; status: number; error: string }
+> {
+  const landing = await getActiveLandingPageForActor(actorId, routeSegment)
+  if (!landing) {
+    return { ok: false, status: 404, error: "Landing page not found" }
+  }
+
+  const deletedDeliveries = await db
+    .delete(webPushDeliveries)
+    .where(eq(webPushDeliveries.landingPageId, landing.id))
+    .returning({ id: webPushDeliveries.id })
+
+  const deletedSubscriptions = await db
+    .delete(webPushSubscriptions)
+    .where(eq(webPushSubscriptions.landingPageId, landing.id))
+    .returning({ id: webPushSubscriptions.id })
+
+  return {
+    ok: true,
+    deletedSubscriptions: deletedSubscriptions.length,
+    deletedDeliveries: deletedDeliveries.length,
+  }
+}

@@ -190,6 +190,25 @@ export async function listSiblingLandingPages(
   return rows.filter((row) => opts.allowedPublicIds!.has(row.publicId))
 }
 
+/** Siblings that do not already belong to any experiment (safe to attach). */
+export async function listUnassignedSiblingLandingPages(
+  excludeLandingPageId?: string,
+  opts?: { allowedPublicIds?: ReadonlySet<string> | null }
+): Promise<SiblingLandingPageOption[]> {
+  const siblings = await listSiblingLandingPages(excludeLandingPageId, opts)
+  if (siblings.length === 0) return []
+
+  const assigned = new Set<string>()
+  await Promise.all(
+    siblings.map(async (sibling) => {
+      const resolution = await resolveExperimentForLandingPage(sibling.id)
+      if (resolution) assigned.add(sibling.id)
+    })
+  )
+
+  return siblings.filter((sibling) => !assigned.has(sibling.id))
+}
+
 async function hydrateVariantHealth(
   links: ExperimentVariantLink[],
   controlLandingPageId: string | null,
@@ -687,14 +706,24 @@ export async function getExperimentMembershipForLandingPage(
 ): Promise<{
   membership: ExperimentMembershipView | null
   candidates: SiblingLandingPageOption[]
+  unassignedCandidates: SiblingLandingPageOption[]
 }> {
   const { experiment, siblings } = await getExperimentConfigForLandingPage(
     landingPage,
     opts
   )
 
+  const unassignedCandidates = await listUnassignedSiblingLandingPages(
+    landingPage.id,
+    opts
+  )
+
   if (!experiment) {
-    return { membership: null, candidates: siblings }
+    return {
+      membership: null,
+      candidates: siblings,
+      unassignedCandidates,
+    }
   }
 
   return {
@@ -718,6 +747,7 @@ export async function getExperimentMembershipForLandingPage(
       })),
     },
     candidates: siblings,
+    unassignedCandidates,
   }
 }
 
