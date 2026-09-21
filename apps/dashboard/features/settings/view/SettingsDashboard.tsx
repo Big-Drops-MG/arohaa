@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
 import type { LandingPageSettingsData } from "@/features/settings/model/landing-page-settings"
 import { SettingsActivityLogSection } from "@/features/settings/view/SettingsActivityLogSection"
 import { SettingsConnectionSection } from "@/features/settings/view/SettingsConnectionSection"
@@ -30,6 +31,7 @@ export function SettingsDashboard({
   allowedSections = null,
   readOnly = false,
 }: SettingsDashboardProps) {
+  const router = useRouter()
   const [settings, setSettings] = useState(initialData)
 
   const navItems = useMemo((): SettingsNavItem[] => {
@@ -56,9 +58,21 @@ export function SettingsDashboard({
     omitDefault: true,
   })
 
-  const handleSettingsUpdate = useCallback((next: LandingPageSettingsData) => {
-    setSettings(next)
-  }, [])
+  const handleSettingsUpdate = useCallback(
+    (next: LandingPageSettingsData) => {
+      const previousSlug = settings.landingPage.slug
+      setSettings(next)
+      if (next.landingPage.slug !== previousSlug) {
+        const query =
+          typeof window !== "undefined" ? window.location.search : ""
+        router.replace(
+          `/dashboard/${encodeURIComponent(next.landingPage.slug)}${query}`
+        )
+        router.refresh()
+      }
+    },
+    [router, settings.landingPage.slug]
+  )
 
   const canShow = (id: SettingsSectionId) =>
     !allowedSections || allowedSections.includes(id)

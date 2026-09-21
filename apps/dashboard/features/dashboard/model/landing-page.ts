@@ -17,7 +17,7 @@ export function emptyLandingPageMetrics(
   formType = "single"
 ): LandingPageMetric[] {
   return [
-    { label: "Active Users", value: "0" },
+    { label: "Visitors", value: "0" },
     { label: submissionMetricLabel(formType), value: "0" },
     { label: "Bounce Rate", value: "0%" },
   ]

@@ -1,6 +1,8 @@
 import { HomePage } from "@/features/dashboard/HomePage"
 import { pageMetadata } from "@/lib/site-metadata"
 
+export const dynamic = "force-dynamic"
+
 export const metadata = pageMetadata("Landing Pages")
 
 export default function HomepagePage() {

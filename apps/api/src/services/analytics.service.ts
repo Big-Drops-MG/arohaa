@@ -189,9 +189,13 @@ function parseLandingFormType(raw: string | undefined): LandingFormType {
   return 'single'
 }
 
-function submissionEventName(formType: LandingFormType): string {
-  if (formType === 'none') return 'service_click'
-  return formType === 'zip' ? 'zip_submit' : 'form_success'
+/** SQL predicate for conversion events. Zip LPs often emit form_success. */
+function submissionEventSqlPredicate(formType: LandingFormType): string {
+  if (formType === 'none') return `event_name = 'service_click'`
+  if (formType === 'zip') {
+    return `event_name IN ('zip_submit', 'form_success')`
+  }
+  return `event_name = 'form_success'`
 }
 
 function seriesLabel(bucket: Date, granularity: AnalyticsGranularity): string {
@@ -369,14 +373,13 @@ function overviewSeriesMetricsQuery(
   granularity: AnalyticsGranularity,
   utmFilter?: AnalyticsUtmFilter,
 ): string {
-  const submitEvent = submissionEventName(formType)
   return `
     SELECT
       ${chBucketExpr(granularity)} AS bucket,
       uniqExactIf(user_id, event_name = 'page_view') AS visitors,
       uniqExact(session_id) AS sessions,
       countIf(event_name = 'page_view') AS page_views,
-      uniqExactIf(session_id, event_name = '${submitEvent}') AS form_submitted
+      uniqExactIf(session_id, ${submissionEventSqlPredicate(formType)}) AS form_submitted
     FROM events_raw
     WHERE ${rangeFilter(utmFilter)}
     GROUP BY bucket
@@ -415,7 +418,6 @@ export async function getAnalyticsOverview(
   custom?: AnalyticsCustomRange,
 ): Promise<AnalyticsOverview> {
   const formType = parseLandingFormType(formTypeRaw)
-  const submitEvent = submissionEventName(formType)
   const now = new Date()
   const window = resolveAnalyticsWindow(rangeId, now, custom)
   const where = rangeFilter(utmFilter)
@@ -424,7 +426,7 @@ export async function getAnalyticsOverview(
     ...rangeQueryParams(window),
     ...utmFilterParams(utmFilter),
   }
-  const cacheKey = `analytics:overview:v6-state:${workspaceId}:${formType}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
+  const cacheKey = `analytics:overview:v7-zip-form:${workspaceId}:${formType}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
   try {
     const cachedStr = await redis.get(cacheKey)
     if (cachedStr) {
@@ -458,7 +460,7 @@ export async function getAnalyticsOverview(
           uniqExactIf(user_id, event_name = 'page_view') AS visitors,
           uniqExact(session_id) AS sessions,
           countIf(event_name = 'page_view') AS page_views,
-          uniqExactIf(session_id, event_name = '${submitEvent}') AS form_submitted
+          uniqExactIf(session_id, ${submissionEventSqlPredicate(formType)}) AS form_submitted
         FROM events_raw
         WHERE ${where}
       `,
@@ -500,7 +502,7 @@ export async function getAnalyticsOverview(
           countIf(event_name = 'page_view') AS page_views,
           uniqExactIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth','service_click')) AS interactions,
           uniqExactIf(session_id, event_name = 'form_start') AS form_started,
-          uniqExactIf(session_id, event_name = '${submitEvent}') AS form_submitted
+          uniqExactIf(session_id, ${submissionEventSqlPredicate(formType)}) AS form_submitted
         FROM events_raw
         WHERE ${where}
       `,
@@ -547,7 +549,7 @@ export async function getAnalyticsOverview(
         SELECT ${chToDayOfWeek('created_at', 1)} AS dow FROM events_raw
         WHERE ${where}
         GROUP BY dow
-        ORDER BY uniqExactIf(session_id, event_name = '${submitEvent}') DESC
+        ORDER BY uniqExactIf(session_id, ${submissionEventSqlPredicate(formType)}) DESC
         LIMIT 1
       `,
     }),
@@ -593,7 +595,7 @@ export async function getAnalyticsOverview(
             uniqExactIf(user_id, event_name = 'page_view') AS visitors,
             uniqExact(session_id) AS sessions,
             countIf(event_name = 'page_view') AS page_views,
-            uniqExactIf(session_id, event_name = '${submitEvent}') AS form_submitted
+            uniqExactIf(session_id, ${submissionEventSqlPredicate(formType)}) AS form_submitted
           FROM events_raw
           WHERE ${usStateWhere}
           GROUP BY state
@@ -884,7 +886,6 @@ export async function getAnalyticsOverviewCities({
   }
 
   const formType = parseLandingFormType(formTypeRaw)
-  const submitEvent = submissionEventName(formType)
   const window = resolveAnalyticsWindow(rangeId, new Date(), custom)
   const where = rangeFilter(utmFilter)
   const p = {
@@ -894,7 +895,7 @@ export async function getAnalyticsOverviewCities({
     ...rangeQueryParams(window),
     ...utmFilterParams(utmFilter),
   }
-  const cacheKey = `analytics:overview:cities:v8:${workspaceId}:${formType}:${normalized.code}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
+  const cacheKey = `analytics:overview:cities:v9-zip-form:${workspaceId}:${formType}:${normalized.code}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
 
   try {
     const cachedStr = await redis.get(cacheKey)
@@ -936,7 +937,7 @@ export async function getAnalyticsOverviewCities({
           uniqExactIf(user_id, event_name = 'page_view') AS visitors,
           uniqExact(session_id) AS sessions,
           countIf(event_name = 'page_view') AS page_views,
-          uniqExactIf(session_id, event_name = '${submitEvent}') AS form_submitted
+          uniqExactIf(session_id, ${submissionEventSqlPredicate(formType)}) AS form_submitted
         FROM events_raw
         WHERE ${cityWhere}
         GROUP BY city_label
@@ -1061,7 +1062,6 @@ export async function getAnalyticsOverviewZipcodes({
   }
 
   const formType = parseLandingFormType(formTypeRaw)
-  const submitEvent = submissionEventName(formType)
   const window = resolveAnalyticsWindow(rangeId, new Date(), custom)
   const where = rangeFilter(utmFilter)
   const p = {
@@ -1072,7 +1072,7 @@ export async function getAnalyticsOverviewZipcodes({
     ...rangeQueryParams(window),
     ...utmFilterParams(utmFilter),
   }
-  const cacheKey = `analytics:overview:zipcodes:v1:${workspaceId}:${formType}:${normalized.code}:${city.toLowerCase()}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
+  const cacheKey = `analytics:overview:zipcodes:v2-zip-form:${workspaceId}:${formType}:${normalized.code}:${city.toLowerCase()}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
 
   try {
     const cachedStr = await redis.get(cacheKey)
@@ -1109,7 +1109,7 @@ export async function getAnalyticsOverviewZipcodes({
           uniqExactIf(user_id, event_name = 'page_view') AS visitors,
           uniqExact(session_id) AS sessions,
           countIf(event_name = 'page_view') AS page_views,
-          uniqExactIf(session_id, event_name = '${submitEvent}') AS form_submitted
+          uniqExactIf(session_id, ${submissionEventSqlPredicate(formType)}) AS form_submitted
         FROM events_raw
         WHERE ${zipWhere}
         GROUP BY zipcode
@@ -1195,6 +1195,7 @@ export async function getAnalyticsOverviewZipcodes({
 
 export interface LandingPageCardMetrics {
   activeUsers: number
+  visitors7d: number
   formSubmissions: number
   bounceRate: number
 }
@@ -1204,8 +1205,8 @@ export async function getLandingPageCardMetrics(
   formTypeRaw?: string,
 ): Promise<LandingPageCardMetrics> {
   const formType = parseLandingFormType(formTypeRaw)
-  const submitEvent = submissionEventName(formType)
-  const cacheKey = `analytics:landing-summary:v2-lifetime:${workspaceId}:${formType}`
+  // Zip LPs frequently emit form_success instead of zip_submit — count both.
+  const cacheKey = `analytics:landing-summary:v5:${workspaceId}:${formType}`
   const cached = await readAnalyticsCache<LandingPageCardMetrics>(cacheKey)
   if (cached) return cached
 
@@ -1219,18 +1220,24 @@ export async function getLandingPageCardMetrics(
             AND event_name IN ('heartbeat', 'page_view')
         ) AS active_users,
         uniqExactIf(
+          user_id,
+          created_at >= now() - INTERVAL 7 DAY
+            AND event_name = 'page_view'
+        ) AS visitors_7d,
+        uniqExactIf(
           session_id,
-          event_name = {submit_event:String}
+          ${submissionEventSqlPredicate(formType)}
         ) AS form_submissions
       FROM events_raw
       WHERE workspace_id = {wid:UUID}
     `,
-    query_params: { wid: workspaceId, submit_event: submitEvent },
+    query_params: { wid: workspaceId },
     format: 'JSON',
   })
   const [row] = (
     (await metricsRes.json()) as CHJson<{
       active_users: string
+      visitors_7d: string
       form_submissions: string
     }>
   ).data
@@ -1244,6 +1251,7 @@ export async function getLandingPageCardMetrics(
         SELECT session_id, toUInt8(count() = 1) AS is_bounce
         FROM events_raw
         WHERE workspace_id = {wid:UUID}
+          AND created_at >= now() - INTERVAL 24 MONTH
         GROUP BY session_id
       )
     `,
@@ -1256,6 +1264,7 @@ export async function getLandingPageCardMetrics(
 
   const result = {
     activeUsers: n(row?.active_users),
+    visitors7d: n(row?.visitors_7d),
     formSubmissions: n(row?.form_submissions),
     bounceRate: bouncePct(n(bounceRow?.bounces), n(bounceRow?.sessions)),
   }
@@ -1267,6 +1276,7 @@ export async function getLandingPageCardMetrics(
 export function emptyLandingPageCardMetrics(): LandingPageCardMetrics {
   return {
     activeUsers: 0,
+    visitors7d: 0,
     formSubmissions: 0,
     bounceRate: 0,
   }

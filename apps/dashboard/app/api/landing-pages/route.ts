@@ -7,7 +7,6 @@ import {
   generateHtmlVerificationToken,
   generatePublicLandingId,
   isVariantLabelTaken,
-  landingPageSlugCandidate,
   landingPages,
   normalizeExperimentVariantLabel,
   normalizeLandingPageUrl,
@@ -30,6 +29,7 @@ import {
 } from "@/lib/server/landing-snippet"
 import { enforceLandingQuota } from "@/lib/server/landing-quota"
 import { parseOptionalFaviconUrl } from "@/lib/server/landing-page-validation"
+import { allocateLandingPageSlug } from "@/lib/server/allocate-landing-page-slug"
 import { route } from "@/lib/server/route"
 import { landingPageCreateBodySchema } from "@/lib/server/route-schemas"
 import { resolveLandingPageWorkspace } from "@/lib/server/resolve-workspace"
@@ -51,22 +51,6 @@ function isUniqueViolation(err: unknown): boolean {
 
 function traceIdFrom(request: Request): string | null {
   return request.headers.get("x-trace-id")?.trim() || null
-}
-
-async function allocateLandingPageSlug(
-  name: string,
-  publicId: string
-): Promise<string> {
-  for (let sequence = 1; sequence <= 1_000; sequence += 1) {
-    const candidate = landingPageSlugCandidate(name, sequence, publicId)
-    const [existing] = await db
-      .select({ id: landingPages.id })
-      .from(landingPages)
-      .where(eq(landingPages.slug, candidate))
-      .limit(1)
-    if (!existing) return candidate
-  }
-  throw new Error("Could not allocate a unique landing page slug")
 }
 
 function toJson(row: LandingRow) {

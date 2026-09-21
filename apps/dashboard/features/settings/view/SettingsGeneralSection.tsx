@@ -164,9 +164,11 @@ export function SettingsGeneralSection({
       setSuccess(
         data.urlChanged
           ? "Settings saved. Landing page URL changed — reinstall the SDK snippet and verify connection again."
-          : formType !== landingPage.formType
-            ? "Settings saved. Form type changed — copy the updated SDK snippet below and reinstall it on your page."
-            : "Settings saved."
+          : data.landingPage.slug !== landingPage.slug
+            ? "Settings saved. Project URL updated to match the new name."
+            : formType !== landingPage.formType
+              ? "Settings saved. Form type changed — copy the updated SDK snippet below and reinstall it on your page."
+              : "Settings saved."
       )
     } finally {
       setIsSaving(false)
@@ -178,6 +180,7 @@ export function SettingsGeneralSection({
     formType,
     landingPage.formType,
     landingPage.publicId,
+    landingPage.slug,
     landingPageUrl,
     notes,
     onSaved,

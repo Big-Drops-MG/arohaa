@@ -32,6 +32,10 @@ import {
 } from "@/lib/server/landing-page-live"
 import { buildHtmlVerificationMetaTag } from "@/lib/server/landing-snippet"
 import { writeLandingPageAuditLog } from "@/lib/server/landing-audit-log"
+import {
+  allocateLandingPageSlug,
+  slugMatchesBrandName,
+} from "@/lib/server/allocate-landing-page-slug"
 import type { z } from "zod"
 import type { landingPagePatchBodySchema } from "@/lib/server/route-schemas"
 
@@ -80,6 +84,7 @@ export async function patchLandingPageForApi(
 
   const before = {
     brandName: row.brandName,
+    slug: row.slug,
     landingPageUrl: row.landingPageUrl,
     normalizedUrl: row.normalizedUrl,
     hostname: row.hostname,
@@ -101,6 +106,17 @@ export async function patchLandingPageForApi(
       return NextResponse.json({ error: bn.error }, { status: 400 })
     }
     nextBrand = bn.brandName
+  }
+
+  let nextSlug = row.slug
+  let slugChanged = false
+  if (nextBrand !== row.brandName) {
+    if (!slugMatchesBrandName(row.slug, nextBrand, row.publicId)) {
+      nextSlug = await allocateLandingPageSlug(nextBrand, row.publicId, {
+        excludeLandingPageId: row.id,
+      })
+      slugChanged = nextSlug !== row.slug
+    }
   }
 
   let urlFields: {
@@ -248,6 +264,7 @@ export async function patchLandingPageForApi(
       .update(landingPages)
       .set({
         brandName: nextBrand,
+        slug: nextSlug,
         ...urlFields,
         formType: nextFormType,
         faviconUrl: nextFaviconUrl,
@@ -265,12 +282,14 @@ export async function patchLandingPageForApi(
       .where(eq(landingPages.id, row.id))
   } catch (err) {
     if (isUniqueViolation(err)) {
-      return NextResponse.json(
-        {
-          error: "This landing page URL is already registered",
-        },
-        { status: 409 }
-      )
+      const message =
+        err &&
+        typeof err === "object" &&
+        "message" in err &&
+        String((err as { message?: string }).message ?? "").includes("slug")
+          ? "That project URL slug is already in use"
+          : "This landing page URL is already registered"
+      return NextResponse.json({ error: message }, { status: 409 })
     }
     throw err
   }
@@ -312,6 +331,7 @@ export async function patchLandingPageForApi(
 
   const generalFieldsChanged =
     nextBrand !== row.brandName ||
+    slugChanged ||
     urlChanged ||
     nextFormType !== row.formType ||
     nextFaviconUrl !== row.faviconUrl ||
@@ -329,6 +349,7 @@ export async function patchLandingPageForApi(
       },
       afterPayload: {
         brandName: saved.brandName,
+        slug: saved.slug,
         landingPageUrl: saved.landingPageUrl,
         normalizedUrl: saved.normalizedUrl,
         hostname: saved.hostname,
@@ -353,6 +374,7 @@ export async function patchLandingPageForApi(
     landingPage: toLandingPageRecord(saved),
     ...(htmlVerificationMetaTag ? { htmlVerificationMetaTag } : {}),
     urlChanged,
+    slugChanged,
   })
 }
 

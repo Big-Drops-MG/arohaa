@@ -1,14 +1,19 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import { Plus, Search } from "lucide-react"
-import type { LandingPageListItem } from "@/features/dashboard/model/landing-page"
+import type {
+  LandingPageListItem,
+  LandingPageMetric,
+} from "@/features/dashboard/model/landing-page"
 import { NEW_LANDING_PATH } from "@/features/dashboard/model/new-landing-mode"
 import { AddNewProjectMenu } from "@/features/dashboard/view/AddNewProjectMenu"
 import { LandingPageCard } from "@/features/dashboard/view/LandingPageCard"
+
+const METRICS_REFRESH_MS = 30_000
 
 type LandingPagesDashboardProps = {
   pages: LandingPageListItem[]
@@ -20,12 +25,59 @@ export function LandingPagesDashboard({
   canCreateProjects = true,
 }: LandingPagesDashboardProps) {
   const [query, setQuery] = useState("")
+  const [liveMetricsByPublicId, setLiveMetricsByPublicId] = useState<Record<
+    string,
+    LandingPageMetric[]
+  > | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function refreshMetrics() {
+      if (document.visibilityState !== "visible") return
+      try {
+        const res = await fetch("/api/landing-pages/card-metrics", {
+          cache: "no-store",
+        })
+        if (!res.ok) return
+        const payload = (await res.json().catch(() => null)) as {
+          metricsByPublicId?: Record<string, LandingPageMetric[]>
+        } | null
+        if (cancelled || !payload?.metricsByPublicId) return
+        setLiveMetricsByPublicId(payload.metricsByPublicId)
+      } catch {
+        // Keep last good metrics on transient failures.
+      }
+    }
+
+    void refreshMetrics()
+    const intervalId = window.setInterval(refreshMetrics, METRICS_REFRESH_MS)
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refreshMetrics()
+    }
+    document.addEventListener("visibilitychange", onVisibility)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [])
+
+  const pagesWithMetrics = useMemo(
+    () =>
+      pages.map((page) => ({
+        ...page,
+        metrics: liveMetricsByPublicId?.[page.publicId] ?? page.metrics,
+      })),
+    [pages, liveMetricsByPublicId]
+  )
 
   const filteredPages = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
     const matched = !normalizedQuery
-      ? pages
-      : pages.filter((page) => {
+      ? pagesWithMetrics
+      : pagesWithMetrics.filter((page) => {
           const searchableText =
             `${page.brandName} ${page.landingPageUrl} ${page.channelType ?? ""} ${page.experimentName ?? ""} ${page.experimentGroupName ?? ""} ${page.variantLabel ?? ""}`.toLowerCase()
           return searchableText.includes(normalizedQuery)
@@ -47,7 +99,7 @@ export function LandingPagesDashboard({
 
       return a.brandName.localeCompare(b.brandName)
     })
-  }, [pages, query])
+  }, [pagesWithMetrics, query])
 
   if (pages.length === 0) {
     return (
