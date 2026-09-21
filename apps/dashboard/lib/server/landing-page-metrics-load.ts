@@ -25,7 +25,7 @@ export function buildLandingPageMetrics(
   formType = "single"
 ): LandingPageMetric[] {
   return [
-    { label: "Visitors", value: fmtCount(data.visitors7d ?? data.activeUsers) },
+    { label: "Active Users", value: fmtCount(data.activeUsers) },
     {
       label: submissionMetricLabel(formType),
       value: fmtCount(data.formSubmissions),
