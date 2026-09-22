@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_EVENTS_TABLE} (
     os LowCardinality(String) DEFAULT '',
     device LowCardinality(String) DEFAULT 'desktop',
     variant LowCardinality(String) DEFAULT '',
+    formtype LowCardinality(String) DEFAULT '',
     country LowCardinality(String) DEFAULT 'Unknown',
     city LowCardinality(String) DEFAULT '',
     state LowCardinality(String) DEFAULT '',
@@ -134,6 +135,10 @@ export async function ensureEventsTable(): Promise<void> {
   await ch.command({
     query:
       `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS variant LowCardinality(String) DEFAULT ''`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS formtype LowCardinality(String) DEFAULT ''`,
   })
   await ch.command({
     query:

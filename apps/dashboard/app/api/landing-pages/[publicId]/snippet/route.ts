@@ -5,6 +5,7 @@ import {
   servicesForSdkSnippet,
 } from "@/features/settings/model/landing-page-services"
 import { canWriteLandingPages } from "@/lib/server/actor-can"
+import { resolveVariantLabelForLandingPageId } from "@/lib/server/experiments-store"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import {
   buildHtmlVerificationMetaTag,
@@ -41,6 +42,7 @@ export const GET = route(
     const services = servicesForSdkSnippet(
       parseLandingPageServices(row.metadata as Record<string, unknown> | null)
     )
+    const variant = await resolveVariantLabelForLandingPageId(row.id)
 
     const sdkSnippetHtml = buildLandingSdkScriptTag({
       sdkScriptUrl,
@@ -49,6 +51,7 @@ export const GET = route(
       publicLandingId: row.publicId,
       pageHostname: row.hostname,
       formType,
+      variant,
       services,
     })
 

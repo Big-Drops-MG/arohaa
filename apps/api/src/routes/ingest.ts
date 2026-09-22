@@ -14,6 +14,7 @@ import {
   isValidEventId,
   releaseIngestEventId,
 } from '../lib/ingest-idempotency.js'
+import { ALLOWED_INGEST_EVENT_NAMES } from '../lib/allowed-event-names.js'
 import { ingestBodyToEventRow, type IngestEventBody } from '../types/event.js'
 import { buildEnrichmentContext } from '../utils/enrichment.js'
 import { normalizeReferrer } from '../utils/referrer.js'
@@ -29,12 +30,12 @@ const eventBodyProperties = {
   ev: {
     type: 'string',
     maxLength: 50,
-    pattern: '^[a-z0-9_]+$',
+    enum: [...ALLOWED_INGEST_EVENT_NAMES],
   },
   event_name: {
     type: 'string',
     maxLength: 50,
-    pattern: '^[a-z0-9_]+$',
+    enum: [...ALLOWED_INGEST_EVENT_NAMES],
   },
   wid: { type: 'string', format: 'uuid' },
   workspace_id: { type: 'string', format: 'uuid' },

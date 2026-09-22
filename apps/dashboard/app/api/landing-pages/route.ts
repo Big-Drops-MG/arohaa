@@ -296,6 +296,7 @@ export const POST = route(
           publicLandingId: publicId,
           pageHostname: nu.hostname,
           formType,
+          variant: variantLabel || null,
         })
 
         const htmlVerificationMetaTag = buildHtmlVerificationMetaTag(htmlToken)

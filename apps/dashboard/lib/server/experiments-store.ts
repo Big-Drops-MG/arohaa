@@ -1087,3 +1087,20 @@ export async function deleteExperimentForLandingPage(
   await db.delete(experiments).where(eq(experiments.id, experimentId))
   return { ok: true }
 }
+
+export async function resolveVariantLabelForLandingPageId(
+  landingPageId: string
+): Promise<string | null> {
+  const rows = await db
+    .select({ variants: experiments.variants })
+    .from(experiments)
+
+  for (const row of rows) {
+    for (const link of normalizeExperimentVariantLinks(row.variants)) {
+      if (link.landingPageId === landingPageId) {
+        return link.label
+      }
+    }
+  }
+  return null
+}

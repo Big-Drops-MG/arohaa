@@ -61,6 +61,7 @@ export interface EventRow {
   longitude: number
   geo_accuracy: number
   variant: string
+  formtype: string
   metric_name: string
   metric_value: number
   properties: string
@@ -126,6 +127,16 @@ export function ingestBodyToEventRow(
   const forZip = materializeOpaqueProps(body.props)
   const submittedZip = zipFromProps(body.props) || zipFromProps(forZip)
   const sealed = sealPropsForStorage(body.props)
+  const formtype =
+    body.formtype === 'zip' ||
+    body.formtype === 'single' ||
+    body.formtype === 'multiple' ||
+    body.formtype === 'none'
+      ? body.formtype
+      : ''
+  const propsWithFormtype = formtype
+    ? { ...sealed, formtype }
+    : sealed
 
   return {
     event_id: body.event_id?.trim() ?? '',
@@ -157,11 +168,12 @@ export function ingestBodyToEventRow(
     longitude: enrichment.longitude ?? 0,
     geo_accuracy: enrichment.accuracyRadius ?? 0,
     variant: body.variant ?? '',
+    formtype,
     metric_name: body.metric_name ?? '',
     metric_value: typeof body.metric_value === 'number' && Number.isFinite(body.metric_value)
       ? body.metric_value
       : 0,
-    properties: serializeProps(sealed),
+    properties: serializeProps(propsWithFormtype),
     trace_id: traceId,
     created_at: toClickHouseDateTime64(new Date()),
   }

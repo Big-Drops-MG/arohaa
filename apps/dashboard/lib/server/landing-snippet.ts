@@ -13,8 +13,11 @@ export type LandingSdkSnippetInput = {
   publicLandingId: string
   pageHostname: string
   formType?: "single" | "multiple" | "zip" | "none"
+  variant?: string | null
   services?: Array<{ id: string; label: string; href?: string }>
 }
+
+const VARIANT_ATTR_RE = /^[A-Za-z0-9_-]{1,32}$/
 
 export function buildLandingSdkScriptTag(
   options: LandingSdkSnippetInput
@@ -26,12 +29,17 @@ export function buildLandingSdkScriptTag(
   const page = escapeHtmlAttribute(options.pageHostname)
   const formType = options.formType ?? "single"
   const ft = escapeHtmlAttribute(formType)
+  const variantRaw = options.variant?.trim() ?? ""
+  const variantAttr =
+    variantRaw && VARIANT_ATTR_RE.test(variantRaw)
+      ? ` data-variant="${escapeHtmlAttribute(variantRaw)}"`
+      : ""
   const servicesAttr =
     formType === "none" && options.services && options.services.length > 0
       ? ` data-services="${escapeHtmlAttribute(JSON.stringify(options.services))}"`
       : ""
   const stub = `<script>!function(w){if(w.arohaa)return;var a=function(){(a.q=a.q||[]).push(arguments)};a.q=[];a.l=Date.now();w.arohaa=a}(window);</script>`
-  const tag = `<script src="${src}" async data-wid="${wid}" data-api="${api}" data-lp-id="${lp}" data-page="${page}" data-formtype="${ft}"${servicesAttr}></script>`
+  const tag = `<script src="${src}" async data-wid="${wid}" data-api="${api}" data-lp-id="${lp}" data-page="${page}" data-formtype="${ft}"${variantAttr}${servicesAttr}></script>`
   return `${stub}\n${tag}`
 }
 

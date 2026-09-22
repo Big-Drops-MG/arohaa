@@ -76,7 +76,7 @@ export function getAttributionData(): AttributionData {
     utm_campaign: readParam(params, "utm_campaign", 255),
     utm_term: readParam(params, "utm_term", 500),
     utm_content: readParam(params, "utm_content", 255),
-    utm_id: readParamWithAliases(params, ["utm_id", "tid", "uid"], 100),
+    utm_id: readParamWithAliases(params, ["utm_id", "tid"], 100),
     utm_s1: readParamWithAliases(params, ["utm_s1", "sub1"], 100),
     referrer: referrer.length > 0 ? referrer.slice(0, 2048) : "direct",
   }

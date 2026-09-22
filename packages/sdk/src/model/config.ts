@@ -5,7 +5,7 @@ const DEFAULT_CONFIG: SDKConfig = {
   wid: "",
   lpId: "",
   page: "",
-  variant: "A",
+  variant: "",
   formtype: "single",
   apiBase: "",
   utmBlockRedirect: "",
@@ -52,7 +52,7 @@ export function initializeConfig(script?: HTMLScriptElement | null): SDKConfig {
     wid: resolvedScript?.getAttribute("data-wid") ?? "",
     lpId: resolvedScript?.getAttribute("data-lp-id") ?? "",
     page: resolvedScript?.getAttribute("data-page") ?? pageFallback,
-    variant: resolvedScript?.getAttribute("data-variant") ?? "A",
+    variant: resolvedScript?.getAttribute("data-variant")?.trim() || "",
     formtype: parseFormType(resolvedScript?.getAttribute("data-formtype")),
     apiBase: resolvedScript?.getAttribute("data-api") ?? "",
     utmBlockRedirect:

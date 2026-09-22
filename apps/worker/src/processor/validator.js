@@ -7,6 +7,36 @@
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EVENT_NAME_RE = /^[a-z0-9_]+$/;
+/** Keep in sync with apps/api/src/lib/allowed-event-names.ts */
+const ALLOWED_EVENT_NAMES = new Set([
+  'sdk_connected',
+  'page_view',
+  'page_leave',
+  'scroll_25',
+  'scroll_50',
+  'scroll_75',
+  'scroll_100',
+  'scroll_depth',
+  'heatmap_click',
+  'heatmap_move',
+  'heatmap_section',
+  'heatmap_field_focus',
+  'call_click',
+  'link_click',
+  'button_click',
+  'form_start',
+  'form_submit',
+  'form_success',
+  'form_field_focus',
+  'form_field_abandon',
+  'form_step_view',
+  'form_step_complete',
+  'zip_start',
+  'zip_submit',
+  'service_click',
+  'heartbeat',
+  'web_vitals',
+]);
 const MIN_CREATED_AT = Date.parse('2020-01-01T00:00:00.000Z');
 const MAX_FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
 
@@ -26,7 +56,12 @@ export function validateEvent(event) {
 
   const eventName =
     typeof event.event_name === 'string' ? event.event_name.trim() : '';
-  if (!eventName || !EVENT_NAME_RE.test(eventName) || eventName.length > 50) {
+  if (
+    !eventName ||
+    !EVENT_NAME_RE.test(eventName) ||
+    eventName.length > 50 ||
+    !ALLOWED_EVENT_NAMES.has(eventName)
+  ) {
     console.warn(
       `[Validator] Dropping event: Missing or invalid event_name for workspace ${workspaceId}`,
     );

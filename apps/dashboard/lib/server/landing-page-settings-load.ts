@@ -6,6 +6,7 @@ import {
   servicesForSdkSnippet,
 } from "@/features/settings/model/landing-page-services"
 import { canWriteLandingPages } from "@/lib/server/actor-can"
+import { resolveVariantLabelForLandingPageId } from "@/lib/server/experiments-store"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { toLandingPageRecord } from "@/lib/server/landing-page-json"
 import {
@@ -29,6 +30,7 @@ export async function loadLandingPageSettingsData(
   const services = servicesForSdkSnippet(
     parseLandingPageServices(row.metadata as Record<string, unknown> | null)
   )
+  const variant = await resolveVariantLabelForLandingPageId(row.id)
 
   const sdkSnippetHtml =
     ingestApiBase != null
@@ -39,6 +41,7 @@ export async function loadLandingPageSettingsData(
           publicLandingId: row.publicId,
           pageHostname: row.hostname,
           formType,
+          variant,
           services,
         })
       : ""
