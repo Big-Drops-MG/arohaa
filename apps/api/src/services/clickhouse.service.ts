@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_EVENTS_TABLE} (
     event_id String DEFAULT '',
     event_name LowCardinality(String),
     workspace_id UUID,
+    tenant_workspace_id String DEFAULT '',
     lp_public_id LowCardinality(String) DEFAULT '',
     user_id String,
     session_id String,
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_EVENTS_TABLE} (
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(event_date_et)
 ORDER BY (workspace_id, event_date_et, event_name)
+TTL toDateTime(created_at) + toIntervalDay(180)
 `
 
 let client: ClickHouseClient | null = null
@@ -130,6 +132,10 @@ export async function ensureEventsTable(): Promise<void> {
   })
   await ch.command({
     query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS tenant_workspace_id String DEFAULT ''`,
+  })
+  await ch.command({
+    query:
       `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS lp_public_id LowCardinality(String) DEFAULT ''`,
   })
   await ch.command({
@@ -175,6 +181,9 @@ export async function ensureEventsTable(): Promise<void> {
   await ch.command({
     query:
       `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS event_date_et Date MATERIALIZED ${chToDate('created_at')}`,
+  })
+  await ch.command({
+    query: `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} MODIFY TTL toDateTime(created_at) + toIntervalDay(180)`,
   })
 
   await ch.command({
@@ -284,7 +293,7 @@ async function ensureHeatmapSchema(ch: ClickHouseClient): Promise<void> {
           workspace_id,
           page_url,
           ${HEATMAP_DEVICE_EXPR} AS device,
-          toDate(timestamp, 'America/New_York') AS day,
+          ${chToDate('timestamp')} AS day,
           ${HEATMAP_GRID_X} AS grid_x,
           ${HEATMAP_GRID_Y} AS grid_y,
           countState() AS clicks
@@ -317,7 +326,7 @@ async function ensureHeatmapSchema(ch: ClickHouseClient): Promise<void> {
           workspace_id,
           page_url,
           ${HEATMAP_DEVICE_EXPR} AS device,
-          toDate(timestamp, 'America/New_York') AS day,
+          ${chToDate('timestamp')} AS day,
           ${HEATMAP_GRID_X} AS grid_x,
           ${HEATMAP_GRID_Y} AS grid_y,
           countState() AS moves
@@ -349,7 +358,7 @@ async function ensureHeatmapSchema(ch: ClickHouseClient): Promise<void> {
           workspace_id,
           page_url,
           ${HEATMAP_DEVICE_EXPR} AS device,
-          toDate(timestamp, 'America/New_York') AS day,
+          ${chToDate('timestamp')} AS day,
           ${HEATMAP_GRID_Y} AS scroll_depth_bucket,
           countState() AS events
       FROM ${HEATMAP_EVENTS_TABLE}
@@ -381,7 +390,7 @@ async function ensureHeatmapSchema(ch: ClickHouseClient): Promise<void> {
           workspace_id,
           page_url,
           ${HEATMAP_DEVICE_EXPR} AS device,
-          toDate(timestamp, 'America/New_York') AS day,
+          ${chToDate('timestamp')} AS day,
           element_selector,
           sumState(JSONExtractFloat(properties, 'dwell_ms')) AS dwell_ms,
           countState() AS views

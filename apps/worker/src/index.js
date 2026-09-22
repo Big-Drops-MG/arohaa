@@ -313,8 +313,14 @@ async function start() {
       await clickHouseClient.command({
         query: `ALTER TABLE events_raw ADD COLUMN IF NOT EXISTS event_id String DEFAULT ''`,
       });
+      await clickHouseClient.command({
+        query: `ALTER TABLE events_raw ADD COLUMN IF NOT EXISTS tenant_workspace_id String DEFAULT ''`,
+      });
+      await clickHouseClient.command({
+        query: `ALTER TABLE events_raw MODIFY TTL toDateTime(created_at) + toIntervalDay(180)`,
+      });
     } catch (err) {
-      logger.warn({ err }, 'failed to ensure events_raw.event_id column');
+      logger.warn({ err }, 'failed to ensure events_raw schema columns/TTL');
     }
 
     logger.info('worker ready');

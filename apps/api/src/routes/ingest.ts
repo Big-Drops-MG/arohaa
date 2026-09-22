@@ -239,6 +239,7 @@ async function ingestOne(
     latitude: ctx.geo.latitude,
     longitude: ctx.geo.longitude,
     accuracyRadius: ctx.geo.accuracyRadius,
+    tenantWorkspaceId: landing.tenantWorkspaceId,
   })
 
   try {

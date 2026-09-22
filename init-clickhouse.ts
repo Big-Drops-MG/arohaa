@@ -21,6 +21,7 @@ const client = createClient({
 const EXPECTED_COLUMNS = [
   "event_name",
   "workspace_id",
+  "tenant_workspace_id",
   "lp_public_id",
   "user_id",
   "session_id",
@@ -62,6 +63,7 @@ CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
     event_id String DEFAULT '',
     event_name LowCardinality(String),
     workspace_id UUID,
+    tenant_workspace_id String DEFAULT '',
     lp_public_id LowCardinality(String) DEFAULT '',
     user_id String,
     session_id String,
@@ -90,7 +92,8 @@ CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
     event_date_et Date MATERIALIZED toDate(created_at, 'America/New_York')
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(event_date_et)
-ORDER BY (workspace_id, event_date_et, event_name);
+ORDER BY (workspace_id, event_date_et, event_name)
+TTL toDateTime(created_at) + toIntervalDay(180);
 `
 
 const HEATMAP_EVENTS_TABLE = "heatmap_events"
@@ -152,7 +155,7 @@ async function ensureHeatmapEvents(): Promise<void> {
           workspace_id,
           page_url,
           ${HEATMAP_DEVICE_EXPR} AS device,
-          toDate(timestamp) AS day,
+          toDate(timestamp, 'America/New_York') AS day,
           ${HEATMAP_GRID_X} AS grid_x,
           ${HEATMAP_GRID_Y} AS grid_y,
           countState() AS clicks
@@ -186,7 +189,7 @@ async function ensureHeatmapEvents(): Promise<void> {
           workspace_id,
           page_url,
           ${HEATMAP_DEVICE_EXPR} AS device,
-          toDate(timestamp) AS day,
+          toDate(timestamp, 'America/New_York') AS day,
           ${HEATMAP_GRID_X} AS grid_x,
           ${HEATMAP_GRID_Y} AS grid_y,
           countState() AS moves
@@ -219,7 +222,7 @@ async function ensureHeatmapEvents(): Promise<void> {
           workspace_id,
           page_url,
           ${HEATMAP_DEVICE_EXPR} AS device,
-          toDate(timestamp) AS day,
+          toDate(timestamp, 'America/New_York') AS day,
           ${HEATMAP_GRID_Y} AS scroll_depth_bucket,
           countState() AS events
       FROM ${HEATMAP_EVENTS_TABLE}
@@ -252,7 +255,7 @@ async function ensureHeatmapEvents(): Promise<void> {
           workspace_id,
           page_url,
           ${HEATMAP_DEVICE_EXPR} AS device,
-          toDate(timestamp) AS day,
+          toDate(timestamp, 'America/New_York') AS day,
           element_selector,
           sumState(JSONExtractFloat(properties, 'dwell_ms')) AS dwell_ms,
           countState() AS views
@@ -283,6 +286,9 @@ async function readColumns(): Promise<string[]> {
 
 async function ensureAdditiveColumns(): Promise<void> {
   await client.command({
+    query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS tenant_workspace_id String DEFAULT ''`,
+  })
+  await client.command({
     query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS state LowCardinality(String) DEFAULT ''`,
   })
   await client.command({
@@ -302,6 +308,9 @@ async function ensureAdditiveColumns(): Promise<void> {
   })
   await client.command({
     query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS event_date_et Date MATERIALIZED toDate(created_at, 'America/New_York')`,
+  })
+  await client.command({
+    query: `ALTER TABLE ${EVENTS_TABLE} MODIFY TTL toDateTime(created_at) + toIntervalDay(180)`,
   })
 }
 

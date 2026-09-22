@@ -4,6 +4,7 @@ import { ingestRequestMatchesLanding } from '@workspace/database/landing/normali
 
 type LandingRowLite = {
   id: string
+  workspaceId: string
   hostname: string
   origin: string
   normalizedUrl: string
@@ -35,7 +36,7 @@ function getSql(): ReturnType<typeof neon> | null {
 
 type ReconcileResult =
   | { outcome: 'reject'; reason: string }
-  | { outcome: 'ok' }
+  | { outcome: 'ok'; tenantWorkspaceId: string }
 
 function toMs(value: Date | string | null | undefined): number {
   if (!value) return 0
@@ -69,6 +70,7 @@ export async function reconcileLandingPageIngest(payload: {
       ? await sql`
           SELECT
             lp.id,
+            lp."workspaceId" AS "workspaceId",
             lp.hostname,
             lp.origin,
             lp."normalizedUrl" AS "normalizedUrl",
@@ -89,6 +91,7 @@ export async function reconcileLandingPageIngest(payload: {
       : await sql`
           SELECT
             lp.id,
+            lp."workspaceId" AS "workspaceId",
             lp.hostname,
             lp.origin,
             lp."normalizedUrl" AS "normalizedUrl",
@@ -142,7 +145,7 @@ export async function reconcileLandingPageIngest(payload: {
     lastSeenMs <= 0 || now.getTime() - lastSeenMs >= LANDING_TOUCH_THROTTLE_MS
 
   if (!needsSdkFlip && !needsStatusPromote && !staleSeen) {
-    return { outcome: 'ok' }
+    return { outcome: 'ok', tenantWorkspaceId: row.workspaceId }
   }
 
   const nextVerifiedAt =
@@ -182,5 +185,5 @@ export async function reconcileLandingPageIngest(payload: {
     }
   }
 
-  return { outcome: 'ok' }
+  return { outcome: 'ok', tenantWorkspaceId: row.workspaceId }
 }

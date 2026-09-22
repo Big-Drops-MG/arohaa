@@ -65,8 +65,30 @@ async function pushHeatmapDurable(row: EventRow): Promise<void> {
   if (!mapped) {
     logger?.warn(
       { event_name: row.event_name, traceId: row.trace_id },
-      'heatmap event could not be mapped; dropping',
+      'heatmap event could not be mapped; sending to DLQ',
     )
+    try {
+      await awaitDlq({
+        reason: 'api_heatmap_unmapped',
+        event_name: row.event_name,
+        trace_id: row.trace_id,
+        workspace_id: row.workspace_id,
+        payload: row,
+        timestamp: Date.now(),
+        type: 'heatmap',
+      })
+    } catch (dlqErr) {
+      logger?.error(
+        { err: dlqErr, event_name: row.event_name, traceId: row.trace_id },
+        'failed to DLQ unmapped heatmap event',
+      )
+      Sentry.captureException(dlqErr, {
+        tags: { component: 'event-buffer', reason: 'heatmap_unmapped_dlq' },
+      })
+      throw dlqErr instanceof Error
+        ? dlqErr
+        : new QueueUnavailableError(String(dlqErr))
+    }
     return
   }
 

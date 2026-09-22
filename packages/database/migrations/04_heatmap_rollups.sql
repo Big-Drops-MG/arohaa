@@ -20,7 +20,7 @@ AS SELECT
     workspace_id,
     page_url,
     if(device != '', device, multiIf(viewport_width < 768, 'mobile', viewport_width < 1024, 'tablet', 'desktop')) AS device,
-    toDate(timestamp) AS day,
+    toDate(timestamp, 'America/New_York') AS day,
     toInt32(floor(least(greatest(x, 0.), 1.) * 10.)) * 10 AS grid_x,
     toInt32(floor(least(greatest(y, 0.), 1.) * 10.)) * 10 AS grid_y,
     countState() AS clicks
@@ -45,7 +45,7 @@ AS SELECT
     workspace_id,
     page_url,
     if(device != '', device, multiIf(viewport_width < 768, 'mobile', viewport_width < 1024, 'tablet', 'desktop')) AS device,
-    toDate(timestamp) AS day,
+    toDate(timestamp, 'America/New_York') AS day,
     toInt32(floor(least(greatest(x, 0.), 1.) * 10.)) * 10 AS grid_x,
     toInt32(floor(least(greatest(y, 0.), 1.) * 10.)) * 10 AS grid_y,
     countState() AS moves
@@ -69,7 +69,7 @@ AS SELECT
     workspace_id,
     page_url,
     if(device != '', device, multiIf(viewport_width < 768, 'mobile', viewport_width < 1024, 'tablet', 'desktop')) AS device,
-    toDate(timestamp) AS day,
+    toDate(timestamp, 'America/New_York') AS day,
     toInt32(floor(least(greatest(y, 0.), 1.) * 10.)) * 10 AS scroll_depth_bucket,
     countState() AS events
 FROM heatmap_events
@@ -93,7 +93,7 @@ AS SELECT
     workspace_id,
     page_url,
     if(device != '', device, multiIf(viewport_width < 768, 'mobile', viewport_width < 1024, 'tablet', 'desktop')) AS device,
-    toDate(timestamp) AS day,
+    toDate(timestamp, 'America/New_York') AS day,
     element_selector,
     sumState(JSONExtractFloat(properties, 'dwell_ms')) AS dwell_ms,
     countState() AS views
