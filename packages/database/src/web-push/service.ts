@@ -13,6 +13,7 @@ import {
   webPushSiteConfigs,
   webPushSubscriptions,
   webPushVapidKeys,
+  webPushClientEvents,
   adjustForQuietHours,
   resolveQuietHoursFromLimits,
   decryptWebhookSecret,
@@ -267,7 +268,7 @@ async function countSentLast24h(subscriptionId: string): Promise<number> {
     .where(
       and(
         eq(webPushDeliveries.subscriptionId, subscriptionId),
-        eq(webPushDeliveries.status, "sent"),
+        inArray(webPushDeliveries.status, ["sent", "clicked"]),
         gte(webPushDeliveries.sentAt, since)
       )
     )
@@ -443,11 +444,33 @@ export async function ingestWebPushEvent(input: {
   wid?: string | null
   occurredAt?: string | null
   context?: SubscribeContext | null
+  deliveryId?: string | null
+  clickId?: string | null
   enqueue: (deliveryId: string) => Promise<void>
 }): Promise<{ ok: true; scheduled: string[] } | { ok: false; error: string }> {
   const event = input.event?.trim()
-  const endpoint = input.subscriptionEndpoint?.trim()
   if (!event) return { ok: false, error: "event required" }
+
+  if (
+    event === "push_displayed" ||
+    event === "push_dismissed" ||
+    event.startsWith("push_permission_")
+  ) {
+    const recorded = await recordWebPushClientSignal({
+      event,
+      deliveryId: input.deliveryId,
+      clickId: input.clickId,
+      subscriptionEndpoint: input.subscriptionEndpoint,
+      landingPageId: input.landingPageId,
+      wid: input.wid,
+      context: input.context,
+      occurredAt: input.occurredAt,
+    })
+    if (!recorded.ok) return recorded
+    return { ok: true, scheduled: [] }
+  }
+
+  const endpoint = input.subscriptionEndpoint?.trim()
   if (!endpoint) return { ok: false, error: "subscription_endpoint required" }
 
   const subs = await db
@@ -456,7 +479,7 @@ export async function ingestWebPushEvent(input: {
     .where(eq(webPushSubscriptions.endpoint, endpoint))
     .limit(1)
 
-  let sub = subs[0]
+  const sub = subs[0]
   if (!sub) {
     return { ok: false, error: "subscription not found" }
   }
@@ -507,6 +530,129 @@ export async function ingestWebPushEvent(input: {
   })
 
   return { ok: true, scheduled }
+}
+
+export async function recordWebPushClientSignal(input: {
+  event: string
+  deliveryId?: string | null
+  clickId?: string | null
+  subscriptionEndpoint?: string | null
+  landingPageId?: string | null
+  wid?: string | null
+  context?: SubscribeContext | null
+  occurredAt?: string | null
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const now = input.occurredAt ? new Date(input.occurredAt) : new Date()
+  const clickId = input.clickId?.trim() || null
+  const deliveryId = input.deliveryId?.trim() || null
+
+  let delivery:
+    | {
+        id: string
+        landingPageId: string
+        subscriptionId: string
+        displayedAt: Date | null
+        dismissedAt: Date | null
+        clickedAt: Date | null
+      }
+    | undefined
+
+  if (deliveryId) {
+    const rows = await db
+      .select({
+        id: webPushDeliveries.id,
+        landingPageId: webPushDeliveries.landingPageId,
+        subscriptionId: webPushDeliveries.subscriptionId,
+        displayedAt: webPushDeliveries.displayedAt,
+        dismissedAt: webPushDeliveries.dismissedAt,
+        clickedAt: webPushDeliveries.clickedAt,
+      })
+      .from(webPushDeliveries)
+      .where(eq(webPushDeliveries.id, deliveryId))
+      .limit(1)
+    delivery = rows[0]
+  } else if (clickId) {
+    const rows = await db
+      .select({
+        id: webPushDeliveries.id,
+        landingPageId: webPushDeliveries.landingPageId,
+        subscriptionId: webPushDeliveries.subscriptionId,
+        displayedAt: webPushDeliveries.displayedAt,
+        dismissedAt: webPushDeliveries.dismissedAt,
+        clickedAt: webPushDeliveries.clickedAt,
+      })
+      .from(webPushDeliveries)
+      .where(eq(webPushDeliveries.clickId, clickId))
+      .limit(1)
+    delivery = rows[0]
+  }
+
+  let landingPageId = delivery?.landingPageId ?? null
+  let subscriptionId = delivery?.subscriptionId ?? null
+
+  if (!landingPageId) {
+    const landing = await resolveLandingPageId({
+      landingPageId: input.landingPageId,
+      wid: input.wid,
+      origin: input.context?.origin,
+    })
+    landingPageId = landing?.id ?? null
+  }
+
+  if (!subscriptionId && input.subscriptionEndpoint?.trim()) {
+    const subs = await db
+      .select({
+        id: webPushSubscriptions.id,
+        landingPageId: webPushSubscriptions.landingPageId,
+      })
+      .from(webPushSubscriptions)
+      .where(
+        eq(webPushSubscriptions.endpoint, input.subscriptionEndpoint.trim())
+      )
+      .limit(1)
+    if (subs[0]) {
+      subscriptionId = subs[0].id
+      landingPageId = landingPageId ?? subs[0].landingPageId
+    }
+  }
+
+  if (!landingPageId) {
+    return { ok: false, error: "landing page not found" }
+  }
+
+  if (delivery && input.event === "push_displayed" && !delivery.displayedAt) {
+    await db
+      .update(webPushDeliveries)
+      .set({ displayedAt: now, updatedAt: now })
+      .where(eq(webPushDeliveries.id, delivery.id))
+  }
+
+  if (
+    delivery &&
+    input.event === "push_dismissed" &&
+    !delivery.dismissedAt &&
+    !delivery.clickedAt
+  ) {
+    await db
+      .update(webPushDeliveries)
+      .set({ dismissedAt: now, updatedAt: now })
+      .where(eq(webPushDeliveries.id, delivery.id))
+  }
+
+  await db.insert(webPushClientEvents).values({
+    id: crypto.randomUUID(),
+    landingPageId,
+    subscriptionId,
+    deliveryId: delivery?.id ?? null,
+    type: input.event,
+    meta: {
+      clickId,
+      wid: input.wid ?? null,
+    },
+    createdAt: now,
+  })
+
+  return { ok: true }
 }
 
 export async function createManualDeliveries(input: {

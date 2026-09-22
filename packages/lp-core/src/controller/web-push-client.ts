@@ -104,7 +104,30 @@ export async function subscribeWebPush(input: {
   }
 
   if (input.requestPermission !== false) {
+    const urls = resolveUrls(input.config)
+    const context = buildWebPushContext({
+      wid: input.config.wid,
+      session_id: input.config.sessionId,
+      ...input.context,
+    })
+    if (Notification.permission === "default") {
+      void postJson(urls.eventsUrl, {
+        event: "push_permission_prompted",
+        wid: input.config.wid,
+        occurred_at: new Date().toISOString(),
+        context,
+      })
+    }
     const permission = await Notification.requestPermission()
+    void postJson(urls.eventsUrl, {
+      event:
+        permission === "granted"
+          ? "push_permission_granted"
+          : "push_permission_denied",
+      wid: input.config.wid,
+      occurred_at: new Date().toISOString(),
+      context,
+    })
     if (permission !== "granted") {
       return { ok: false, error: `Notification permission: ${permission}` }
     }

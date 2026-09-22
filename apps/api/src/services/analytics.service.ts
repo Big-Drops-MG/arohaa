@@ -26,6 +26,7 @@ import {
   rangeFilter,
   rangeQueryParams,
   resolveAnalyticsWindow,
+  resolveAnalyticsWindowForLanding,
   type AnalyticsCustomRange,
   type AnalyticsGranularity,
   type AnalyticsRangeId,
@@ -419,7 +420,7 @@ export async function getAnalyticsOverview(
 ): Promise<AnalyticsOverview> {
   const formType = parseLandingFormType(formTypeRaw)
   const now = new Date()
-  const window = resolveAnalyticsWindow(rangeId, now, custom)
+  const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, now, custom)
   const where = rangeFilter(utmFilter)
   const p = {
     wid: workspaceId,
@@ -886,7 +887,7 @@ export async function getAnalyticsOverviewCities({
   }
 
   const formType = parseLandingFormType(formTypeRaw)
-  const window = resolveAnalyticsWindow(rangeId, new Date(), custom)
+  const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, new Date(), custom)
   const where = rangeFilter(utmFilter)
   const p = {
     wid: workspaceId,
@@ -1062,7 +1063,7 @@ export async function getAnalyticsOverviewZipcodes({
   }
 
   const formType = parseLandingFormType(formTypeRaw)
-  const window = resolveAnalyticsWindow(rangeId, new Date(), custom)
+  const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, new Date(), custom)
   const where = rangeFilter(utmFilter)
   const p = {
     wid: workspaceId,

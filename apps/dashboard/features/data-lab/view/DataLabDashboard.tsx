@@ -82,8 +82,9 @@ function seedDataLabStats(initialDataExport: DataExportDashboardData | null) {
 function hasCompleteDataLabStats(
   data: DataExportDashboardData | null | undefined
 ): boolean {
+  if (!data || data.analyticsUnavailable) return false
   return Boolean(
-    data?.level1Complete &&
+    data.level1Complete &&
     hasCompleteLevel1Stats(data.level1Stats) &&
     data.level2Complete &&
     Array.isArray(data.level2Stats) &&
@@ -171,7 +172,7 @@ export function DataLabDashboard({
       setStatsLoading(true)
       return
     }
-    if (!initialDataExport) {
+    if (!initialDataExport || initialDataExport.analyticsUnavailable) {
       setExportLoading(true)
       setStatsLoading(true)
       return
@@ -217,7 +218,10 @@ export function DataLabDashboard({
       } catch (err) {
         if (cancelled || controller.signal.aborted) return
         console.error("[data-lab] load failed", err)
-        setExportData(getDataExportEmptyDashboardData(dateRangeId))
+        setExportData({
+          ...getDataExportEmptyDashboardData("7d"),
+          analyticsUnavailable: true,
+        })
         setLevel1Stats(emptyLevel1Stats())
         setLevel2Stats(emptyLevel2Stats())
         setLevel3Data(emptyLevel3Data())

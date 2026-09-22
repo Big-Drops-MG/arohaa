@@ -1,7 +1,7 @@
 import { getClickHouseClient } from './clickhouse.service.js'
 import {
   rangeQueryParams,
-  resolveAnalyticsWindow,
+  resolveAnalyticsWindowForLanding,
   type AnalyticsCustomRange,
   type AnalyticsRangeId,
 } from '../lib/analytics-range.js'
@@ -508,7 +508,7 @@ export async function getAnalyticsHeatmap({
   custom?: AnalyticsCustomRange
   utmFilter?: AnalyticsUtmFilter
 }): Promise<AnalyticsHeatmapResponse> {
-  const window = resolveAnalyticsWindow(rangeId, new Date(), custom)
+  const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, new Date(), custom)
   const rangeParams = rangeQueryParams(window)
   const pageUrls = await listPageUrls(workspaceId, rangeParams, utmFilter)
 

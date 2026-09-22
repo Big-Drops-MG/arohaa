@@ -102,6 +102,28 @@ describe('resolveAnalyticsWindow', () => {
     ).toBe(10)
   })
 
+  it('resolves all_time as full history through end of today', () => {
+    const origin = new Date('2026-01-15T15:00:00.000Z')
+    const window = resolveAnalyticsWindow('all_time', wed, null, origin)
+    expect(window.rangeId).toBe('all_time')
+    expect(analyticsDayKey(window.start)).toBe('2000-01-01')
+    expect(window.end.getTime()).toBe(
+      addAnalyticsEtDays(startOfAnalyticsEtDay(wed), 1).getTime(),
+    )
+    expect(window.seriesEnd.getTime()).toBe(window.end.getTime())
+    expect(window.granularity).toBe('month')
+  })
+
+  it('resolves all_time without origin to the same full-history window', () => {
+    const window = resolveAnalyticsWindow('all_time', wed, null, null)
+    expect(window.rangeId).toBe('all_time')
+    expect(analyticsDayKey(window.start)).toBe('2000-01-01')
+    expect(window.end.getTime()).toBe(
+      addAnalyticsEtDays(startOfAnalyticsEtDay(wed), 1).getTime(),
+    )
+    expect(window.granularity).toBe('month')
+  })
+
   it('rejects inverted custom range', () => {
     expect(
       parseAnalyticsCustomRange('2026-07-10', '2026-07-01'),

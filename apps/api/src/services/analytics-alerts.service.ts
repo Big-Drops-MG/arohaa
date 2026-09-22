@@ -11,6 +11,7 @@ import {
   rangeCacheKey,
   rangeQueryParams,
   resolveAnalyticsWindow,
+  resolveAnalyticsWindowForLanding,
   type AnalyticsCustomRange,
 } from '../lib/analytics-range.js'
 import {
@@ -69,7 +70,7 @@ export async function getAnalyticsAlerts({
   custom?: AnalyticsCustomRange
 }): Promise<AnalyticsAlertsResponse> {
   const now = new Date()
-  const window = resolveAnalyticsWindow(rangeId, now, custom)
+  const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, now, custom)
   const utmKey = utmFilterCacheKey(utmFilter)
   const cacheKey = `analytics:alerts:v3-kind:${workspaceId}:${lpPublicId}:${rangeCacheKey(window, utmKey)}`
   const cached = await readAnalyticsCache<AnalyticsAlertsResponse>(cacheKey)

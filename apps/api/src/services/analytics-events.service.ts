@@ -11,6 +11,7 @@ import {
   rangeFilter,
   rangeQueryParams,
   resolveAnalyticsWindow,
+  resolveAnalyticsWindowForLanding,
   type AnalyticsCustomRange,
 } from '../lib/analytics-range.js'
 import {
@@ -42,7 +43,7 @@ export async function getAnalyticsEvents({
   custom?: AnalyticsCustomRange
 }): Promise<AnalyticsEvents> {
   const now = new Date()
-  const window = resolveAnalyticsWindow(rangeId, now, custom)
+  const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, now, custom)
   const utmKey = utmFilterCacheKey(utmFilter)
   const cacheKey = `analytics:events:v4-services:${workspaceId}:${rangeCacheKey(window, utmKey)}`
   const cached = await readAnalyticsCache<AnalyticsEvents>(cacheKey)

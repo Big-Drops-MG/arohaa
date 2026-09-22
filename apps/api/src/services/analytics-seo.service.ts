@@ -15,6 +15,7 @@ import {
 import {
   rangeCacheKey,
   resolveAnalyticsWindow,
+  resolveAnalyticsWindowForLanding,
   type AnalyticsCustomRange,
 } from '../lib/analytics-range.js'
 
@@ -64,7 +65,7 @@ export async function getAnalyticsSeo({
   custom?: AnalyticsCustomRange
 }): Promise<AnalyticsSeo> {
   const now = new Date()
-  const window = resolveAnalyticsWindow(rangeId, now, custom)
+  const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, now, custom)
   const cacheKey = `analytics:seo:v2-abs:${workspaceId}:${lpPublicId}:${rangeCacheKey(window)}:${sortBy}:${sortOrder}`
   const cached = await readAnalyticsCache<AnalyticsSeo>(cacheKey)
   if (cached) return cached

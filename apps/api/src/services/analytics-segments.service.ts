@@ -21,6 +21,7 @@ import {
   rangeFilter,
   rangeQueryParams,
   resolveAnalyticsWindow,
+  resolveAnalyticsWindowForLanding,
   type AnalyticsCustomRange,
   type AnalyticsWindow,
 } from '../lib/analytics-range.js'
@@ -164,7 +165,7 @@ export async function getAnalyticsSegments({
   custom?: AnalyticsCustomRange
 }): Promise<AnalyticsSegments> {
   const now = new Date()
-  const window = resolveAnalyticsWindow(rangeId, now, custom)
+  const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, now, custom)
   const utmKey = utmFilterCacheKey(utmFilter)
   const cacheKey = `analytics:segments:v4-abs:${workspaceId}:${rangeCacheKey(window, utmKey)}`
   const cached = await readAnalyticsCache<AnalyticsSegments>(cacheKey)

@@ -102,11 +102,14 @@ Push notifications open an Arohaa short link, not the raw LP URL:
 https://<arohaa-api-host>/r/{clickId}
   → 302 → real destination (frozen at send, or fresh last_seen_url)
   → marks delivery clicked
+  → destination includes `arohaa_click_id` + `utm_medium=web_push` for attribution
 ```
 
 Also available as `/v1/web-push/r/{clickId}`.
 
-**No LP / SW changes beyond opening `data.url`** — use `WEB_PUSH_SERVICE_WORKER_SOURCE`.
+**Service worker** (`WEB_PUSH_SERVICE_WORKER_SOURCE`) opens `data.url` and beacons `push_displayed` / `push_dismissed` to `/api/push/events` (or `data.events_path`) with `delivery_id` and `arohaa_click_id`.
+
+**Attribution:** Notification Center Stats joins ClickHouse `form_success` / `zip_submit` / `service_click` where `url` contains `arohaa_click_id`, within 24h of click. Keep masked redirect on for accurate CTR and conversions.
 
 Set on Arohaa (API + worker + dashboard):
 

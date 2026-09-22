@@ -21,6 +21,7 @@ export type OverviewDateRangeId =
   | "last_week"
   | "this_month"
   | "last_month"
+  | "all_time"
   | "custom"
 
 export type OverviewLandingFormType = "zip" | "single" | "multiple" | "none"

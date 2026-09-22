@@ -273,14 +273,32 @@ export function DataExportDashboard({
 
   useEffect(() => {
     if (!isActive) return
+
+    // Embedded leads table: use parent preload only when it already matches
+    // the selected range; otherwise fetch so All Time / custom ranges load.
     if (embedded && !returningOnly) {
-      if (isTabLoading) return
-      setDashboardData(initialData)
-      setPageOffset(initialData.offset)
-      return
+      if (
+        !initialData.analyticsUnavailable &&
+        shouldUseInitialTabData(
+          dateRangeId,
+          initialData.defaultDateRangeId,
+          utmFilter,
+          customRange
+        )
+      ) {
+        if (isTabLoading) return
+        setDashboardData(initialData)
+        setPageOffset(initialData.offset)
+        return
+      }
+      const controller = new AbortController()
+      void fetchPage(0, controller.signal)
+      return () => controller.abort()
     }
+
     if (
       !returningOnly &&
+      !initialData.analyticsUnavailable &&
       shouldUseInitialTabData(
         dateRangeId,
         initialData.defaultDateRangeId,

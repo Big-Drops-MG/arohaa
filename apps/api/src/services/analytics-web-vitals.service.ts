@@ -4,6 +4,7 @@ import {
   rangeFilter,
   rangeQueryParams,
   resolveAnalyticsWindow,
+  resolveAnalyticsWindowForLanding,
   type AnalyticsCustomRange,
   type AnalyticsRangeId,
 } from '../lib/analytics-range.js'
@@ -134,7 +135,7 @@ export async function getAnalyticsWebVitals({
   utmFilter?: AnalyticsUtmFilter
 }): Promise<AnalyticsWebVitals> {
   const now = new Date()
-  const window = resolveAnalyticsWindow(rangeId, now, custom)
+  const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, now, custom)
   const cacheKey = `analytics:web-vitals:v3:${workspaceId}:${rangeCacheKey(window)}:${utmFilterCacheKey(utmFilter)}`
   const cached = await readAnalyticsCache<AnalyticsWebVitals>(cacheKey)
   if (cached) return cached

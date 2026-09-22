@@ -11,6 +11,7 @@ export const TRAFFIC_RANGE_IDS: readonly OverviewDateRangeId[] = [
   "last_week",
   "this_month",
   "last_month",
+  "all_time",
   "custom",
 ] as const
 
@@ -22,6 +23,7 @@ export const TRAFFIC_DATE_RANGE_OPTIONS: OverviewDateRangeOption[] = [
   { id: "last_week", label: "Last Week" },
   { id: "this_month", label: "This Month" },
   { id: "last_month", label: "Last Month" },
+  { id: "all_time", label: "All Time" },
   { id: "custom", label: "Custom Range" },
 ]
 
@@ -82,6 +84,7 @@ export function trafficRangeLabel(
   if (rangeId === "custom" && custom) {
     return formatCustomRangeLabel(custom.from, custom.to)
   }
+  if (rangeId === "all_time") return "All Time"
   return (
     TRAFFIC_DATE_RANGE_OPTIONS.find((opt) => opt.id === rangeId)?.label ??
     "Last 7 Days"

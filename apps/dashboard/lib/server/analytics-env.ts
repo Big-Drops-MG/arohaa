@@ -21,15 +21,20 @@ export function resolveInternalApiSecret(): string | undefined {
 
 export function resolveIngestApiBase(): string | undefined {
   ensureDashboardEnvLoaded()
-  const configured =
-    process.env.INGEST_BASE_URL?.trim() ||
-    process.env.NEXT_PUBLIC_AROHAA_INGEST_API_BASE?.trim()
 
-  if (configured) return configured.replace(/\/$/, "")
+  // Explicit server-side override always wins (prod or pointing local at a remote API).
+  const explicit = process.env.INGEST_BASE_URL?.trim()
+  if (explicit) return explicit.replace(/\/$/, "")
 
+  // Local `pnpm dev` runs @workspace/api on :3001 with the latest route schemas
+  // (including range_id=all_time). Prefer that over NEXT_PUBLIC_*, which often
+  // points at a remote deploy that lags local API changes.
   if (process.env.NODE_ENV === "development") {
     return "http://127.0.0.1:3001"
   }
+
+  const publicBase = process.env.NEXT_PUBLIC_AROHAA_INGEST_API_BASE?.trim()
+  if (publicBase) return publicBase.replace(/\/$/, "")
 
   return undefined
 }

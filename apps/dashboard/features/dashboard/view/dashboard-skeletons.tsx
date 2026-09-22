@@ -391,3 +391,33 @@ export function Level1StatsSkeleton({
     </div>
   )
 }
+
+export function NotificationCenterStatsSkeleton() {
+  return (
+    <div className="flex flex-col gap-4" aria-busy>
+      <DashboardKpiRowSkeleton count={6} />
+      <DashboardChartSkeleton />
+      <div className="grid gap-4 xl:grid-cols-2">
+        <DashboardAnalyticCardSkeleton rows={3} />
+        <DashboardAnalyticCardSkeleton rows={3} />
+      </div>
+      <div className="grid items-stretch gap-4 xl:grid-cols-2">
+        <DashboardAnalyticCardSkeleton rows={5} className="min-h-72" />
+        <DashboardAnalyticCardSkeleton rows={5} className="min-h-72" />
+      </div>
+    </div>
+  )
+}
+
+export function NotificationCenterDashboardSkeleton() {
+  return (
+    <div className="flex flex-col gap-4" aria-busy>
+      <div className="flex gap-x-5 border-b border-neutral-200">
+        <Skeleton className="mb-2.5 h-5 w-12" />
+        <Skeleton className="mb-2.5 h-5 w-20" />
+        <Skeleton className="mb-2.5 h-5 w-10" />
+      </div>
+      <NotificationCenterStatsSkeleton />
+    </div>
+  )
+}

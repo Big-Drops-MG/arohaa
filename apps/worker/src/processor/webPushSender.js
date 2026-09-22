@@ -76,6 +76,7 @@ function resolveClickUrl({
   origin,
   lastSeenUrl,
   context,
+  clickId,
 }) {
   const ctx = context && typeof context === 'object' ? context : {}
   const query = ctx.query && typeof ctx.query === 'object' ? ctx.query : {}
@@ -109,7 +110,10 @@ function resolveClickUrl({
     ...utm,
   }
 
-  const appendUtms = click?.appendUtms || {}
+  const appendUtms = { ...(click?.appendUtms || {}) }
+  if (!appendUtms.utm_medium) appendUtms.utm_medium = 'web_push'
+  if (clickId) appendUtms.arohaa_click_id = clickId
+
   let resolved = ''
 
   if (click?.mode === 'fixed') {
@@ -494,6 +498,7 @@ export async function processWebPushDelivery(deliveryId) {
     origin: row.origin,
     lastSeenUrl: row.lastSeenUrl,
     context,
+    clickId,
   })
 
   const clickBase =
@@ -522,6 +527,8 @@ export async function processWebPushDelivery(deliveryId) {
       drip_step: row.dripStepIndex ?? undefined,
       sequence_id: row.sequenceId || undefined,
       target_url: targetUrl,
+      wid: row.landingPagePublicId || undefined,
+      events_path: '/api/push/events',
     },
   }
 

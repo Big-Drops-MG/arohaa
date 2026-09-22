@@ -88,7 +88,19 @@ export async function resolveClickRedirect(token: string): Promise<
       origin: row.origin,
       lastSeenUrl: row.lastSeenUrl,
       context: row.context as WebPushSubscriptionContext | null,
+      clickId,
     })
+  } else if (clickId && !/[?&]arohaa_click_id=/.test(destination)) {
+    try {
+      const parsed = new URL(destination)
+      parsed.searchParams.set("arohaa_click_id", clickId)
+      if (!parsed.searchParams.get("utm_medium")) {
+        parsed.searchParams.set("utm_medium", "web_push")
+      }
+      destination = parsed.toString()
+    } catch {
+      /* keep destination */
+    }
   }
 
   if (!destination || !/^https?:\/\//i.test(destination)) {

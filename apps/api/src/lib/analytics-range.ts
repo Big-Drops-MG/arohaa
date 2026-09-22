@@ -20,6 +20,7 @@ export type AnalyticsRangeId =
   | 'last_week'
   | 'this_month'
   | 'last_month'
+  | 'all_time'
   | 'custom'
 
 export const ANALYTICS_RANGE_IDS: readonly AnalyticsRangeId[] = [
@@ -30,6 +31,7 @@ export const ANALYTICS_RANGE_IDS: readonly AnalyticsRangeId[] = [
   'last_week',
   'this_month',
   'last_month',
+  'all_time',
   'custom',
 ] as const
 
@@ -113,14 +115,21 @@ function minDate(a: Date, b: Date): Date {
   return a.getTime() <= b.getTime() ? a : b
 }
 
+/** Absolute earliest bound for All Time (full workspace history). */
+const ALL_TIME_FLOOR = new Date(Date.UTC(2000, 0, 1, 5, 0, 0))
+
 /**
  * Resolve an absolute [start, end) query window and a full [start, seriesEnd)
  * chart span in Eastern Time.
+ *
+ * `all_time` always covers full available history through now (originAt is
+ * ignored so leads are never clipped by landing createdAt).
  */
 export function resolveAnalyticsWindow(
   rangeId: AnalyticsRangeId,
   now: Date = new Date(),
   custom?: AnalyticsCustomRange | null,
+  _originAt?: Date | null,
 ): AnalyticsWindow {
   if (rangeId === 'custom') {
     const parsed = custom ?? undefined
@@ -140,6 +149,19 @@ export function resolveAnalyticsWindow(
       seriesEnd,
       granularity: granularityForSpanMs(seriesEnd.getTime() - start.getTime()),
       custom: parsed,
+    }
+  }
+
+  if (rangeId === 'all_time') {
+    const start = startOfAnalyticsEtDay(ALL_TIME_FLOOR)
+    // Inclusive of the full current ET day so "end" is not cut mid-day.
+    const seriesEnd = addAnalyticsEtDays(startOfAnalyticsEtDay(now), 1)
+    return {
+      rangeId: 'all_time',
+      start,
+      end: seriesEnd,
+      seriesEnd,
+      granularity: granularityForSpanMs(seriesEnd.getTime() - start.getTime()),
     }
   }
 
@@ -243,6 +265,19 @@ export function resolveAnalyticsWindow(
     seriesEnd: thisMonthStart,
     granularity: 'day',
   }
+}
+
+/**
+ * Same as resolveAnalyticsWindow. Landing lookup is kept for API compatibility;
+ * All Time always uses the full-history window.
+ */
+export async function resolveAnalyticsWindowForLanding(
+  rangeId: AnalyticsRangeId,
+  _landingPageId: string | null | undefined,
+  now: Date = new Date(),
+  custom?: AnalyticsCustomRange | null,
+): Promise<AnalyticsWindow> {
+  return resolveAnalyticsWindow(rangeId, now, custom, null)
 }
 
 /** Equal-length previous window immediately before the query window. */

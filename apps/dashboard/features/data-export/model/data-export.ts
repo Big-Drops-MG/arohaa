@@ -38,6 +38,8 @@ export type DataExportDashboardData = {
   level2Complete: boolean
   level3: IntelligenceCenterPayload | null
   level3Complete: boolean
+  /** Soft-fail shell from a failed upstream fetch — do not treat as authoritative. */
+  analyticsUnavailable?: boolean
 }
 
 export const DATA_EXPORT_PAGE_SIZE = 15

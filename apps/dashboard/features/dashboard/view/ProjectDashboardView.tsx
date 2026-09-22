@@ -122,11 +122,15 @@ function ProjectDashboardViewInner({
     requestKey: string
     data: ProjectTabData["data-export"] | null
     loading: boolean
-  }>(() => ({
-    requestKey: dataLabPath,
-    data: initial["data-export"] ?? null,
-    loading: !initial["data-export"],
-  }))
+  }>(() => {
+    const seeded = initial["data-export"] ?? null
+    const unavailable = Boolean(seeded?.analyticsUnavailable)
+    return {
+      requestKey: dataLabPath,
+      data: unavailable ? null : seeded,
+      loading: !seeded || unavailable,
+    }
+  })
 
   useEffect(() => {
     if (

@@ -240,6 +240,8 @@ export const webPushDeliveries = pgTable(
     scheduledFor: timestamp("scheduledFor", { mode: "date" }).notNull(),
     sentAt: timestamp("sentAt", { mode: "date" }),
     clickedAt: timestamp("clickedAt", { mode: "date" }),
+    displayedAt: timestamp("displayedAt", { mode: "date" }),
+    dismissedAt: timestamp("dismissedAt", { mode: "date" }),
     failureCode: integer("failureCode"),
     failureReason: text("failureReason"),
     clickId: text("clickId"),
@@ -269,9 +271,50 @@ export const webPushDeliveries = pgTable(
       t.landingPageId,
       t.createdAt
     ),
+    landingSentIdx: index("web_push_delivery_landing_sent_idx").on(
+      t.landingPageId,
+      t.sentAt
+    ),
+    landingStatusSentIdx: index("web_push_delivery_landing_status_sent_idx").on(
+      t.landingPageId,
+      t.status,
+      t.sentAt
+    ),
     sequenceIdx: index("web_push_delivery_sequence_idx").on(t.sequenceId),
     clickIdUid: uniqueIndex("web_push_delivery_click_id_uidx")
       .on(t.clickId)
       .where(sql`${t.clickId} IS NOT NULL`),
+  })
+)
+
+export const webPushClientEvents = pgTable(
+  "web_push_client_event",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    landingPageId: text("landingPageId")
+      .notNull()
+      .references(() => landingPages.id, { onDelete: "cascade" }),
+    subscriptionId: text("subscriptionId").references(
+      () => webPushSubscriptions.id,
+      { onDelete: "set null" }
+    ),
+    deliveryId: text("deliveryId").references(() => webPushDeliveries.id, {
+      onDelete: "set null",
+    }),
+    type: text("type").notNull(),
+    meta: jsonb("meta").$type<Record<string, unknown> | null>(),
+    createdAt: timestamp("createdAt", { mode: "date" }).notNull().defaultNow(),
+  },
+  (t) => ({
+    landingCreatedIdx: index("web_push_client_event_landing_idx").on(
+      t.landingPageId,
+      t.createdAt
+    ),
+    typeCreatedIdx: index("web_push_client_event_type_idx").on(
+      t.type,
+      t.createdAt
+    ),
   })
 )

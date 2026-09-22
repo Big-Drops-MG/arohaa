@@ -6,6 +6,7 @@ export type RangeId =
   | "last_week"
   | "this_month"
   | "last_month"
+  | "all_time"
   | "custom"
 
 export interface RangeKpis {

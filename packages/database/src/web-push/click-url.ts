@@ -12,6 +12,8 @@ export type ResolveClickUrlInput = {
   origin?: string | null
   lastSeenUrl?: string | null
   context?: WebPushSubscriptionContext | null
+  /** Masked click token — stamped onto destination for CH attribution. */
+  clickId?: string | null
 }
 
 function appendQueryParams(
@@ -115,5 +117,15 @@ export function resolveWebPushClickUrl(input: ResolveClickUrlInput): string {
     }
   }
 
-  return appendQueryParams(resolved, appendUtms)
+  const attribution: Record<string, string | null | undefined> = {
+    ...appendUtms,
+  }
+  if (!attribution.utm_medium) {
+    attribution.utm_medium = "web_push"
+  }
+  if (input.clickId?.trim()) {
+    attribution.arohaa_click_id = input.clickId.trim()
+  }
+
+  return appendQueryParams(resolved, attribution)
 }

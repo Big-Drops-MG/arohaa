@@ -70,6 +70,8 @@ export async function forwardWebPushEvent(input: {
   wid?: string | null
   landingPageId?: string | null
   occurredAt?: string | null
+  deliveryId?: string | null
+  clickId?: string | null
   context?: WebPushContext | null
 }): Promise<{ ok: boolean; status: number; json: Record<string, unknown> }> {
   return postSignedJson(input.config, "/v1/web-push/events", {
@@ -78,6 +80,8 @@ export async function forwardWebPushEvent(input: {
     wid: input.wid ?? input.context?.wid,
     landing_page_id: input.landingPageId ?? input.context?.landing_page_id,
     occurred_at: input.occurredAt ?? new Date().toISOString(),
+    delivery_id: input.deliveryId ?? undefined,
+    arohaa_click_id: input.clickId ?? undefined,
     context: input.context ?? undefined,
   })
 }

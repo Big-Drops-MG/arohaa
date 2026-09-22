@@ -44,6 +44,8 @@ type EventBody = {
   landing_page_id?: string
   wid?: string
   occurred_at?: string
+  delivery_id?: string
+  arohaa_click_id?: string
   context?: SubscribeContext
 }
 
@@ -210,6 +212,8 @@ export async function webPushRoutes(server: FastifyInstance) {
         wid: body.wid,
         occurredAt: body.occurred_at,
         context: body.context ?? null,
+        deliveryId: body.delivery_id,
+        clickId: body.arohaa_click_id,
         enqueue: enqueueDelivery,
       })
 

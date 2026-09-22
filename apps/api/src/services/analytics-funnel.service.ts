@@ -5,6 +5,7 @@ import {
   rangeFilter,
   rangeQueryParams,
   resolveAnalyticsWindow,
+  resolveAnalyticsWindowForLanding,
   type AnalyticsCustomRange,
   type AnalyticsRangeId,
 } from '../lib/analytics-range.js'
@@ -350,7 +351,7 @@ export async function getAnalyticsFunnel({
   custom,
 }: GetAnalyticsFunnelParams): Promise<FunnelDashboardResponse> {
   const now = new Date()
-  const window = resolveAnalyticsWindow(rangeId, now, custom)
+  const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, now, custom)
   const utmKey = utmFilterCacheKey(utmFilter)
   const showOfferSteps = formType === 'multiple' || (formType === 'zip' && hasRedirect)
   const showDropOff =

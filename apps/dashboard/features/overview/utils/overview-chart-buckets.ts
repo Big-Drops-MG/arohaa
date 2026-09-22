@@ -181,6 +181,9 @@ export function overviewChartLabelsForRange(
       return bucketsThisMonth(now)
     case "last_month":
       return bucketsLastMonth(now)
+    case "all_time":
+      // Placeholder axis when API series is not yet loaded.
+      return bucketsLastMonth(now)
     case "custom":
       if (customRange?.from && customRange?.to) {
         return bucketsCustomRange(customRange)

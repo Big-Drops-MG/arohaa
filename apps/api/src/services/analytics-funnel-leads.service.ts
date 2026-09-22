@@ -3,6 +3,7 @@ import {
   rangeFilter,
   rangeQueryParams,
   resolveAnalyticsWindow,
+  resolveAnalyticsWindowForLanding,
   type AnalyticsCustomRange,
   type AnalyticsRangeId,
 } from '../lib/analytics-range.js'
@@ -1513,7 +1514,7 @@ export async function getFunnelLeads({
   utmFilter?: AnalyticsUtmFilter
   returningOnly?: boolean
 }): Promise<FunnelLeadsResponse> {
-  const window = resolveAnalyticsWindow(rangeId, new Date(), custom)
+  const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, new Date(), custom)
   const ch = getClickHouseClient()
   const where = `${rangeFilter()}
     AND event_name IN ('form_success', 'form_step_complete', 'form_step_view')

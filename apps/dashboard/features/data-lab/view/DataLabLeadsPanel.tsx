@@ -4,7 +4,6 @@ import { Lock } from "lucide-react"
 import { DataExportDashboard } from "@/features/data-export/view/DataExportDashboard"
 import type { DataExportDashboardData } from "@/features/data-export/model/data-export"
 import { getDataExportEmptyDashboardData } from "@/features/data-export/controller/data-export-empty-data"
-import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 
 type DataLabLeadsPanelProps = {
   projectId: string
@@ -27,7 +26,6 @@ export function DataLabLeadsPanel({
   leadFilter = "all",
   title,
 }: DataLabLeadsPanelProps) {
-  const { dateRangeId } = useDashboardDateRange()
   const isRetention = leadFilter === "returning"
   const restrictedLabel = isRetention ? "Retention" : "Leads table"
 
@@ -50,7 +48,12 @@ export function DataLabLeadsPanel({
 
   return (
     <DataExportDashboard
-      data={data ?? getDataExportEmptyDashboardData(dateRangeId)}
+      data={
+        data ?? {
+          ...getDataExportEmptyDashboardData("7d"),
+          analyticsUnavailable: true,
+        }
+      }
       projectId={projectId}
       isActive={isActive}
       isLoading={isLoading}

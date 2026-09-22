@@ -93,7 +93,8 @@ async function fetchLeads(
   })
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 12_000)
+  const timeoutMs = rangeId === "all_time" ? 60_000 : 12_000
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const url = new URL(`${apiBase}/v1/analytics/funnel/leads`)
     url.searchParams.set("workspace_id", workspaceId)
@@ -186,7 +187,13 @@ export async function loadDataExportDashboardData({
     returningOnly
   )
   if (!analytics) {
-    return getDataExportEmptyDashboardData(rangeId, true, row.brandName)
+    // Do not stamp the requested rangeId onto a soft-fail empty shell —
+    // that makes the embedded Leads table treat the failure as authoritative
+    // and never refetch (especially common for All Time timeouts).
+    return {
+      ...getDataExportEmptyDashboardData("7d", true, row.brandName),
+      analyticsUnavailable: true,
+    }
   }
 
   const rawMappedLeads = (analytics.leads ?? []).map((lead) =>
@@ -282,5 +289,12 @@ export async function loadDataExportDashboardDataForApi(
     offset,
     returningOnly,
   })
+  if (data.analyticsUnavailable) {
+    return {
+      ok: false,
+      status: 503,
+      error: "Analytics temporarily unavailable",
+    }
+  }
   return { ok: true, data }
 }

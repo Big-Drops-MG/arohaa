@@ -21,6 +21,7 @@ import {
   rangeFilter,
   rangeQueryParams,
   resolveAnalyticsWindow,
+  resolveAnalyticsWindowForLanding,
   type AnalyticsCustomRange,
   type AnalyticsWindow,
 } from '../lib/analytics-range.js'
@@ -277,7 +278,7 @@ export async function getAnalyticsExperiments({
   custom?: AnalyticsCustomRange
 }): Promise<AnalyticsExperiments> {
   const now = new Date()
-  const baseWindow = resolveAnalyticsWindow(rangeId, now, custom)
+  const baseWindow = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, now, custom)
 
   const lp = await db.query.landingPages.findFirst({
     where: eq(landingPages.publicId, lpPublicId),

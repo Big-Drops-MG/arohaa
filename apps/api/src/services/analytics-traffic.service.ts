@@ -6,6 +6,7 @@ import {
   rangeLookbackFilter,
   rangeQueryParams,
   resolveAnalyticsWindow,
+  resolveAnalyticsWindowForLanding,
   type AnalyticsCustomRange,
   type AnalyticsGranularity,
   type AnalyticsWindow,
@@ -498,7 +499,7 @@ export async function getAnalyticsTraffic({
   utmFilter,
 }: GetAnalyticsTrafficParams): Promise<TrafficDashboardResponse> {
   const now = new Date()
-  const window = resolveAnalyticsWindow(rangeId, now, custom)
+  const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, now, custom)
   const utmKey = utmFilterCacheKey(utmFilter)
   const cacheKey = `analytics:traffic:v4:${workspaceId}:${rangeCacheKey(window, utmKey)}`
   try {

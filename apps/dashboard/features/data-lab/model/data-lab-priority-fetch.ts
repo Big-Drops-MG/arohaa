@@ -4,6 +4,7 @@ const CACHE_TTL_MS = 30_000
 const MAX_CACHE_ENTRIES = 12
 const RETRY_DELAYS_MS = [120, 320] as const
 const REQUEST_TIMEOUT_MS = 15_000
+const ALL_TIME_REQUEST_TIMEOUT_MS = 65_000
 
 type CacheEntry = {
   data: DataExportDashboardData
@@ -16,6 +17,7 @@ export function cacheDataLabResponse(
   key: string,
   data: DataExportDashboardData
 ): void {
+  if (data.analyticsUnavailable) return
   responseCache.delete(key)
   responseCache.set(key, { data, expiresAt: Date.now() + CACHE_TTL_MS })
   while (responseCache.size > MAX_CACHE_ENTRIES) {
@@ -28,7 +30,7 @@ export function cacheDataLabResponse(
 function readCachedResponse(key: string): DataExportDashboardData | null {
   const cached = responseCache.get(key)
   if (!cached) return null
-  if (cached.expiresAt <= Date.now()) {
+  if (cached.expiresAt <= Date.now() || cached.data.analyticsUnavailable) {
     responseCache.delete(key)
     return null
   }
@@ -62,6 +64,12 @@ function shouldRetry(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || status >= 500
 }
 
+function requestTimeoutMsForPath(path: string): number {
+  return path.includes("range_id=all_time")
+    ? ALL_TIME_REQUEST_TIMEOUT_MS
+    : REQUEST_TIMEOUT_MS
+}
+
 async function fetchAttempt(
   path: string,
   signal: AbortSignal
@@ -69,7 +77,7 @@ async function fetchAttempt(
   const timeoutController = new AbortController()
   const timeout = window.setTimeout(
     () => timeoutController.abort(),
-    REQUEST_TIMEOUT_MS
+    requestTimeoutMsForPath(path)
   )
   const abort = () => timeoutController.abort()
   signal.addEventListener("abort", abort, { once: true })
