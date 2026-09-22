@@ -10,11 +10,7 @@ import type { NotificationRecord } from "@/features/notifications/model/notifica
 import { fetchAlertsAnalytics } from "@/lib/server/alerts-dashboard-load"
 import { dispatchWorkspaceAlertWebhooks } from "@/lib/server/workspace-alert-webhooks"
 
-const SKIP_AUDIT_ACTIONS = new Set([
-  "check_connection",
-  // Routine settings saves are noisy; keep lifecycle / connection / experiment events.
-  "update",
-])
+const SKIP_AUDIT_ACTIONS = new Set(["check_connection", "update"])
 
 const MEANINGFUL_ALERT_KINDS = new Set([
   "traffic_drop",
@@ -334,45 +330,47 @@ export async function syncAnalyticsAlertNotifications(
     )
 
   const dayKey = alertDayKey()
+  const syncRanges = ["7d", "last_month"] as const
 
   await Promise.all(
     pages.map(async (page) => {
-      const analytics = await fetchAlertsAnalytics(
-        page.workspaceId,
-        page.publicId,
-        "7d"
-      )
-      if (!analytics?.items.length) return
+      for (const rangeId of syncRanges) {
+        const analytics = await fetchAlertsAnalytics(
+          page.id,
+          page.publicId,
+          rangeId
+        )
+        if (!analytics?.items.length) continue
 
-      for (const alert of analytics.items) {
-        if (!isMeaningfulInboxAlert(alert)) continue
+        for (const alert of analytics.items) {
+          if (!isMeaningfulInboxAlert(alert)) continue
 
-        const kind = resolveAlertKind(alert)
-        if (!kind) continue
+          const kind = resolveAlertKind(alert)
+          if (!kind) continue
 
-        const title = ALERT_KIND_TITLES[kind] ?? "Analytics alert"
-        const body = `${page.brandName}: ${alert.message}`
-        const result = await createNotification({
-          userId,
-          type: "analytics_alert",
-          title,
-          body,
-          severity: mapAlertSeverity(alert.severity),
-          landingPageId: page.id,
-          landingPagePublicId: page.publicId,
-          href: `/dashboard/${encodeURIComponent(page.slug)}?tab=alerts`,
-          sourceType: "analytics_alert",
-          // One inbox item per page + alert kind per calendar day (stable; no % in key).
-          sourceId: `${page.publicId}:${kind}:${dayKey}`,
-        })
-
-        if (result?.created) {
-          void dispatchWorkspaceAlertWebhooks(page.workspaceId, {
+          const title = ALERT_KIND_TITLES[kind] ?? "Analytics alert"
+          const body = `${page.brandName}: ${alert.message}`
+          const result = await createNotification({
+            userId,
+            type: "analytics_alert",
             title,
             body,
-            severity: alert.severity === "info" ? "info" : "warning",
-            source: `analytics:${page.publicId}:${kind}`,
-          }).catch(() => undefined)
+            severity: mapAlertSeverity(alert.severity),
+            landingPageId: page.id,
+            landingPagePublicId: page.publicId,
+            href: `/dashboard/${encodeURIComponent(page.slug)}?tab=alerts`,
+            sourceType: "analytics_alert",
+            sourceId: `${page.publicId}:${kind}:${dayKey}`,
+          })
+
+          if (result?.created) {
+            void dispatchWorkspaceAlertWebhooks(page.workspaceId, {
+              title,
+              body,
+              severity: alert.severity === "info" ? "info" : "warning",
+              source: `analytics:${page.publicId}:${kind}`,
+            }).catch(() => undefined)
+          }
         }
       }
     })

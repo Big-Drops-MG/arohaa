@@ -1,5 +1,6 @@
 import type { SDKConfig } from "../types"
 import { normalizeDeniedPath } from "../utils/utm-block"
+import { getItem, setItem } from "../services/storage.service"
 
 const DEFAULT_CONFIG: SDKConfig = {
   wid: "",
@@ -43,16 +44,42 @@ function resolveScriptElement(): HTMLScriptElement | null {
   )
 }
 
+function variantStorageKey(wid: string, lpId: string): string {
+  const scope = (lpId || wid || "default").trim() || "default"
+  return `aro_variant:${scope}`
+}
+
+function resolveStickyVariant(
+  fromAttr: string,
+  wid: string,
+  lpId: string,
+): string {
+  const attr = fromAttr.trim()
+  const key = variantStorageKey(wid, lpId)
+  const sticky = (getItem(key) ?? "").trim()
+  if (sticky) return sticky.slice(0, 64)
+  if (attr) {
+    setItem(key, attr.slice(0, 64))
+    return attr.slice(0, 64)
+  }
+  return ""
+}
+
 export function initializeConfig(script?: HTMLScriptElement | null): SDKConfig {
   const resolvedScript = script ?? resolveScriptElement()
   const pageFallback =
     typeof window !== "undefined" ? window.location.hostname : ""
 
+  const wid = resolvedScript?.getAttribute("data-wid") ?? ""
+  const lpId = resolvedScript?.getAttribute("data-lp-id") ?? ""
+  const attrVariant =
+    resolvedScript?.getAttribute("data-variant")?.trim() || ""
+
   config = {
-    wid: resolvedScript?.getAttribute("data-wid") ?? "",
-    lpId: resolvedScript?.getAttribute("data-lp-id") ?? "",
+    wid,
+    lpId,
     page: resolvedScript?.getAttribute("data-page") ?? pageFallback,
-    variant: resolvedScript?.getAttribute("data-variant")?.trim() || "",
+    variant: resolveStickyVariant(attrVariant, wid, lpId),
     formtype: parseFormType(resolvedScript?.getAttribute("data-formtype")),
     apiBase: resolvedScript?.getAttribute("data-api") ?? "",
     utmBlockRedirect:

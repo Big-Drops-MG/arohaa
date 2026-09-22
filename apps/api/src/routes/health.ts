@@ -119,7 +119,11 @@ export async function healthRoutes(server: FastifyInstance) {
   server.get(
     '/health/metrics',
     { config: HEALTH_RATE_LIMIT_OPT_OUT },
-    async (_request, reply) => {
+    async (request, reply) => {
+      if (!verifyInternalApiRequest(request.headers['x-arohaa-internal'])) {
+        return reply.code(401).send({ error: 'Unauthorized' })
+      }
+
       if (shouldSkipClickHouse()) {
         return reply.status(503).send({ status: 'error', reason: 'clickhouse_backoff' })
       }

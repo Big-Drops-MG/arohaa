@@ -234,7 +234,13 @@ export async function loadOverviewDashboardData(
   const secret = resolveInternalApiSecret()
 
   if (!apiBase || !secret) {
-    return getOverviewPlaceholderData(landingPagePublicId, formType)
+    const empty = buildEmptyOverviewForRange(
+      landingPagePublicId,
+      formType,
+      rangeId,
+      customRange
+    )
+    return { ...empty, analyticsUnavailable: true }
   }
 
   const controller = new AbortController()

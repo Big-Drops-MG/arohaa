@@ -321,8 +321,9 @@ export function OverviewDashboard({
             role="alert"
             className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
           >
-            Analytics is temporarily unavailable. Figures below may be empty
-            until the data store recovers.
+            Analytics is unavailable. Check ingest API configuration, or wait
+            until the data store recovers. Figures below are empty placeholders,
+            not live traffic.
           </div>
         </motion.div>
       ) : null}

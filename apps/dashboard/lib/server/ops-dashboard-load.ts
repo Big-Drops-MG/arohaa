@@ -391,7 +391,7 @@ export async function loadOpsDashboardData(): Promise<OpsDashboardData> {
       fetchJson<OpsReadySnapshot>(`${apiBase}/health/ready`),
     ]).then((r) => r[0]),
     Promise.allSettled([
-      fetchJson<OpsMetricsSnapshot>(`${apiBase}/health/metrics`),
+      fetchJson<OpsMetricsSnapshot>(`${apiBase}/health/metrics`, ingestHeaders),
     ]).then((r) => r[0]),
     Promise.allSettled([
       fetchJson<OpsDetailedSnapshot>(`${apiBase}/health/detailed`),

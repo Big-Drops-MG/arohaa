@@ -92,22 +92,44 @@ export function trafficRangeLabel(
 }
 
 export function formatCustomRangeLabel(from: string, to: string): string {
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  })
-  const fromDate = new Date(`${from}T12:00:00.000Z`)
-  const toDate = new Date(`${to}T12:00:00.000Z`)
-  if (from === to) return fmt.format(fromDate)
-  const short = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  })
-  if (from.slice(0, 4) === to.slice(0, 4)) {
-    return `${short.format(fromDate)} – ${fmt.format(toDate)}`
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ] as const
+
+  const formatDay = (isoDate: string, withYear: boolean): string => {
+    const parts = isoDate.split("-")
+    const year = Number(parts[0])
+    const month = Number(parts[1])
+    const day = Number(parts[2])
+    if (
+      !Number.isFinite(year) ||
+      !Number.isFinite(month) ||
+      !Number.isFinite(day) ||
+      month < 1 ||
+      month > 12 ||
+      day < 1 ||
+      day > 31
+    ) {
+      return isoDate
+    }
+    const monthLabel = months[month - 1]
+    return withYear ? `${monthLabel} ${day}, ${year}` : `${monthLabel} ${day}`
   }
-  return `${fmt.format(fromDate)} – ${fmt.format(toDate)}`
+
+  if (from === to) return formatDay(from, true)
+  if (from.slice(0, 4) === to.slice(0, 4)) {
+    return `${formatDay(from, false)} – ${formatDay(to, true)}`
+  }
+  return `${formatDay(from, true)} – ${formatDay(to, true)}`
 }

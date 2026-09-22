@@ -165,11 +165,6 @@ export async function loadDataExportDashboardData({
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
 
-  const hasRedirect = Boolean(row.redirectPageUrl?.trim())
-  if (!hasRedirect) {
-    return getDataExportEmptyDashboardData(rangeId, false, row.brandName)
-  }
-
   const scopedUtmFilter = await resolveUtmFilterForActor(
     actor,
     landingPagePublicId,

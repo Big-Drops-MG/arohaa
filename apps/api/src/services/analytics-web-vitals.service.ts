@@ -73,6 +73,14 @@ const RESOLVED_DEVICE_SQL = `
   if(device IN ('mobile', 'tablet', 'desktop'), device, 'desktop')
 `
 
+const CLIPPED_METRIC_VALUE_SQL = `
+  multiIf(
+    metric_name = 'CLS', least(metric_value, 5.),
+    metric_name = 'INP', least(metric_value, 10000.),
+    least(metric_value, 60000.)
+  )
+`
+
 export function emptyAnalyticsWebVitals(
   rangeId: AnalyticsRangeId,
 ): AnalyticsWebVitals {
@@ -136,7 +144,7 @@ export async function getAnalyticsWebVitals({
 }): Promise<AnalyticsWebVitals> {
   const now = new Date()
   const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, now, custom)
-  const cacheKey = `analytics:web-vitals:v3:${workspaceId}:${rangeCacheKey(window)}:${utmFilterCacheKey(utmFilter)}`
+  const cacheKey = `analytics:web-vitals:v4-clip:${workspaceId}:${rangeCacheKey(window)}:${utmFilterCacheKey(utmFilter)}`
   const cached = await readAnalyticsCache<AnalyticsWebVitals>(cacheKey)
   if (cached) return cached
 
@@ -161,8 +169,8 @@ export async function getAnalyticsWebVitals({
       query: `
         SELECT
           metric_name,
-          quantileExact(0.75)(metric_value) AS p75,
-          avg(metric_value) AS avg,
+          quantileExact(0.75)(${CLIPPED_METRIC_VALUE_SQL}) AS p75,
+          avg(${CLIPPED_METRIC_VALUE_SQL}) AS avg,
           count() AS samples
         FROM events_raw
         WHERE ${where}
@@ -175,10 +183,10 @@ export async function getAnalyticsWebVitals({
       query: `
         SELECT
           ${RESOLVED_DEVICE_SQL} AS device,
-          quantileExactIf(0.75)(metric_value, metric_name = 'FCP') AS fcp_p75,
-          quantileExactIf(0.75)(metric_value, metric_name = 'LCP') AS lcp_p75,
-          quantileExactIf(0.75)(metric_value, metric_name = 'CLS') AS cls_p75,
-          quantileExactIf(0.75)(metric_value, metric_name = 'INP') AS inp_p75,
+          quantileExactIf(0.75)(${CLIPPED_METRIC_VALUE_SQL}, metric_name = 'FCP') AS fcp_p75,
+          quantileExactIf(0.75)(${CLIPPED_METRIC_VALUE_SQL}, metric_name = 'LCP') AS lcp_p75,
+          quantileExactIf(0.75)(${CLIPPED_METRIC_VALUE_SQL}, metric_name = 'CLS') AS cls_p75,
+          quantileExactIf(0.75)(${CLIPPED_METRIC_VALUE_SQL}, metric_name = 'INP') AS inp_p75,
           countIf(metric_name = 'FCP') AS fcp_samples,
           countIf(metric_name = 'LCP') AS lcp_samples,
           countIf(metric_name = 'CLS') AS cls_samples,
@@ -196,10 +204,10 @@ export async function getAnalyticsWebVitals({
       query: `
         SELECT
           state AS state,
-          quantileExactIf(0.75)(metric_value, metric_name = 'FCP') AS fcp_p75,
-          quantileExactIf(0.75)(metric_value, metric_name = 'LCP') AS lcp_p75,
-          quantileExactIf(0.75)(metric_value, metric_name = 'CLS') AS cls_p75,
-          quantileExactIf(0.75)(metric_value, metric_name = 'INP') AS inp_p75,
+          quantileExactIf(0.75)(${CLIPPED_METRIC_VALUE_SQL}, metric_name = 'FCP') AS fcp_p75,
+          quantileExactIf(0.75)(${CLIPPED_METRIC_VALUE_SQL}, metric_name = 'LCP') AS lcp_p75,
+          quantileExactIf(0.75)(${CLIPPED_METRIC_VALUE_SQL}, metric_name = 'CLS') AS cls_p75,
+          quantileExactIf(0.75)(${CLIPPED_METRIC_VALUE_SQL}, metric_name = 'INP') AS inp_p75,
           countIf(metric_name = 'FCP') AS fcp_samples,
           countIf(metric_name = 'LCP') AS lcp_samples,
           countIf(metric_name = 'CLS') AS cls_samples,

@@ -274,8 +274,6 @@ export function DataExportDashboard({
   useEffect(() => {
     if (!isActive) return
 
-    // Embedded leads table: use parent preload only when it already matches
-    // the selected range; otherwise fetch so All Time / custom ranges load.
     if (embedded && !returningOnly) {
       if (
         !initialData.analyticsUnavailable &&
@@ -366,27 +364,6 @@ export function DataExportDashboard({
       <div className="space-y-4">
         {header}
         <div className="h-40 animate-pulse rounded-xl border border-border bg-muted/40" />
-      </div>
-    )
-  }
-
-  if (!dashboardData.hasRedirect) {
-    return (
-      <div className="space-y-4">
-        {header}
-        <Card
-          className={cn(
-            overviewCardPointerFocusResetClassName,
-            overviewAnalyticCardShellClassName
-          )}
-        >
-          <CardContent className="px-5 py-8 sm:px-6">
-            <p className="text-sm text-muted-foreground">
-              Set an Offer / redirect page URL in Settings (Zip form type) to
-              start capturing offer-form details.
-            </p>
-          </CardContent>
-        </Card>
       </div>
     )
   }
