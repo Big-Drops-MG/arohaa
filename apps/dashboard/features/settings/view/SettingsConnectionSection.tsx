@@ -82,7 +82,7 @@ export function SettingsConnectionSection({
 
     if (data.connected) {
       setConnectionState("connected")
-      setConnectionMessage("SDK or HTML verification is active for this page.")
+      setConnectionMessage("SDK detected for this page.")
       return
     }
 
@@ -132,10 +132,9 @@ export function SettingsConnectionSection({
 
       setVerifyMessage(
         data.ok === true
-          ? "HTML verification succeeded."
+          ? "HTML ownership verified. SDK connection still requires a live SDK event."
           : "HTML verification completed."
       )
-      setConnectionState("connected")
     } finally {
       setIsVerifyingHtml(false)
     }
@@ -180,7 +179,7 @@ export function SettingsConnectionSection({
         {htmlVerificationMetaTag ? (
           <SettingsCopyBlock
             label="HTML verification meta tag"
-            description="Optional alternative to waiting for the first SDK event."
+            description="Optional ownership proof. Does not mark the SDK as connected."
             value={htmlVerificationMetaTag}
             copyLabel="Copy meta tag"
           />

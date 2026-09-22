@@ -265,10 +265,7 @@ export function NewLandingPage({
         }
         if (!res.ok) return false
 
-        const connected =
-          data.verificationMethod === "html_meta" ||
-          data.sdkInstallStatus === "detected" ||
-          data.status === "verified"
+        const connected = data.sdkInstallStatus === "detected"
 
         if (connected && !cancelled) {
           setConnectionStatus("connected")
@@ -328,7 +325,9 @@ export function NewLandingPage({
       return
     }
     setVerifyHtmlHint(
-      data.ok === true ? "HTML verification succeeded." : "Verified."
+      data.ok === true
+        ? "HTML ownership verified. Waiting for SDK is still required for connection."
+        : "Verified."
     )
   }, [publicLandingId])
 
@@ -547,9 +546,8 @@ export function NewLandingPage({
                 Optional HTML verification (meta tag)
               </p>
               <p className="text-sm text-muted-foreground">
-                Paste this meta tag anywhere inside the landing page HTML
-                &lt;head&gt; to prove ownership without waiting for SDK
-                telemetry.
+                Paste this meta tag inside the landing page HTML &lt;head&gt; to
+                prove ownership. SDK connection still requires a live SDK event.
               </p>
               <div className="rounded-lg border border-border bg-muted/30 px-4 py-4">
                 <code className="block text-sm break-all whitespace-pre-wrap text-foreground">

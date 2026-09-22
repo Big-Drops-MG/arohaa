@@ -62,11 +62,9 @@ export const POST = route(
     await db
       .update(landingPages)
       .set({
-        sdkInstallStatus: "detected",
         status: "verified",
         verifiedAt: row.verifiedAt ?? now,
         verificationMethod: "html_meta",
-        lastSeenAt: now,
         updatedAt: now,
         updatedByUserId: actor.id,
       })
@@ -79,10 +77,12 @@ export const POST = route(
       beforePayload: {
         verificationMethod: row.verificationMethod,
         status: row.status,
+        sdkInstallStatus: row.sdkInstallStatus,
       },
       afterPayload: {
         verificationMethod: "html_meta",
         status: "verified",
+        sdkInstallStatus: row.sdkInstallStatus,
       },
       traceId: traceIdFrom(request),
     })
@@ -91,6 +91,7 @@ export const POST = route(
       ok: true,
       verificationMethod: "html_meta",
       status: "verified",
+      sdkInstallStatus: row.sdkInstallStatus,
     })
   }
 )

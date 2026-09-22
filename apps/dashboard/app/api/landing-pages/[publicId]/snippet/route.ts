@@ -4,6 +4,7 @@ import {
   parseLandingPageServices,
   servicesForSdkSnippet,
 } from "@/features/settings/model/landing-page-services"
+import { canWriteLandingPages } from "@/lib/server/actor-can"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import {
   buildHtmlVerificationMetaTag,
@@ -51,9 +52,14 @@ export const GET = route(
       services,
     })
 
-    const htmlVerificationMetaTag = row.htmlVerificationToken
-      ? buildHtmlVerificationMetaTag(row.htmlVerificationToken)
-      : null
+    const canWrite = await canWriteLandingPages({
+      id: actor.id,
+      roleId: actor.roleId,
+    })
+    const htmlVerificationMetaTag =
+      canWrite && row.htmlVerificationToken
+        ? buildHtmlVerificationMetaTag(row.htmlVerificationToken)
+        : null
 
     return NextResponse.json({
       sdkSnippetHtml,

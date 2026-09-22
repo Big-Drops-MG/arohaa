@@ -26,9 +26,7 @@ export const POST = route(
     const now = Date.now()
     const lastSeen = row.lastSeenAt?.getTime() ?? 0
     const connected =
-      row.verificationMethod === "html_meta" ||
       row.sdkInstallStatus === "detected" ||
-      row.status === "verified" ||
       (lastSeen > 0 && now - lastSeen <= RECENT_MS)
 
     await writeLandingPageAuditLog({
