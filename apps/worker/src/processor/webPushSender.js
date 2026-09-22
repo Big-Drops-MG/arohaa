@@ -615,19 +615,25 @@ export async function startWebPushConsumption(redis, { isShuttingDown }) {
 
   while (!isShuttingDown()) {
     try {
-      const result = await redis.blpop(WEB_PUSH_QUEUE, 1)
+      const result = await redis.brpop(WEB_PUSH_QUEUE, 1)
       if (!result) continue
       const [, payload] = result
       let parsed
       try {
         parsed = JSON.parse(payload)
       } catch {
-        logger.warn({ payload }, 'invalid web push queue payload')
+        logger.warn(
+          {
+            payloadBytes:
+              typeof payload === 'string' ? Buffer.byteLength(payload, 'utf8') : 0,
+          },
+          'invalid web push queue payload',
+        )
         continue
       }
       const deliveryId = parsed?.deliveryId
-      if (!deliveryId) continue
-      await processWebPushDelivery(deliveryId)
+      if (typeof deliveryId !== 'string' || !deliveryId.trim()) continue
+      await processWebPushDelivery(deliveryId.trim())
     } catch (err) {
       if (isShuttingDown()) break
       logger.error({ err }, 'web push consumer error')

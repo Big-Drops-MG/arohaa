@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error worker runtime is plain JS without type declarations
-import { anonymizeEvent, hashEmail } from './pii.js'
+import { anonymizeEvent, anonymizeHeatmapEvent, hashEmail } from './pii.js'
 
 describe('anonymizeEvent', () => {
   it('hashes emails in ordinary properties', () => {
@@ -47,6 +47,17 @@ describe('anonymizeEvent', () => {
 
   it('still hashes user_id', () => {
     const event = anonymizeEvent({ user_id: 'lead@example.com' })
+    expect(event.user_id).toBe(hashEmail('lead@example.com'))
+  })
+})
+
+describe('anonymizeHeatmapEvent', () => {
+  it('strips query and hash from url', () => {
+    const event = anonymizeHeatmapEvent({
+      url: 'https://example.com/path?email=a@b.com&token=secret#frag',
+      user_id: 'lead@example.com',
+    })
+    expect(event.url).toBe('https://example.com/path')
     expect(event.user_id).toBe(hashEmail('lead@example.com'))
   })
 })

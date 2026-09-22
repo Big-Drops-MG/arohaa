@@ -109,7 +109,7 @@ export function startFailedEventsReplay(redis) {
             continue
           }
 
-          await redis.rpush(item.queue, JSON.stringify(item.event))
+          await redis.lpush(item.queue, JSON.stringify(item.event))
           replayed += 1
         }
       }

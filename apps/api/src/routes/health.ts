@@ -44,7 +44,7 @@ export async function healthRoutes(server: FastifyInstance) {
           setTimeout(() => resolve(false), PING_TIMEOUT_MS),
         )
 
-        const [isClickHouseUp, isRedisUp, isPostgresUp, queueLen, dlqLen] =
+        const [isClickHouseUp, isRedisUp, isPostgresUp, queueLen, heatmapLen, dlqLen] =
           await Promise.all([
             pingClickHouse(PING_TIMEOUT_MS),
             Promise.race([
@@ -56,6 +56,7 @@ export async function healthRoutes(server: FastifyInstance) {
               timeoutPromise,
             ]),
             redis.llen('analytics_queue').catch(() => -1),
+            redis.llen('heatmap_queue').catch(() => -1),
             redis.llen('failed_events').catch(() => -1),
           ])
 
@@ -64,7 +65,7 @@ export async function healthRoutes(server: FastifyInstance) {
         if (!isClickHouseUp || !isRedisUp || !isPostgresUp) {
           void sendAlertWebhook({
             title: 'API readiness check failed',
-            body: `clickhouse=${isClickHouseUp ? 'ok' : 'down'}, redis=${isRedisUp ? 'ok' : 'down'}, postgres=${isPostgresUp ? 'ok' : 'down'}, queue=${queueLen}, dlq=${dlqLen}`,
+            body: `clickhouse=${isClickHouseUp ? 'ok' : 'down'}, redis=${isRedisUp ? 'ok' : 'down'}, postgres=${isPostgresUp ? 'ok' : 'down'}, queue=${queueLen}, heatmap=${heatmapLen}, dlq=${dlqLen}`,
             severity: 'warning',
             source: 'api.health.ready',
           })
@@ -79,6 +80,7 @@ export async function healthRoutes(server: FastifyInstance) {
             },
             queues: {
               analytics_queue: queueLen,
+              heatmap_queue: heatmapLen,
               failed_events: dlqLen,
             },
             latency_ms: latencyMs,
@@ -96,6 +98,7 @@ export async function healthRoutes(server: FastifyInstance) {
           },
           queues: {
             analytics_queue: queueLen,
+            heatmap_queue: heatmapLen,
             failed_events: dlqLen,
           },
           latency_ms: latencyMs,
@@ -141,8 +144,9 @@ export async function healthRoutes(server: FastifyInstance) {
           }>
         }
         const row = json.data[0]
-        const [queueLen, dlqLen] = await Promise.all([
+        const [queueLen, heatmapLen, dlqLen] = await Promise.all([
           redis.llen('analytics_queue').catch(() => -1),
+          redis.llen('heatmap_queue').catch(() => -1),
           redis.llen('failed_events').catch(() => -1),
         ])
 
@@ -155,6 +159,7 @@ export async function healthRoutes(server: FastifyInstance) {
           },
           queues: {
             analytics_queue: queueLen,
+            heatmap_queue: heatmapLen,
             failed_events: dlqLen,
           },
           timestamp: new Date().toISOString(),
@@ -169,7 +174,7 @@ export async function healthRoutes(server: FastifyInstance) {
     '/health/detailed',
     { config: HEALTH_RATE_LIMIT_OPT_OUT },
     async (request) => {
-      const [clickhouse, redisCheck, postgres, queueLen, dlqLen] =
+      const [clickhouse, redisCheck, postgres, queueLen, heatmapLen, dlqLen] =
         await Promise.all([
           timedCheck(() => pingClickHouse(PING_TIMEOUT_MS), PING_TIMEOUT_MS),
           timedCheck(() => redis.ping().then(() => true), PING_TIMEOUT_MS),
@@ -178,6 +183,7 @@ export async function healthRoutes(server: FastifyInstance) {
             PING_TIMEOUT_MS,
           ),
           redis.llen('analytics_queue').catch(() => -1),
+          redis.llen('heatmap_queue').catch(() => -1),
           redis.llen('failed_events').catch(() => -1),
         ])
 
@@ -203,6 +209,7 @@ export async function healthRoutes(server: FastifyInstance) {
         },
         queues: {
           analytics_queue: queueLen,
+          heatmap_queue: heatmapLen,
           failed_events: dlqLen,
         },
         system: {
@@ -246,7 +253,8 @@ export async function healthRoutes(server: FastifyInstance) {
             event_name: pick(obj, 'event_name'),
             url: pick(obj, 'url'),
             workspace_id: pick(obj, 'workspace_id'),
-            created_at: pick(obj, 'created_at'),
+            created_at:
+              pick(obj, 'created_at') ?? pick(obj, 'ts') ?? pick(obj, 'timestamp'),
             json: truncate(raw),
           }
         } catch {
@@ -277,12 +285,24 @@ export async function healthRoutes(server: FastifyInstance) {
       }
 
       try {
-        const [queueDepth, dlqDepth, queueRaw, dlqRaw] = await Promise.all([
+        const [
+          queueDepth,
+          heatmapDepth,
+          dlqDepth,
+          queueRawOldest,
+          heatmapRawOldest,
+          dlqRaw,
+        ] = await Promise.all([
           redis.llen('analytics_queue').catch(() => -1),
+          redis.llen('heatmap_queue').catch(() => -1),
           redis.llen('failed_events').catch(() => -1),
-          redis.lrange('analytics_queue', 0, limit - 1).catch(() => [] as string[]),
+          redis.lrange('analytics_queue', -limit, -1).catch(() => [] as string[]),
+          redis.lrange('heatmap_queue', -limit, -1).catch(() => [] as string[]),
           redis.lrange('failed_events', 0, limit - 1).catch(() => [] as string[]),
         ])
+
+        const queueRaw = [...queueRawOldest].reverse()
+        const heatmapRaw = [...heatmapRawOldest].reverse()
 
         return {
           status: 'ok',
@@ -290,6 +310,10 @@ export async function healthRoutes(server: FastifyInstance) {
           analytics_queue: {
             depth: queueDepth,
             sample: queueRaw.map(mapQueueItem),
+          },
+          heatmap_queue: {
+            depth: heatmapDepth,
+            sample: heatmapRaw.map(mapQueueItem),
           },
           failed_events: {
             depth: dlqDepth,

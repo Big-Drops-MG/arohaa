@@ -124,6 +124,23 @@ function maskPropertiesObject(props) {
   return modified ? next : props;
 }
 
+function stripUrlQueryAndHash(url) {
+  if (typeof url !== 'string' || !url) return url;
+  try {
+    const parsed = new URL(url);
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    const q = url.indexOf('?');
+    const h = url.indexOf('#');
+    let end = url.length;
+    if (q >= 0) end = Math.min(end, q);
+    if (h >= 0) end = Math.min(end, h);
+    return url.slice(0, end);
+  }
+}
+
 export function anonymizeEvent(event) {
   if (!event) return event;
   const cloned = { ...event };
@@ -150,4 +167,14 @@ export function anonymizeEvent(event) {
   }
 
   return cloned;
+}
+
+export function anonymizeHeatmapEvent(event) {
+  const base = anonymizeEvent(event);
+  if (!base || typeof base !== 'object') return base;
+  const next = { ...base };
+  if (typeof next.url === 'string') {
+    next.url = stripUrlQueryAndHash(next.url);
+  }
+  return next;
 }

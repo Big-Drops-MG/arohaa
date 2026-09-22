@@ -13,8 +13,9 @@
  * ClickHouse first and skipped if it is already there.
  *
  * Runs as a dry run unless `--apply` is passed. In apply mode entries are
- * drained oldest-first with RPOP and re-queued with RPUSH so replayed events
- * sit behind live traffic. Events that still fail validation are moved to
+ * drained oldest-first with RPOP and re-queued with LPUSH so replayed events
+ * join the FIFO tail (same as live ingest; worker uses BRPOP).
+ * Events that still fail validation are moved to
  * `failed_events_unreplayable` rather than dropped.
  *
  * Requires REDIS_URL, CLICKHOUSE_URL, CLICKHOUSE_USER, CLICKHOUSE_PASSWORD.
@@ -102,7 +103,6 @@ function signature(event, isHeatmap) {
       ].join("|")
 }
 
-/** Flattens a DLQ entry into the individual events it was holding. */
 function extractEvents(entry) {
   const isHeatmap = entry.type === "heatmap"
   const queue = isHeatmap ? HEATMAP_QUEUE : ANALYTICS_QUEUE
@@ -177,8 +177,6 @@ const total = await redis.llen(DLQ_KEY)
 console.log(`${DLQ_KEY} depth: ${total}`)
 console.log(apply ? "mode: APPLY\n" : "mode: DRY RUN (pass --apply to run)\n")
 
-// Read non-destructively first so the ClickHouse dedup check can run before
-// anything is removed from the queue.
 const entries = await redis.lrange(DLQ_KEY, 0, -1)
 const byReason = {}
 const analytics = []
@@ -257,7 +255,7 @@ for (let i = 0; i < total; i++) {
 
     stats.replayed++
     stats.byQueue[queue] = (stats.byQueue[queue] ?? 0) + 1
-    if (apply) await redis.rpush(queue, JSON.stringify(event))
+    if (apply) await redis.lpush(queue, JSON.stringify(event))
   }
 }
 

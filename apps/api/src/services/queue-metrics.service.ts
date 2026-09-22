@@ -40,29 +40,39 @@ function getCloudWatchClient(): CloudWatchClient | null {
 
 async function readQueueDepths(): Promise<{
   analyticsQueue: number
+  heatmapQueue: number
   failedEvents: number
 }> {
-  const [analyticsQueue, failedEvents] = await Promise.all([
+  const [analyticsQueue, heatmapQueue, failedEvents] = await Promise.all([
     redis.llen('analytics_queue').catch(() => -1),
+    redis.llen('heatmap_queue').catch(() => -1),
     redis.llen('failed_events').catch(() => -1),
   ])
 
-  return { analyticsQueue, failedEvents }
+  return { analyticsQueue, heatmapQueue, failedEvents }
 }
 
 async function publishQueueMetrics(
   analyticsQueue: number,
+  heatmapQueue: number,
   failedEvents: number,
 ): Promise<void> {
   const client = getCloudWatchClient()
   if (!client) return
-  if (analyticsQueue < 0 && failedEvents < 0) return
+  if (analyticsQueue < 0 && heatmapQueue < 0 && failedEvents < 0) return
 
   const metricData: MetricDatum[] = []
   if (analyticsQueue >= 0) {
     metricData.push({
       MetricName: 'analytics_queue_depth',
       Value: analyticsQueue,
+      Unit: 'Count',
+    })
+  }
+  if (heatmapQueue >= 0) {
+    metricData.push({
+      MetricName: 'heatmap_queue_depth',
+      Value: heatmapQueue,
       Unit: 'Count',
     })
   }
@@ -86,6 +96,7 @@ async function publishQueueMetrics(
 
 async function maybeAlertOnQueueDepths(
   analyticsQueue: number,
+  heatmapQueue: number,
   failedEvents: number,
 ): Promise<void> {
   const queueThreshold = parsePositiveInt(
@@ -106,6 +117,15 @@ async function maybeAlertOnQueueDepths(
     })
   }
 
+  if (heatmapQueue >= queueThreshold) {
+    void sendAlertWebhook({
+      title: 'Heatmap queue depth high',
+      body: `heatmap_queue=${heatmapQueue} (threshold ${queueThreshold})`,
+      severity: 'warning',
+      source: 'api.queue.monitor',
+    })
+  }
+
   if (failedEvents >= dlqThreshold) {
     void sendAlertWebhook({
       title: 'Failed events DLQ depth high',
@@ -118,14 +138,15 @@ async function maybeAlertOnQueueDepths(
 
 async function sampleQueues(reason: string): Promise<void> {
   try {
-    const { analyticsQueue, failedEvents } = await readQueueDepths()
-    await publishQueueMetrics(analyticsQueue, failedEvents)
-    await maybeAlertOnQueueDepths(analyticsQueue, failedEvents)
+    const { analyticsQueue, heatmapQueue, failedEvents } = await readQueueDepths()
+    await publishQueueMetrics(analyticsQueue, heatmapQueue, failedEvents)
+    await maybeAlertOnQueueDepths(analyticsQueue, heatmapQueue, failedEvents)
 
     logger?.debug(
       {
         reason,
         analyticsQueue,
+        heatmapQueue,
         failedEvents,
       },
       'queue depth sample',
@@ -177,11 +198,13 @@ export async function stopQueueDepthMonitor(): Promise<void> {
 
 export async function getQueueDepthsForHealth(): Promise<{
   analytics_queue: number
+  heatmap_queue: number
   failed_events: number
 }> {
-  const { analyticsQueue, failedEvents } = await readQueueDepths()
+  const { analyticsQueue, heatmapQueue, failedEvents } = await readQueueDepths()
   return {
     analytics_queue: analyticsQueue,
+    heatmap_queue: heatmapQueue,
     failed_events: failedEvents,
   }
 }

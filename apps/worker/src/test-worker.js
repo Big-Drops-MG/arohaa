@@ -40,16 +40,15 @@ async function run() {
   ];
 
   for (const ev of validEvents) {
-    await redis.rpush('analytics_queue', JSON.stringify(ev));
+    await redis.lpush('analytics_queue', JSON.stringify(ev));
   }
 
   console.log('[Test] Pushing 1 invalid JSON event...');
-  await redis.rpush('analytics_queue', '{ invalid_json: "yes" ');
+  await redis.lpush('analytics_queue', '{ invalid_json: "yes" ');
 
   console.log('[Test] Events pushed. Start the worker now or wait 5s if it is already running...');
   
   setTimeout(async () => {
-    // Check clickhouse
     const res = await clickhouse.query({
       query: 'SELECT * FROM events_raw WHERE event_name LIKE \'test_event_%\' ORDER BY event_name',
       format: 'JSONEachRow'
@@ -61,7 +60,6 @@ async function run() {
       console.log('Row 1 properties:', rows[0].properties);
     }
     
-    // Check DLQ
     const dlq = await redis.lrange('failed_events', 0, -1);
     console.log('[Test] Failed events in DLQ:', dlq.length);
     

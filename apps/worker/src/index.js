@@ -1,21 +1,26 @@
 import './instrument.js';
-import { Redis } from 'ioredis';
 import { createClient } from '@clickhouse/client';
 import * as Sentry from '@sentry/node';
 import { sendAlertWebhook } from './alert-webhook.js';
 import { validateEvent, validateHeatmapEvent } from './processor/validator.js';
-import { anonymizeEvent } from './processor/pii.js';
+import { anonymizeEvent, anonymizeHeatmapEvent } from './processor/pii.js';
 import { DbWriter } from './processor/dbWriter.js';
 import { startWebPushConsumption } from './processor/webPushSender.js';
 import { startFailedEventsReplay } from './processor/dlq-replay.js';
 import { logger } from './logger.js';
+import {
+  createRedisClient,
+  waitUntilReady,
+  quitRedisClient,
+  payloadLogMeta,
+} from './redis-clients.js';
 
-const LOCAL_REDIS_URL = 'redis://127.0.0.1:6379';
 const MAX_BATCH_SIZE = 1000;
 const FLUSH_INTERVAL_MS = 5000;
 const MAX_HEATMAP_BATCH_SIZE = 5000;
 const HEATMAP_FLUSH_INTERVAL_MS = 2000;
 const SHUTDOWN_DRAIN_MS = 8_000;
+const BRPOP_TIMEOUT_SEC = 1;
 
 const PRIORITY_EVENT_NAMES = new Set([
   'form_success',
@@ -24,46 +29,10 @@ const PRIORITY_EVENT_NAMES = new Set([
   'zip_submit',
 ]);
 
-
-function resolveRedisUrl() {
-  const candidates = [
-    process.env.REDIS_URL,
-    process.env.UPSTASH_REDIS_URL,
-    process.env.KV_URL,
-  ];
-
-  for (const value of candidates) {
-    const trimmed = value?.trim();
-    if (trimmed) return trimmed;
-  }
-
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('REDIS_URL environment variable is missing.');
-  }
-
-  return LOCAL_REDIS_URL;
-}
-
-const redis = new Redis(resolveRedisUrl(), {
-  maxRetriesPerRequest: null,
-  enableReadyCheck: true,
-  retryStrategy(times) {
-    return Math.min(times * 200, 30_000);
-  }
-});
-
-redis.on('error', (err) => {
-  logger.error({ err }, 'redis connection error');
-});
-
-redis.on('close', () => {
-  logger.warn('redis connection closed; waiting for reconnect');
-});
-
-redis.on('reconnecting', (delay) => {
-  logger.info({ delay }, 'redis reconnecting');
-});
-
+const redis = createRedisClient('commands');
+const analyticsRedis = createRedisClient('analytics-brpop');
+const heatmapRedis = createRedisClient('heatmap-brpop');
+const webPushRedis = createRedisClient('web-push-brpop');
 
 function getClickHouseClient() {
   const url = process.env.CLICKHOUSE_URL?.trim();
@@ -84,7 +53,6 @@ function getClickHouseClient() {
 let clickHouseClient = null;
 let dbWriter = null;
 
-
 let isShuttingDown = false;
 let batch = [];
 let lastFlushTime = Date.now();
@@ -102,7 +70,7 @@ let heatmapLoopDone = Promise.resolve();
 async function requeueInFlight(queueName, payload) {
   if (!payload) return;
   try {
-    await redis.lpush(queueName, payload);
+    await redis.rpush(queueName, payload);
     logger.info({ queue: queueName }, 'requeued in-flight payload on shutdown');
   } catch (err) {
     logger.error({ err, queue: queueName }, 'failed to requeue in-flight payload');
@@ -124,11 +92,11 @@ async function requeueInFlight(queueName, payload) {
 
 async function startQueueConsumption() {
   logger.info('starting queue consumption from analytics_queue');
-  
+
   while (!isShuttingDown) {
     try {
-      const result = await redis.blpop('analytics_queue', 1);
-      
+      const result = await analyticsRedis.brpop('analytics_queue', BRPOP_TIMEOUT_SEC);
+
       let priorityFlush = false;
       if (result) {
         const [, payload] = result;
@@ -143,12 +111,29 @@ async function startQueueConsumption() {
               priorityFlush = true;
             }
           } else {
-            await redis.lpush('failed_events', JSON.stringify({ reason: 'validation_failed', payload, timestamp: Date.now() }));
+            await redis.lpush(
+              'failed_events',
+              JSON.stringify({
+                reason: 'validation_failed',
+                payload,
+                timestamp: Date.now(),
+              }),
+            );
             inFlightAnalyticsPayload = null;
           }
-        } catch (parseErr) {
-          logger.warn({ payload }, 'invalid JSON payload received');
-          await redis.lpush('failed_events', JSON.stringify({ reason: 'json_parse_error', payload, timestamp: Date.now() }));
+        } catch {
+          logger.warn(
+            payloadLogMeta(payload),
+            'invalid JSON payload received on analytics_queue',
+          );
+          await redis.lpush(
+            'failed_events',
+            JSON.stringify({
+              reason: 'json_parse_error',
+              payload,
+              timestamp: Date.now(),
+            }),
+          );
           inFlightAnalyticsPayload = null;
         }
       }
@@ -164,64 +149,83 @@ async function startQueueConsumption() {
         lastFlushTime = Date.now();
         await dbWriter.flushBatch(currentBatch);
       }
-      
     } catch (err) {
       if (isShuttingDown) break;
       logger.error({ err }, 'error in queue consumption loop');
-      await new Promise(resolve => setTimeout(resolve, 1000)); 
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
 }
 
 async function startHeatmapConsumption() {
   logger.info('starting queue consumption from heatmap_queue');
-  
+
   while (!isShuttingDown) {
     try {
-      const result = await redis.blpop('heatmap_queue', 1);
-      
+      const result = await heatmapRedis.brpop('heatmap_queue', BRPOP_TIMEOUT_SEC);
+
       if (result) {
         const [, payload] = result;
         inFlightHeatmapPayload = payload;
         try {
           const rawEvent = JSON.parse(payload);
           if (validateHeatmapEvent(rawEvent)) {
-            heatmapBatch.push(rawEvent);
+            heatmapBatch.push(anonymizeHeatmapEvent(rawEvent));
             inFlightHeatmapPayload = null;
           } else {
-            await redis.lpush('failed_events', JSON.stringify({ reason: 'validation_failed', payload, timestamp: Date.now(), type: 'heatmap' }));
+            await redis.lpush(
+              'failed_events',
+              JSON.stringify({
+                reason: 'validation_failed',
+                payload,
+                timestamp: Date.now(),
+                type: 'heatmap',
+              }),
+            );
             inFlightHeatmapPayload = null;
           }
-        } catch (parseErr) {
-          logger.warn({ payload }, 'invalid JSON payload received in heatmap_queue');
-          await redis.lpush('failed_events', JSON.stringify({ reason: 'json_parse_error', payload, timestamp: Date.now(), type: 'heatmap' }));
+        } catch {
+          logger.warn(
+            payloadLogMeta(payload),
+            'invalid JSON payload received on heatmap_queue',
+          );
+          await redis.lpush(
+            'failed_events',
+            JSON.stringify({
+              reason: 'json_parse_error',
+              payload,
+              timestamp: Date.now(),
+              type: 'heatmap',
+            }),
+          );
           inFlightHeatmapPayload = null;
         }
       }
 
       const timeSinceFlush = Date.now() - lastHeatmapFlushTime;
-      if (heatmapBatch.length >= MAX_HEATMAP_BATCH_SIZE || (heatmapBatch.length > 0 && timeSinceFlush >= HEATMAP_FLUSH_INTERVAL_MS)) {
+      if (
+        heatmapBatch.length >= MAX_HEATMAP_BATCH_SIZE ||
+        (heatmapBatch.length > 0 && timeSinceFlush >= HEATMAP_FLUSH_INTERVAL_MS)
+      ) {
         const currentBatch = [...heatmapBatch];
         heatmapBatch = [];
         lastHeatmapFlushTime = Date.now();
         await dbWriter.flushHeatmapBatch(currentBatch);
       }
-      
     } catch (err) {
       if (isShuttingDown) break;
       logger.error({ err }, 'error in heatmap queue consumption loop');
-      await new Promise(resolve => setTimeout(resolve, 1000)); 
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
 }
-
 
 async function shutdown(signal) {
   if (isShuttingDown) return;
   isShuttingDown = true;
   logger.info({ signal }, 'shutdown initiated');
   stopFailedEventsReplay();
-  
+
   try {
     await Promise.race([
       Promise.all([analyticsLoopDone, heatmapLoopDone]),
@@ -241,23 +245,28 @@ async function shutdown(signal) {
       batch = [];
       await dbWriter.flushBatch(currentBatch);
     }
-    
+
     if (heatmapBatch.length > 0) {
-      logger.info({ rows: heatmapBatch.length }, 'flushing pending heatmap events before shutdown');
+      logger.info(
+        { rows: heatmapBatch.length },
+        'flushing pending heatmap events before shutdown',
+      );
       const currentBatch = [...heatmapBatch];
       heatmapBatch = [];
       await dbWriter.flushHeatmapBatch(currentBatch);
     }
-    
+
     if (clickHouseClient) {
       await clickHouseClient.close();
       logger.info('clickhouse disconnected');
     }
 
-    if (redis) {
-      await redis.quit();
-      logger.info('redis disconnected');
-    }
+    await Promise.all([
+      quitRedisClient(analyticsRedis, 'analytics-brpop'),
+      quitRedisClient(heatmapRedis, 'heatmap-brpop'),
+      quitRedisClient(webPushRedis, 'web-push-brpop'),
+      quitRedisClient(redis, 'commands'),
+    ]);
 
     await Sentry.close(2000);
 
@@ -275,16 +284,16 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   });
 }
 
-
 async function start() {
   logger.info('starting worker');
 
   try {
-    await new Promise((resolve, reject) => {
-      if (redis.status === 'ready') return resolve();
-      redis.once('ready', resolve);
-      redis.once('error', reject);
-    });
+    await Promise.all([
+      waitUntilReady(redis, 'commands'),
+      waitUntilReady(analyticsRedis, 'analytics-brpop'),
+      waitUntilReady(heatmapRedis, 'heatmap-brpop'),
+      waitUntilReady(webPushRedis, 'web-push-brpop'),
+    ]);
     logger.info('redis connected');
 
     clickHouseClient = getClickHouseClient();
@@ -309,11 +318,13 @@ async function start() {
     }
 
     logger.info('worker ready');
-    
+
     analyticsLoopDone = startQueueConsumption();
     heatmapLoopDone = startHeatmapConsumption();
     stopFailedEventsReplay = startFailedEventsReplay(redis);
-    void startWebPushConsumption(redis, { isShuttingDown: () => isShuttingDown });
+    void startWebPushConsumption(webPushRedis, {
+      isShuttingDown: () => isShuttingDown,
+    });
   } catch (err) {
     logger.error({ err }, 'worker startup failed');
     void sendAlertWebhook({
