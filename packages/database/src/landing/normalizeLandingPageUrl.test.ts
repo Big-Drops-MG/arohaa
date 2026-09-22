@@ -69,6 +69,17 @@ describe('ingestRequestMatchesLanding', () => {
     ).toBe(true)
   })
 
+  it('prefers eventUrl over origin-only Referer', () => {
+    expect(
+      ingestRequestMatchesLanding({
+        ...landing,
+        requestOrigin: 'https://example.com',
+        requestReferer: 'https://example.com/',
+        eventUrl: 'https://example.com/offer/step-2?x=1',
+      }),
+    ).toBe(true)
+  })
+
   it('rejects a sibling path on the same origin (cross-LP claim)', () => {
     expect(
       ingestRequestMatchesLanding({

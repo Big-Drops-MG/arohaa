@@ -4,7 +4,7 @@ import type { landingPages } from "@workspace/database"
 type LandingRow = InferSelectModel<typeof landingPages>
 
 export function isLandingPageLive(status: string): boolean {
-  return status !== "inactive" && status !== "archived"
+  return status === "verified"
 }
 
 export function resolveLiveStatusChange(
@@ -22,18 +22,11 @@ export function resolveLiveStatusChange(
 
   if (isLive) {
     const meta = (row.metadata ?? {}) as Record<string, unknown>
-    const previousStatus =
-      typeof meta.previousStatus === "string" && meta.previousStatus.length > 0
-        ? meta.previousStatus
-        : row.verifiedAt != null
-          ? "verified"
-          : "pending_verification"
-
     const { previousStatus: _removed, ...rest } = meta
     void _removed
 
     return {
-      status: previousStatus,
+      status: "verified",
       metadata: Object.keys(rest).length > 0 ? rest : null,
     }
   }

@@ -28,7 +28,7 @@ const startedForms = new WeakSet<HTMLFormElement>()
 const startedStandaloneZip = new WeakSet<HTMLElement>()
 const startedStandaloneFields = new WeakSet<HTMLElement>()
 let zipStartFired = false
-let fetchTrackingInstalled = false
+let submitFormSuccessObserverInstalled = false
 let submitTrackingInstalled = false
 let zipClickTrackingInstalled = false
 
@@ -91,55 +91,38 @@ function handleZipControlSubmit(control: HTMLElement): void {
   markFormSessionSucceeded(formId)
 }
 
-export function installFormFetchTracking(): void {
-  if (fetchTrackingInstalled || typeof window === "undefined") return
-  if (typeof window.fetch !== "function") return
+export function installSubmitFormSuccessObserver(): void {
+  if (submitFormSuccessObserverInstalled || typeof window === "undefined") {
+    return
+  }
+  if (typeof PerformanceObserver === "undefined") return
 
-  fetchTrackingInstalled = true
-  const nativeFetch = window.fetch.bind(window)
+  submitFormSuccessObserverInstalled = true
 
-  window.fetch = async function arohaaFetch(
-    input: RequestInfo | URL,
-    init?: RequestInit,
-  ): Promise<Response> {
-    const method = (init?.method ?? "GET").toUpperCase()
-    const url =
-      typeof input === "string"
-        ? input
-        : input instanceof Request
-          ? input.url
-          : String(input)
+  const onSuccess = (): void => {
+    if (hasFormSessionSucceeded()) return
+    const zip = resolveZipForSubmit()
+    fireZipStartIfApplicable()
+    trackFormSuccess(undefined, zip)
+    fireZipSubmitIfApplicable(undefined, zip)
+    markFormSessionSucceeded()
+  }
 
-    const response = await nativeFetch(input, init)
-
-    if (method === "POST" && isSubmitFormUrl(url)) {
-      try {
-        const clone = response.clone()
-        const data = (await clone.json()) as {
-          success?: boolean
-          rejected?: boolean
+  try {
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        const resource = entry as PerformanceResourceTiming
+        if (!isSubmitFormUrl(resource.name)) continue
+        const status = resource.responseStatus
+        if (typeof status === "number") {
+          if (status < 200 || status >= 300) continue
         }
-        if (response.ok && data.success !== false && !data.rejected) {
-          if (!hasFormSessionSucceeded()) {
-            const zip = resolveZipForSubmit()
-            fireZipStartIfApplicable()
-            trackFormSuccess(undefined, zip)
-            fireZipSubmitIfApplicable(undefined, zip)
-            markFormSessionSucceeded()
-          }
-        }
-      } catch {
-        if (response.ok && !hasFormSessionSucceeded()) {
-          const zip = resolveZipForSubmit()
-          fireZipStartIfApplicable()
-          trackFormSuccess(undefined, zip)
-          fireZipSubmitIfApplicable(undefined, zip)
-          markFormSessionSucceeded()
-        }
+        onSuccess()
       }
-    }
-
-    return response
+    })
+    observer.observe({ type: "resource", buffered: true })
+  } catch {
+    submitFormSuccessObserverInstalled = false
   }
 }
 
@@ -259,7 +242,7 @@ export function setupFormTracking(options?: {
 
   const trackSuccess = options?.trackFormSuccess !== false
   if (trackSuccess) {
-    installFormFetchTracking()
+    installSubmitFormSuccessObserver()
     setupFormSubmitTracking()
     setupZipSubmitClickTracking()
   }

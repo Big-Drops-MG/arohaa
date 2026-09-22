@@ -5,12 +5,12 @@ export function getCookie(name: string): string | undefined {
     ?.split("=")[1]
 }
 
-export function setCookie(
-  name: string,
-  value: string,
-  days = 365,
-): void {
+export function setCookie(name: string, value: string, days = 365): void {
   const d = new Date()
   d.setTime(d.getTime() + days * 86400000)
-  document.cookie = `${name}=${value}; path=/; expires=${d.toUTCString()}`
+  const secure =
+    typeof location !== "undefined" && location.protocol === "https:"
+      ? "; Secure"
+      : ""
+  document.cookie = `${name}=${value}; path=/; expires=${d.toUTCString()}; SameSite=Lax${secure}`
 }

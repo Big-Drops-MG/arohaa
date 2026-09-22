@@ -3,8 +3,6 @@ import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import { writeLandingPageAuditLog } from "@/lib/server/landing-audit-log"
 import { route } from "@/lib/server/route"
 
-const RECENT_MS = 2 * 60 * 1000
-
 function traceIdFrom(request: Request): string | null {
   return request.headers.get("x-trace-id")?.trim() || null
 }
@@ -23,11 +21,7 @@ export const POST = route(
       return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
 
-    const now = Date.now()
-    const lastSeen = row.lastSeenAt?.getTime() ?? 0
-    const connected =
-      row.sdkInstallStatus === "detected" ||
-      (lastSeen > 0 && now - lastSeen <= RECENT_MS)
+    const connected = row.sdkInstallStatus === "detected"
 
     await writeLandingPageAuditLog({
       actorUserId: actor.id,

@@ -131,12 +131,28 @@ export function ingestRequestMatchesLanding(params: {
   if (onRedirectOrigin && !onPrimaryOrigin) return true;
 
   const pathCandidate =
-    pickSameOriginUrl(params.requestReferer, browserOrigin) ??
-    pickSameOriginUrl(params.eventUrl, browserOrigin);
+    pickSameOriginUrl(params.eventUrl, browserOrigin) ??
+    preferFullPathReferer(params.requestReferer, browserOrigin);
 
   if (!pathCandidate) return true;
 
   return pathBelongsToLanding(pathCandidate, params.landingNormalizedUrl);
+}
+
+
+function preferFullPathReferer(
+  refererRaw: string | undefined,
+  expectedOrigin: string,
+): string | null {
+  const candidate = pickSameOriginUrl(refererRaw, expectedOrigin);
+  if (!candidate) return null;
+  try {
+    const path = new URL(candidate).pathname;
+    if (path === '/' || path === '') return null;
+    return candidate;
+  } catch {
+    return null;
+  }
 }
 
 function parseHttpOrigin(raw: string | undefined): string | null {

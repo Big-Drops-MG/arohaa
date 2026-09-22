@@ -1,5 +1,5 @@
 import { track } from "./tracker"
-import { trackPageView } from "../events/page.events"
+import { setupSpaPageViews, trackPageView } from "../events/page.events"
 import { setupScrollTracking } from "../events/scroll.events"
 import { setupClickTracking } from "../events/click.events"
 import { setupAttentionTracking } from "../events/attention.events"
@@ -23,6 +23,7 @@ export function setupLifecycle(): void {
 
   track("sdk_connected", {})
   trackPageView()
+  setupSpaPageViews()
   setupScrollTracking()
   setupClickTracking()
   setupAttentionTracking()

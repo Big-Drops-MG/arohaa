@@ -248,8 +248,6 @@ export async function fetchLandingHtmlForVerification(
   return { ok: false, reason: "TOO_MANY_REDIRECTS" }
 }
 
-const META_TAG_RE = /<meta\b[^>]*>/gi
-
 function readHtmlAttribute(tag: string, name: string): string | null {
   const re = new RegExp(
     `\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`,
@@ -265,9 +263,9 @@ export function landingHtmlIncludesVerificationToken(
   token: string
 ): boolean {
   if (!token) return false
-  META_TAG_RE.lastIndex = 0
+  const metaTagRe = /<meta\b[^>]*>/gi
   let match: RegExpExecArray | null
-  while ((match = META_TAG_RE.exec(html)) !== null) {
+  while ((match = metaTagRe.exec(html)) !== null) {
     const tag = match[0]
     const name = readHtmlAttribute(tag, "name")
     const content = readHtmlAttribute(tag, "content")

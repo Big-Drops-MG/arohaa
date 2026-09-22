@@ -1,4 +1,5 @@
 const PREVIEW_FLAG = "_arohaa_preview"
+const AROHAA_STORAGE_PREFIX = "aro_"
 
 let cachedPreview: boolean | null = null
 
@@ -28,14 +29,27 @@ export function isHeatmapPreview(): boolean {
   return cachedPreview
 }
 
+function clearPrefixedStorage(storage: Storage): void {
+  const keys: string[] = []
+  for (let i = 0; i < storage.length; i += 1) {
+    const key = storage.key(i)
+    if (key && key.startsWith(AROHAA_STORAGE_PREFIX)) {
+      keys.push(key)
+    }
+  }
+  for (const key of keys) {
+    storage.removeItem(key)
+  }
+}
+
 export function clearPreviewSiteState(): void {
   try {
-    window.localStorage.clear()
+    clearPrefixedStorage(window.localStorage)
   } catch {
     /* storage can be unavailable in sandboxed frames */
   }
   try {
-    window.sessionStorage.clear()
+    clearPrefixedStorage(window.sessionStorage)
   } catch {
     /* storage can be unavailable in sandboxed frames */
   }
