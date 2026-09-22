@@ -106,6 +106,88 @@ export function ingestHostnameMatchesLanding(
   }
 }
 
+export function ingestRequestMatchesLanding(params: {
+  requestOrigin?: string | undefined;
+  requestReferer?: string | undefined;
+  eventUrl?: string | undefined;
+  landingOrigin: string;
+  landingRedirectOrigin?: string | null;
+  landingNormalizedUrl: string;
+}): boolean {
+  const landingOrigin = params.landingOrigin?.trim();
+  if (!landingOrigin) return false;
+
+  const requestOrigin = parseHttpOrigin(params.requestOrigin);
+  const refererOrigin = parseHttpOriginFromUrl(params.requestReferer);
+  const browserOrigin = requestOrigin ?? refererOrigin;
+  if (!browserOrigin) return false;
+
+  const redirectOrigin = params.landingRedirectOrigin?.trim() || null;
+  const onPrimaryOrigin = browserOrigin === landingOrigin;
+  const onRedirectOrigin =
+    redirectOrigin != null && browserOrigin === redirectOrigin;
+  if (!onPrimaryOrigin && !onRedirectOrigin) return false;
+
+  if (onRedirectOrigin && !onPrimaryOrigin) return true;
+
+  const pathCandidate =
+    pickSameOriginUrl(params.requestReferer, browserOrigin) ??
+    pickSameOriginUrl(params.eventUrl, browserOrigin);
+
+  if (!pathCandidate) return true;
+
+  return pathBelongsToLanding(pathCandidate, params.landingNormalizedUrl);
+}
+
+function parseHttpOrigin(raw: string | undefined): string | null {
+  const value = raw?.trim();
+  if (!value) return null;
+  try {
+    const u = new URL(value);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    return u.origin;
+  } catch {
+    return null;
+  }
+}
+
+function parseHttpOriginFromUrl(raw: string | undefined): string | null {
+  return parseHttpOrigin(raw);
+}
+
+function pickSameOriginUrl(
+  raw: string | undefined,
+  expectedOrigin: string,
+): string | null {
+  const value = raw?.trim();
+  if (!value) return null;
+  try {
+    const u = new URL(value);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    if (u.origin !== expectedOrigin) return null;
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
+function pathBelongsToLanding(
+  candidateUrlRaw: string,
+  landingNormalizedUrl: string,
+): boolean {
+  const candidate = normalizeLandingPageUrl(candidateUrlRaw);
+  const landing = normalizeLandingPageUrl(landingNormalizedUrl);
+  if (!candidate.ok || !landing.ok) return false;
+  if (candidate.origin !== landing.origin) return false;
+
+  const candidatePath = new URL(candidate.normalizedUrl).pathname;
+  const landingPath = new URL(landing.normalizedUrl).pathname;
+
+  if (candidatePath === landingPath) return true;
+  if (landingPath === '/') return true;
+  return candidatePath.startsWith(`${landingPath}/`);
+}
+
 export function normalizeOptionalRedirectUrl(
   rawInput: string | null | undefined,
 ):

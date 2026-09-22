@@ -1,11 +1,14 @@
 import { neon } from '@neondatabase/serverless'
 import { createNotification } from '@workspace/database'
-import { ingestHostnameMatchesLanding } from '@workspace/database/landing/normalizeLandingPageUrl'
+import { ingestRequestMatchesLanding } from '@workspace/database/landing/normalizeLandingPageUrl'
 
 type LandingRowLite = {
   id: string
   hostname: string
+  origin: string
+  normalizedUrl: string
   redirectHostname: string | null
+  redirectOrigin: string | null
   status: string
   verifiedAt: Date | null
   lastSeenAt: Date | null
@@ -33,30 +36,6 @@ function getSql(): ReturnType<typeof neon> | null {
 type ReconcileResult =
   | { outcome: 'reject'; reason: string }
   | { outcome: 'ok' }
-
-function requestOriginAsUrl(originRaw: string | undefined): string | undefined {
-  const origin = originRaw?.trim()
-  if (!origin) return undefined
-  try {
-    const u = new URL(origin)
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return undefined
-    return u.origin
-  } catch {
-    return undefined
-  }
-}
-
-function refererAsUrl(refererRaw: string | undefined): string | undefined {
-  const referer = refererRaw?.trim()
-  if (!referer) return undefined
-  try {
-    const u = new URL(referer)
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return undefined
-    return u.origin
-  } catch {
-    return undefined
-  }
-}
 
 function toMs(value: Date | string | null | undefined): number {
   if (!value) return 0
@@ -91,7 +70,10 @@ export async function reconcileLandingPageIngest(payload: {
           SELECT
             lp.id,
             lp.hostname,
+            lp.origin,
+            lp."normalizedUrl" AS "normalizedUrl",
             lp."redirectHostname" AS "redirectHostname",
+            lp."redirectOrigin" AS "redirectOrigin",
             lp.status,
             lp."verifiedAt",
             lp."lastSeenAt" AS "lastSeenAt",
@@ -108,7 +90,10 @@ export async function reconcileLandingPageIngest(payload: {
           SELECT
             lp.id,
             lp.hostname,
+            lp.origin,
+            lp."normalizedUrl" AS "normalizedUrl",
             lp."redirectHostname" AS "redirectHostname",
+            lp."redirectOrigin" AS "redirectOrigin",
             lp.status,
             lp."verifiedAt",
             lp."lastSeenAt" AS "lastSeenAt",
@@ -136,19 +121,17 @@ export async function reconcileLandingPageIngest(payload: {
     return { outcome: 'reject', reason: 'WID_MISMATCH' }
   }
 
-  const hostnameCandidate =
-    requestOriginAsUrl(payload.requestOrigin) ??
-    refererAsUrl(payload.requestReferer)
-
   if (
-    !hostnameCandidate ||
-    !ingestHostnameMatchesLanding(
-      hostnameCandidate,
-      row.hostname,
-      row.redirectHostname,
-    )
+    !ingestRequestMatchesLanding({
+      requestOrigin: payload.requestOrigin,
+      requestReferer: payload.requestReferer,
+      eventUrl: payload.eventUrl,
+      landingOrigin: row.origin,
+      landingRedirectOrigin: row.redirectOrigin,
+      landingNormalizedUrl: row.normalizedUrl,
+    })
   ) {
-    return { outcome: 'reject', reason: 'HOSTNAME_MISMATCH' }
+    return { outcome: 'reject', reason: 'ORIGIN_MISMATCH' }
   }
 
   const now = new Date()

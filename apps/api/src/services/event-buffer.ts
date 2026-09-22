@@ -40,65 +40,24 @@ let logger: FastifyBaseLogger | undefined
 let flushIntervalMs = FLUSH_INTERVAL_MS
 let flushSizeThreshold = FLUSH_SIZE_THRESHOLD
 
-function pushHeatmap(row: EventRow): void {
-  const mapped = eventRowToHeatmapRow(row)
-  if (!mapped) {
-    logger?.warn(
-      { event_name: row.event_name, traceId: row.trace_id },
-      'heatmap event could not be mapped; dropping',
-    )
-    return
-  }
-
-  if (heatmapBuffer.length >= MAX_HEATMAP_BUFFER_SIZE) {
-    logger?.warn(
-      { bufferSize: heatmapBuffer.length, traceId: row.trace_id },
-      'heatmap buffer is full; dropping event',
-    )
-    void redis
-      .lpush(
-        'failed_events',
-        JSON.stringify({
-          reason: 'api_heatmap_buffer_full',
-          payload: mapped,
-          timestamp: Date.now(),
-          type: 'heatmap',
-        }),
-      )
-      .catch(() => {})
-    return
-  }
-
-  heatmapBuffer.push(mapped)
-
-  if (heatmapBuffer.length >= HEATMAP_FLUSH_SIZE_THRESHOLD) {
-    void scheduleHeatmapFlush('size_threshold')
+class QueueUnavailableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'QueueUnavailableError'
   }
 }
 
+async function awaitDlq(entry: Record<string, unknown>): Promise<void> {
+  await redis.lpush('failed_events', JSON.stringify(entry))
+}
+
 function pushPriorityEvent(row: EventRow): Promise<void> {
-  return redis
-    .lpush('analytics_queue', JSON.stringify(row))
-    .then(() => {
-      logger?.info(
-        { event_name: row.event_name, traceId: row.trace_id },
-        'priority event pushed to redis',
-      )
-    })
-    .catch((err) => {
-      logger?.error(
-        { err, event_name: row.event_name, traceId: row.trace_id },
-        'priority redis push failed; falling back to buffer',
-      )
-      Sentry.captureException(err, {
-        tags: { component: 'event-buffer', reason: 'priority_push' },
-      })
-      buffer.push(row)
-      if (buffer.length >= flushSizeThreshold) {
-        void scheduleFlush('priority_fallback')
-      }
-      throw err
-    })
+  return redis.lpush('analytics_queue', JSON.stringify(row)).then(() => {
+    logger?.info(
+      { event_name: row.event_name, traceId: row.trace_id },
+      'priority event pushed to redis',
+    )
+  })
 }
 
 async function pushHeatmapDurable(row: EventRow): Promise<void> {
@@ -111,55 +70,36 @@ async function pushHeatmapDurable(row: EventRow): Promise<void> {
     return
   }
 
-  try {
-    await redis.lpush('heatmap_queue', JSON.stringify(mapped))
-  } catch (err) {
-    logger?.error(
-      { err, event_name: row.event_name, traceId: row.trace_id },
-      'heatmap redis push failed; falling back to buffer',
-    )
-    Sentry.captureException(err, {
-      tags: { component: 'event-buffer', reason: 'heatmap_push' },
-    })
-    pushHeatmap(row)
-    throw err
-  }
+  await redis.lpush('heatmap_queue', JSON.stringify(mapped))
 }
 
 async function pushAnalyticsDurable(row: EventRow): Promise<void> {
+  await redis.lpush('analytics_queue', JSON.stringify(row))
+}
+
+export async function pushEvent(row: EventRow): Promise<void> {
   try {
-    await redis.lpush('analytics_queue', JSON.stringify(row))
+    if (shouldRouteToHeatmapQueue(row)) {
+      await pushHeatmapDurable(row)
+      if (isHeatmapOnlyEvent(row)) return
+    }
+
+    if (PRIORITY_EVENT_NAMES.has(row.event_name)) {
+      await pushPriorityEvent(row)
+      return
+    }
+
+    await pushAnalyticsDurable(row)
   } catch (err) {
     logger?.error(
       { err, event_name: row.event_name, traceId: row.trace_id },
-      'analytics redis push failed; falling back to buffer',
+      'redis push failed; rejecting ingest (no silent buffer drop)',
     )
     Sentry.captureException(err, {
-      tags: { component: 'event-buffer', reason: 'analytics_push' },
+      tags: { component: 'event-buffer', reason: 'durable_push' },
     })
-    if (buffer.length < MAX_BUFFER_SIZE) {
-      buffer.push(row)
-      if (buffer.length >= flushSizeThreshold) {
-        void scheduleFlush('durable_fallback')
-      }
-    }
-    throw err
+    throw err instanceof Error ? err : new QueueUnavailableError(String(err))
   }
-}
-
-
-export async function pushEvent(row: EventRow): Promise<void> {
-  if (shouldRouteToHeatmapQueue(row)) {
-    await pushHeatmapDurable(row)
-    if (isHeatmapOnlyEvent(row)) return
-  }
-
-  if (PRIORITY_EVENT_NAMES.has(row.event_name)) {
-    await pushPriorityEvent(row)
-    return
-  }
-
-  await pushAnalyticsDurable(row)
 }
 
 export function getBufferSize(): number {
@@ -222,8 +162,27 @@ async function doFlush(reason: string): Promise<void> {
   } catch (err) {
     const remainingHeadroom = MAX_BUFFER_SIZE - buffer.length
     const requeue = batch.slice(0, Math.max(0, remainingHeadroom))
-    const droppedRows = batch.length - requeue.length
+    const overflow = batch.slice(requeue.length)
     buffer = requeue.concat(buffer)
+
+    if (overflow.length > 0) {
+      try {
+        await awaitDlq({
+          reason: 'api_analytics_flush_overflow',
+          events: overflow,
+          error: err instanceof Error ? err.message : String(err),
+          timestamp: Date.now(),
+        })
+      } catch (dlqErr) {
+        logger?.error(
+          { err: dlqErr, droppedRows: overflow.length },
+          'failed to DLQ overflow analytics events',
+        )
+        Sentry.captureException(dlqErr, {
+          tags: { component: 'event-buffer', reason: 'analytics_dlq' },
+        })
+      }
+    }
 
     logger?.error(
       {
@@ -231,9 +190,9 @@ async function doFlush(reason: string): Promise<void> {
         reason,
         attemptedRows: batch.length,
         requeuedRows: requeue.length,
-        droppedRows,
+        dlqRows: overflow.length,
       },
-      'redis push failed; events requeued',
+      'redis push failed; events requeued or sent to DLQ',
     )
 
     Sentry.captureException(err, {
@@ -242,7 +201,7 @@ async function doFlush(reason: string): Promise<void> {
         flush: {
           attemptedRows: batch.length,
           requeuedRows: requeue.length,
-          droppedRows,
+          dlqRows: overflow.length,
         },
       },
     })
@@ -271,7 +230,28 @@ async function doHeatmapFlush(reason: string): Promise<void> {
   } catch (err) {
     const remainingHeadroom = MAX_HEATMAP_BUFFER_SIZE - heatmapBuffer.length
     const requeue = batch.slice(0, Math.max(0, remainingHeadroom))
+    const overflow = batch.slice(requeue.length)
     heatmapBuffer = requeue.concat(heatmapBuffer)
+
+    if (overflow.length > 0) {
+      try {
+        await awaitDlq({
+          reason: 'api_heatmap_flush_overflow',
+          events: overflow,
+          error: err instanceof Error ? err.message : String(err),
+          timestamp: Date.now(),
+          type: 'heatmap',
+        })
+      } catch (dlqErr) {
+        logger?.error(
+          { err: dlqErr, droppedRows: overflow.length },
+          'failed to DLQ overflow heatmap events',
+        )
+        Sentry.captureException(dlqErr, {
+          tags: { component: 'event-buffer', reason: 'heatmap_dlq' },
+        })
+      }
+    }
 
     logger?.error(
       {
@@ -279,8 +259,9 @@ async function doHeatmapFlush(reason: string): Promise<void> {
         reason,
         attemptedRows: batch.length,
         requeuedRows: requeue.length,
+        dlqRows: overflow.length,
       },
-      'redis heatmap push failed; events requeued',
+      'redis heatmap push failed; events requeued or sent to DLQ',
     )
 
     Sentry.captureException(err, {

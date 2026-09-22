@@ -50,10 +50,8 @@ export const landingPages = pgTable(
     deletedAt: timestamp("deletedAt", { mode: "date" }),
   },
   (t) => ({
-    workspaceNormalizedUid: uniqueIndex(
-      "landing_workspace_normalized_active_uidx"
-    )
-      .on(t.workspaceId, t.normalizedUrl)
+    normalizedActiveUid: uniqueIndex("landing_normalized_active_uidx")
+      .on(t.normalizedUrl)
       .where(sql`${t.deletedAt} IS NULL`),
   })
 )

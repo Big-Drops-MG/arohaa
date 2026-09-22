@@ -1,6 +1,6 @@
 import "server-only"
 
-import { and, count, eq, inArray, isNull, ne, sql } from "drizzle-orm"
+import { and, count, eq, inArray, isNull, ne, not, sql } from "drizzle-orm"
 import {
   accessRoles,
   CEO_ROLE_KEY,
@@ -115,18 +115,16 @@ export async function transferOwnedAssetsBeforeUserDelete(params: {
   let transferredLandingPages = 0
 
   if (ownedWorkspaceIds.length > 0) {
-    const recipientActiveUrls = await db
+    const otherActiveUrls = await db
       .select({ normalizedUrl: landingPages.normalizedUrl })
       .from(landingPages)
       .where(
         and(
-          eq(landingPages.workspaceId, recipientWorkspaceId),
-          isNull(landingPages.deletedAt)
+          isNull(landingPages.deletedAt),
+          not(inArray(landingPages.workspaceId, ownedWorkspaceIds))
         )
       )
-    const takenUrls = new Set(
-      recipientActiveUrls.map((row) => row.normalizedUrl)
-    )
+    const takenUrls = new Set(otherActiveUrls.map((row) => row.normalizedUrl))
 
     const sourcePages = await db
       .select({
