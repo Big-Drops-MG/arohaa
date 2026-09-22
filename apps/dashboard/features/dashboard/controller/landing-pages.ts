@@ -93,8 +93,15 @@ export async function getLandingPageList(): Promise<LandingPageListItem[]> {
     getVariantMembership(),
   ])
 
+  const idToPublicId = new Map(
+    visibleRows.map((row) => [row.id, row.publicId] as const)
+  )
+
   return visibleRows.map((row, index) => {
     const membership = variantByLandingPageId.get(row.id) ?? null
+    const hubPublicId = membership?.hubLandingPageId
+      ? (idToPublicId.get(membership.hubLandingPageId) ?? null)
+      : null
     return {
       publicId: row.publicId,
       slug: row.slug,
@@ -109,11 +116,12 @@ export async function getLandingPageList(): Promise<LandingPageListItem[]> {
       variantLabel: membership?.label ?? null,
       experimentName: membership?.experimentName ?? null,
       experimentGroupName: membership?.groupName ?? null,
+      experimentId: membership?.experimentId ?? null,
+      hubPublicId,
     }
   })
 }
 
-/** Lightweight metrics map for client refresh on /dashboard cards. */
 export async function getLandingPageCardMetricsByPublicId(): Promise<
   Record<string, LandingPageMetric[]>
 > {
@@ -153,13 +161,17 @@ type VariantMembership = {
   experimentName: string
   /** Brand of the experiment owner, which reads better than the generated name. */
   groupName: string
+  experimentId: string
+  hubLandingPageId: string
 }
 
 async function getVariantMembership(): Promise<Map<string, VariantMembership>> {
   const rows = await db
     .select({
+      id: experiments.id,
       name: experiments.name,
       variants: experiments.variants,
+      hubLandingPageId: experiments.landingPageId,
       ownerBrandName: landingPages.brandName,
     })
     .from(experiments)
@@ -173,6 +185,8 @@ async function getVariantMembership(): Promise<Map<string, VariantMembership>> {
         label: link.label,
         experimentName: row.name,
         groupName: row.ownerBrandName ?? row.name,
+        experimentId: row.id,
+        hubLandingPageId: row.hubLandingPageId,
       })
     }
   }
