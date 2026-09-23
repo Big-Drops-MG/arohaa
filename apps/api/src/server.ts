@@ -4,10 +4,7 @@ import { randomUUID } from 'node:crypto'
 import * as Sentry from '@sentry/node'
 import Fastify, { type FastifyError } from 'fastify'
 import cors from '@fastify/cors'
-import {
-  isCorsOriginAllowed,
-  resolveAllowedCorsOrigins,
-} from './lib/cors-origins.js'
+import { resolveCorsOriginDecision } from './lib/cors-origins.js'
 import rateLimit from '@fastify/rate-limit'
 import fastifyRedis from '@fastify/redis'
 import { redis } from './services/redis.service.js'
@@ -74,7 +71,8 @@ function buildLoggerConfig(): boolean | Record<string, unknown> {
 
 const server = Fastify({
   logger: buildLoggerConfig(),
-  trustProxy: true,
+  trustProxy: 1,
+  bodyLimit: 64 * 1024,
   requestIdHeader: TRACE_ID_HEADER,
   genReqId: (req) =>
     pickInboundTraceId(req.headers[TRACE_ID_HEADER]) ?? randomUUID(),
@@ -88,16 +86,48 @@ const isDev = process.env.NODE_ENV !== 'production'
 
 server.register(cors, {
   origin: async (origin: string | undefined) => {
-    if (!origin) return false
-
-    const allowed = await resolveAllowedCorsOrigins()
-    if (isCorsOriginAllowed(origin, allowed)) {
-      return origin
-    }
-    return false
+    return resolveCorsOriginDecision(origin)
   },
   credentials: false,
   methods: ['GET', 'POST', 'OPTIONS'],
+})
+
+server.addHook('preValidation', async (request, reply) => {
+  const body = request.body
+  if (!body || typeof body !== 'object') return
+
+  const checkProps = (props: unknown): string | null => {
+    if (props == null) return null
+    if (typeof props !== 'object' || Array.isArray(props)) {
+      return 'props must be an object'
+    }
+    try {
+      const encoded = JSON.stringify(props)
+      if (encoded.length > 8_192) {
+        return 'props exceeds 8KB'
+      }
+    } catch {
+      return 'props is not serializable'
+    }
+    return null
+  }
+
+  if ('props' in body) {
+    const err = checkProps((body as { props?: unknown }).props)
+    if (err) {
+      return reply.code(400).send({ error: err })
+    }
+  }
+
+  if ('events' in body && Array.isArray((body as { events?: unknown }).events)) {
+    for (const event of (body as { events: unknown[] }).events) {
+      if (!event || typeof event !== 'object') continue
+      const err = checkProps((event as { props?: unknown }).props)
+      if (err) {
+        return reply.code(400).send({ error: err })
+      }
+    }
+  }
 })
 
 

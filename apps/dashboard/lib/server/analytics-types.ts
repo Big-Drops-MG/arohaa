@@ -65,6 +65,7 @@ export interface OverviewCityMetric {
 export interface AnalyticsOverview {
   rangeId: RangeId
   kpis: RangeKpis
+  kpiChanges?: Partial<Record<OverviewKpiMetricId, number | null>>
   series: SeriesPoint[]
   kpiSeries: Record<OverviewKpiMetricId, SeriesPoint[]>
   kpiByState?: OverviewStateMetric[]
@@ -151,6 +152,12 @@ export interface AnalyticsTrafficUtmParamTab {
 export interface AnalyticsTraffic {
   rangeId: RangeId
   kpis: AnalyticsTrafficKpis
+  kpiChanges?: Partial<
+    Record<
+      "visitors" | "sessions" | "page-views" | "bounce-rate",
+      number | null
+    >
+  >
   trafficByTime: AnalyticsTrafficByTimeRow[]
   trafficByDevice: AnalyticsTrafficByDeviceRow[]
   topPages: AnalyticsTopPageRow[]

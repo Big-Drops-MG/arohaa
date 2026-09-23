@@ -6,6 +6,7 @@ import type {
   OverviewKpi,
   OverviewKpiMetricId,
 } from "@/features/overview/model/overview"
+import { FunnelTrendBadge } from "@/features/funnel/view/FunnelTrendBadge"
 import {
   overviewSpring,
   overviewStaggerContainer,
@@ -62,14 +63,27 @@ export function OverviewKpiRow({
               />
             ) : null}
             <div className="relative z-10">
-              <p
-                className={cn(
-                  "text-xs leading-snug font-medium",
-                  active ? "text-white/75" : "text-muted-foreground"
-                )}
-              >
-                {kpi.label}
-              </p>
+              <div className="flex items-start justify-between gap-2">
+                <p
+                  className={cn(
+                    "text-xs leading-snug font-medium",
+                    active ? "text-white/75" : "text-muted-foreground"
+                  )}
+                >
+                  {kpi.label}
+                </p>
+                {kpi.change ? (
+                  <FunnelTrendBadge
+                    change={kpi.change}
+                    variant={kpi.changeVariant}
+                    className={
+                      active
+                        ? "bg-white/15 text-white ring-white/20"
+                        : undefined
+                    }
+                  />
+                ) : null}
+              </div>
               <motion.p
                 key={kpi.value}
                 initial={reduceMotion ? false : { opacity: 0, y: 4 }}

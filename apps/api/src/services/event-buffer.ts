@@ -9,7 +9,7 @@ import {
   type HeatmapRow,
 } from './heatmap-route.js'
 
-const FLUSH_INTERVAL_MS = 5000
+const FLUSH_INTERVAL_MS = 2000
 const FLUSH_SIZE_THRESHOLD = 1000
 const MAX_BUFFER_SIZE = 10_000
 

@@ -1,3 +1,4 @@
+import { formatFunnelTrendChange } from "@/features/funnel/utils/funnel-trend"
 import { notFound } from "next/navigation"
 import type { OverviewLandingFormType } from "@/features/overview/model/overview"
 import {
@@ -58,6 +59,7 @@ export function buildTrafficDashboardData(
   const showForm = hasConversionMetrics(formType)
   const formSubmitted = trafficFormSubmittedLabel(formType)
   const rate = trafficRateLabel(formType)
+  const changes = data.kpiChanges ?? {}
 
   return {
     formType,
@@ -70,17 +72,29 @@ export function buildTrafficDashboardData(
         label: "Active Users Right Now",
         value: `${fmtCount(kpis.activeUsersNow)} Users`,
       },
-      { id: "visitors", label: "Visitors", value: fmtCount(kpis.visitors) },
-      { id: "sessions", label: "Sessions", value: fmtCount(kpis.sessions) },
+      {
+        id: "visitors",
+        label: "Visitors",
+        value: fmtCount(kpis.visitors),
+        ...formatFunnelTrendChange(changes.visitors),
+      },
+      {
+        id: "sessions",
+        label: "Sessions",
+        value: fmtCount(kpis.sessions),
+        ...formatFunnelTrendChange(changes.sessions),
+      },
       {
         id: "page-views",
         label: "Page Views",
         value: fmtCount(kpis.pageViews),
+        ...formatFunnelTrendChange(changes["page-views"]),
       },
       {
         id: "bounce-rate",
         label: "Bounce Rate",
         value: fmtPct(kpis.bounceRate),
+        ...formatFunnelTrendChange(changes["bounce-rate"]),
       },
     ],
     trafficByTime: {

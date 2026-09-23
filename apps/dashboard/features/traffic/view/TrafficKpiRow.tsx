@@ -3,6 +3,7 @@ import type {
   TrafficKpi,
   TrafficKpiMetricId,
 } from "@/features/traffic/model/traffic"
+import { FunnelTrendBadge } from "@/features/funnel/view/FunnelTrendBadge"
 
 type TrafficKpiRowProps = {
   kpis: TrafficKpi[]
@@ -32,14 +33,25 @@ export function TrafficKpiRow({
                 : "border-foreground/10 bg-card text-foreground hover:border-neutral-300 hover:bg-neutral-50/80"
             )}
           >
-            <p
-              className={cn(
-                "text-xs font-medium",
-                active ? "text-white/80" : "text-muted-foreground"
-              )}
-            >
-              {kpi.label}
-            </p>
+            <div className="flex items-start justify-between gap-2">
+              <p
+                className={cn(
+                  "text-xs font-medium",
+                  active ? "text-white/80" : "text-muted-foreground"
+                )}
+              >
+                {kpi.label}
+              </p>
+              {kpi.change ? (
+                <FunnelTrendBadge
+                  change={kpi.change}
+                  variant={kpi.changeVariant}
+                  className={
+                    active ? "bg-white/15 text-white ring-white/20" : undefined
+                  }
+                />
+              ) : null}
+            </div>
             <p
               className={cn(
                 "mt-2 font-heading text-xl font-semibold tracking-tight tabular-nums",

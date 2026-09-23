@@ -22,6 +22,8 @@ import {
 } from '../lib/analytics-timezone.js'
 import {
   DEFAULT_ANALYTICS_RANGE_ID,
+  previousRangeFilter,
+  previousRangeQueryParams,
   rangeCacheKey,
   rangeFilter,
   rangeQueryParams,
@@ -32,6 +34,7 @@ import {
   type AnalyticsRangeId,
   type AnalyticsWindow,
 } from '../lib/analytics-range.js'
+import { computePeriodChangePct } from '../lib/funnel-trend.js'
 import {
   utmFilterCacheKey,
   utmFilterParams,
@@ -86,11 +89,8 @@ export interface OverviewCityMetric {
   state: string
   latitude?: number
   longitude?: number
-  /** County FIPS resolved from zipcodes, for rows without usable coordinates. */
   countyFips?: string
-  /** Distinct zipcodes with events in this city (GeoIP postal + form-submitted). */
   zipCount: number
-  /** Distinct zipcode values backing `zipCount`, capped for payload size. */
   zipcodes: string[]
   visitors: number
   sessions: number
@@ -115,10 +115,9 @@ export interface OverviewZipcodeMetric {
 export interface AnalyticsOverview {
   rangeId: AnalyticsRangeId
   kpis: RangeKpis
-  /** Visitors series for the selected range. */
+  kpiChanges: Partial<Record<OverviewKpiMetricId, number | null>>
   series: SeriesPoint[]
   kpiSeries: Record<OverviewKpiMetricId, SeriesPoint[]>
-  /** US state breakdown for map bubbles (selected KPI reads one metric). */
   kpiByState: OverviewStateMetric[]
   funnel: FunnelStep[]
   uniqueVisitors7d: number
@@ -190,7 +189,6 @@ function parseLandingFormType(raw: string | undefined): LandingFormType {
   return 'single'
 }
 
-/** SQL predicate for conversion events. Zip LPs often emit form_success. */
 function submissionEventSqlPredicate(formType: LandingFormType): string {
   if (formType === 'none') return `event_name = 'service_click'`
   if (formType === 'zip') {
@@ -422,12 +420,14 @@ export async function getAnalyticsOverview(
   const now = new Date()
   const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, now, custom)
   const where = rangeFilter(utmFilter)
+  const previousWhere = previousRangeFilter(utmFilter)
   const p = {
     wid: workspaceId,
     ...rangeQueryParams(window),
+    ...previousRangeQueryParams(window),
     ...utmFilterParams(utmFilter),
   }
-  const cacheKey = `analytics:overview:v7-zip-form:${workspaceId}:${formType}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
+  const cacheKey = `analytics:overview:v8-prior:${workspaceId}:${formType}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
   try {
     const cachedStr = await redis.get(cacheKey)
     if (cachedStr) {
@@ -452,6 +452,8 @@ export async function getAnalyticsOverview(
     cityRes,
     dowRes,
     engagedRes,
+    prevKpiRes,
+    prevBounceRes,
   ] = await Promise.all([
     ch.query({
       format: 'JSON',
@@ -570,9 +572,38 @@ export async function getAnalyticsOverview(
         )
       `,
     }),
+
+    ch.query({
+      format: 'JSON',
+      query_params: p,
+      query: `
+        SELECT
+          uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+          uniqExact(session_id) AS sessions,
+          countIf(event_name = 'page_view') AS page_views,
+          uniqExactIf(session_id, ${submissionEventSqlPredicate(formType)}) AS form_submitted
+        FROM events_raw
+        WHERE ${previousWhere}
+      `,
+    }),
+
+    ch.query({
+      format: 'JSON',
+      query_params: p,
+      query: `
+        SELECT
+          sumIf(1, is_bounce = 1) AS bounces,
+          count() AS sessions
+        FROM (
+          SELECT session_id, min(created_at) AS first_at, toUInt8(count() = 1) AS is_bounce
+          FROM events_raw
+          WHERE ${previousWhere}
+          GROUP BY session_id
+        )
+      `,
+    }),
   ])
 
-  // Isolated from core KPIs so a map SQL failure cannot blank the overview.
   let stateMetricRows: Array<{
     state: string
     visitors: string
@@ -669,6 +700,26 @@ export async function getAnalyticsOverview(
   const sessions = n(kd.sessions)
   const pageViews = n(kd.page_views)
   const formSubmitted = n(kd.form_submitted)
+  const bounceRate = bouncePct(n(bd.bounces), n(bd.sessions))
+  const fsr = fsrPct(formSubmitted, sessions)
+
+  const prevKd = ((await prevKpiRes.json()) as CHJson<KR>).data[0] ?? {}
+  const prevBd = ((await prevBounceRes.json()) as CHJson<KR>).data[0] ?? {}
+  const prevVisitors = n(prevKd.visitors)
+  const prevSessions = n(prevKd.sessions)
+  const prevPageViews = n(prevKd.page_views)
+  const prevFormSubmitted = n(prevKd.form_submitted)
+  const prevBounceRate = bouncePct(n(prevBd.bounces), n(prevBd.sessions))
+  const prevFsr = fsrPct(prevFormSubmitted, prevSessions)
+
+  const kpiChanges: Partial<Record<OverviewKpiMetricId, number | null>> = {
+    visitors: computePeriodChangePct(visitors, prevVisitors),
+    sessions: computePeriodChangePct(sessions, prevSessions),
+    'page-views': computePeriodChangePct(pageViews, prevPageViews),
+    'form-submitted': computePeriodChangePct(formSubmitted, prevFormSubmitted),
+    fsr: computePeriodChangePct(fsr, prevFsr),
+    'bounce-rate': computePeriodChangePct(bounceRate, prevBounceRate),
+  }
 
   const kpiSeries = buildKpiSeries(
     window,
@@ -719,9 +770,10 @@ export async function getAnalyticsOverview(
       sessions,
       pageViews,
       formSubmitted,
-      bounceRate: bouncePct(n(bd.bounces), n(bd.sessions)),
-      fsr: fsrPct(formSubmitted, sessions),
+      bounceRate,
+      fsr,
     },
+    kpiChanges,
     series: kpiSeries.visitors,
     kpiSeries,
     kpiByState,
@@ -777,6 +829,7 @@ export function emptyAnalyticsOverview(
   return {
     rangeId: window.rangeId,
     kpis: { ...ZERO_KPIS },
+    kpiChanges: {},
     series: kpiSeries.visitors,
     kpiSeries,
     kpiByState: [],
@@ -859,10 +912,8 @@ function normalizeOverviewStateInput(raw: string): {
   return null
 }
 
-/** Cap on distinct zipcodes returned per city so county totals stay exact without huge payloads. */
 const CITY_ZIP_SAMPLE_LIMIT = 250
 
-/** Group events without a city name by ZIP or a fallback label for county drill-down. */
 const CITY_GROUP_SQL = `if(city != '', city, if(zipcode != '', concat('ZIP ', zipcode), 'Unknown'))`
 const CITY_LOCATION_SQL = `(city != '' OR zipcode != '' OR (latitude != 0 AND longitude != 0))`
 
@@ -1206,7 +1257,6 @@ export async function getLandingPageCardMetrics(
   formTypeRaw?: string,
 ): Promise<LandingPageCardMetrics> {
   const formType = parseLandingFormType(formTypeRaw)
-  // Zip LPs frequently emit form_success instead of zip_submit — count both.
   const cacheKey = `analytics:landing-summary:v5:${workspaceId}:${formType}`
   const cached = await readAnalyticsCache<LandingPageCardMetrics>(cacheKey)
   if (cached) return cached

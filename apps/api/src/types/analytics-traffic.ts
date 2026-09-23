@@ -33,6 +33,12 @@ export interface TrafficKpis {
   bounceRate: number
 }
 
+export type TrafficKpiChangeKey =
+  | 'visitors'
+  | 'sessions'
+  | 'page-views'
+  | 'bounce-rate'
+
 export interface TrafficByTimeRow {
   date: string
   visitors: number
@@ -84,7 +90,6 @@ export interface UtmParamTab {
   rows: UtmParamValueRow[]
 }
 
-/** @deprecated Prefer `utmByParam` tabs. Kept for older clients. */
 export interface UtmParameterRow {
   domain: string
   visitors: number
@@ -93,12 +98,12 @@ export interface UtmParameterRow {
 export interface TrafficDashboardResponse {
   rangeId: TrafficRangeId
   kpis: TrafficKpis
+  kpiChanges: Partial<Record<TrafficKpiChangeKey, number | null>>
   trafficByTime: TrafficByTimeRow[]
   trafficByDevice: TrafficByDeviceRow[]
   topPages: TopPageRow[]
   trafficByLocation: TrafficByLocationRow[]
   referrers: ReferrerRow[]
   utmByParam: UtmParamTab[]
-  /** @deprecated Prefer `utmByParam`. */
   utmParameters: UtmParameterRow[]
 }

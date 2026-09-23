@@ -139,12 +139,6 @@ export function conversionSubmittedColumnLabel(
   return "Form Submitted"
 }
 
-export type OverviewKpi = {
-  id: OverviewKpiMetricId
-  label: string
-  value: string
-}
-
 export type OverviewKpiValuesByMetric = Partial<
   Record<OverviewKpiMetricId, string>
 >
@@ -154,6 +148,21 @@ export type OverviewKpiValuesByDateRange = Partial<
 >
 
 export type OverviewFunnelChangeVariant = "positive" | "negative" | "neutral"
+
+export type OverviewKpiChangesByDateRange = Partial<
+  Record<
+    OverviewDateRangeId,
+    Partial<Record<OverviewKpiMetricId, number | null>>
+  >
+>
+
+export type OverviewKpi = {
+  id: OverviewKpiMetricId
+  label: string
+  value: string
+  change?: string
+  changeVariant?: OverviewFunnelChangeVariant
+}
 
 export type OverviewFunnelStep = {
   label: string
@@ -235,6 +244,7 @@ export type OverviewDashboardData = {
   dateRangeOptions: OverviewDateRangeOption[]
   defaultDateRangeId: OverviewDateRangeId
   kpisByDateRange: OverviewKpiValuesByDateRange
+  kpiChangesByDateRange?: OverviewKpiChangesByDateRange
   defaultKpiMetricId: OverviewKpiMetricId
   funnel: FunnelStep[]
   multiStepFormTracking: FunnelStep[]

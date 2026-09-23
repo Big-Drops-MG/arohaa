@@ -1,13 +1,7 @@
-/**
- * Validates incoming events to ensure data accuracy and enforce workspace data separation.
- *
- * @param {Object} event - The raw parsed JSON event.
- * @returns {boolean} True if valid, false if invalid and should be dropped.
- */
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EVENT_NAME_RE = /^[a-z0-9_]+$/;
-/** Keep in sync with apps/api/src/lib/allowed-event-names.ts */
 const ALLOWED_EVENT_NAMES = new Set([
   'sdk_connected',
   'page_view',

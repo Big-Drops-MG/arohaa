@@ -98,30 +98,6 @@ function dropOffQuery(whereClause: string, mode: 'standard' | 'zipRedirect' = 's
     mode === 'zipRedirect'
       ? `AND ${FIELD_NAME_EXPR} NOT IN ('zip', 'zipcode', 'zip_code', 'postal')`
       : ''
-  const completedSessions =
-    mode === 'zipRedirect'
-      ? `
-        SELECT DISTINCT session_id
-        FROM events_raw
-        WHERE ${whereClause}
-          AND (
-            (
-              event_name = 'form_success'
-              AND (
-                JSONHas(properties, 'lead_complete')
-                OR JSONHas(properties, '_k')
-                OR JSONHas(properties, 'fields')
-              )
-            )
-            OR event_name = 'service_click'
-          )
-      `
-      : `
-        SELECT DISTINCT session_id
-        FROM events_raw
-        WHERE ${whereClause}
-          AND event_name = 'form_success'
-      `
 
   return `
     SELECT
@@ -150,21 +126,13 @@ function dropOffQuery(whereClause: string, mode: 'standard' | 'zipRedirect' = 's
         uniqExact(session_id) AS drop_offs
       FROM (
         SELECT DISTINCT
-          focused.session_id AS session_id,
-          focused.field_name AS field_name
-        FROM (
-          SELECT
-            session_id,
-            ${FIELD_NAME_EXPR} AS field_name
-          FROM events_raw
-          WHERE ${whereClause}
-            AND event_name = 'form_field_focus'
-            AND ${FIELD_NAME_EXPR} != ''
-            ${fieldExclude}
-        ) AS focused
-        LEFT ANTI JOIN (
-          ${completedSessions}
-        ) AS submitted ON focused.session_id = submitted.session_id
+          session_id,
+          ${FIELD_NAME_EXPR} AS field_name
+        FROM events_raw
+        WHERE ${whereClause}
+          AND event_name = 'form_field_abandon'
+          AND ${FIELD_NAME_EXPR} != ''
+          ${fieldExclude}
       )
       GROUP BY field_name
     ) AS drops ON drops.field_name = reaches.field_name

@@ -177,7 +177,11 @@ export async function healthRoutes(server: FastifyInstance) {
   server.get(
     '/health/detailed',
     { config: HEALTH_RATE_LIMIT_OPT_OUT },
-    async (request) => {
+    async (request, reply) => {
+      if (!verifyInternalApiRequest(request.headers['x-arohaa-internal'])) {
+        return reply.code(401).send({ error: 'Unauthorized' })
+      }
+
       const [clickhouse, redisCheck, postgres, queueLen, heatmapLen, dlqLen] =
         await Promise.all([
           timedCheck(() => pingClickHouse(PING_TIMEOUT_MS), PING_TIMEOUT_MS),

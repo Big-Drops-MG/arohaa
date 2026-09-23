@@ -15,6 +15,8 @@ export type TrafficKpi = {
   id: TrafficKpiMetricId
   label: string
   value: string
+  change?: string
+  changeVariant?: "positive" | "negative" | "neutral"
 }
 
 export type TrafficTableColumn = {

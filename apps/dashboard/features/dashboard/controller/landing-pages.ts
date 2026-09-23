@@ -159,7 +159,6 @@ export async function getLandingPageCardMetricsByPublicId(): Promise<
 type VariantMembership = {
   label: string
   experimentName: string
-  /** Brand of the experiment owner, which reads better than the generated name. */
   groupName: string
   experimentId: string
   hubLandingPageId: string

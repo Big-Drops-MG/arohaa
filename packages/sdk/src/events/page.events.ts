@@ -9,8 +9,8 @@ export function trackPageLeave(): void {
 }
 
 let spaPageViewsInstalled = false
+let pageLeaveInstalled = false
 let lastTrackedHref: string | null = null
-
 
 export function setupSpaPageViews(): void {
   if (spaPageViewsInstalled || typeof window === "undefined") return
@@ -40,4 +40,22 @@ export function setupSpaPageViews(): void {
     originalReplaceState(...args)
     maybeTrack()
   }
+}
+
+export function setupPageLeaveTracking(): void {
+  if (pageLeaveInstalled || typeof window === "undefined") return
+  pageLeaveInstalled = true
+
+  const leave = (): void => {
+    trackPageLeave()
+  }
+
+  document.addEventListener(
+    "visibilitychange",
+    () => {
+      if (document.visibilityState === "hidden") leave()
+    },
+    true,
+  )
+  window.addEventListener("pagehide", leave, true)
 }

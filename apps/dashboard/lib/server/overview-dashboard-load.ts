@@ -10,7 +10,21 @@ import {
 } from "@/features/funnel/controller/funnel-default-payload"
 import { getOverviewPlaceholderData } from "@/features/overview/controller/overview-placeholder-data"
 import { overviewChartPointsForRange } from "@/features/overview/utils/overview-chart-buckets"
-import { overviewKpiMetricOrder } from "@/features/overview/model/overview"
+import {
+  overviewKpiMetricOrder,
+  type OverviewAlert,
+  type OverviewCityMetric,
+  type OverviewDashboardData,
+  type OverviewFunnelStep,
+  type OverviewKpiChangesByDateRange,
+  type OverviewKpiMetricId,
+  type OverviewKpiSeriesByDateRange,
+  type OverviewKpiValuesByDateRange,
+  type OverviewLandingFormType,
+  type OverviewTrafficStat,
+  type OverviewZipcodeMetric,
+  parseOverviewLandingFormType,
+} from "@/features/overview/model/overview"
 import { defaultSegmentsByDateRange } from "@/features/segments/controller/segments-default-payload"
 import { defaultSegmentsPerformanceByDateRange } from "@/features/segments/controller/segments-performance-default-payload"
 import { defaultTrafficTablesByDateRange } from "@/features/traffic/controller/traffic-default-payload"
@@ -20,19 +34,6 @@ import {
   parseTrafficRangeId,
   type DashboardCustomRange,
 } from "@/features/traffic/model/traffic-range"
-import type {
-  OverviewAlert,
-  OverviewCityMetric,
-  OverviewDashboardData,
-  OverviewFunnelStep,
-  OverviewKpiMetricId,
-  OverviewKpiSeriesByDateRange,
-  OverviewKpiValuesByDateRange,
-  OverviewLandingFormType,
-  OverviewTrafficStat,
-  OverviewZipcodeMetric,
-} from "@/features/overview/model/overview"
-import { parseOverviewLandingFormType } from "@/features/overview/model/overview"
 import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribution-filter"
 import {
   appendDashboardCustomRangeParams,
@@ -104,6 +105,10 @@ function buildOverviewFromAnalytics(
     },
   }
 
+  const kpiChangesByDateRange: OverviewKpiChangesByDateRange = {
+    [rangeId]: data.kpiChanges ?? {},
+  }
+
   const kpiSeriesByDateRange: OverviewKpiSeriesByDateRange = {
     [rangeId]: data.kpiSeries ?? { visitors: data.series },
   }
@@ -146,6 +151,7 @@ function buildOverviewFromAnalytics(
     dateRangeOptions: TRAFFIC_DATE_RANGE_OPTIONS,
     defaultDateRangeId: rangeId,
     kpisByDateRange,
+    kpiChangesByDateRange,
     defaultKpiMetricId: "visitors",
     funnel,
     multiStepFormTracking: defaultMultiStepFormTracking(),

@@ -1,29 +1,4 @@
-/**
- * Replays entries from the `failed_events` dead-letter queue back onto the
- * queues the worker consumes.
- *
- * Entries come in two shapes:
- *   - single rejected event:  { reason, payload: "<json>", timestamp, type? }
- *   - failed insert batch:    { events: [...], error, timestamp, type? }
- * `type: "heatmap"` routes to `heatmap_queue`, otherwise `analytics_queue`.
- *
- * A batch is dead-lettered when the ClickHouse insert *reports* failure, but a
- * client-side timeout can still have committed server-side. Both target tables
- * are plain MergeTree with no deduplication, so every event is checked against
- * ClickHouse first and skipped if it is already there.
- *
- * Runs as a dry run unless `--apply` is passed. In apply mode entries are
- * drained oldest-first with RPOP and re-queued with LPUSH so replayed events
- * join the FIFO tail (same as live ingest; worker uses BRPOP).
- * Events that still fail validation are moved to
- * `failed_events_unreplayable` rather than dropped.
- *
- * Requires REDIS_URL, CLICKHOUSE_URL, CLICKHOUSE_USER, CLICKHOUSE_PASSWORD.
- *
- * Usage:
- *   node scripts/replay-failed-events.mjs
- *   node scripts/replay-failed-events.mjs --apply
- */
+
 import { readFileSync } from "node:fs"
 import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -85,7 +60,6 @@ function quote(value) {
   return `'${String(value ?? "").replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
 }
 
-/** Identity used to decide whether an event already landed in ClickHouse. */
 function signature(event, isHeatmap) {
   return isHeatmap
     ? [
@@ -217,7 +191,6 @@ const stats = {
 }
 
 for (let i = 0; i < total; i++) {
-  // Producers LPUSH, so RPOP drains oldest-first.
   const raw = apply ? await redis.rpop(DLQ_KEY) : entries[total - 1 - i]
   if (raw == null) break
   stats.entries++

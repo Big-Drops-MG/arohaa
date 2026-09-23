@@ -5,12 +5,15 @@ import {
   rangeFilter,
   rangeLookbackFilter,
   rangeQueryParams,
+  previousRangeFilter,
+  previousRangeQueryParams,
   resolveAnalyticsWindow,
   resolveAnalyticsWindowForLanding,
   type AnalyticsCustomRange,
   type AnalyticsGranularity,
   type AnalyticsWindow,
 } from '../lib/analytics-range.js'
+import { computePeriodChangePct } from '../lib/funnel-trend.js'
 import {
   utmFilterParams,
   utmFilterSql,
@@ -89,12 +92,10 @@ function useEventsRaw(
   return window.granularity === 'hour' || Boolean(utmFilter)
 }
 
-/** Map half-open [range_from, range_to) onto daily_metrics `day` (ET calendar). */
 function dailyMetricsDayFilter(): string {
   return `workspace_id = {wid:UUID} AND day >= ${chToDate("toDateTime64({range_from:String}, 3, 'UTC')")} AND day <= ${chToDate("toDateTime64({range_to:String}, 3, 'UTC') - INTERVAL 1 MILLISECOND")}`
 }
 
-// Strip query strings from URLs before path() so top pages are not split by UTM params.
 const PAGE_PATH_EXPR = `
   multiIf(
     url = '', '/',
@@ -164,7 +165,6 @@ function kpiQuery(window: AnalyticsWindow, utmFilter?: AnalyticsUtmFilter): stri
   `
 }
 
-/** Bounce = session with exactly one event in the range. */
 function bounceQuery(utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
@@ -174,6 +174,31 @@ function bounceQuery(utmFilter?: AnalyticsUtmFilter): string {
       SELECT session_id, toUInt8(count() = 1) AS is_bounce
       FROM events_raw
       WHERE ${rangeFilter(utmFilter)}
+      GROUP BY session_id
+    )
+  `
+}
+
+function prevKpiQuery(utmFilter?: AnalyticsUtmFilter): string {
+  return `
+    SELECT
+      uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+      uniqExact(session_id) AS sessions,
+      countIf(event_name = 'page_view') AS page_views
+    FROM events_raw
+    WHERE ${previousRangeFilter(utmFilter)}
+  `
+}
+
+function prevBounceQuery(utmFilter?: AnalyticsUtmFilter): string {
+  return `
+    SELECT
+      sumIf(1, is_bounce = 1) AS bounces,
+      count() AS sessions
+    FROM (
+      SELECT session_id, toUInt8(count() = 1) AS is_bounce
+      FROM events_raw
+      WHERE ${previousRangeFilter(utmFilter)}
       GROUP BY session_id
     )
   `
@@ -501,7 +526,7 @@ export async function getAnalyticsTraffic({
   const now = new Date()
   const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, now, custom)
   const utmKey = utmFilterCacheKey(utmFilter)
-  const cacheKey = `analytics:traffic:v4:${workspaceId}:${rangeCacheKey(window, utmKey)}`
+  const cacheKey = `analytics:traffic:v5-prior:${workspaceId}:${rangeCacheKey(window, utmKey)}`
   try {
     const cachedStr = await redis.get(cacheKey)
     if (cachedStr) {
@@ -515,6 +540,7 @@ export async function getAnalyticsTraffic({
   const p = {
     wid: workspaceId,
     ...rangeQueryParams(window),
+    ...previousRangeQueryParams(window),
     ...utmFilterParams(utmFilter),
   }
   const q = (query: string) => ch.query({ format: 'JSON', query_params: p, query })
@@ -523,6 +549,8 @@ export async function getAnalyticsTraffic({
     activeRes,
     kpiRes,
     bounceRes,
+    prevKpiRes,
+    prevBounceRes,
     timeRes,
     deviceRes,
     pagesRes,
@@ -534,6 +562,8 @@ export async function getAnalyticsTraffic({
     q(ACTIVE_USERS_QUERY(utmFilter)),
     q(kpiQuery(window, utmFilter)),
     q(bounceQuery(utmFilter)),
+    q(prevKpiQuery(utmFilter)),
+    q(prevBounceQuery(utmFilter)),
     q(trafficByTimeQuery(window, utmFilter)),
     q(trafficByDeviceQuery(utmFilter)),
     q(topPagesQuery(utmFilter)),
@@ -558,6 +588,8 @@ export async function getAnalyticsTraffic({
 
   const kpiRow = ((await kpiRes.json()) as CHJson<KpiRow>).data[0]
   const bounceRow = ((await bounceRes.json()) as CHJson<BounceRow>).data[0]
+  const prevKpiRow = ((await prevKpiRes.json()) as CHJson<KpiRow>).data[0]
+  const prevBounceRow = ((await prevBounceRes.json()) as CHJson<BounceRow>).data[0]
   const activeRow = ((await activeRes.json()) as CHJson<ActiveRow>).data[0]
   const timeRows = ((await timeRes.json()) as CHJson<TimeAggRow>).data ?? []
   const deviceRows = ((await deviceRes.json()) as CHJson<DeviceRow>).data ?? []
@@ -570,6 +602,22 @@ export async function getAnalyticsTraffic({
   const sessions = n(kpiRow?.sessions)
   const pageViews = n(kpiRow?.page_views)
   const bounceSessions = n(bounceRow?.sessions)
+  const bounceRate = bouncePct(n(bounceRow?.bounces), bounceSessions)
+
+  const prevVisitors = n(prevKpiRow?.visitors)
+  const prevSessions = n(prevKpiRow?.sessions)
+  const prevPageViews = n(prevKpiRow?.page_views)
+  const prevBounceRate = bouncePct(
+    n(prevBounceRow?.bounces),
+    n(prevBounceRow?.sessions),
+  )
+
+  const kpiChanges: TrafficDashboardResponse['kpiChanges'] = {
+    visitors: computePeriodChangePct(visitors, prevVisitors),
+    sessions: computePeriodChangePct(sessions, prevSessions),
+    'page-views': computePeriodChangePct(pageViews, prevPageViews),
+    'bounce-rate': computePeriodChangePct(bounceRate, prevBounceRate),
+  }
 
   const trafficByDevice: TrafficByDeviceRow[] = deviceRows.map(row => {
     const deviceSessions = n(row.sessions)
@@ -635,8 +683,9 @@ export async function getAnalyticsTraffic({
       visitors,
       sessions,
       pageViews,
-      bounceRate: bouncePct(n(bounceRow?.bounces), bounceSessions),
+      bounceRate,
     },
+    kpiChanges,
     trafficByTime: buildTrafficByTime(window, timeRows),
     trafficByDevice,
     topPages,
@@ -665,6 +714,7 @@ export function emptyAnalyticsTraffic(rangeId: TrafficRangeId): TrafficDashboard
       pageViews: 0,
       bounceRate: 0,
     },
+    kpiChanges: {},
     trafficByTime: buildTrafficByTime(window, []),
     trafficByDevice: [],
     topPages: [],

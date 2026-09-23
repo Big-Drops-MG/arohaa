@@ -7,7 +7,9 @@ import {
 describe("allowed SDK event names", () => {
   it("allows known product events", () => {
     expect(isAllowedSdkEventName("page_view")).toBe(true)
+    expect(isAllowedSdkEventName("page_leave")).toBe(true)
     expect(isAllowedSdkEventName("form_success")).toBe(true)
+    expect(isAllowedSdkEventName("form_field_abandon")).toBe(true)
     expect(isAllowedSdkEventName("heatmap_click")).toBe(true)
   })
 

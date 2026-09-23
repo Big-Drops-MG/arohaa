@@ -16,7 +16,7 @@ import {
 } from './redis-clients.js';
 
 const MAX_BATCH_SIZE = 1000;
-const FLUSH_INTERVAL_MS = 5000;
+const FLUSH_INTERVAL_MS = 2000;
 const MAX_HEATMAP_BATCH_SIZE = 5000;
 const HEATMAP_FLUSH_INTERVAL_MS = 2000;
 const SHUTDOWN_DRAIN_MS = 8_000;
