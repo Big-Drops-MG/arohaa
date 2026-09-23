@@ -84,6 +84,7 @@ export interface EnrichmentForRow {
   longitude: number | null
   accuracyRadius: number | null
   tenantWorkspaceId?: string
+  landingPageId?: string
 }
 
 function zipFromValue(raw: unknown): string {
@@ -143,7 +144,11 @@ export function ingestBodyToEventRow(
   return {
     event_id: body.event_id?.trim() ?? '',
     event_name: body.event_name ?? body.ev ?? '',
-    workspace_id: body.workspace_id ?? body.wid ?? '',
+    workspace_id:
+      enrichment.landingPageId?.trim() ||
+      body.workspace_id ||
+      body.wid ||
+      '',
     tenant_workspace_id: enrichment.tenantWorkspaceId?.trim() ?? '',
     lp_public_id: body.lp_id?.trim() ?? '',
     user_id: body.uid,

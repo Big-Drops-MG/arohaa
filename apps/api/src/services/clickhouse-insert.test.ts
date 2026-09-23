@@ -24,7 +24,7 @@ describe('ClickHouse event row shaping', () => {
       {
         event_id: 'evt-1',
         ev: 'page_leave',
-        wid: '11111111-1111-4111-8111-111111111111',
+        wid: '33333333-3333-4333-8333-333333333333',
         uid: 'user-1',
         sid: 'sess-1',
         lp_id: 'lp_public',
@@ -32,7 +32,10 @@ describe('ClickHouse event row shaping', () => {
         props: { fieldName: 'email' },
       },
       'trace-1',
-      enrichment,
+      {
+        ...enrichment,
+        landingPageId: '11111111-1111-4111-8111-111111111111',
+      },
     )
 
     expect(row.event_name).toBe('page_leave')

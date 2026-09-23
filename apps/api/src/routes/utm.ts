@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { verifyInternalApiRequest } from '../lib/internal-api-secret.js'
+import { hasBrowserOriginOrReferer } from '../lib/browser-origin.js'
 import {
   getBlockedUtmSets,
   invalidateBlockedUtmCache,
@@ -32,6 +33,10 @@ export async function utmRoutes(server: FastifyInstance) {
       },
     },
     async (request, reply) => {
+      if (!hasBrowserOriginOrReferer(request.headers)) {
+        return reply.code(403).send({ error: 'Origin required' })
+      }
+
       const { wid } = request.query
       if (!UUID_RE.test(wid)) {
         return reply.code(400).send({ error: 'Invalid wid' })

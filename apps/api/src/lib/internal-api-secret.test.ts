@@ -30,6 +30,16 @@ describe('internal api secret', () => {
     process.env.NODE_ENV = 'development'
     delete process.env.AROHAA_INTERNAL_API_SECRET
     expect(resolveInternalApiSecret()).toBe(DEV_INTERNAL_API_SECRET)
+    expect(verifyInternalApiRequest(DEV_INTERNAL_API_SECRET)).toBe(true)
+    expect(verifyInternalApiRequest('wrong')).toBe(false)
+  })
+
+  it('rejects unauthenticated calls when NODE_ENV is test without a secret', () => {
+    process.env.NODE_ENV = 'test'
+    delete process.env.AROHAA_INTERNAL_API_SECRET
+    expect(resolveInternalApiSecret()).toBeUndefined()
+    expect(verifyInternalApiRequest(undefined)).toBe(false)
+    expect(verifyInternalApiRequest(DEV_INTERNAL_API_SECRET)).toBe(false)
   })
 
   it('does not fall back when NODE_ENV is production without a configured secret', () => {

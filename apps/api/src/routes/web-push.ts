@@ -1,5 +1,6 @@
 import { Readable } from 'node:stream'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
+import { verifyInternalApiRequest } from '../lib/internal-api-secret.js'
 import {
   upsertWebPushSubscription,
   ingestWebPushEvent,
@@ -20,6 +21,8 @@ const WEB_PUSH_RATE_LIMIT = {
 } as const
 
 type RequestWithRawBody = FastifyRequest & { rawBody?: string }
+
+type ResolvedLanding = { id: string; publicId: string; origin: string }
 
 async function enqueueDelivery(deliveryId: string): Promise<void> {
   await redis.lpush(
@@ -56,28 +59,26 @@ async function assertWebhookAuth(
     wid?: string | null
     origin?: string | null
   },
-): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+): Promise<
+  | { ok: true; landing: ResolvedLanding }
+  | { ok: false; status: number; error: string }
+> {
   const landing = await resolveLandingPageIdForWebhook(identity)
   if (!landing) {
-    // Fall through: subscribe/event handlers still validate landing.
-    return { ok: true }
+    return {
+      ok: false,
+      status: 401,
+      error: 'Unable to resolve landing page for webhook auth',
+    }
   }
 
   const secret = await getWebhookSecretForLanding(landing.id)
   if (!secret) {
-    // No secret configured yet — allow (dev / gradual rollout).
-    return { ok: true }
-  }
-
-  const bearer = String(request.headers.authorization ?? '')
-  const bearerToken = bearer.toLowerCase().startsWith('bearer ')
-    ? bearer.slice(7).trim()
-    : ''
-  const headerSecret = String(
-    request.headers['x-arohaa-web-push-secret'] ?? '',
-  ).trim()
-  if (bearerToken === secret || headerSecret === secret) {
-    return { ok: true }
+    return {
+      ok: false,
+      status: 401,
+      error: 'Webhook secret is not configured for this landing page',
+    }
   }
 
   const signature = String(
@@ -92,14 +93,14 @@ async function assertWebhookAuth(
       signatureHeader: signature,
     })
   ) {
-    return { ok: true }
+    return { ok: true, landing }
   }
 
   return {
     ok: false,
     status: 401,
     error:
-      'Invalid or missing webhook signature. Send x-arohaa-web-push-signature: sha256=<hmac> or x-arohaa-web-push-secret.',
+      'Invalid or missing webhook signature. Send x-arohaa-web-push-signature: sha256=<hmac>.',
   }
 }
 
@@ -175,6 +176,7 @@ export async function webPushRoutes(server: FastifyInstance) {
           keys: { p256dh: p256dh ?? '', auth: authKey ?? '' },
         },
         context: body.context ?? null,
+        landingPageId: auth.landing.id,
       })
 
       if (!result.ok) {
@@ -208,7 +210,7 @@ export async function webPushRoutes(server: FastifyInstance) {
       const result = await ingestWebPushEvent({
         event: body.event ?? '',
         subscriptionEndpoint: body.subscription_endpoint ?? '',
-        landingPageId: body.landing_page_id,
+        landingPageId: auth.landing.id,
         wid: body.wid,
         occurredAt: body.occurred_at,
         context: body.context ?? null,
@@ -231,14 +233,7 @@ export async function webPushRoutes(server: FastifyInstance) {
   server.post<{ Body: { deliveryId?: string } }>(
     '/v1/web-push/internal/enqueue',
     async (request, reply) => {
-      const secret = process.env.AROHAA_INTERNAL_API_SECRET?.trim()
-      const header = String(request.headers['x-arohaa-internal'] ?? '')
-      const isDev = process.env.NODE_ENV !== 'production'
-      if (secret) {
-        if (header !== secret) {
-          return reply.status(401).send({ error: 'unauthorized' })
-        }
-      } else if (!isDev) {
+      if (!verifyInternalApiRequest(request.headers['x-arohaa-internal'])) {
         return reply.status(401).send({ error: 'unauthorized' })
       }
 

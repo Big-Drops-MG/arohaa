@@ -201,26 +201,27 @@ async function ingestOne(
       trace_id: traceId,
       event: 'ingest_lp_linked',
       lp_id: body.lp_id,
+      landing_page_id: landing.landingPageId,
       wid: body.workspace_id ?? body.wid,
     })
+  } else {
+    return { status: 'rejected', error: 'UNKNOWN_LANDING_PAGE', code: 400 }
   }
 
-  const landingPageId = body.workspace_id ?? body.wid ?? ''
-  if (landingPageId) {
-    const blockedSets = await getBlockedUtmSets(landingPageId)
-    if (isUtmBlocked(blockedSets, body.utm_source, body.utm_s1)) {
-      request.log.info(
-        {
-          trace_id: traceId,
-          event: 'ingest_utm_blocked',
-          wid: landingPageId,
-          utm_source: body.utm_source,
-          utm_s1: body.utm_s1,
-        },
-        'ingest event dropped by UTM block rule',
-      )
-      return { status: 'dropped' }
-    }
+  const landingPageId = landing.landingPageId
+  const blockedSets = await getBlockedUtmSets(landingPageId)
+  if (isUtmBlocked(blockedSets, body.utm_source, body.utm_s1)) {
+    request.log.info(
+      {
+        trace_id: traceId,
+        event: 'ingest_utm_blocked',
+        wid: landingPageId,
+        utm_source: body.utm_source,
+        utm_s1: body.utm_s1,
+      },
+      'ingest event dropped by UTM block rule',
+    )
+    return { status: 'dropped' }
   }
 
   const ctx = buildEnrichmentContext(request)
@@ -240,6 +241,7 @@ async function ingestOne(
     longitude: ctx.geo.longitude,
     accuracyRadius: ctx.geo.accuracyRadius,
     tenantWorkspaceId: landing.tenantWorkspaceId,
+    landingPageId,
   })
 
   try {

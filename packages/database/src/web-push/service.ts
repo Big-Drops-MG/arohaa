@@ -48,6 +48,46 @@ export type SubscribeContext = {
   step?: number | string
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+async function findLandingById(
+  id: string
+): Promise<{ id: string; publicId: string; origin: string } | null> {
+  const found = await db
+    .select({
+      id: landingPages.id,
+      publicId: landingPages.publicId,
+      origin: landingPages.origin,
+    })
+    .from(landingPages)
+    .where(
+      and(sql`${landingPages.deletedAt} IS NULL`, eq(landingPages.id, id))
+    )
+    .limit(1)
+  return found[0] ?? null
+}
+
+async function findLandingByPublicId(
+  publicId: string
+): Promise<{ id: string; publicId: string; origin: string } | null> {
+  const found = await db
+    .select({
+      id: landingPages.id,
+      publicId: landingPages.publicId,
+      origin: landingPages.origin,
+    })
+    .from(landingPages)
+    .where(
+      and(
+        sql`${landingPages.deletedAt} IS NULL`,
+        eq(landingPages.publicId, publicId)
+      )
+    )
+    .limit(1)
+  return found[0] ?? null
+}
+
 async function resolveLandingPageId(input: {
   landingPageId?: string | null
   wid?: string | null
@@ -55,25 +95,23 @@ async function resolveLandingPageId(input: {
 }): Promise<{ id: string; publicId: string; origin: string } | null> {
   const lpId = input.landingPageId?.trim()
   const wid = input.wid?.trim()
-  if (lpId || wid) {
-    const found = await db
-      .select({
-        id: landingPages.id,
-        publicId: landingPages.publicId,
-        origin: landingPages.origin,
-      })
-      .from(landingPages)
-      .where(
-        and(
-          sql`${landingPages.deletedAt} IS NULL`,
-          lpId
-            ? eq(landingPages.id, lpId)
-            : eq(landingPages.publicId, wid!)
-        )
-      )
-      .limit(1)
 
-    if (found[0]) return found[0]
+  if (lpId) {
+    if (UUID_RE.test(lpId)) {
+      const byId = await findLandingById(lpId)
+      if (byId) return byId
+    }
+    const byPublic = await findLandingByPublicId(lpId)
+    if (byPublic) return byPublic
+  }
+
+  if (wid) {
+    if (UUID_RE.test(wid)) {
+      const byId = await findLandingById(wid)
+      if (byId) return byId
+    }
+    const byPublic = await findLandingByPublicId(wid)
+    if (byPublic) return byPublic
   }
 
   const origin = input.origin?.trim()
@@ -103,6 +141,27 @@ async function resolveLandingPageId(input: {
   return byOrigin[0] ?? null
 }
 
+async function findSubscriptionByEndpoint(
+  endpoint: string,
+  landingPageId?: string | null
+) {
+  const endpointHash = hashPushEndpoint(endpoint)
+  const rows = await db
+    .select()
+    .from(webPushSubscriptions)
+    .where(
+      landingPageId
+        ? and(
+            eq(webPushSubscriptions.endpointHash, endpointHash),
+            eq(webPushSubscriptions.landingPageId, landingPageId)
+          )
+        : eq(webPushSubscriptions.endpointHash, endpointHash)
+    )
+    .limit(5)
+
+  return rows.find((row) => row.endpoint === endpoint) ?? null
+}
+
 function buildContext(
   context?: SubscribeContext | null
 ): WebPushSubscriptionContext {
@@ -123,34 +182,40 @@ export async function upsertWebPushSubscription(input: {
   action: "subscribe" | "unsubscribe"
   subscription: PushSubscriptionKeys
   context?: SubscribeContext | null
+  landingPageId: string
 }): Promise<{ ok: true; subscriptionId: string | null } | { ok: false; error: string }> {
   const endpoint = input.subscription?.endpoint?.trim()
   const p256dh = input.subscription?.keys?.p256dh?.trim()
   const auth = input.subscription?.keys?.auth?.trim()
   if (!endpoint) return { ok: false, error: "subscription.endpoint required" }
 
+  const landingPageId = input.landingPageId.trim()
+  if (!landingPageId) {
+    return { ok: false, error: "landing page not found" }
+  }
+
+  const landing = await findLandingById(landingPageId)
+  if (!landing) {
+    return { ok: false, error: "landing page not found" }
+  }
+
   if (input.action === "unsubscribe") {
+    const existing = await findSubscriptionByEndpoint(endpoint, landing.id)
+    if (!existing) {
+      return { ok: true, subscriptionId: null }
+    }
     await db
       .update(webPushSubscriptions)
       .set({
         status: "inactive",
         updatedAt: new Date(),
       })
-      .where(eq(webPushSubscriptions.endpoint, endpoint))
-    return { ok: true, subscriptionId: null }
+      .where(eq(webPushSubscriptions.id, existing.id))
+    return { ok: true, subscriptionId: existing.id }
   }
 
   if (!p256dh || !auth) {
     return { ok: false, error: "subscription.keys required" }
-  }
-
-  const landing = await resolveLandingPageId({
-    landingPageId: input.context?.landing_page_id,
-    wid: input.context?.wid,
-    origin: input.context?.origin,
-  })
-  if (!landing) {
-    return { ok: false, error: "landing page not found" }
   }
 
   const vapid = await db
@@ -167,18 +232,22 @@ export async function upsertWebPushSubscription(input: {
       ? new Date(input.subscription.expirationTime)
       : null
 
-  const existing = await db
-    .select({ id: webPushSubscriptions.id })
-    .from(webPushSubscriptions)
-    .where(eq(webPushSubscriptions.endpoint, endpoint))
-    .limit(1)
+  const existing = await findSubscriptionByEndpoint(endpoint)
+  if (existing && existing.landingPageId !== landing.id) {
+    if (existing.status === "active") {
+      return { ok: false, error: "endpoint already registered" }
+    }
+  }
 
-  if (existing[0]) {
+  const owned = existing?.landingPageId === landing.id ? existing : null
+
+  if (owned) {
     await db
       .update(webPushSubscriptions)
       .set({
         landingPageId: landing.id,
         vapidKeyId: vapid[0]?.id ?? null,
+        endpointHash,
         p256dh,
         auth,
         expirationTime,
@@ -189,8 +258,29 @@ export async function upsertWebPushSubscription(input: {
         updatedAt: now,
         lastEventAt: now,
       })
-      .where(eq(webPushSubscriptions.id, existing[0].id))
-    return { ok: true, subscriptionId: existing[0].id }
+      .where(eq(webPushSubscriptions.id, owned.id))
+    return { ok: true, subscriptionId: owned.id }
+  }
+
+  if (existing && existing.status !== "active") {
+    await db
+      .update(webPushSubscriptions)
+      .set({
+        landingPageId: landing.id,
+        vapidKeyId: vapid[0]?.id ?? null,
+        endpointHash,
+        p256dh,
+        auth,
+        expirationTime,
+        origin: input.context?.origin ?? landing.origin,
+        lastSeenUrl: input.context?.page_url ?? null,
+        context,
+        status: "active",
+        updatedAt: now,
+        lastEventAt: now,
+      })
+      .where(eq(webPushSubscriptions.id, existing.id))
+    return { ok: true, subscriptionId: existing.id }
   }
 
   const id = crypto.randomUUID()
@@ -427,7 +517,6 @@ async function scheduleMatchingCampaigns(input: {
         enqueue: input.enqueue,
       })
       createdIds.push(deliveryId)
-      // Reserve a slot toward the cap for planned sends in this batch
       if (typeof maxPerDay === "number" && maxPerDay > 0) {
         sentToday += 1
       }
@@ -473,22 +562,23 @@ export async function ingestWebPushEvent(input: {
   const endpoint = input.subscriptionEndpoint?.trim()
   if (!endpoint) return { ok: false, error: "subscription_endpoint required" }
 
-  const subs = await db
-    .select()
-    .from(webPushSubscriptions)
-    .where(eq(webPushSubscriptions.endpoint, endpoint))
-    .limit(1)
-
-  const sub = subs[0]
+  const authenticatedLandingId = input.landingPageId?.trim() || null
+  const sub = await findSubscriptionByEndpoint(
+    endpoint,
+    authenticatedLandingId
+  )
   if (!sub) {
     return { ok: false, error: "subscription not found" }
   }
 
-  const landing = await resolveLandingPageId({
-    landingPageId: input.landingPageId ?? sub.landingPageId,
-    wid: input.wid,
-    origin: input.context?.origin ?? sub.origin,
-  })
+  if (
+    authenticatedLandingId &&
+    sub.landingPageId !== authenticatedLandingId
+  ) {
+    return { ok: false, error: "subscription not found" }
+  }
+
+  const landingId = authenticatedLandingId ?? sub.landingPageId
 
   const now = input.occurredAt ? new Date(input.occurredAt) : new Date()
   const mergedContext: WebPushSubscriptionContext = {
@@ -509,7 +599,7 @@ export async function ingestWebPushEvent(input: {
 
   await cancelPendingDeliveries({
     subscriptionId: sub.id,
-    landingPageId: landing?.id ?? sub.landingPageId,
+    landingPageId: landingId,
     events: [event],
   })
 
@@ -518,7 +608,7 @@ export async function ingestWebPushEvent(input: {
   }
 
   const scheduled = await scheduleMatchingCampaigns({
-    landingPageId: landing?.id ?? sub.landingPageId,
+    landingPageId: landingId,
     subscriptionId: sub.id,
     event,
     occurredAt: now,
@@ -600,19 +690,13 @@ export async function recordWebPushClientSignal(input: {
   }
 
   if (!subscriptionId && input.subscriptionEndpoint?.trim()) {
-    const subs = await db
-      .select({
-        id: webPushSubscriptions.id,
-        landingPageId: webPushSubscriptions.landingPageId,
-      })
-      .from(webPushSubscriptions)
-      .where(
-        eq(webPushSubscriptions.endpoint, input.subscriptionEndpoint.trim())
-      )
-      .limit(1)
-    if (subs[0]) {
-      subscriptionId = subs[0].id
-      landingPageId = landingPageId ?? subs[0].landingPageId
+    const sub = await findSubscriptionByEndpoint(
+      input.subscriptionEndpoint.trim(),
+      landingPageId
+    )
+    if (sub) {
+      subscriptionId = sub.id
+      landingPageId = landingPageId ?? sub.landingPageId
     }
   }
 

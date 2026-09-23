@@ -36,12 +36,25 @@ function getSql(): ReturnType<typeof neon> | null {
 
 type ReconcileResult =
   | { outcome: 'reject'; reason: string }
-  | { outcome: 'ok'; tenantWorkspaceId: string }
+  | {
+      outcome: 'ok'
+      landingPageId: string
+      tenantWorkspaceId: string
+      publicId: string
+    }
 
 function toMs(value: Date | string | null | undefined): number {
   if (!value) return 0
   const ms = value instanceof Date ? value.getTime() : new Date(value).getTime()
   return Number.isFinite(ms) ? ms : 0
+}
+
+export function widMatchesLandingPage(
+  wid: string,
+  landing: { id: string; workspaceId: string },
+): boolean {
+  if (!wid) return true
+  return wid === landing.id || wid === landing.workspaceId
 }
 
 export async function reconcileLandingPageIngest(payload: {
@@ -120,7 +133,7 @@ export async function reconcileLandingPageIngest(payload: {
     return { outcome: 'reject', reason: 'LANDING_PAGE_INACTIVE' }
   }
 
-  if (wid && row.id !== wid) {
+  if (!widMatchesLandingPage(wid, row)) {
     return { outcome: 'reject', reason: 'WID_MISMATCH' }
   }
 
@@ -145,7 +158,12 @@ export async function reconcileLandingPageIngest(payload: {
     lastSeenMs <= 0 || now.getTime() - lastSeenMs >= LANDING_TOUCH_THROTTLE_MS
 
   if (!needsSdkFlip && !needsStatusPromote && !staleSeen) {
-    return { outcome: 'ok', tenantWorkspaceId: row.workspaceId }
+    return {
+      outcome: 'ok',
+      landingPageId: row.id,
+      tenantWorkspaceId: row.workspaceId,
+      publicId: row.publicId,
+    }
   }
 
   const nextVerifiedAt =
@@ -185,5 +203,10 @@ export async function reconcileLandingPageIngest(payload: {
     }
   }
 
-  return { outcome: 'ok', tenantWorkspaceId: row.workspaceId }
+  return {
+    outcome: 'ok',
+    landingPageId: row.id,
+    tenantWorkspaceId: row.workspaceId,
+    publicId: row.publicId,
+  }
 }
