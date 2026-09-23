@@ -76,6 +76,13 @@ const server = Fastify({
   requestIdHeader: TRACE_ID_HEADER,
   genReqId: (req) =>
     pickInboundTraceId(req.headers[TRACE_ID_HEADER]) ?? randomUUID(),
+  ajv: {
+    customOptions: {
+      removeAdditional: false,
+      coerceTypes: 'array',
+      useDefaults: true,
+    },
+  },
 })
 
 server.addHook('onRequest', async (request, reply) => {
@@ -90,6 +97,23 @@ server.register(cors, {
   },
   credentials: false,
   methods: ['GET', 'POST', 'OPTIONS'],
+})
+
+
+server.addHook('onRequest', async (request, reply) => {
+  if (request.method !== 'OPTIONS') return
+  if (reply.sent) return
+  const originHeader = request.headers.origin
+  const origin =
+    typeof originHeader === 'string'
+      ? originHeader
+      : Array.isArray(originHeader)
+        ? originHeader[0]
+        : undefined
+  const allowed = await resolveCorsOriginDecision(origin)
+  if (allowed !== false) return
+  reply.header('Vary', 'Origin')
+  return reply.code(204).header('Content-Length', '0').send()
 })
 
 server.addHook('preValidation', async (request, reply) => {

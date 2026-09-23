@@ -63,6 +63,18 @@ async function assertWebhookAuth(
   | { ok: true; landing: ResolvedLanding }
   | { ok: false; status: number; error: string }
 > {
+  const signature = String(
+    request.headers['x-arohaa-web-push-signature'] ?? '',
+  ).trim()
+  if (!signature) {
+    return {
+      ok: false,
+      status: 401,
+      error:
+        'Invalid or missing webhook signature. Send x-arohaa-web-push-signature: sha256=<hmac>.',
+    }
+  }
+
   const landing = await resolveLandingPageIdForWebhook(identity)
   if (!landing) {
     return {
@@ -81,9 +93,6 @@ async function assertWebhookAuth(
     }
   }
 
-  const signature = String(
-    request.headers['x-arohaa-web-push-signature'] ?? '',
-  )
   const rawBody = request.rawBody ?? ''
   if (
     rawBody &&
