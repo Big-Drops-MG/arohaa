@@ -724,7 +724,9 @@ export function NotificationCenterStatsTab({
                         <StatusBadge status={sub.status} />
                       </div>
                       <p className="mt-1 truncate text-[11px] text-neutral-500">
-                        {sub.lastSeenUrl || sub.origin || "—"}
+                        {[sub.lastSeenUrl, sub.origin]
+                          .filter(Boolean)
+                          .join(" · ") || "—"}
                       </p>
                     </div>
                   ))}
@@ -752,6 +754,11 @@ export function NotificationCenterStatsTab({
                           </p>
                           <StatusBadge status={sub.status} />
                         </div>
+                        <p className="mt-1 truncate text-[11px] text-neutral-500">
+                          {[sub.lastSeenUrl, sub.origin]
+                            .filter(Boolean)
+                            .join(" · ") || "—"}
+                        </p>
                       </div>
                     ))
                   )}

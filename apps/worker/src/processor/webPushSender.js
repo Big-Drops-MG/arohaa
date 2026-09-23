@@ -179,11 +179,13 @@ async function loadDeliveryBundle(db, deliveryId) {
       v."publicKey" AS "vapidPublicKey",
       v."privateKeyEncrypted",
       v.subject AS "vapidSubject",
-      lp."publicId" AS "landingPagePublicId"
+      lp."publicId" AS "landingPagePublicId",
+      sc.id AS "webhookConfigId"
     FROM web_push_delivery d
     INNER JOIN web_push_campaign c ON c.id = d."campaignId"
     INNER JOIN web_push_subscription s ON s.id = d."subscriptionId"
     INNER JOIN landing_page lp ON lp.id = d."landingPageId"
+    LEFT JOIN web_push_site_config sc ON sc."landingPageId" = d."landingPageId"
     LEFT JOIN web_push_vapid_key v ON v.id = COALESCE(s."vapidKeyId", (
       SELECT vk.id FROM web_push_vapid_key vk
       WHERE vk."landingPageId" = d."landingPageId"
@@ -428,7 +430,6 @@ export async function processWebPushDelivery(deliveryId) {
     return
   }
 
-  // Delayed deliveries are DB-polled; Redis may still deliver early — never send before due.
   if (row.scheduledFor) {
     const dueAt = new Date(row.scheduledFor).getTime()
     if (Number.isFinite(dueAt) && dueAt > Date.now() + 1_000) {
@@ -438,8 +439,13 @@ export async function processWebPushDelivery(deliveryId) {
     }
   }
 
-  if (row.campaignStatus === 'paused') {
-    await markFailed(db, deliveryId, null, 'campaign_paused')
+  if (row.campaignStatus !== 'active') {
+    await markFailed(
+      db,
+      deliveryId,
+      null,
+      row.campaignStatus === 'paused' ? 'campaign_paused' : 'campaign_not_active',
+    )
     return
   }
 
@@ -450,6 +456,11 @@ export async function processWebPushDelivery(deliveryId) {
 
   if (!row.vapidPublicKey || !row.privateKeyEncrypted) {
     await markFailed(db, deliveryId, null, 'vapid_missing')
+    return
+  }
+
+  if (!row.webhookConfigId) {
+    await markFailed(db, deliveryId, null, 'webhook_secret_missing')
     return
   }
 

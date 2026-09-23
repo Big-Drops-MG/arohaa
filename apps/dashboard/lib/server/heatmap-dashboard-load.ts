@@ -167,10 +167,11 @@ export async function loadHeatmapDashboardData({
   const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
   if (!row) notFound()
 
+  const resolvedPageUrl = resolveHeatmapPageUrl(pageUrl, row.landingPageUrl)
   const analytics = await fetchHeatmapAnalytics(row.id, rangeId, {
     mode,
     device,
-    pageUrl: resolveHeatmapPageUrl(pageUrl, row.landingPageUrl),
+    pageUrl: resolvedPageUrl,
     customRange,
     utmFilter: scopedUtmFilter,
   })
@@ -179,7 +180,8 @@ export async function loadHeatmapDashboardData({
       landingPagePublicId,
       rangeId,
       mode,
-      device
+      device,
+      resolvedPageUrl
     )
   }
 
@@ -220,10 +222,14 @@ export async function loadHeatmapDashboardDataForApi(
     return { ok: false, status: 404, error: "Not found" }
   }
 
+  const resolvedPageUrl = resolveHeatmapPageUrl(
+    options.pageUrl,
+    row.landingPageUrl
+  )
   const analytics = await fetchHeatmapAnalytics(row.id, rangeId, {
     mode,
     device,
-    pageUrl: resolveHeatmapPageUrl(options.pageUrl, row.landingPageUrl),
+    pageUrl: resolvedPageUrl,
     customRange: options.customRange,
     utmFilter: scopedUtmFilter,
   })
@@ -234,7 +240,8 @@ export async function loadHeatmapDashboardDataForApi(
         landingPagePublicId,
         rangeId,
         mode,
-        device
+        device,
+        resolvedPageUrl
       ),
     }
   }

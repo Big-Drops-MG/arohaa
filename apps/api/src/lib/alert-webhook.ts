@@ -59,7 +59,16 @@ function buildDiscordBody(payload: AlertWebhookPayload): string {
 }
 
 function isDiscordWebhook(url: string): boolean {
-  return url.includes('discord.com/api/webhooks')
+  try {
+    const parsed = new URL(url.trim())
+    const host = parsed.hostname
+    return (
+      (host === 'discord.com' || host === 'discordapp.com') &&
+      parsed.pathname.startsWith('/api/webhooks/')
+    )
+  } catch {
+    return /discord(?:app)?\.com\/api\/webhooks/i.test(url)
+  }
 }
 
 export async function sendAlertWebhook(

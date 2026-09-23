@@ -24,9 +24,22 @@ function resolveWebhookUrls() {
   return urls;
 }
 
+function isDiscordWebhook(url) {
+  try {
+    const parsed = new URL(String(url).trim());
+    const host = parsed.hostname;
+    return (
+      (host === 'discord.com' || host === 'discordapp.com') &&
+      parsed.pathname.startsWith('/api/webhooks/')
+    );
+  } catch {
+    return /discord(?:app)?\.com\/api\/webhooks/i.test(String(url));
+  }
+}
+
 function buildBody(url, payload) {
   const label = severityLabel(payload.severity);
-  if (url.includes('discord.com/api/webhooks')) {
+  if (isDiscordWebhook(url)) {
     const color =
       payload.severity === 'critical'
         ? 0xef4444

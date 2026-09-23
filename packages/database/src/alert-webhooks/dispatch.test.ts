@@ -13,6 +13,24 @@ describe('alert webhook dispatch', () => {
     expect(
       detectWebhookProvider('https://discord.com/api/webhooks/1/2'),
     ).toBe('discord')
+    expect(
+      detectWebhookProvider('https://discordapp.com/api/webhooks/1/2'),
+    ).toBe('discord')
+  })
+
+  it('builds discord embeds for discordapp.com hosts', () => {
+    const body = buildWebhookBody(
+      'https://discordapp.com/api/webhooks/1/token',
+      {
+        title: 'Traffic spike',
+        body: 'Sessions up 40%',
+        severity: 'warning',
+        source: 'analytics',
+      },
+    )
+    const parsed = JSON.parse(body) as { embeds?: unknown[]; text?: string }
+    expect(parsed.embeds).toHaveLength(1)
+    expect(parsed.text).toBeUndefined()
   })
 
   it('allows only https slack/discord webhook URLs', () => {
@@ -31,6 +49,9 @@ describe('alert webhook dispatch', () => {
     ).toBe(false)
     expect(
       isAllowedWebhookUrl('https://discord.com/api/webhooks/1/2'),
+    ).toBe(true)
+    expect(
+      isAllowedWebhookUrl('https://discordapp.com/api/webhooks/1/2'),
     ).toBe(true)
     expect(isAllowedWebhookUrl('https://evildiscord.com/api/webhooks/1/2')).toBe(
       false,

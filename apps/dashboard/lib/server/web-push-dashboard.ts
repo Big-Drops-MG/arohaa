@@ -536,7 +536,6 @@ export async function generateVapidForLanding(
     })
   }
 
-  // Touch to ensure decrypt works with current secret
   decryptVapidPrivateKey(encrypted)
 
   return { ok: true, publicKey: keys.publicKey }
@@ -612,6 +611,17 @@ export async function sendCampaignNow(
   if (!campaign[0])
     return { ok: false, status: 404, error: "Campaign not found" }
 
+  if (campaign[0].status !== "active") {
+    return {
+      ok: false,
+      status: 400,
+      error:
+        campaign[0].status === "paused"
+          ? "Resume the campaign before sending"
+          : "Activate the campaign before sending",
+    }
+  }
+
   const vapid = await db
     .select({ id: webPushVapidKeys.id })
     .from(webPushVapidKeys)
@@ -622,6 +632,19 @@ export async function sendCampaignNow(
       ok: false,
       status: 400,
       error: "Generate a VAPID key pair before sending",
+    }
+  }
+
+  const webhook = await db
+    .select({ id: webPushSiteConfigs.id })
+    .from(webPushSiteConfigs)
+    .where(eq(webPushSiteConfigs.landingPageId, landing.id))
+    .limit(1)
+  if (!webhook[0]) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Generate a webhook secret before sending",
     }
   }
 

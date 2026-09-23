@@ -3,6 +3,7 @@ import { CLICKHOUSE_EVENTS_TABLE } from '../lib/clickhouse-events-table.js'
 import {
   getClickHouseClient,
   pingClickHouse,
+  probeClickHouse,
   shouldSkipClickHouse,
 } from '../services/clickhouse.service.js'
 import { redis } from '../services/redis.service.js'
@@ -44,9 +45,9 @@ export async function healthRoutes(server: FastifyInstance) {
           setTimeout(() => resolve(false), PING_TIMEOUT_MS),
         )
 
-        const [isClickHouseUp, isRedisUp, isPostgresUp, queueLen, heatmapLen, dlqLen] =
+        const [clickhouseStatus, isRedisUp, isPostgresUp, queueLen, heatmapLen, dlqLen] =
           await Promise.all([
-            pingClickHouse(PING_TIMEOUT_MS),
+            probeClickHouse(PING_TIMEOUT_MS),
             Promise.race([
               redis.ping().then(() => true).catch(() => false),
               timeoutPromise,
@@ -60,12 +61,13 @@ export async function healthRoutes(server: FastifyInstance) {
             redis.llen('failed_events').catch(() => -1),
           ])
 
+        const isClickHouseUp = clickhouseStatus === 'ok'
         const latencyMs = Date.now() - start
 
         if (!isClickHouseUp || !isRedisUp || !isPostgresUp) {
           void sendAlertWebhook({
             title: 'API readiness check failed',
-            body: `clickhouse=${isClickHouseUp ? 'ok' : 'down'}, redis=${isRedisUp ? 'ok' : 'down'}, postgres=${isPostgresUp ? 'ok' : 'down'}, queue=${queueLen}, heatmap=${heatmapLen}, dlq=${dlqLen}`,
+            body: `clickhouse=${clickhouseStatus}, redis=${isRedisUp ? 'ok' : 'down'}, postgres=${isPostgresUp ? 'ok' : 'down'}, queue=${queueLen}, heatmap=${heatmapLen}, dlq=${dlqLen}`,
             severity: 'warning',
             source: 'api.health.ready',
           })
@@ -74,7 +76,7 @@ export async function healthRoutes(server: FastifyInstance) {
             status: 'error',
             service: 'arohaa-ingestion-api',
             dependencies: {
-              clickhouse: isClickHouseUp ? 'ok' : 'unreachable',
+              clickhouse: clickhouseStatus,
               redis: isRedisUp ? 'ok' : 'unreachable',
               postgres: isPostgresUp ? 'ok' : 'unreachable',
             },

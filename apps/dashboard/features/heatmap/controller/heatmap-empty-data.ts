@@ -10,7 +10,8 @@ export function getHeatmapEmptyDashboardData(
   _landingPagePublicId: string,
   rangeId: OverviewDateRangeId = "7d",
   mode: HeatmapMode = "click",
-  device: HeatmapDevice = "desktop"
+  device: HeatmapDevice = "desktop",
+  pageUrl: string | null = null
 ): HeatmapDashboardData {
   void _landingPagePublicId
 
@@ -19,8 +20,8 @@ export function getHeatmapEmptyDashboardData(
     defaultDateRangeId: rangeId,
     mode,
     device,
-    pageUrl: null,
-    pageUrls: [],
+    pageUrl,
+    pageUrls: pageUrl ? [pageUrl] : [],
     cells: [],
     points: [],
     scrollBuckets: [],

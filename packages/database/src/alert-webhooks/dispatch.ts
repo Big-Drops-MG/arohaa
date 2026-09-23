@@ -10,12 +10,6 @@ export type OutboundWebhookPayload = {
 const SLACK_HOST = 'hooks.slack.com'
 const DISCORD_HOSTS = new Set(['discord.com', 'discordapp.com'])
 
-export function detectWebhookProvider(url: string): WebhookProvider {
-  if (url.includes('discord.com/api/webhooks')) return 'discord'
-  if (url.includes('hooks.slack.com')) return 'slack'
-  return 'generic'
-}
-
 function parseWebhookUrl(raw: string): URL | null {
   try {
     const url = new URL(raw.trim())
@@ -26,6 +20,22 @@ function parseWebhookUrl(raw: string): URL | null {
   } catch {
     return null
   }
+}
+
+export function detectWebhookProvider(url: string): WebhookProvider {
+  const parsed = parseWebhookUrl(url)
+  if (
+    parsed &&
+    DISCORD_HOSTS.has(parsed.hostname) &&
+    parsed.pathname.startsWith('/api/webhooks/')
+  ) {
+    return 'discord'
+  }
+  if (parsed && parsed.hostname === SLACK_HOST) return 'slack'
+
+  if (/discord(?:app)?\.com\/api\/webhooks/i.test(url)) return 'discord'
+  if (url.includes('hooks.slack.com')) return 'slack'
+  return 'generic'
 }
 
 export function isAllowedWebhookUrl(raw: string): boolean {

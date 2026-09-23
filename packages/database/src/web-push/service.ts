@@ -757,6 +757,9 @@ export async function createManualDeliveries(input: {
     .limit(1)
 
   if (!campaign[0]) return { created: 0, deliveryIds: [] }
+  if (campaign[0].status !== "active") {
+    return { created: 0, deliveryIds: [] }
+  }
 
   const limits = campaign[0].limits as WebPushCampaignLimits | null
   const quiet = resolveQuietHoursFromLimits(limits)

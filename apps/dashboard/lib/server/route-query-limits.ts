@@ -45,13 +45,43 @@ export function sanitizeHeatmapPageUrl(
   try {
     const u = new URL(trimmed)
     if (u.protocol !== "http:" && u.protocol !== "https:") return null
-    const path = u.pathname || "/"
-    return path.length > 2048 ? null : path
+    const hash = u.hash || ""
+    u.search = ""
+    u.hash = ""
+    const base = u.toString().replace(/\?$/, "")
+    const out = `${base}${hash}`
+    return out.length > 2048 ? null : out
   } catch {
     if (!trimmed.startsWith("/")) return null
-    const pathOnly = trimmed.split(/[?#]/, 1)[0] ?? ""
+    const hashIndex = trimmed.indexOf("#")
+    const beforeHash = hashIndex >= 0 ? trimmed.slice(0, hashIndex) : trimmed
+    const hash = hashIndex >= 0 ? trimmed.slice(hashIndex) : ""
+    const pathOnly = beforeHash.split("?", 1)[0] ?? ""
     if (!pathOnly.startsWith("/")) return null
-    return pathOnly.length > 2048 ? null : pathOnly
+    const out = `${pathOnly}${hash}`
+    return out.length > 2048 ? null : out
+  }
+}
+
+function joinLandingOrigin(
+  pathOrUrl: string,
+  landingPageUrl: string
+): string | null {
+  try {
+    const absolute = new URL(pathOrUrl)
+    if (absolute.protocol === "http:" || absolute.protocol === "https:") {
+      return sanitizeHeatmapPageUrl(absolute.toString())
+    }
+  } catch {
+    // path-relative — join below
+  }
+
+  try {
+    const base = new URL(landingPageUrl)
+    if (base.protocol !== "http:" && base.protocol !== "https:") return null
+    return sanitizeHeatmapPageUrl(new URL(pathOrUrl, base.origin).toString())
+  } catch {
+    return null
   }
 }
 
@@ -59,7 +89,8 @@ export function resolveHeatmapPageUrl(
   requested: string | null | undefined,
   landingPageUrl: string
 ): string | null {
-  return (
+  const sanitized =
     sanitizeHeatmapPageUrl(requested) ?? sanitizeHeatmapPageUrl(landingPageUrl)
-  )
+  if (!sanitized) return null
+  return joinLandingOrigin(sanitized, landingPageUrl)
 }

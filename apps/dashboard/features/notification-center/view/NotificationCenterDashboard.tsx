@@ -874,7 +874,12 @@ export function NotificationCenterDashboard({
                             <Button
                               type="button"
                               size="sm"
-                              disabled={busy || campaign.status === "draft"}
+                              disabled={
+                                busy ||
+                                campaign.status !== "active" ||
+                                !data.vapid ||
+                                !data.webhook.configured
+                              }
                               className="h-8 gap-1.5 px-2.5"
                               onClick={() => void sendNow(campaign.id)}
                             >

@@ -476,7 +476,36 @@ async function migrateLegacyEventsTable(ch: ClickHouseClient): Promise<void> {
   }
 }
 
-export async function pingClickHouse(timeoutMs: number = 3000): Promise<boolean> {
+export type ClickHouseProbeStatus = 'ok' | 'unauthorized' | 'unreachable'
+
+export function isClickHouseAuthError(err: unknown): boolean {
+  const text = [
+    err && typeof err === 'object' && 'message' in err
+      ? String((err as { message?: unknown }).message ?? '')
+      : '',
+    err && typeof err === 'object' && 'code' in err
+      ? String((err as { code?: unknown }).code ?? '')
+      : '',
+    String(err ?? ''),
+  ]
+    .join(' ')
+    .toLowerCase()
+
+  return (
+    text.includes('authentication failed') ||
+    text.includes('authentication_failed') ||
+    text.includes('wrong password') ||
+    text.includes('unauthorized') ||
+    text.includes('code: 516') ||
+    text.includes('http 401') ||
+    text.includes(' status code: 401') ||
+    text.includes('statuscode: 401')
+  )
+}
+
+export async function probeClickHouse(
+  timeoutMs: number = 3000,
+): Promise<ClickHouseProbeStatus> {
   try {
     const ch = getClickHousePingClient()
     const controller = new AbortController()
@@ -492,13 +521,17 @@ export async function pingClickHouse(timeoutMs: number = 3000): Promise<boolean>
         },
       })
       const json = (await result.json()) as { data: Array<{ ok: number }> }
-      return json.data?.[0]?.ok === 1
+      return json.data?.[0]?.ok === 1 ? 'ok' : 'unreachable'
     } finally {
       clearTimeout(timer)
     }
-  } catch {
-    return false
+  } catch (err) {
+    return isClickHouseAuthError(err) ? 'unauthorized' : 'unreachable'
   }
+}
+
+export async function pingClickHouse(timeoutMs: number = 3000): Promise<boolean> {
+  return (await probeClickHouse(timeoutMs)) === 'ok'
 }
 
 export async function insertEvents(rows: EventRow[]): Promise<void> {

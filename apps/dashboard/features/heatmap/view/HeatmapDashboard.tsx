@@ -177,6 +177,7 @@ export function HeatmapDashboard({
   ])
 
   const pageUrl = canonicalizeHeatmapPageUrl(dashboardData.pageUrl ?? "")
+  const previewSrc = pageUrl ? heatmapPreviewSrc(pageUrl) || null : null
 
   const hasEvents =
     dashboardData.totalEvents > 0 ||
@@ -322,7 +323,7 @@ export function HeatmapDashboard({
               maxValue={dashboardData.maxValue}
               opacity={HEATMAP_DEFAULT_OPACITY}
               backgroundUrl={pageUrl || dashboardData.pageUrl}
-              previewSrc={pageUrl ? heatmapPreviewSrc(pageUrl) : null}
+              previewSrc={previewSrc}
               emptyState={showEmptyOverlay}
               emptyMessage={emptyMessage}
             />

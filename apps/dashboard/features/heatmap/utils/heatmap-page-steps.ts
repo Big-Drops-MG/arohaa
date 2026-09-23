@@ -122,7 +122,9 @@ export function buildHeatmapStepUrl(formKey: string, stepSlug: string): string {
 
 export function heatmapPreviewSrc(url: string): string {
   try {
-    const u = new URL(canonicalizeHeatmapPageUrl(url))
+    const canon = canonicalizeHeatmapPageUrl(url)
+    const u = new URL(canon)
+    if (u.protocol !== "http:" && u.protocol !== "https:") return ""
     const slug = heatmapStepSlug(u.href)
     u.search = ""
     u.hash = ""
@@ -130,7 +132,7 @@ export function heatmapPreviewSrc(url: string): string {
     u.searchParams.set("_arohaa_preview", "1")
     return u.toString()
   } catch {
-    return url
+    return ""
   }
 }
 

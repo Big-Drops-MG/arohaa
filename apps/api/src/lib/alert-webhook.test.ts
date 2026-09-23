@@ -41,22 +41,27 @@ describe('alert webhook', () => {
     expect(init?.method).toBe('POST')
   })
 
-  it('rate-limits repeated alerts from the same source', async () => {
-    process.env.ALERT_WEBHOOK_SLACK_URL = 'https://hooks.slack.com/services/test'
+  it('posts discord embeds for discordapp.com webhooks', async () => {
+    process.env.ALERT_WEBHOOK_DISCORD_URL =
+      'https://discordapp.com/api/webhooks/1/token'
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(null, { status: 200 }),
+      new Response(null, { status: 204 }),
     )
 
-    const payload = {
-      title: 'Repeat',
-      body: 'same source',
-      severity: 'warning' as const,
-      source: 'test.cooldown',
-    }
-
-    await sendAlertWebhook(payload)
-    await sendAlertWebhook(payload)
+    await sendAlertWebhook({
+      title: 'Queue depth high',
+      body: 'analytics_queue=9000',
+      severity: 'warning',
+      source: 'test.discordapp',
+    })
 
     expect(fetchMock).toHaveBeenCalledOnce()
+    const [, init] = fetchMock.mock.calls[0]!
+    const body = JSON.parse(String(init?.body ?? '{}')) as {
+      embeds?: unknown[]
+      text?: string
+    }
+    expect(body.embeds).toHaveLength(1)
+    expect(body.text).toBeUndefined()
   })
 })
