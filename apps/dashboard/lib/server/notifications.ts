@@ -8,6 +8,7 @@ import {
 } from "@workspace/database"
 import type { NotificationRecord } from "@/features/notifications/model/notifications"
 import { fetchAlertsAnalytics } from "@/lib/server/alerts-dashboard-load"
+import { ANALYTICS_ALERT_SYNC_RANGES } from "@/lib/server/analytics-alert-sync-ranges"
 import { dispatchWorkspaceAlertWebhooks } from "@/lib/server/workspace-alert-webhooks"
 
 const SKIP_AUDIT_ACTIONS = new Set(["check_connection", "update"])
@@ -42,7 +43,6 @@ function resolveAlertKind(alert: {
   message: string
 }): string | null {
   if (alert.kind) return alert.kind
-  // Legacy payloads without kind: only promote warnings, keyed by id.
   if (alert.severity === "warning") return `legacy_${alert.id}`
   return null
 }
@@ -252,16 +252,42 @@ function toNotificationRecord(row: {
 
 export async function listUserNotifications(
   userId: string,
-  limit = 30
+  options?: { limit?: number; unreadOnly?: boolean }
 ): Promise<NotificationRecord[]> {
+  const limit = options?.limit ?? 30
+  const unreadOnly = options?.unreadOnly === true
+
   const rows = await db
-    .select()
+    .select({
+      id: notifications.id,
+      type: notifications.type,
+      title: notifications.title,
+      body: notifications.body,
+      severity: notifications.severity,
+      landingPageId: notifications.landingPageId,
+      landingPagePublicId: notifications.landingPagePublicId,
+      href: notifications.href,
+      readAt: notifications.readAt,
+      createdAt: notifications.createdAt,
+      landingDeletedAt: landingPages.deletedAt,
+    })
     .from(notifications)
-    .where(eq(notifications.userId, userId))
+    .leftJoin(landingPages, eq(notifications.landingPageId, landingPages.id))
+    .where(
+      unreadOnly
+        ? and(eq(notifications.userId, userId), isNull(notifications.readAt))
+        : eq(notifications.userId, userId)
+    )
     .orderBy(desc(notifications.createdAt))
     .limit(limit)
 
-  return rows.map(toNotificationRecord)
+  return rows.map((row) => {
+    const record = toNotificationRecord(row)
+    if (row.landingPageId && row.landingDeletedAt) {
+      return { ...record, href: "/dashboard" }
+    }
+    return record
+  })
 }
 
 export async function countUnreadNotifications(
@@ -330,7 +356,7 @@ export async function syncAnalyticsAlertNotifications(
     )
 
   const dayKey = alertDayKey()
-  const syncRanges = ["7d", "last_month"] as const
+  const syncRanges = ANALYTICS_ALERT_SYNC_RANGES
 
   await Promise.all(
     pages.map(async (page) => {

@@ -14,7 +14,9 @@ export const GET = route(
     rateLimit: "landing",
   },
   async ({ actor, request }) => {
-    const shouldSync = new URL(request.url).searchParams.get("sync") === "1"
+    const url = new URL(request.url)
+    const shouldSync = url.searchParams.get("sync") === "1"
+    const unreadOnly = url.searchParams.get("filter") === "unread"
 
     if (shouldSync) {
       try {
@@ -27,7 +29,10 @@ export const GET = route(
     }
 
     const [items, unreadCount] = await Promise.all([
-      listUserNotifications(actor.id),
+      listUserNotifications(actor.id, {
+        unreadOnly,
+        limit: unreadOnly ? 100 : 30,
+      }),
       countUnreadNotifications(actor.id),
     ])
 

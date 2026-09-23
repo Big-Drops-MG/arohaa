@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import {
   Bell,
@@ -23,7 +23,6 @@ import {
   notificationAccentClass,
 } from "@/features/notifications/utils/notification-format"
 import { Button } from "@workspace/ui/components/button"
-import { writeDashboardPreference } from "@/lib/dashboard/dashboard-preferences"
 import {
   Popover,
   PopoverContent,
@@ -56,53 +55,58 @@ export function NotificationBell() {
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<"all" | "unread">("all")
 
-  const fetchNotifications = useCallback(async (opts?: { sync?: boolean }) => {
-    setIsLoading(true)
-    setError(null)
+  const fetchNotifications = useCallback(
+    async (opts?: { sync?: boolean; filter?: "all" | "unread" }) => {
+      setIsLoading(true)
+      setError(null)
 
-    try {
-      const url = opts?.sync
-        ? "/api/notifications?sync=1"
-        : "/api/notifications"
-      const res = await fetch(url, { cache: "no-store" })
-      const data = (await res.json().catch(() => ({}))) as
-        | NotificationsListResponse
-        | { error?: string }
+      try {
+        const params = new URLSearchParams()
+        if (opts?.sync) params.set("sync", "1")
+        if (opts?.filter === "unread") params.set("filter", "unread")
+        const qs = params.toString()
+        const url = qs ? `/api/notifications?${qs}` : "/api/notifications"
+        const res = await fetch(url, { cache: "no-store" })
+        const data = (await res.json().catch(() => ({}))) as
+          | NotificationsListResponse
+          | { error?: string }
 
-      if (!res.ok || !("items" in data)) {
-        setError(
-          "error" in data && data.error
-            ? data.error
-            : "Could not load notifications"
-        )
-        return
+        if (!res.ok || !("items" in data)) {
+          setError(
+            "error" in data && data.error
+              ? data.error
+              : "Could not load notifications"
+          )
+          return
+        }
+
+        setItems(data.items)
+        setUnreadCount(data.unreadCount)
+      } finally {
+        setIsLoading(false)
       }
-
-      setItems(data.items)
-      setUnreadCount(data.unreadCount)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [])
+    },
+    []
+  )
 
   useEffect(() => {
-    void fetchNotifications({ sync: true })
-  }, [fetchNotifications])
+    void fetchNotifications({ sync: true, filter })
+  }, [fetchNotifications, filter])
 
   useEffect(() => {
     const id = window.setInterval(() => {
       if (document.visibilityState !== "visible") return
-      void fetchNotifications()
+      void fetchNotifications({ filter })
     }, POLL_MS)
 
     return () => window.clearInterval(id)
-  }, [fetchNotifications])
+  }, [fetchNotifications, filter])
 
   useEffect(() => {
     if (open) {
-      void fetchNotifications({ sync: true })
+      void fetchNotifications({ sync: true, filter })
     }
-  }, [open, fetchNotifications])
+  }, [open, fetchNotifications, filter])
 
   const markRead = useCallback(async (notificationId: string) => {
     await fetch(
@@ -131,12 +135,7 @@ export function NotificationBell() {
     setUnreadCount(0)
   }, [])
 
-  const visibleItems = useMemo(() => {
-    if (filter === "unread") {
-      return items.filter((item) => item.readAt == null)
-    }
-    return items
-  }, [filter, items])
+  const visibleItems = items
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -252,10 +251,7 @@ export function NotificationBell() {
               {visibleItems.map((item) => {
                 const isUnread = item.readAt == null
                 const isAccessRequest = isAccessRequestNotification(item.type)
-                const targetHref =
-                  item.href && item.landingPagePublicId
-                    ? item.href.split("?")[0]!
-                    : item.href
+                const targetHref = item.href
 
                 const content = (
                   <>
@@ -310,18 +306,6 @@ export function NotificationBell() {
                       <Link
                         href={targetHref}
                         onClick={() => {
-                          if (item.href && item.landingPagePublicId) {
-                            const params = new URLSearchParams(
-                              item.href.split("?")[1] ?? ""
-                            )
-                            for (const [key, value] of params) {
-                              writeDashboardPreference(
-                                item.landingPagePublicId,
-                                key,
-                                value
-                              )
-                            }
-                          }
                           if (isUnread) void markRead(item.id)
                           setOpen(false)
                         }}

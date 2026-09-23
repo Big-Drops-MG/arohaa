@@ -20,6 +20,8 @@ export type LandingPageAuditLogRow = {
   beforePayload: Record<string, unknown> | null
   afterPayload: Record<string, unknown> | null
   traceId: string | null
+  ipAddress: string | null
+  userAgent: string | null
   createdAt: string
   actorUserId: string
   actorEmail: string | null
@@ -40,6 +42,9 @@ export async function writeLandingPageAuditLog(input: {
   traceId?: string | null
 }): Promise<string> {
   const id = crypto.randomUUID()
+  const headerStore = await headers()
+  const ipAddress = await clientIpFromNextHeaders()
+  const userAgent = userAgentFromHeaders(headerStore)
 
   await db.insert(landingPageAuditLogs).values({
     id,
@@ -49,6 +54,8 @@ export async function writeLandingPageAuditLog(input: {
     beforePayload: input.beforePayload ?? null,
     afterPayload: input.afterPayload ?? null,
     traceId: input.traceId ?? null,
+    ipAddress,
+    userAgent,
   })
 
   await enqueueNotificationFromAuditLog({
@@ -61,7 +68,6 @@ export async function writeLandingPageAuditLog(input: {
   })
 
   try {
-    const headerStore = await headers()
     const page = await db.query.landingPages.findFirst({
       where: eq(landingPages.id, input.landingPageId),
       columns: { publicId: true, slug: true, brandName: true },
@@ -73,8 +79,8 @@ export async function writeLandingPageAuditLog(input: {
       path: page?.slug ? `/dashboard/${page.slug}` : null,
       tab: "settings",
       projectPublicId: page?.publicId ?? null,
-      ipAddress: await clientIpFromNextHeaders(),
-      userAgent: userAgentFromHeaders(headerStore),
+      ipAddress,
+      userAgent,
       metadata: {
         auditLogId: id,
         landingPageId: input.landingPageId,
@@ -101,6 +107,8 @@ export async function listLandingPageAuditLogs(
       beforePayload: landingPageAuditLogs.beforePayload,
       afterPayload: landingPageAuditLogs.afterPayload,
       traceId: landingPageAuditLogs.traceId,
+      ipAddress: landingPageAuditLogs.ipAddress,
+      userAgent: landingPageAuditLogs.userAgent,
       createdAt: landingPageAuditLogs.createdAt,
       actorUserId: landingPageAuditLogs.actorUserId,
       actorEmail: users.email,
@@ -119,6 +127,8 @@ export async function listLandingPageAuditLogs(
     beforePayload: row.beforePayload,
     afterPayload: row.afterPayload,
     traceId: row.traceId,
+    ipAddress: row.ipAddress,
+    userAgent: row.userAgent,
     createdAt: row.createdAt.toISOString(),
     actorUserId: row.actorUserId,
     actorEmail: row.actorEmail,
@@ -138,6 +148,8 @@ export async function listAuditLogsByActorUserId(
       beforePayload: landingPageAuditLogs.beforePayload,
       afterPayload: landingPageAuditLogs.afterPayload,
       traceId: landingPageAuditLogs.traceId,
+      ipAddress: landingPageAuditLogs.ipAddress,
+      userAgent: landingPageAuditLogs.userAgent,
       createdAt: landingPageAuditLogs.createdAt,
       actorUserId: landingPageAuditLogs.actorUserId,
       actorEmail: users.email,
@@ -164,6 +176,8 @@ export async function listAuditLogsByActorUserId(
     beforePayload: row.beforePayload,
     afterPayload: row.afterPayload,
     traceId: row.traceId,
+    ipAddress: row.ipAddress,
+    userAgent: row.userAgent,
     createdAt: row.createdAt.toISOString(),
     actorUserId: row.actorUserId,
     actorEmail: row.actorEmail,

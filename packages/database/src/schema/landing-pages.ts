@@ -70,5 +70,7 @@ export const landingPageAuditLogs = pgTable("landing_page_audit_log", {
   beforePayload: jsonb("beforePayload").$type<Record<string, unknown> | null>(),
   afterPayload: jsonb("afterPayload").$type<Record<string, unknown> | null>(),
   traceId: text("traceId"),
+  ipAddress: text("ipAddress"),
+  userAgent: text("userAgent"),
   createdAt: timestamp("createdAt", { mode: "date" }).notNull().defaultNow(),
 })
