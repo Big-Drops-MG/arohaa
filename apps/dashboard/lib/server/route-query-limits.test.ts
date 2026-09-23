@@ -16,24 +16,22 @@ describe("route query limits", () => {
     expect(parseRouteOffset("12", 10_000)).toBe(12)
   })
 
-  it("sanitizes heatmap page URLs", () => {
-    expect(sanitizeHeatmapPageUrl("https://example.com/x?a=1#h")).toBe(
-      "https://example.com/x#h"
-    )
-    expect(sanitizeHeatmapPageUrl("/landing?x=1")).toBe("/landing")
+  it("sanitizes heatmap page URLs to path only", () => {
+    expect(sanitizeHeatmapPageUrl("https://example.com/x?a=1#h")).toBe("/x")
+    expect(sanitizeHeatmapPageUrl("/landing?x=1#frag")).toBe("/landing")
     expect(sanitizeHeatmapPageUrl("javascript:alert(1)")).toBeNull()
   })
 
-  it("defaults heatmap page to the project landing page", () => {
+  it("defaults heatmap page to the project landing path", () => {
     expect(
       resolveHeatmapPageUrl(
         "https://example.com/terms?x=1",
         "https://example.com/"
       )
-    ).toBe("https://example.com/terms")
+    ).toBe("/terms")
     expect(
       resolveHeatmapPageUrl(null, "https://autoinsurance.quotifii.com/")
-    ).toBe("https://autoinsurance.quotifii.com/")
+    ).toBe("/")
     expect(resolveHeatmapPageUrl("javascript:alert(1)", "")).toBeNull()
   })
 })

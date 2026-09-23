@@ -2,8 +2,6 @@ import crypto from 'crypto';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const EMAIL_KEY_HINT = /email/i;
-const PII_FIELD_KEY_HINT =
-  /^(email|e_?mail|first_?name|last_?name|full_?name|name|dob|date_of_birth|ssn|phone|mobile|tel)$/i;
 
 const LEAD_FIELDS_KEY = 'fields';
 const OPAQUE_PROP_KEY = '_k';
@@ -68,10 +66,10 @@ function maskPlaintextLeadFields(fields) {
   let modified = false;
   for (const [key, value] of Object.entries(next)) {
     if (typeof value !== 'string') continue;
-    if (EMAIL_KEY_HINT.test(key) || EMAIL_REGEX.test(value) || PII_FIELD_KEY_HINT.test(key)) {
-      next[key] = hashOpaqueValue(value);
-      modified = true;
-    }
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    next[key] = hashOpaqueValue(trimmed);
+    modified = true;
   }
   return modified ? next : fields;
 }

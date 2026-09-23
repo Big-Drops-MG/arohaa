@@ -50,6 +50,7 @@ export type RouteWriteNoBodyConfig = RouteBaseConfig & {
 function guardFailureResponse(result: {
   ok: false
   status: 401 | 403 | 429 | 400
+  headers?: Record<string, string>
 }): Response {
   const message =
     result.status === 401
@@ -59,7 +60,13 @@ function guardFailureResponse(result: {
         : result.status === 429
           ? "Too many requests"
           : "Invalid request"
-  return NextResponse.json({ error: message }, { status: result.status })
+  return NextResponse.json(
+    { error: message },
+    {
+      status: result.status,
+      headers: result.headers,
+    }
+  )
 }
 
 async function runRoute<TBody>(

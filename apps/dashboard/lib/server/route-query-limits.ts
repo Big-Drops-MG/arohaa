@@ -45,18 +45,16 @@ export function sanitizeHeatmapPageUrl(
   try {
     const u = new URL(trimmed)
     if (u.protocol !== "http:" && u.protocol !== "https:") return null
-    const hash = u.hash || ""
-    u.search = ""
-    u.hash = ""
-    const base = u.toString().replace(/\?$/, "")
-    return `${base}${hash}`
+    const path = u.pathname || "/"
+    return path.length > 2048 ? null : path
   } catch {
     if (!trimmed.startsWith("/")) return null
-    return trimmed.replace(/\?[^#]*/, "")
+    const pathOnly = trimmed.split(/[?#]/, 1)[0] ?? ""
+    if (!pathOnly.startsWith("/")) return null
+    return pathOnly.length > 2048 ? null : pathOnly
   }
 }
 
-/** Prefer an explicit page_url; otherwise the project's configured landing page. */
 export function resolveHeatmapPageUrl(
   requested: string | null | undefined,
   landingPageUrl: string

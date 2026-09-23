@@ -11,6 +11,13 @@ describe('cors origin allow checks', () => {
     )
   })
 
+  it('denies empty allowlist even outside production', () => {
+    const previous = process.env.NODE_ENV
+    process.env.NODE_ENV = 'development'
+    expect(isCorsOriginAllowed('https://evil.test', new Set())).toBe(false)
+    process.env.NODE_ENV = previous
+  })
+
   it('denies empty allowlist', () => {
     expect(isCorsOriginAllowed('https://a.test', new Set())).toBe(false)
   })

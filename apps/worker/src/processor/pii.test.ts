@@ -30,12 +30,15 @@ describe('anonymizeEvent', () => {
     delete process.env.AROHAA_INTERNAL_API_SECRET
   })
 
-  it('hashes plaintext lead field values when no blob key is available', () => {
+  it('hashes all plaintext lead field values when no blob key is available', () => {
     delete process.env.AROHAA_FIELD_BLOB_KEY
     delete process.env.AROHAA_INTERNAL_API_SECRET
     const fields = {
       email: 'Lead@Example.com',
       first_name: 'David',
+      address: '123 Main St',
+      zip: '78701',
+      phone_number: '5125551212',
     }
     const event = anonymizeEvent({
       properties: JSON.stringify({ fields }),
@@ -43,6 +46,9 @@ describe('anonymizeEvent', () => {
     const props = JSON.parse(event.properties)
     expect(props.fields.email).toBe(hashEmail('lead@example.com'))
     expect(props.fields.first_name).toBe(hashEmail('David'))
+    expect(props.fields.address).toBe(hashEmail('123 Main St'))
+    expect(props.fields.zip).toBe(hashEmail('78701'))
+    expect(props.fields.phone_number).toBe(hashEmail('5125551212'))
   })
 
   it('still hashes user_id', () => {

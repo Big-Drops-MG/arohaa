@@ -64,13 +64,15 @@ export function canonicalizeHeatmapPageUrl(raw: string): string {
   if (!trimmed) return ''
   try {
     const u = new URL(trimmed)
-    const hash = u.hash || ''
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return ''
     u.search = ''
     u.hash = ''
-    const base = u.toString().replace(/\?$/, '')
-    return `${base}${hash}`
+    return u.toString().replace(/\?$/, '')
   } catch {
-    return trimmed.replace(/\?[^#]*/, '')
+    if (trimmed.startsWith('/')) {
+      return trimmed.split(/[?#]/, 1)[0] ?? ''
+    }
+    return (trimmed.replace(/\?[^#]*/, '').split('#', 1)[0] ?? '').trim()
   }
 }
 

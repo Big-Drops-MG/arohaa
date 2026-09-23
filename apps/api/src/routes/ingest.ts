@@ -72,7 +72,7 @@ const eventBodyProperties = {
 const ingestSchema = {
   body: {
     type: 'object',
-    required: ['sid', 'uid'],
+    required: ['sid', 'uid', 'event_id'],
     anyOf: [
       { required: ['ev', 'wid'] },
       { required: ['event_name', 'workspace_id'] },
@@ -94,7 +94,7 @@ const batchIngestSchema = {
         maxItems: 50,
         items: {
           type: 'object',
-          required: ['sid', 'uid'],
+          required: ['sid', 'uid', 'event_id'],
           anyOf: [
             { required: ['ev', 'wid'] },
             { required: ['event_name', 'workspace_id'] },
@@ -142,25 +142,24 @@ async function ingestOne(
   }
 
   const eventId = body.event_id?.trim() ?? ''
-  if (eventId) {
-    if (!isValidEventId(eventId)) {
-      return { status: 'rejected', error: 'INVALID_EVENT_ID', code: 400 }
-    }
-    const claim = await claimIngestEventId(eventId)
-    if (claim === 'duplicate') {
-      request.log.info(
-        {
-          trace_id: traceId,
-          event: 'ingest_duplicate',
-          event_id: eventId,
-        },
-        'ingest duplicate event_id dropped',
-      )
-      return { status: 'dropped' }
-    }
-    if (claim === 'unavailable') {
-      return { status: 'unavailable', error: 'IDEMPOTENCY_UNAVAILABLE' }
-    }
+  if (!eventId || !isValidEventId(eventId)) {
+    return { status: 'rejected', error: 'INVALID_EVENT_ID', code: 400 }
+  }
+
+  const claim = await claimIngestEventId(eventId)
+  if (claim === 'duplicate') {
+    request.log.info(
+      {
+        trace_id: traceId,
+        event: 'ingest_duplicate',
+        event_id: eventId,
+      },
+      'ingest duplicate event_id dropped',
+    )
+    return { status: 'dropped' }
+  }
+  if (claim === 'unavailable') {
+    return { status: 'unavailable', error: 'IDEMPOTENCY_UNAVAILABLE' }
   }
 
   const originHeader = request.headers.origin
@@ -176,9 +175,7 @@ async function ingestOne(
   })
 
   if (landing.outcome === 'reject') {
-    if (eventId) {
-      await releaseIngestEventId(eventId)
-    }
+    await releaseIngestEventId(eventId)
     request.log.warn(
       {
         trace_id: traceId,

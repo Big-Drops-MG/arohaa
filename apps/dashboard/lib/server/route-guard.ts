@@ -33,7 +33,11 @@ export type RouteGuardConfig = {
 
 export type RouteGuardResult =
   | { ok: true; actor: RouteGuardActor }
-  | { ok: false; status: 401 | 403 | 429 | 400 }
+  | {
+      ok: false
+      status: 401 | 403 | 429 | 400
+      headers?: Record<string, string>
+    }
 
 export type RouteGuardTestOverrides = {
   actor?: RouteGuardActor | null
@@ -134,14 +138,28 @@ export async function evaluateRouteGuard(
   }
 
   if (overrides?.rateLimited) {
-    return { ok: false, status: 429 }
+    return {
+      ok: false,
+      status: 429,
+      headers: { "Retry-After": "60" },
+    }
   }
 
   if (!overrides) {
     const { enforceLandingApiRateLimit } =
       await import("@/lib/server/rate-limit-landing")
     const limited = await enforceLandingApiRateLimit(actor.id)
-    if (limited) return { ok: false, status: 429 }
+    if (limited) {
+      const retryAfter = limited.headers.get("Retry-After")
+      return {
+        ok: false,
+        status: 429,
+        headers: {
+          "Retry-After":
+            retryAfter && retryAfter.trim() ? retryAfter.trim() : "60",
+        },
+      }
+    }
   }
 
   const queryBlocked = enforceRouteQueryLimits(request, cfg.query)
