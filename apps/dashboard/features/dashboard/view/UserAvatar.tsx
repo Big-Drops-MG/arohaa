@@ -1,11 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { cn } from "@workspace/ui/lib/utils"
+import { avatarProxyPath } from "@/features/dashboard/model/avatar"
 
 type UserAvatarProps = {
   initials: string
   imageUrl?: string | null
+  /** When set, load via same-origin proxy to avoid Google Referer/403 issues. */
+  userId?: string | null
   size?: "sm" | "md" | "lg"
   className?: string
   alt?: string
@@ -19,19 +22,27 @@ const sizeClassName = {
 
 /**
  * Prefer a plain <img> for Google (and other SSO) avatars.
- * Google user-content hosts often 403 when a Referer is sent (esp. on localhost);
- * referrerPolicy="no-referrer" is required for reliable loading.
+ * Same-origin `/api/avatars/:userId` avoids Googleusercontent Referer 403s;
+ * referrerPolicy="no-referrer" covers direct googleusercontent URLs.
  */
 export function UserAvatar({
   initials,
   imageUrl,
+  userId,
   size = "md",
   className,
   alt = "",
 }: UserAvatarProps) {
   const [failed, setFailed] = useState(false)
-  const src = imageUrl?.trim() || null
+  const directSrc = imageUrl?.trim() || null
+  const proxySrc =
+    userId?.trim() && directSrc ? avatarProxyPath(userId.trim()) : null
+  const src = proxySrc || directSrc
   const showImage = Boolean(src) && !failed
+
+  useEffect(() => {
+    setFailed(false)
+  }, [src])
 
   return (
     <div

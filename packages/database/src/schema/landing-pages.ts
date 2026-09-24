@@ -27,6 +27,8 @@ export const landingPages = pgTable(
     }),
     slug: text("slug").notNull().unique(),
     brandName: text("brandName").notNull(),
+    /** Shared product/org brand for dashboard grouping (e.g. Quotifii). */
+    brand: text("brand"),
     landingPageUrl: text("landingPageUrl").notNull(),
     normalizedUrl: text("normalizedUrl").notNull(),
     origin: text("origin").notNull(),

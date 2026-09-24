@@ -99,6 +99,7 @@ export function TeamMemberLogsPanel({
             <UserAvatar
               initials={member.initials}
               imageUrl={member.imageUrl}
+              userId={member.id}
               alt={member.name}
               size="sm"
             />

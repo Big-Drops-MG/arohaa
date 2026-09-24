@@ -83,6 +83,24 @@ export function normalizedBrandName(
   return { ok: true, brandName };
 }
 
+/** Optional shared brand used to group landing pages on the dashboard. */
+export function normalizedOptionalBrand(
+  raw: unknown,
+):
+  | { ok: true; brand: string | null }
+  | { ok: false; error: string } {
+  if (raw == null) return { ok: true, brand: null };
+  if (typeof raw !== 'string') {
+    return { ok: false, error: 'Brand must be a string' };
+  }
+  const brand = raw.trim();
+  if (!brand) return { ok: true, brand: null };
+  if (brand.length > LANDING_BRAND_MAX) {
+    return { ok: false, error: 'Brand is too long' };
+  }
+  return { ok: true, brand };
+}
+
 export function ingestHostnameMatchesLanding(
   eventUrlRaw: string | undefined,
   expectedHostnameLower: string,

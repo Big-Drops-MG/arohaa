@@ -16,6 +16,7 @@ export function toLandingPageRecord(row: LandingRow): LandingPageRecord {
     publicId: row.publicId,
     slug: row.slug,
     brandName: row.brandName,
+    brand: row.brand?.trim() || null,
     landingPageUrl: row.landingPageUrl,
     normalizedUrl: row.normalizedUrl,
     origin: row.origin,

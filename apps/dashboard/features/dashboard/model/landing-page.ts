@@ -34,6 +34,7 @@ export type LandingPageListItem = {
   publicId: string
   slug: string
   brandName: string
+  brand: string | null
   landingPageUrl: string
   faviconUrl: string | null
   isLive: boolean

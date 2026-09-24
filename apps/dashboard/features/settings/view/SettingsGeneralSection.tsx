@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Loader2 } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
@@ -13,6 +13,7 @@ import type {
 } from "@/features/settings/model/landing-page-settings"
 import { FormTypeFieldset } from "@/features/settings/view/FormTypeFieldset"
 import { ChannelTypeFieldset } from "@/features/settings/view/ChannelTypeFieldset"
+import { BrandSelectField } from "@/features/settings/view/BrandSelectField"
 import { ServicesFieldset } from "@/features/settings/view/ServicesFieldset"
 import { SettingsSectionCard } from "@/features/settings/view/SettingsSectionCard"
 import type { LandingPageChannelType } from "@/features/settings/model/landing-page-channel-types"
@@ -20,6 +21,7 @@ import type { LandingPageChannelType } from "@/features/settings/model/landing-p
 type ServiceCandidate = {
   publicId: string
   brandName: string
+  brand?: string | null
   landingPageUrl: string
   formType?: string
 }
@@ -34,6 +36,7 @@ export function SettingsGeneralSection({
   onSaved,
 }: SettingsGeneralSectionProps) {
   const [brandName, setBrandName] = useState(landingPage.brandName)
+  const [brand, setBrand] = useState(landingPage.brand ?? "")
   const [landingPageUrl, setLandingPageUrl] = useState(
     landingPage.landingPageUrl
   )
@@ -58,6 +61,7 @@ export function SettingsGeneralSection({
 
   useEffect(() => {
     setBrandName(landingPage.brandName)
+    setBrand(landingPage.brand ?? "")
     setLandingPageUrl(landingPage.landingPageUrl)
     setFaviconUrl(landingPage.faviconUrl ?? "")
     setFormType(landingPage.formType)
@@ -78,9 +82,7 @@ export function SettingsGeneralSection({
         }
         if (cancelled) return
         const rows = Array.isArray(data.landingPages) ? data.landingPages : []
-        setCandidates(
-          rows.filter((row) => row.publicId !== landingPage.publicId)
-        )
+        setCandidates(rows)
       } catch {
         // ignore candidate load failures
       }
@@ -90,6 +92,20 @@ export function SettingsGeneralSection({
     }
   }, [landingPage.publicId])
 
+  const brandOptions = useMemo(() => {
+    const names: string[] = []
+    for (const row of candidates) {
+      if (row.brand?.trim()) names.push(row.brand.trim())
+    }
+    if (landingPage.brand?.trim()) names.push(landingPage.brand.trim())
+    return names
+  }, [candidates, landingPage.brand])
+
+  const serviceCandidates = useMemo(
+    () => candidates.filter((row) => row.publicId !== landingPage.publicId),
+    [candidates, landingPage.publicId]
+  )
+
   const handleSave = useCallback(async () => {
     setError(null)
     setSuccess(null)
@@ -98,6 +114,7 @@ export function SettingsGeneralSection({
     try {
       const body: Record<string, unknown> = {
         brandName,
+        brand: brand.trim() || null,
         landingPageUrl,
         formType,
         faviconUrl,
@@ -174,6 +191,7 @@ export function SettingsGeneralSection({
       setIsSaving(false)
     }
   }, [
+    brand,
     brandName,
     channelType,
     faviconUrl,
@@ -197,8 +215,15 @@ export function SettingsGeneralSection({
       description="Update how this landing page appears in Arohaa and how analytics labels are applied."
     >
       <div className="space-y-4">
+        <BrandSelectField
+          value={brand}
+          options={brandOptions}
+          onChange={setBrand}
+          disabled={isSaving}
+        />
+
         <div className="space-y-2">
-          <Label htmlFor="settings-brand-name">Brand name</Label>
+          <Label htmlFor="settings-brand-name">Project name</Label>
           <Input
             id="settings-brand-name"
             value={brandName}
@@ -206,6 +231,9 @@ export function SettingsGeneralSection({
             className="h-11"
             autoComplete="organization"
           />
+          <p className="text-xs text-muted-foreground">
+            Display name for this landing page card.
+          </p>
         </div>
 
         <div className="space-y-2">
@@ -274,7 +302,7 @@ export function SettingsGeneralSection({
           <ServicesFieldset
             services={services}
             onChange={setServices}
-            candidates={candidates}
+            candidates={serviceCandidates}
             disabled={isSaving}
           />
         ) : null}

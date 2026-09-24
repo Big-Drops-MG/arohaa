@@ -73,6 +73,7 @@ export default async function DashboardGroupLayout({
         lastName={lastName}
         role={role}
         imageUrl={imageUrl}
+        userId={user.id}
         landingPageNavItems={landingPageNavItems}
         showTeamAndOps={showTeamAndOps}
       />

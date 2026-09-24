@@ -99,6 +99,7 @@ const landingPageFormTypeSchema = z.enum(["single", "multiple", "zip", "none"])
 export const landingPageCreateBodySchema = z
   .object({
     brandName: z.string(),
+    brand: z.union([z.string(), z.null()]).optional(),
     landingPageUrl: z.string(),
     formType: landingPageFormTypeSchema.optional(),
     faviconUrl: z.string().optional(),
@@ -110,6 +111,7 @@ export const landingPageCreateBodySchema = z
 export const landingPagePatchBodySchema = z
   .object({
     brandName: z.string().optional(),
+    brand: z.union([z.string(), z.null()]).optional(),
     landingPageUrl: z.string().optional(),
     formType: landingPageFormTypeSchema.optional(),
     faviconUrl: z.string().optional(),

@@ -7,6 +7,7 @@ import {
   normalizeLandingPageUrl,
   normalizeOptionalRedirectUrl,
   normalizedBrandName,
+  normalizedOptionalBrand,
   users,
 } from "@workspace/database"
 import {
@@ -84,6 +85,7 @@ export async function patchLandingPageForApi(
 
   const before = {
     brandName: row.brandName,
+    brand: row.brand ?? null,
     slug: row.slug,
     landingPageUrl: row.landingPageUrl,
     normalizedUrl: row.normalizedUrl,
@@ -106,6 +108,15 @@ export async function patchLandingPageForApi(
       return NextResponse.json({ error: bn.error }, { status: 400 })
     }
     nextBrand = bn.brandName
+  }
+
+  let nextGroupBrand = row.brand ?? null
+  if ("brand" in record) {
+    const parsed = normalizedOptionalBrand(record.brand)
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 })
+    }
+    nextGroupBrand = parsed.brand
   }
 
   let nextSlug = row.slug
@@ -264,6 +275,7 @@ export async function patchLandingPageForApi(
       .update(landingPages)
       .set({
         brandName: nextBrand,
+        brand: nextGroupBrand,
         slug: nextSlug,
         ...urlFields,
         formType: nextFormType,
@@ -331,6 +343,7 @@ export async function patchLandingPageForApi(
 
   const generalFieldsChanged =
     nextBrand !== row.brandName ||
+    nextGroupBrand !== (row.brand ?? null) ||
     slugChanged ||
     urlChanged ||
     nextFormType !== row.formType ||

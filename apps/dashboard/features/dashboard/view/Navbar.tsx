@@ -25,6 +25,7 @@ type NavbarProps = {
   lastName: string
   role: string
   imageUrl?: string | null
+  userId?: string | null
   landingPageNavItems: LandingPageNavItem[]
   showTeamAndOps?: boolean
 }
@@ -40,6 +41,7 @@ export function Navbar({
   lastName,
   role,
   imageUrl = null,
+  userId = null,
   landingPageNavItems,
   showTeamAndOps = true,
 }: NavbarProps) {
@@ -89,6 +91,7 @@ export function Navbar({
                 <UserAvatar
                   initials={initials}
                   imageUrl={imageUrl}
+                  userId={userId}
                   alt={fullName}
                 />
                 <div className="hidden text-left sm:block">

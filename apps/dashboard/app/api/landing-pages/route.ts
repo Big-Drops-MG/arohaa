@@ -11,6 +11,7 @@ import {
   normalizeExperimentVariantLabel,
   normalizeLandingPageUrl,
   normalizedBrandName,
+  normalizedOptionalBrand,
 } from "@workspace/database"
 import { canAccessProject, getActorAccess } from "@/lib/server/external-access"
 import { writeLandingPageAuditLog } from "@/lib/server/landing-audit-log"
@@ -60,6 +61,7 @@ function toJson(row: LandingRow) {
     publicId: row.publicId,
     slug: row.slug,
     brandName: row.brandName,
+    brand: row.brand?.trim() || null,
     landingPageUrl: row.landingPageUrl,
     normalizedUrl: row.normalizedUrl,
     origin: row.origin,
@@ -137,6 +139,11 @@ export const POST = route(
       return NextResponse.json({ error: bn.error }, { status: 400 })
     }
 
+    const brandParsed = normalizedOptionalBrand(body.brand)
+    if (!brandParsed.ok) {
+      return NextResponse.json({ error: brandParsed.error }, { status: 400 })
+    }
+
     const nu = normalizeLandingPageUrl(body.landingPageUrl)
     if (!nu.ok) {
       return NextResponse.json({ error: nu.error }, { status: 400 })
@@ -198,6 +205,7 @@ export const POST = route(
         createdByUserId: actor.id,
         updatedByUserId: null as string | null,
         brandName: bn.brandName,
+        brand: brandParsed.brand,
         landingPageUrl: nu.landingPageUrl,
         normalizedUrl: nu.normalizedUrl,
         origin: nu.origin,

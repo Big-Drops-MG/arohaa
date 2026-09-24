@@ -8,6 +8,8 @@ export type LandingPageRecord = {
   publicId: string
   slug: string
   brandName: string
+  /** Shared product/org brand for dashboard grouping. */
+  brand: string | null
   landingPageUrl: string
   normalizedUrl: string
   origin: string

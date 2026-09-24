@@ -31,7 +31,7 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
   {
     id: "general",
     label: "General",
-    description: "Brand, URL, form type, notes",
+    description: "Brand, project name, URL, form type",
     icon: Settings2,
   },
   {

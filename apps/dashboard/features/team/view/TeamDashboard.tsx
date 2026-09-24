@@ -132,6 +132,7 @@ function MemberList({
                 <UserAvatar
                   initials={member.initials}
                   imageUrl={member.imageUrl}
+                  userId={member.id}
                   alt={member.name}
                 />
                 <span
@@ -311,6 +312,7 @@ function PendingRequestsSection({
                   <UserAvatar
                     initials={request.initials}
                     imageUrl={request.imageUrl}
+                    userId={request.id}
                     alt={request.name}
                   />
                   <div className="min-w-0 flex-1">
