@@ -32,4 +32,7 @@ export const FI_MSG = {
   space: d("KSo7OT8="),
   symbol: d("KSM3ODU2"),
   star: d("cA=="),
+  pasted: d("KjspLj8+"),
+  copied: d("OTUqMz8+"),
+  cut: d("OS8u"),
 } as const

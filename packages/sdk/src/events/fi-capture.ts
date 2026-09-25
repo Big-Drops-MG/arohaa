@@ -49,6 +49,8 @@ let inFlightItems: FiItem[] | null = null
 const changeTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const pendingChanges = new Map<string, { value: string; phone: boolean }>()
 const lastChangedValue = new Map<string, string>()
+let lastPasteField = ""
+let lastPasteAt = 0
 
 function bracket(name: string): string {
   return `[${name}]`
@@ -116,6 +118,26 @@ function formatTyped(key: string, field: string, phone = false): string {
 
 function formatPressed(combo: string, field: string): string {
   return `${FI_MSG.pressed} '${combo}'${FI_MSG.inSep}${bracket(field)}`
+}
+
+function formatPasted(field: string): string {
+  return `${FI_MSG.pasted}${FI_MSG.inSep}${bracket(field)}`
+}
+
+function formatCopied(field: string): string {
+  return `${FI_MSG.copied}${FI_MSG.inSep}${bracket(field)}`
+}
+
+function formatCut(field: string): string {
+  return `${FI_MSG.cut}${FI_MSG.inSep}${bracket(field)}`
+}
+
+function pushPasted(field: string): void {
+  const now = Date.now()
+  if (field === lastPasteField && now - lastPasteAt < 120) return
+  lastPasteField = field
+  lastPasteAt = now
+  pushItem(1, formatPasted(field))
 }
 
 function formatClicked(target: string): string {
@@ -262,15 +284,34 @@ function shortcutLabel(e: KeyboardEvent): string | null {
   if (e.ctrlKey) parts.push("Control")
   if (e.altKey) parts.push("Alt")
   if (e.metaKey) parts.push("Meta")
-  if (e.shiftKey && e.key.length > 1) parts.push("Shift")
+  if (e.shiftKey && (parts.length > 0 || e.key.length > 1)) {
+    parts.push("Shift")
+  }
 
-  const key = e.key === " " ? "Space" : e.key
+  let key = e.key === " " ? "Space" : e.key
+  if (key.length === 1) key = key.toLowerCase()
   if (parts.length === 0) {
     if (key.length === 1) return null
     return key
   }
   parts.push(key)
   return parts.join("+")
+}
+
+function isClipboardShortcut(combo: string): "paste" | "copy" | "cut" | null {
+  const lower = combo.toLowerCase()
+  if (
+    lower === "control+v" ||
+    lower === "meta+v" ||
+    lower === "shift+insert" ||
+    lower === "control+shift+v" ||
+    lower === "meta+shift+v"
+  ) {
+    return "paste"
+  }
+  if (lower === "control+c" || lower === "meta+c") return "copy"
+  if (lower === "control+x" || lower === "meta+x") return "cut"
+  return null
 }
 
 function isFormLikeTarget(target: EventTarget | null): boolean {
@@ -466,6 +507,17 @@ function onKeyDown(e: KeyboardEvent): void {
   }
 }
 
+function onClipboardAction(kind: "paste" | "copy" | "cut", e: Event): void {
+  ensureArmed(e.target)
+  if (!armed) return
+  const control = resolveFormControl(e.target)
+  if (!control || isSkippedControl(control)) return
+  const field = fieldKeyFromControl(control) || FI_MSG.unnamed
+  if (kind === "paste") pushPasted(field)
+  else if (kind === "copy") pushItem(1, formatCopied(field))
+  else pushItem(1, formatCut(field))
+}
+
 function onClick(e: MouseEvent): void {
   ensureArmed(e.target)
   if (!armed) return
@@ -539,6 +591,15 @@ function onInputOrChange(e: Event): void {
   const field = fieldKeyFromControl(control) || FI_MSG.unnamed
   const value = controlDisplayValue(control)
   const phone = isPhoneControl(control, field)
+
+  if (
+    e.type === "input" &&
+    e instanceof InputEvent &&
+    e.inputType === "insertFromPaste"
+  ) {
+    pushPasted(field)
+  }
+
   scheduleChange(field, value, isChoiceControl(control), phone)
 }
 
@@ -588,6 +649,9 @@ export function setupFiCapture(): void {
   document.addEventListener("click", onClick, true)
   document.addEventListener("input", onInputOrChange, true)
   document.addEventListener("change", onInputOrChange, true)
+  document.addEventListener("paste", (e) => onClipboardAction("paste", e), true)
+  document.addEventListener("copy", (e) => onClipboardAction("copy", e), true)
+  document.addEventListener("cut", (e) => onClipboardAction("cut", e), true)
   window.addEventListener("pagehide", onPageHide, true)
   document.addEventListener(
     "visibilitychange",
@@ -609,7 +673,11 @@ export const __fiTest = {
   formatChanged,
   formatSelected,
   formatStep,
+  formatPasted,
+  formatCopied,
+  formatCut,
   shortcutLabel,
+  isClipboardShortcut,
   resolveClickLabel,
   isPhoneFieldKey,
   classifyTypedKey,

@@ -23,6 +23,9 @@ describe("fi-tokens", () => {
     expect(FI_MSG.space).toBe("space")
     expect(FI_MSG.symbol).toBe("symbol")
     expect(FI_MSG.star).toBe("*")
+    expect(FI_MSG.pasted).toBe("pasted")
+    expect(FI_MSG.copied).toBe("copied")
+    expect(FI_MSG.cut).toBe("cut")
   })
 })
 
@@ -32,6 +35,33 @@ describe("fi message builders", () => {
     expect(__fiTest.formatPressed("Control+v", "email")).toBe(
       "pressed 'Control+v' in [email]",
     )
+  })
+
+  it("labels clipboard shortcuts", () => {
+    expect(
+      __fiTest.shortcutLabel({
+        key: "v",
+        ctrlKey: true,
+        altKey: false,
+        metaKey: false,
+        shiftKey: false,
+      } as KeyboardEvent),
+    ).toBe("Control+v")
+    expect(
+      __fiTest.shortcutLabel({
+        key: "V",
+        ctrlKey: false,
+        altKey: false,
+        metaKey: true,
+        shiftKey: false,
+      } as KeyboardEvent),
+    ).toBe("Meta+v")
+    expect(__fiTest.isClipboardShortcut("Control+v")).toBe("paste")
+    expect(__fiTest.isClipboardShortcut("Meta+c")).toBe("copy")
+    expect(__fiTest.isClipboardShortcut("Control+x")).toBe("cut")
+    expect(__fiTest.formatPasted("email")).toBe("pasted in [email]")
+    expect(__fiTest.formatCopied("email")).toBe("copied in [email]")
+    expect(__fiTest.formatCut("email")).toBe("cut in [email]")
   })
 
   it("masks phone keystrokes like TrustedForm", () => {

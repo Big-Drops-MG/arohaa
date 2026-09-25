@@ -99,15 +99,39 @@ export function LeadInteractionLogDialog({
     return entries.filter((e) => e.message.toLowerCase().includes(q))
   }, [data?.entries, query])
 
+  const timeOnFormMs = useMemo(() => {
+    const entries = data?.entries ?? []
+    if (entries.length === 0) return null
+    let maxOffset = 0
+    for (const entry of entries) {
+      if (entry.offsetMs > maxOffset) maxOffset = entry.offsetMs
+    }
+    return maxOffset
+  }, [data?.entries])
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[min(90vh,720px)] max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
-        <DialogHeader className="shrink-0 border-b border-border px-5 py-4 text-left">
-          <DialogTitle>Event log</DialogTitle>
-          <DialogDescription>
-            Review the timestamped user activity captured during the form
-            session.
-          </DialogDescription>
+        <DialogHeader className="shrink-0 border-b border-border px-5 py-4 pr-12 text-left">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 space-y-1.5">
+              <DialogTitle>Event log</DialogTitle>
+              <DialogDescription>
+                Review the timestamped user activity captured during the form
+                session.
+              </DialogDescription>
+            </div>
+            {timeOnFormMs != null ? (
+              <div className="shrink-0 pt-0.5 text-right">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Time on form
+                </p>
+                <p className="text-sm font-semibold text-foreground tabular-nums">
+                  {formatOffset(timeOnFormMs)}
+                </p>
+              </div>
+            ) : null}
+          </div>
         </DialogHeader>
 
         <div className="shrink-0 border-b border-border px-5 py-3">
