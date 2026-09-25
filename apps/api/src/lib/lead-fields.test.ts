@@ -92,12 +92,13 @@ describe('normalizeLeadFields', () => {
       normalizeLeadFields({
         Nombre_de_pila: 'Raul',
         Apellido: 'Garcia',
+        address: '123 Main',
         unit: 'Casa',
       }),
     ).toEqual({
       first_name: 'Raul',
       last_name: 'Garcia',
-      unit: 'Casa',
+      address: '123 Main, Casa',
     })
   })
 
@@ -140,12 +141,82 @@ describe('normalizeLeadFields', () => {
         이름: 'Michael',
         성: 'Kim',
         best_primeiro_nome: 'IgnoredBecauseCanonicalFilled',
+        address: '9 Oak',
         unit: '1A',
       }),
     ).toEqual({
       first_name: 'Andre',
       last_name: 'Ribeiro',
-      unit: '1A',
+      address: '9 Oak, 1A',
+    })
+  })
+
+  it('maps browser-locale name labels from the leads table onto first_name / last_name', () => {
+    expect(
+      normalizeLeadFields({
+        İlk_adı: 'Ahmet',
+        Soy_isim: 'Yilmaz',
+        Nombre: 'Carlos',
+        Nome: 'Luca',
+        Nome_di_battesimo: 'Giulia',
+        نام: 'Reza',
+        نام_خانوادگی: 'Karimi',
+      }),
+    ).toEqual({
+      first_name: 'Ahmet',
+      last_name: 'Yilmaz',
+    })
+  })
+
+  it('maps Spanish Nombre / Italian Nome when they are the only first-name key', () => {
+    expect(
+      normalizeLeadFields({
+        Nombre: 'Maria',
+        Apellido: 'Lopez',
+      }),
+    ).toEqual({
+      first_name: 'Maria',
+      last_name: 'Lopez',
+    })
+    expect(
+      normalizeLeadFields({
+        Nome_di_battesimo: 'Marco',
+        cognome: 'Rossi',
+      }),
+    ).toEqual({
+      first_name: 'Marco',
+      last_name: 'Rossi',
+    })
+    expect(
+      normalizeLeadFields({
+        نام: 'Sara',
+        نام_خانوادگی: 'Ahmadi',
+      }),
+    ).toEqual({
+      first_name: 'Sara',
+      last_name: 'Ahmadi',
+    })
+  })
+
+  it('folds unit into address and drops the unit column', () => {
+    expect(
+      normalizeLeadFields({
+        address: '500 Brickell Ave',
+        unit: 'Apt 12',
+        city: 'Miami',
+      }),
+    ).toEqual({
+      address: '500 Brickell Ave, Apt 12',
+      city: 'Miami',
+    })
+    expect(
+      normalizeLeadFields({
+        unit: '2B',
+        city: 'Austin',
+      }),
+    ).toEqual({
+      address: '2B',
+      city: 'Austin',
     })
   })
 

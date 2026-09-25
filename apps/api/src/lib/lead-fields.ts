@@ -17,72 +17,74 @@ const FIRST_NAME_KEYS = new Set([
   'given_name',
   'givenname',
   'forename',
-  // ES
+  'nombre',
   'nombre_de_pila',
   'nombredepila',
-  // PT
   'primeiro_nome',
   'primeironome',
-  // FR
+  'nome',
+  'nome_di_battesimo',
+  'nomedibattesimo',
+  'ilk_adı',
+  'ilk_adi',
+  'ad',
   'prenom',
   'prénom',
-  // DE
   'vorname',
-  // VI
   'tên',
   'ho_ten',
-  // RU
   'имя',
   'imya',
-  // AR
   'الاسم_الأول',
   'الاسم_الاول',
   'الاسم_الاوّل',
   'الاسمالأول',
-  // KO
+  'نام',
   '이름',
-  // JA / ZH given name
   '名',
   'めい',
   '名字',
 ])
 
 const LAST_NAME_KEYS = new Set([
-  // EN
   'last_name',
   'lastname',
   'lname',
   'surname',
   'family_name',
   'familyname',
-  // ES
   'apellido',
   'apellidos',
-  // PT
   'sobrenome',
   'apelido',
-  // FR
+  'cognome',
+  'soy_isim',
+  'soyisim',
+  'soyad',
+  'soyadı',
+  'soyadi',
   'nom_de_famille',
-  // DE
   'nachname',
   'familienname',
-  // VI
   'họ',
-  // RU
   'фамилия',
   'familiya',
-  // AR
   'اسم_العائلة',
   'اسمالعائلة',
   'اللقب',
-  // KO
+  'نام_خانوادگی',
+  'نامخانوادگی',
   '성',
   '성씨',
-  // JA / ZH family name
   '姓',
   'せい',
   '姓氏',
 ])
+
+const UNIT_KEY_RE =
+  /^(unit|unit_?number|unit_?no|apt|apartment|suite|#)$/i
+
+const ADDRESS_LINE1_RE = /^(address|address_?line_?1|addr1|street|street_?address)$/i
 
 const NOISE_FIELD_RE =
   /^(input|select|textarea|search|receipt|xxtrustedform\w*|trustedform\w*|jornaya_lead_id|leadid_token|universal_leadid|consent-confirmation-certificate-id)$/i
@@ -94,6 +96,7 @@ export function normalizeFieldKey(key: string): string {
     .normalize('NFKC')
     .trim()
     .toLowerCase()
+    .replace(/\u0307/g, '')
     .replace(/[\s\-./]+/g, '_')
     .replace(/_+/g, '_')
     .replace(/^_|_$/g, '')
@@ -104,7 +107,7 @@ export function normalizeFieldKey(key: string): string {
 function isFirstNameKey(key: string): boolean {
   const n = normalizeFieldKey(key)
   if (FIRST_NAME_KEYS.has(n)) return true
-  return /^(primeiro_?nome|nombre_?de_?pila|given_?name|first_?name|vorname|prenom|prénom)$/i.test(
+  return /^(primeiro_?nome|nombre(_?de_?pila)?|nome(_?di_?battesimo)?|ilk_?ad[iı]|given_?name|first_?name|vorname|prenom|prénom|نام)$/i.test(
     n,
   )
 }
@@ -112,9 +115,26 @@ function isFirstNameKey(key: string): boolean {
 function isLastNameKey(key: string): boolean {
   const n = normalizeFieldKey(key)
   if (LAST_NAME_KEYS.has(n)) return true
-  return /^(sobre_?nome|family_?name|last_?name|nachname|nom_?de_?famille|apellido[s]?)$/i.test(
+  return /^(sobre_?nome|family_?name|last_?name|nachname|nom_?de_?famille|apellido[s]?|cognome|soy_?isim|soyad[iı]?|نام_?خانوادگی)$/i.test(
     n,
   )
+}
+
+function isUnitFieldKey(key: string): boolean {
+  return UNIT_KEY_RE.test(normalizeFieldKey(key))
+}
+
+function isAddressLine1Key(key: string): boolean {
+  return ADDRESS_LINE1_RE.test(normalizeFieldKey(key))
+}
+
+function appendAddressPart(base: string, part: string): string {
+  const b = base.trim()
+  const p = part.trim()
+  if (!p) return b
+  if (!b) return p
+  if (b.toLowerCase().includes(p.toLowerCase())) return b
+  return `${b}, ${p}`
 }
 
 function isDigestValue(value: string): boolean {
@@ -172,6 +192,38 @@ function canonicalizeNameFields(fields: Record<string, string>): void {
   if (lastName) fields.last_name = lastName
 }
 
+function canonicalizeAddressFields(fields: Record<string, string>): void {
+  let address = ''
+  const unitParts: string[] = []
+  const dropKeys: string[] = []
+
+  for (const [key, value] of Object.entries(fields)) {
+    const trimmed = value.trim()
+    if (!trimmed) continue
+
+    if (isAddressLine1Key(key)) {
+      if (!address) address = trimmed
+      if (!/^address$/i.test(key)) dropKeys.push(key)
+      continue
+    }
+
+    if (isUnitFieldKey(key)) {
+      unitParts.push(trimmed)
+      dropKeys.push(key)
+    }
+  }
+
+  for (const key of dropKeys) {
+    delete fields[key]
+  }
+
+  for (const part of unitParts) {
+    address = appendAddressPart(address, part)
+  }
+
+  if (address) fields.address = address
+}
+
 export function normalizeLeadFields(
   raw: Record<string, string>,
 ): Record<string, string> {
@@ -200,6 +252,7 @@ export function normalizeLeadFields(
   composeDob(out)
   dropDobParts(out)
   canonicalizeNameFields(out)
+  canonicalizeAddressFields(out)
   return out
 }
 
