@@ -290,50 +290,77 @@ export async function syncSeoFromGscForApi(
     return { ok: false, status: 404, error: "Not found" }
   }
 
-  const apiBase = resolveIngestApiBase()
-  const secret = resolveInternalApiSecret()
-  if (!apiBase || !secret) {
-    return { ok: false, status: 503, error: "Analytics API not configured" }
+  if (!row.gscSiteUrl?.trim()) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Bind a Search Console property before syncing",
+    }
   }
 
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 60_000)
-
   try {
-    const res = await fetch(`${apiBase}/v1/analytics/seo/gsc-sync`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-arohaa-internal": secret,
-      },
-      body: JSON.stringify({
-        workspace_id: row.id,
-        lp_public_id: landingPagePublicId,
-      }),
-      cache: "no-store",
-      signal: controller.signal,
+    const {
+      db,
+      decryptVapidPrivateKey,
+      eq,
+      fetchGscSearchAnalytics,
+      gscPageFilterFromLanding,
+      landingPages,
+      refreshGscAccessToken,
+      workspaceGscConnections,
+    } = await import("@workspace/database")
+
+    const connection = await db.query.workspaceGscConnections.findFirst({
+      where: eq(workspaceGscConnections.workspaceId, row.workspaceId),
     })
-
-    const payload = (await res.json().catch(() => null)) as {
-      inserted?: number
-      error?: string
-    } | null
-
-    if (!res.ok) {
+    if (!connection || connection.status !== "active") {
       return {
         ok: false,
-        status: res.status,
-        error: payload?.error ?? "Search Console sync failed",
+        status: 400,
+        error: "Workspace Search Console is not connected",
       }
     }
 
-    return { ok: true, inserted: payload?.inserted ?? 0 }
-  } catch (err: unknown) {
-    if (err instanceof Error && err.name === "AbortError") {
-      return { ok: false, status: 504, error: "Search Console sync timed out" }
+    const refreshToken = decryptVapidPrivateKey(
+      connection.refreshTokenEncrypted
+    )
+    const accessToken = await refreshGscAccessToken(refreshToken)
+    const end = new Date()
+    const start = new Date(end.getTime() - 90 * 24 * 60 * 60 * 1000)
+    const gscRows = await fetchGscSearchAnalytics({
+      accessToken,
+      siteUrl: row.gscSiteUrl.trim(),
+      startDate: start,
+      endDate: end,
+      pageFilter: gscPageFilterFromLanding(row),
+    })
+
+    const upsert = await syncSeoRowsForApi(
+      landingPagePublicId,
+      gscRows.map((entry, index) => ({
+        id: `gsc:${index}`,
+        query: entry.query,
+        pageUrl: entry.pageUrl,
+        clicks: entry.clicks,
+        impressions: entry.impressions,
+        ctr: entry.ctr,
+        position: entry.position,
+        reportDate: entry.reportDate,
+      }))
+    )
+    if (!upsert.ok) return upsert
+
+    await db
+      .update(landingPages)
+      .set({ gscLastSyncedAt: new Date(), updatedAt: new Date() })
+      .where(eq(landingPages.id, row.id))
+
+    return { ok: true, inserted: upsert.inserted }
+  } catch (err) {
+    return {
+      ok: false,
+      status: 502,
+      error: err instanceof Error ? err.message : "Search Console sync failed",
     }
-    return { ok: false, status: 502, error: "Search Console sync failed" }
-  } finally {
-    clearTimeout(timer)
   }
 }
