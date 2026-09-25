@@ -216,6 +216,16 @@ export function SeoDashboard({
     )
   }
 
+  const handleGscChanged = () => {
+    // Search Console data is delayed (often 2–3 days). After sync, widen off
+    // "Today"/"Yesterday" so newly imported rows are visible immediately.
+    if (dateRangeId === "today" || dateRangeId === "yesterday") {
+      setDateRangeId("7d")
+      return
+    }
+    refresh()
+  }
+
   const kpis = isOrganic
     ? [
         { label: "Google sessions", value: summary.clicks },
@@ -246,7 +256,7 @@ export function SeoDashboard({
         projectId={projectId}
         source={dashboardData.source}
         gsc={dashboardData.gsc}
-        onChanged={refresh}
+        onChanged={handleGscChanged}
       />
 
       {isTabLoading || isBlockingLoad ? (
