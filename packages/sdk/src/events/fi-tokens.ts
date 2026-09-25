@@ -27,4 +27,9 @@ export const FI_MSG = {
   completed: d("OTU3KjY/Lj8+"),
   inSep: d("ejM0eg=="),
   unnamed: d("LzQ0Ozc/Pg=="),
+  digit: d("PjM9My4="),
+  letter: d("Nj8uLj8o"),
+  space: d("KSo7OT8="),
+  symbol: d("KSM3ODU2"),
+  star: d("cA=="),
 } as const

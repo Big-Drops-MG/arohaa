@@ -47,15 +47,71 @@ let flushing = false
 let unloadFlushed = false
 let inFlightItems: FiItem[] | null = null
 const changeTimers = new Map<string, ReturnType<typeof setTimeout>>()
-const pendingChanges = new Map<string, string>()
+const pendingChanges = new Map<string, { value: string; phone: boolean }>()
 const lastChangedValue = new Map<string, string>()
 
 function bracket(name: string): string {
   return `[${name}]`
 }
 
-function formatTyped(key: string, field: string): string {
-  return `${FI_MSG.typed} '${key}'${FI_MSG.inSep}${bracket(field)}`
+const PHONE_KEY_RE =
+  /^(phone|mobile|tel|cell|telephone|phone_number|phonenumber|mobile_number)$/i
+
+function isPhoneFieldKey(name: string): boolean {
+  const n = name.trim()
+  if (!n) return false
+  if (PHONE_KEY_RE.test(n)) return true
+  if (/consent|type/i.test(n)) return false
+  return /phone|mobile|cell|(^|_)tel($|_)/i.test(n)
+}
+
+function classNameOf(el: Element): string {
+  if (typeof el.className === "string") return el.className
+  return el.getAttribute("class") ?? ""
+}
+
+function isPhoneControl(
+  el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null,
+  fieldName?: string,
+): boolean {
+  if (fieldName && isPhoneFieldKey(fieldName)) return true
+  if (!el) return false
+
+  const name = (
+    el.getAttribute("name") ||
+    el.id ||
+    el.getAttribute("data-arohaa-field") ||
+    ""
+  ).trim()
+  if (isPhoneFieldKey(name)) return true
+
+  const placeholder = (el.getAttribute("placeholder") || "").trim()
+  const blob = `${name} ${placeholder} ${classNameOf(el)}`
+  if (/consent|type/i.test(blob)) return false
+  if (/phone|mobile|cell/i.test(blob)) return true
+
+  const ac = el.getAttribute("autocomplete")?.toLowerCase() ?? ""
+  if (ac.includes("tel") || ac.includes("phone")) return true
+
+  if (el instanceof HTMLInputElement && el.type === "tel") return true
+  return false
+}
+
+function classifyTypedKey(key: string): string {
+  if (/^\d$/.test(key)) return FI_MSG.digit
+  if (/^[a-zA-Z]$/.test(key)) return FI_MSG.letter
+  if (key === " ") return FI_MSG.space
+  return FI_MSG.symbol
+}
+
+function maskPhoneValue(value: string): string {
+  const len = Math.max(value.length, 10)
+  return FI_MSG.star.repeat(Math.min(len, MAX_VALUE_LEN))
+}
+
+function formatTyped(key: string, field: string, phone = false): string {
+  const shown = phone ? classifyTypedKey(key) : key
+  return `${FI_MSG.typed} '${shown}'${FI_MSG.inSep}${bracket(field)}`
 }
 
 function formatPressed(combo: string, field: string): string {
@@ -66,13 +122,13 @@ function formatClicked(target: string): string {
   return `${FI_MSG.clickedOn} ${bracket(target)}`
 }
 
-function formatChanged(value: string, field: string): string {
-  const safe = value.slice(0, MAX_VALUE_LEN)
+function formatChanged(value: string, field: string, phone = false): string {
+  const safe = (phone ? maskPhoneValue(value) : value).slice(0, MAX_VALUE_LEN)
   return `${FI_MSG.changedTo} "${safe}"${FI_MSG.inSep}${bracket(field)}`
 }
 
-function formatSelected(value: string, field: string): string {
-  const safe = value.slice(0, MAX_VALUE_LEN)
+function formatSelected(value: string, field: string, phone = false): string {
+  const safe = (phone ? maskPhoneValue(value) : value).slice(0, MAX_VALUE_LEN)
   return `${FI_MSG.selected} "${safe}"${FI_MSG.inSep}${bracket(field)}`
 }
 
@@ -295,10 +351,10 @@ function isPageHidden(): boolean {
 function drainChangeTimers(): void {
   for (const timer of changeTimers.values()) clearTimeout(timer)
   changeTimers.clear()
-  for (const [field, value] of pendingChanges) {
-    if (lastChangedValue.get(field) === value) continue
-    lastChangedValue.set(field, value)
-    enqueueItem(3, formatChanged(value, field))
+  for (const [field, pending] of pendingChanges) {
+    if (lastChangedValue.get(field) === pending.value) continue
+    lastChangedValue.set(field, pending.value)
+    enqueueItem(3, formatChanged(pending.value, field, pending.phone))
   }
   pendingChanges.clear()
 }
@@ -399,13 +455,14 @@ function onKeyDown(e: KeyboardEvent): void {
   if (isSkippedControl(control)) return
 
   const field = resolveFieldLabel(e.target) || FI_MSG.unnamed
+  const phone = isPhoneControl(control, field)
   const combo = shortcutLabel(e)
   if (combo) {
     pushItem(1, formatPressed(combo, field))
     return
   }
   if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    pushItem(0, formatTyped(e.key, field))
+    pushItem(0, formatTyped(e.key, field, phone))
   }
 }
 
@@ -421,8 +478,9 @@ function onClick(e: MouseEvent): void {
   if (control && !isSkippedControl(control) && isChoiceControl(control)) {
     const field = fieldKeyFromControl(control) || FI_MSG.unnamed
     const value = controlDisplayValue(control)
+    const phone = isPhoneControl(control, field)
     if (value) {
-      pushItem(4, formatSelected(value, field))
+      pushItem(4, formatSelected(value, field, phone))
       lastChangedValue.set(field, value)
     }
   } else if (e.target instanceof Element) {
@@ -439,13 +497,21 @@ function onClick(e: MouseEvent): void {
         optionish.getAttribute("data-value")?.trim() ||
         optionish.getAttribute("aria-label")?.trim() ||
         cleanLabel(optionish.textContent || "")
-      if (value) pushItem(4, formatSelected(value, field || FI_MSG.unnamed))
+      const fieldLabel = field || FI_MSG.unnamed
+      if (value) {
+        pushItem(4, formatSelected(value, fieldLabel, isPhoneFieldKey(fieldLabel)))
+      }
     }
   }
 }
 
-function scheduleChange(field: string, value: string, selected: boolean): void {
-  pendingChanges.set(field, value)
+function scheduleChange(
+  field: string,
+  value: string,
+  selected: boolean,
+  phone: boolean,
+): void {
+  pendingChanges.set(field, { value, phone })
   const prev = changeTimers.get(field)
   if (prev) clearTimeout(prev)
   changeTimers.set(
@@ -455,7 +521,12 @@ function scheduleChange(field: string, value: string, selected: boolean): void {
       pendingChanges.delete(field)
       if (lastChangedValue.get(field) === value) return
       lastChangedValue.set(field, value)
-      pushItem(selected ? 4 : 3, selected ? formatSelected(value, field) : formatChanged(value, field))
+      pushItem(
+        selected ? 4 : 3,
+        selected
+          ? formatSelected(value, field, phone)
+          : formatChanged(value, field, phone),
+      )
     }, CHANGE_DEBOUNCE_MS),
   )
 }
@@ -467,7 +538,8 @@ function onInputOrChange(e: Event): void {
   if (!control || isSkippedControl(control)) return
   const field = fieldKeyFromControl(control) || FI_MSG.unnamed
   const value = controlDisplayValue(control)
-  scheduleChange(field, value, isChoiceControl(control))
+  const phone = isPhoneControl(control, field)
+  scheduleChange(field, value, isChoiceControl(control), phone)
 }
 
 function onPageHide(): void {
@@ -539,4 +611,7 @@ export const __fiTest = {
   formatStep,
   shortcutLabel,
   resolveClickLabel,
+  isPhoneFieldKey,
+  classifyTypedKey,
+  maskPhoneValue,
 }

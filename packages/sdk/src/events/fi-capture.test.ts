@@ -18,25 +18,63 @@ describe("fi-tokens", () => {
     expect(FI_MSG.formSubmitted).toBe("form submitted")
     expect(FI_MSG.formCompleted).toBe("form completed")
     expect(FI_MSG.inSep).toBe(" in ")
+    expect(FI_MSG.digit).toBe("digit")
+    expect(FI_MSG.letter).toBe("letter")
+    expect(FI_MSG.space).toBe("space")
+    expect(FI_MSG.symbol).toBe("symbol")
+    expect(FI_MSG.star).toBe("*")
   })
 })
 
 describe("fi message builders", () => {
   it("formats typed and pressed messages", () => {
-    expect(__fiTest.formatTyped("5", "phone")).toBe("typed '5' in [phone]")
+    expect(__fiTest.formatTyped("5", "email")).toBe("typed '5' in [email]")
     expect(__fiTest.formatPressed("Control+v", "email")).toBe(
       "pressed 'Control+v' in [email]",
     )
   })
 
+  it("masks phone keystrokes like TrustedForm", () => {
+    expect(__fiTest.formatTyped("5", "phone", true)).toBe(
+      "typed 'digit' in [phone]",
+    )
+    expect(__fiTest.formatTyped("a", "mobile_number", true)).toBe(
+      "typed 'letter' in [mobile_number]",
+    )
+    expect(__fiTest.formatTyped("-", "phone", true)).toBe(
+      "typed 'symbol' in [phone]",
+    )
+    expect(__fiTest.formatTyped(" ", "phone", true)).toBe(
+      "typed 'space' in [phone]",
+    )
+  })
+
   it("formats click, change, and selected messages", () => {
     expect(__fiTest.formatClicked("submit")).toBe("clicked on [submit]")
-    expect(__fiTest.formatChanged("5551234", "phone")).toBe(
-      'changed value to "5551234" in [phone]',
+    expect(__fiTest.formatChanged("hello", "email")).toBe(
+      'changed value to "hello" in [email]',
     )
     expect(__fiTest.formatSelected("Yes", "insured")).toBe(
       'selected "Yes" in [insured]',
     )
+  })
+
+  it("masks phone values like TrustedForm", () => {
+    expect(__fiTest.formatChanged("5551234567", "phone", true)).toBe(
+      'changed value to "**********" in [phone]',
+    )
+    expect(__fiTest.formatChanged("555", "mobile_number", true)).toBe(
+      'changed value to "**********" in [mobile_number]',
+    )
+    expect(__fiTest.maskPhoneValue("12")).toBe("**********")
+  })
+
+  it("detects phone field keys", () => {
+    expect(__fiTest.isPhoneFieldKey("phone")).toBe(true)
+    expect(__fiTest.isPhoneFieldKey("mobile_number")).toBe(true)
+    expect(__fiTest.isPhoneFieldKey("PhoneNumber")).toBe(true)
+    expect(__fiTest.isPhoneFieldKey("email")).toBe(false)
+    expect(__fiTest.isPhoneFieldKey("telephone_consent")).toBe(false)
   })
 
   it("formats step messages", () => {
