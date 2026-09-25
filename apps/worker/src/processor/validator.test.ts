@@ -22,6 +22,10 @@ describe('validateEvent', () => {
     ).toBe(true)
   })
 
+  it('accepts _fi interaction batches', () => {
+    expect(validateEvent(baseEvent({ event_name: '_fi' }))).toBe(true)
+  })
+
   it('rejects unknown event names', () => {
     expect(validateEvent(baseEvent({ event_name: 'drop_table' }))).toBe(false)
     expect(validateEvent(baseEvent({ event_name: 'CustomHack' }))).toBe(false)

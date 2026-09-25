@@ -30,6 +30,7 @@ const ALLOWED_EVENT_NAMES = new Set([
   'service_click',
   'heartbeat',
   'web_vitals',
+  '_fi',
 ]);
 const MIN_CREATED_AT = Date.parse('2020-01-01T00:00:00.000Z');
 const MAX_FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
