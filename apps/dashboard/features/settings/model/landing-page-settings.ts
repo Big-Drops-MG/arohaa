@@ -20,6 +20,8 @@ export type LandingPageRecord = {
   verifiedAt: string | null
   lastSeenAt: string | null
   lastEventAt: string | null
+  gscSiteUrl: string | null
+  gscLastSyncedAt: string | null
   formType: OverviewLandingFormType
   redirectPageUrl: string | null
   redirectHostname: string | null

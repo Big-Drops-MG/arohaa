@@ -46,6 +46,8 @@ export const landingPages = pgTable(
     faviconUrl: text("faviconUrl"),
     notes: text("notes"),
     htmlVerificationToken: text("htmlVerificationToken"),
+    gscSiteUrl: text("gscSiteUrl"),
+    gscLastSyncedAt: timestamp("gscLastSyncedAt", { mode: "date" }),
     metadata: jsonb("metadata").$type<Record<string, unknown> | null>(),
     createdAt: timestamp("createdAt", { mode: "date" }).notNull().defaultNow(),
     updatedAt: timestamp("updatedAt", { mode: "date" }).notNull().defaultNow(),

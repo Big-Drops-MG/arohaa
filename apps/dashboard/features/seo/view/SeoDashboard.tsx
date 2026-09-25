@@ -11,7 +11,8 @@ import type {
   SeoSortOrder,
 } from "@/features/seo/model/seo"
 import { SeoResultsTable } from "@/features/seo/view/SeoResultsTable"
-import { SeoImportPanel } from "@/features/seo/view/SeoImportPanel"
+import { SeoConnectPanel } from "@/features/seo/view/SeoConnectPanel"
+import { SeoContentPanel } from "@/features/seo/view/SeoContentPanel"
 import { formatSeoSummaryLabel } from "@/features/seo/utils/seo-format"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardQueryParam } from "@/hooks/use-dashboard-query-param"
@@ -194,6 +195,7 @@ export function SeoDashboard({
   )
 
   const summary = formatSeoSummaryLabel(dashboardData.summary)
+  const isOrganic = dashboardData.source === "organic"
 
   const handleSort = (field: SeoSortField) => {
     if (sortBy === field) {
@@ -203,6 +205,30 @@ export function SeoDashboard({
     setSortBy(field)
     setSortOrder("desc")
   }
+
+  const refresh = () => {
+    void fetchSeoForRange(
+      dateRangeId,
+      sortBy,
+      sortOrder,
+      undefined,
+      "background"
+    )
+  }
+
+  const kpis = isOrganic
+    ? [
+        { label: "Google sessions", value: summary.clicks },
+        { label: "Page views", value: summary.impressions },
+        { label: "Landing paths", value: summary.queries },
+      ]
+    : [
+        { label: "Total clicks", value: summary.clicks },
+        { label: "Impressions", value: summary.impressions },
+        { label: "Avg CTR", value: summary.ctr },
+        { label: "Avg position", value: summary.position },
+        { label: "Queries", value: summary.queries },
+      ]
 
   return (
     <div className="flex flex-col gap-4 pb-6">
@@ -216,17 +242,11 @@ export function SeoDashboard({
         onCustomRangeChange={setCustomRange}
       />
 
-      <SeoImportPanel
+      <SeoConnectPanel
         projectId={projectId}
-        onSynced={() => {
-          void fetchSeoForRange(
-            dateRangeId,
-            sortBy,
-            sortOrder,
-            undefined,
-            "background"
-          )
-        }}
+        source={dashboardData.source}
+        gsc={dashboardData.gsc}
+        onChanged={refresh}
       />
 
       {isTabLoading || isBlockingLoad ? (
@@ -239,14 +259,13 @@ export function SeoDashboard({
           )}
           aria-busy={isRefreshing}
         >
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {[
-              { label: "Total clicks", value: summary.clicks },
-              { label: "Impressions", value: summary.impressions },
-              { label: "Avg CTR", value: summary.ctr },
-              { label: "Avg position", value: summary.position },
-              { label: "Queries", value: summary.queries },
-            ].map((kpi) => (
+          <div
+            className={cn(
+              "grid gap-3 sm:grid-cols-2",
+              isOrganic ? "lg:grid-cols-3" : "lg:grid-cols-5"
+            )}
+          >
+            {kpis.map((kpi) => (
               <div
                 key={kpi.label}
                 className="rounded-xl border border-border bg-white px-4 py-3"
@@ -259,11 +278,17 @@ export function SeoDashboard({
             ))}
           </div>
 
+          <SeoContentPanel
+            items={dashboardData.content ?? []}
+            metricLabel={isOrganic ? "Sessions" : "Clicks"}
+          />
+
           <SeoResultsTable
             rows={sortedRows}
             sortBy={sortBy}
             sortOrder={sortOrder}
             onSort={handleSort}
+            source={dashboardData.source}
           />
         </div>
       )}

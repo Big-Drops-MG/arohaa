@@ -1,11 +1,23 @@
 import { track } from "../core/tracker"
 
 export function trackPageView(): void {
-  track("page_view")
+  const pageTitle =
+    typeof document !== "undefined"
+      ? String(document.title ?? "")
+          .trim()
+          .slice(0, 300)
+      : ""
+  track("page_view", pageTitle ? { page_title: pageTitle } : {})
 }
 
 export function trackPageLeave(): void {
-  track("page_leave")
+  const pageTitle =
+    typeof document !== "undefined"
+      ? String(document.title ?? "")
+          .trim()
+          .slice(0, 300)
+      : ""
+  track("page_leave", pageTitle ? { page_title: pageTitle } : {})
 }
 
 let spaPageViewsInstalled = false

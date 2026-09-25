@@ -20,22 +20,31 @@ export const utmPutBodySchema = z
 
 export const seoPostBodySchema = z
   .object({
-    rows: z.array(
-      z
-        .object({
-          id: z.string(),
-          query: z.string(),
-          pageUrl: z.string(),
-          clicks: z.number(),
-          impressions: z.number(),
-          ctr: z.number(),
-          position: z.number(),
-          reportDate: z.string(),
-        })
-        .strict()
-    ),
+    action: z.enum(["gsc_sync"]).optional(),
+    rows: z
+      .array(
+        z
+          .object({
+            id: z.string().optional(),
+            query: z.string(),
+            pageUrl: z.string(),
+            clicks: z.number(),
+            impressions: z.number(),
+            ctr: z.number(),
+            position: z.number(),
+            reportDate: z.string(),
+          })
+          .strict()
+      )
+      .optional(),
   })
   .strict()
+  .refine(
+    (body) =>
+      body.action === "gsc_sync" ||
+      (Array.isArray(body.rows) && body.rows.length > 0),
+    { message: "rows or action=gsc_sync required" }
+  )
 
 export const alertWebhookCreateBodySchema = z
   .object({
@@ -121,6 +130,7 @@ export const landingPagePatchBodySchema = z
     services: z.unknown().optional(),
     channelType: z.unknown().optional(),
     channelTypes: z.unknown().optional(),
+    gscSiteUrl: z.union([z.string(), z.null()]).optional(),
   })
   .strict()
 

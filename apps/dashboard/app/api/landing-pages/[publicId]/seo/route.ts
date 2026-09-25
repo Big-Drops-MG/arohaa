@@ -3,6 +3,7 @@ import { parseDashboardCustomRange } from "@/features/traffic/model/traffic-rang
 import { parseUtmFilterFromSearchParams } from "@/lib/server/analytics-utm-params"
 import {
   loadSeoDashboardDataForApi,
+  syncSeoFromGscForApi,
   syncSeoRowsForApi,
 } from "@/lib/server/seo-dashboard-load"
 import { route } from "@/lib/server/route"
@@ -53,7 +54,27 @@ export const POST = route(
     schema: seoPostBodySchema,
   },
   async ({ params, body }) => {
-    const res = await syncSeoRowsForApi(params.publicId!, body.rows)
+    if (body.action === "gsc_sync") {
+      const res = await syncSeoFromGscForApi(params.publicId!)
+      if (!res.ok) {
+        return NextResponse.json({ error: res.error }, { status: res.status })
+      }
+      return NextResponse.json({ inserted: res.inserted })
+    }
+
+    const res = await syncSeoRowsForApi(
+      params.publicId!,
+      (body.rows ?? []).map((row, index) => ({
+        id: row.id ?? `import:${index}`,
+        query: row.query,
+        pageUrl: row.pageUrl,
+        clicks: row.clicks,
+        impressions: row.impressions,
+        ctr: row.ctr,
+        position: row.position,
+        reportDate: row.reportDate,
+      }))
+    )
     if (!res.ok) {
       return NextResponse.json({ error: res.error }, { status: res.status })
     }

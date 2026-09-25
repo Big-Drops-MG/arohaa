@@ -10,14 +10,20 @@ import {
   trackPageLeave,
 } from "./page.events"
 
+const trackMock = vi.mocked(track)
+
 describe("page leave tracking", () => {
   afterEach(() => {
     vi.clearAllMocks()
   })
 
   it("trackPageLeave emits page_leave", () => {
+    vi.stubGlobal("document", { title: "Test Page" })
     trackPageLeave()
-    expect(track).toHaveBeenCalledWith("page_leave")
+    expect(trackMock).toHaveBeenCalledWith("page_leave", {
+      page_title: "Test Page",
+    })
+    vi.unstubAllGlobals()
   })
 
   it("setupPageLeaveTracking fires on hide and pagehide", () => {
@@ -25,6 +31,7 @@ describe("page leave tracking", () => {
     const pagehideListeners: Array<() => void> = []
 
     const doc = {
+      title: "Leave Page",
       visibilityState: "visible" as DocumentVisibilityState,
       addEventListener: (
         type: string,
@@ -57,11 +64,15 @@ describe("page leave tracking", () => {
 
     doc.visibilityState = "hidden"
     visibilityListeners[0]!()
-    expect(track).toHaveBeenCalledWith("page_leave")
+    expect(trackMock).toHaveBeenCalledWith("page_leave", {
+      page_title: "Leave Page",
+    })
 
-    track.mockClear()
+    trackMock.mockClear()
     pagehideListeners[0]!()
-    expect(track).toHaveBeenCalledWith("page_leave")
+    expect(trackMock).toHaveBeenCalledWith("page_leave", {
+      page_title: "Leave Page",
+    })
 
     vi.unstubAllGlobals()
   })

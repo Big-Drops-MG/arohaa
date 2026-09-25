@@ -34,6 +34,14 @@ export function SettingsProjectDetailsSection({
           value={landingPage.normalizedUrl}
         />
         <SettingsReadOnlyRow
+          label="Search Console property"
+          value={landingPage.gscSiteUrl ?? "Not linked"}
+        />
+        <SettingsReadOnlyRow
+          label="Search Console last sync"
+          value={formatSettingsTimestamp(landingPage.gscLastSyncedAt)}
+        />
+        <SettingsReadOnlyRow
           label="Page status"
           value={formatLandingPageStatus(landingPage.status)}
         />

@@ -7,7 +7,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@workspace/ui/components/card"
-import type { SeoResultRow, SeoSortField } from "@/features/seo/model/seo"
+import type {
+  SeoResultRow,
+  SeoSortField,
+  SeoSource,
+} from "@/features/seo/model/seo"
 import {
   overviewAnalyticCardHeaderClassName,
   overviewAnalyticCardShellClassName,
@@ -16,25 +20,12 @@ import {
 import { overviewCardPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
 import { formatDashboardDate } from "@/lib/datetime"
 
-const COLUMNS: Array<{
-  key: SeoSortField | "pageUrl" | "reportDate"
-  label: string
-  sortable: boolean
-}> = [
-  { key: "query", label: "Query", sortable: true },
-  { key: "pageUrl", label: "Page", sortable: false },
-  { key: "clicks", label: "Clicks", sortable: true },
-  { key: "impressions", label: "Impressions", sortable: true },
-  { key: "ctr", label: "CTR", sortable: true },
-  { key: "position", label: "Position", sortable: true },
-  { key: "reportDate", label: "Date", sortable: false },
-]
-
 type SeoResultsTableProps = {
   rows: SeoResultRow[]
   sortBy: SeoSortField
   sortOrder: "asc" | "desc"
   onSort: (field: SeoSortField) => void
+  source: SeoSource
 }
 
 function formatDate(iso: string): string {
@@ -43,30 +34,61 @@ function formatDate(iso: string): string {
   return formatDashboardDate(d)
 }
 
-function cellValue(row: SeoResultRow, key: (typeof COLUMNS)[number]["key"]) {
-  if (key === "reportDate") return formatDate(row.reportDate)
-  if (key === "ctr") return `${row.ctr.toFixed(1)}%`
-  if (key === "position") return row.position.toFixed(1)
-  if (key === "pageUrl") {
-    try {
-      const url = new URL(row.pageUrl)
-      return url.pathname || row.pageUrl
-    } catch {
-      return row.pageUrl
-    }
-  }
-  if (key === "clicks" || key === "impressions") {
-    return row[key].toLocaleString("en-US")
-  }
-  return row[key as SeoSortField]
-}
-
 export function SeoResultsTable({
   rows,
   sortBy,
   sortOrder,
   onSort,
+  source,
 }: SeoResultsTableProps) {
+  const isOrganic = source === "organic"
+  const columns: Array<{
+    key: SeoSortField | "pageUrl" | "pageTitle" | "reportDate"
+    label: string
+    sortable: boolean
+  }> = isOrganic
+    ? [
+        { key: "pageTitle", label: "Title", sortable: false },
+        { key: "pageUrl", label: "Path", sortable: false },
+        { key: "clicks", label: "Sessions", sortable: true },
+        { key: "impressions", label: "Views", sortable: true },
+        { key: "reportDate", label: "As of", sortable: false },
+      ]
+    : [
+        { key: "query", label: "Query", sortable: true },
+        { key: "pageUrl", label: "Page", sortable: false },
+        { key: "clicks", label: "Clicks", sortable: true },
+        { key: "impressions", label: "Impressions", sortable: true },
+        { key: "ctr", label: "CTR", sortable: true },
+        { key: "position", label: "Position", sortable: true },
+        { key: "reportDate", label: "Date", sortable: false },
+      ]
+
+  function cellValue(
+    row: SeoResultRow,
+    key: (typeof columns)[number]["key"]
+  ): string {
+    if (key === "reportDate") return formatDate(row.reportDate)
+    if (key === "ctr") return `${row.ctr.toFixed(1)}%`
+    if (key === "position") return row.position.toFixed(1)
+    if (key === "pageTitle") return row.pageTitle || row.pageUrl
+    if (key === "pageUrl") {
+      try {
+        const url = new URL(row.pageUrl)
+        return url.pathname || row.pageUrl
+      } catch {
+        return row.pageUrl
+      }
+    }
+    if (key === "clicks" || key === "impressions") {
+      return row[key].toLocaleString("en-US")
+    }
+    if (key === "query") {
+      return row.query || "—"
+    }
+    return String(row[key as SeoSortField] ?? "")
+  }
+
   return (
     <Card
       className={cn(
@@ -77,17 +99,19 @@ export function SeoResultsTable({
     >
       <CardHeader className={overviewAnalyticCardHeaderClassName}>
         <CardTitle className={overviewSectionHeadingClassName}>
-          Search queries
+          {isOrganic ? "Google landing paths" : "Search queries"}
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
         <div
           className="grid border-b border-border px-5 py-2.5 sm:px-6"
           style={{
-            gridTemplateColumns: `2fr 1.5fr repeat(5, minmax(0, 1fr))`,
+            gridTemplateColumns: isOrganic
+              ? `1.5fr 1.5fr repeat(3, minmax(0, 1fr))`
+              : `2fr 1.5fr repeat(5, minmax(0, 1fr))`,
           }}
         >
-          {COLUMNS.map((col) => {
+          {columns.map((col) => {
             const active = col.sortable && sortBy === col.key
             return (
               <button
@@ -113,8 +137,9 @@ export function SeoResultsTable({
         </div>
         {rows.length === 0 ? (
           <p className="px-5 py-8 text-sm text-muted-foreground sm:px-6">
-            No SEO results for this date range. Sync search console data to
-            populate this table.
+            {isOrganic
+              ? "No Google organic traffic for this date range yet. Connect Search Console for keywords and rankings."
+              : "No Search Console rows for this date range. Sync Search Console to populate this table."}
           </p>
         ) : (
           rows.map((row, rowIndex) => (
@@ -125,14 +150,16 @@ export function SeoResultsTable({
                 rowIndex < rows.length - 1 && "border-b border-border/60"
               )}
               style={{
-                gridTemplateColumns: `2fr 1.5fr repeat(5, minmax(0, 1fr))`,
+                gridTemplateColumns: isOrganic
+                  ? `1.5fr 1.5fr repeat(3, minmax(0, 1fr))`
+                  : `2fr 1.5fr repeat(5, minmax(0, 1fr))`,
               }}
             >
-              {COLUMNS.map((col) => (
+              {columns.map((col) => (
                 <span
                   key={col.key}
                   className="truncate text-sm text-foreground tabular-nums"
-                  title={String(cellValue(row, col.key))}
+                  title={cellValue(row, col.key)}
                 >
                   {cellValue(row, col.key)}
                 </span>

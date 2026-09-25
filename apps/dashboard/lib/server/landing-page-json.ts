@@ -32,6 +32,8 @@ export function toLandingPageRecord(row: LandingRow): LandingPageRecord {
     redirectHostname: row.redirectHostname ?? null,
     faviconUrl: row.faviconUrl,
     notes: row.notes,
+    gscSiteUrl: row.gscSiteUrl ?? null,
+    gscLastSyncedAt: row.gscLastSyncedAt?.toISOString() ?? null,
     channelType: parseLandingPageChannelType(metadata),
     services: parseLandingPageServices(metadata),
     isLive: isLandingPageLive(row.status),

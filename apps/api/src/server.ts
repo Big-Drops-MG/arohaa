@@ -35,6 +35,10 @@ import {
   startConnectionWarmer,
   stopConnectionWarmer,
 } from './services/connection-warmer.service.js'
+import {
+  startGscSeoSyncScheduler,
+  stopGscSeoSyncScheduler,
+} from './services/gsc-seo-sync-scheduler.js'
 
 const TRACE_ID_HEADER = 'x-trace-id'
 const TRACE_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/
@@ -270,6 +274,7 @@ const start = async () => {
     startBufferProcessor({ logger: server.log })
     startQueueDepthMonitor({ logger: server.log })
     startConnectionWarmer({ logger: server.log })
+    startGscSeoSyncScheduler({ logger: server.log })
 
     const port = Number(process.env.PORT) || 3001
     await server.listen({ port, host: '0.0.0.0' })
@@ -287,6 +292,7 @@ const shutdown = async (signal: string) => {
     await stopBufferProcessor()
     await stopQueueDepthMonitor()
     stopConnectionWarmer()
+    stopGscSeoSyncScheduler()
     await server.close()
     await closeClickHouseClient()
     await Sentry.flush(2000).catch(() => undefined)

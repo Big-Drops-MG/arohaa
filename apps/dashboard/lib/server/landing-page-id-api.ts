@@ -184,6 +184,27 @@ export async function patchLandingPageForApi(
     nextNotes = parsed.value
   }
 
+  let nextGscSiteUrl = row.gscSiteUrl ?? null
+  if ("gscSiteUrl" in record) {
+    if (record.gscSiteUrl == null || record.gscSiteUrl === "") {
+      nextGscSiteUrl = null
+    } else if (typeof record.gscSiteUrl === "string") {
+      const trimmed = record.gscSiteUrl.trim()
+      if (trimmed.length > 2048) {
+        return NextResponse.json(
+          { error: "gscSiteUrl is too long" },
+          { status: 400 }
+        )
+      }
+      nextGscSiteUrl = trimmed || null
+    } else {
+      return NextResponse.json(
+        { error: "gscSiteUrl must be a string or null" },
+        { status: 400 }
+      )
+    }
+  }
+
   let nextRedirectPageUrl = row.redirectPageUrl ?? null
   let nextRedirectHostname = row.redirectHostname ?? null
   let nextRedirectOrigin = row.redirectOrigin ?? null
@@ -281,6 +302,7 @@ export async function patchLandingPageForApi(
         formType: nextFormType,
         faviconUrl: nextFaviconUrl,
         notes: nextNotes,
+        gscSiteUrl: nextGscSiteUrl,
         redirectPageUrl: nextRedirectPageUrl,
         redirectHostname: nextRedirectHostname,
         redirectOrigin: nextRedirectOrigin,
@@ -349,6 +371,7 @@ export async function patchLandingPageForApi(
     nextFormType !== row.formType ||
     nextFaviconUrl !== row.faviconUrl ||
     nextNotes !== row.notes ||
+    nextGscSiteUrl !== (row.gscSiteUrl ?? null) ||
     channelTypeChanged
 
   if (generalFieldsChanged) {

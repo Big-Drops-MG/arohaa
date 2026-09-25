@@ -10,6 +10,7 @@ import * as experimentsSchema from "./schema/experiments.js"
 import * as experimentVariantLabelsSchema from "./schema/experiment-variant-labels.js"
 import * as notificationsSchema from "./schema/notifications.js"
 import * as seoSchema from "./schema/seo.js"
+import * as gscSchema from "./schema/gsc.js"
 import * as workspaceApiKeysSchema from "./schema/workspace-api-keys.js"
 import * as workspaceAlertWebhooksSchema from "./schema/workspace-alert-webhooks.js"
 import * as landingPageUtmParamsSchema from "./schema/landing-page-utm-params.js"
@@ -33,6 +34,7 @@ const schema = {
   ...experimentVariantLabelsSchema,
   ...notificationsSchema,
   ...seoSchema,
+  ...gscSchema,
   ...workspaceApiKeysSchema,
   ...workspaceAlertWebhooksSchema,
   ...landingPageUtmParamsSchema,
@@ -51,8 +53,7 @@ const schema = {
 bootstrapDatabaseEnv(import.meta.url)
 
 function resolveDatabaseUrl(): string {
-  // Prefer a direct (unpooled) URL so multi-statement transactions work.
-  // neon-http cannot run db.transaction(); node-postgres can.
+
   const url =
     process.env.DATABASE_URL_UNPOOLED ??
     process.env.POSTGRES_URL_NON_POOLING ??
@@ -75,7 +76,6 @@ function getPool(): pg.Pool {
 
   const pool = new pg.Pool({
     connectionString: resolveDatabaseUrl(),
-    // Serverless-friendly: avoid exhausting Neon connection limits.
     max: Number(process.env.PG_POOL_MAX ?? 5),
     idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 15_000,
@@ -94,6 +94,8 @@ export * from "./schema/experiments.js"
 export * from "./schema/experiment-variant-labels.js"
 export * from "./schema/notifications.js"
 export * from "./schema/seo.js"
+export * from "./schema/gsc.js"
+export * from "./gsc/client.js"
 export * from "./schema/workspace-api-keys.js"
 export * from "./schema/workspace-alert-webhooks.js"
 export * from "./schema/landing-page-utm-params.js"

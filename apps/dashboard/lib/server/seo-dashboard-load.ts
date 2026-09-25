@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation"
 import { getSeoEmptyDashboardData } from "@/features/seo/controller/seo-empty-data"
 import type {
+  SeoContentItem,
   SeoDashboardData,
   SeoSortField,
   SeoSortOrder,
+  SeoSource,
 } from "@/features/seo/model/seo"
 import {
   DEFAULT_TRAFFIC_RANGE_ID,
@@ -31,6 +33,9 @@ import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribut
 interface AnalyticsSeoResponse {
   summary: SeoDashboardData["summary"]
   rows: SeoDashboardData["rows"]
+  content?: SeoContentItem[]
+  source?: SeoSource
+  gsc?: SeoDashboardData["gsc"]
   sortBy: SeoSortField
   sortOrder: SeoSortOrder
 }
@@ -44,11 +49,19 @@ export function buildSeoDashboardData(
     defaultDateRangeId: rangeId as SeoDashboardData["defaultDateRangeId"],
     defaultSortBy: data.sortBy,
     defaultSortOrder: data.sortOrder,
+    source: data.source ?? "organic",
+    gsc: data.gsc ?? {
+      connected: false,
+      siteUrl: null,
+      accountEmail: null,
+      lastSyncedAt: null,
+    },
     summary: {
       ...data.summary,
       totalClicks: data.summary.totalClicks,
       totalImpressions: data.summary.totalImpressions,
     },
+    content: data.content ?? [],
     rows: data.rows.map((row) => ({
       ...row,
       clicks: row.clicks,
@@ -257,6 +270,69 @@ export async function syncSeoRowsForApi(
       return { ok: false, status: 504, error: "SEO sync timed out" }
     }
     return { ok: false, status: 502, error: "SEO sync failed" }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export async function syncSeoFromGscForApi(
+  landingPagePublicId: string
+): Promise<
+  { ok: true; inserted: number } | { ok: false; status: number; error: string }
+> {
+  const actor = await requireWritableLandingPageActor()
+  if (!actor) {
+    return { ok: false, status: 401, error: "Unauthorized" }
+  }
+
+  const row = await getActiveLandingPageForActor(actor.id, landingPagePublicId)
+  if (!row) {
+    return { ok: false, status: 404, error: "Not found" }
+  }
+
+  const apiBase = resolveIngestApiBase()
+  const secret = resolveInternalApiSecret()
+  if (!apiBase || !secret) {
+    return { ok: false, status: 503, error: "Analytics API not configured" }
+  }
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 60_000)
+
+  try {
+    const res = await fetch(`${apiBase}/v1/analytics/seo/gsc-sync`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-arohaa-internal": secret,
+      },
+      body: JSON.stringify({
+        workspace_id: row.id,
+        lp_public_id: landingPagePublicId,
+      }),
+      cache: "no-store",
+      signal: controller.signal,
+    })
+
+    const payload = (await res.json().catch(() => null)) as {
+      inserted?: number
+      error?: string
+    } | null
+
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: res.status,
+        error: payload?.error ?? "Search Console sync failed",
+      }
+    }
+
+    return { ok: true, inserted: payload?.inserted ?? 0 }
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "AbortError") {
+      return { ok: false, status: 504, error: "Search Console sync timed out" }
+    }
+    return { ok: false, status: 502, error: "Search Console sync failed" }
   } finally {
     clearTimeout(timer)
   }

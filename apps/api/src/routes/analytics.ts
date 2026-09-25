@@ -6,7 +6,7 @@ import {
 } from '../lib/internal-api-secret.js'
 import { verifyWorkspaceApiKeyForLandingPage } from '../lib/workspace-api-key-auth.js'
 import { guardFunnelLeadsRequest } from '../lib/funnel-leads-auth.js'
-import { WORKSPACE_API_KEY_SCOPE_ANALYTICS } from '@workspace/database'
+import { WORKSPACE_API_KEY_SCOPE_ANALYTICS, db, eq, landingPages } from '@workspace/database'
 import {
   getAnalyticsFunnel,
 } from '../services/analytics-funnel.service.js'
@@ -37,6 +37,7 @@ import {
 } from '../services/analytics-alerts.service.js'
 import {
   getAnalyticsSeo,
+  syncLandingPageFromGsc,
   syncSeoResults,
 } from '../services/analytics-seo.service.js'
 import {
@@ -1370,6 +1371,68 @@ export async function analyticsRoutes(server: FastifyInstance) {
       } catch (err) {
         request.log.error({ err, workspace_id, lp_public_id }, 'seo sync failed')
         return reply.code(400).send({ error: 'SEO sync failed' })
+      }
+    },
+  )
+
+  server.post<{
+    Body: {
+      workspace_id: string
+      lp_public_id: string
+    }
+  }>(
+    '/v1/analytics/seo/gsc-sync',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['workspace_id', 'lp_public_id'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            lp_public_id: { type: 'string', minLength: 1 },
+          },
+        },
+      },
+      config: ANALYTICS_RATE_LIMIT,
+    },
+    async (request, reply) => {
+      const { workspace_id, lp_public_id } = request.body
+
+      if (!resolveInternalApiSecret()) {
+        return reply.code(503).send({ error: 'Analytics not configured on this server' })
+      }
+
+      if (!verifyInternalApiRequest(request.headers['x-arohaa-internal'])) {
+        return reply.code(401).send({ error: 'Unauthorized' })
+      }
+
+      if (!UUID_RE.test(workspace_id)) {
+        return reply.code(400).send({ error: 'Invalid workspace_id' })
+      }
+
+      try {
+        const lp = await db.query.landingPages.findFirst({
+          where: eq(landingPages.publicId, lp_public_id),
+        })
+        if (!lp || lp.id !== workspace_id) {
+          return reply.code(404).send({ error: 'Landing page not found' })
+        }
+        if (!lp.gscSiteUrl?.trim()) {
+          return reply
+            .code(400)
+            .send({ error: 'Bind a Search Console property before syncing' })
+        }
+        const result = await syncLandingPageFromGsc(lp)
+        return reply.send(result)
+      } catch (err) {
+        request.log.error(
+          { err, workspace_id, lp_public_id },
+          'seo gsc sync failed',
+        )
+        return reply.code(400).send({
+          error:
+            err instanceof Error ? err.message : 'Search Console sync failed',
+        })
       }
     },
   )

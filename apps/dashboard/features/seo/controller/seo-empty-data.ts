@@ -11,6 +11,13 @@ export function getSeoEmptyDashboardData(
     defaultDateRangeId: rangeId,
     defaultSortBy: "clicks",
     defaultSortOrder: "desc",
+    source: "organic",
+    gsc: {
+      connected: false,
+      siteUrl: null,
+      accountEmail: null,
+      lastSyncedAt: null,
+    },
     summary: {
       totalClicks: 0,
       totalImpressions: 0,
@@ -18,6 +25,7 @@ export function getSeoEmptyDashboardData(
       avgPosition: 0,
       rowCount: 0,
     },
+    content: [],
     rows: [],
   }
 }
