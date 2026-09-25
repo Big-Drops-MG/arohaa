@@ -361,6 +361,7 @@ export function LoginPage() {
                     </Label>
                     <Link
                       href="/forgot-password"
+                      prefetch={false}
                       className="text-sm font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                     >
                       Forgot password?

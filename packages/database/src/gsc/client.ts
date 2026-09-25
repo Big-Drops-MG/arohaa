@@ -13,11 +13,17 @@ export type GscSiteEntry = {
   permissionLevel: string
 }
 
-function requireGoogleOAuthClient(): { clientId: string; clientSecret: string } {
-  const clientId = process.env.GOOGLE_CLIENT_ID?.trim()
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim()
+function requireGscOAuthClient(): { clientId: string; clientSecret: string } {
+  const clientId =
+    process.env.GSC_GOOGLE_CLIENT_ID?.trim() ||
+    process.env.GOOGLE_CLIENT_ID?.trim()
+  const clientSecret =
+    process.env.GSC_GOOGLE_CLIENT_SECRET?.trim() ||
+    process.env.GOOGLE_CLIENT_SECRET?.trim()
   if (!clientId || !clientSecret) {
-    throw new Error("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required for GSC")
+    throw new Error(
+      "GSC_GOOGLE_CLIENT_ID and GSC_GOOGLE_CLIENT_SECRET are required for GSC (or GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET fallback)"
+    )
   }
   return { clientId, clientSecret }
 }
@@ -25,7 +31,7 @@ function requireGoogleOAuthClient(): { clientId: string; clientSecret: string } 
 export async function refreshGscAccessToken(
   refreshToken: string
 ): Promise<string> {
-  const { clientId, clientSecret } = requireGoogleOAuthClient()
+  const { clientId, clientSecret } = requireGscOAuthClient()
   const body = new URLSearchParams({
     client_id: clientId,
     client_secret: clientSecret,
@@ -52,7 +58,7 @@ export async function exchangeGscAuthCode(
   code: string,
   redirectUri: string
 ): Promise<{ refreshToken: string; accessToken: string; email?: string }> {
-  const { clientId, clientSecret } = requireGoogleOAuthClient()
+  const { clientId, clientSecret } = requireGscOAuthClient()
   const body = new URLSearchParams({
     code,
     client_id: clientId,
@@ -107,7 +113,7 @@ export function buildGscAuthorizeUrl(params: {
   redirectUri: string
   state: string
 }): string {
-  const { clientId } = requireGoogleOAuthClient()
+  const { clientId } = requireGscOAuthClient()
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth")
   url.searchParams.set("client_id", clientId)
   url.searchParams.set("redirect_uri", params.redirectUri)

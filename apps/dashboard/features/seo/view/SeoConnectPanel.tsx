@@ -110,7 +110,12 @@ export function SeoConnectPanel({
       if (!res.ok) {
         throw new Error(body?.error ?? "Search Console sync failed")
       }
-      setMessage(`Synced ${body?.inserted ?? 0} rows from Search Console`)
+      const inserted = body?.inserted ?? 0
+      setMessage(
+        inserted > 0
+          ? `Synced ${inserted} rows from Search Console. Switch the date range to Last 7 Days or This Month if Today is empty (Search Console data is delayed).`
+          : "Sync finished with 0 rows for this landing page URL filter."
+      )
       onChanged()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sync failed")
@@ -151,8 +156,17 @@ export function SeoConnectPanel({
           <span className="text-xs text-muted-foreground">{email}</span>
         ) : null}
         {gsc.lastSyncedAt ? (
-          <span className="text-xs text-muted-foreground">
-            Last sync {new Date(gsc.lastSyncedAt).toLocaleString()}
+          <span
+            className="text-xs text-muted-foreground"
+            suppressHydrationWarning
+          >
+            Last sync{" "}
+            {new Date(gsc.lastSyncedAt).toLocaleString("en-US", {
+              timeZone: "UTC",
+              dateStyle: "medium",
+              timeStyle: "short",
+            })}{" "}
+            UTC
           </span>
         ) : null}
       </div>

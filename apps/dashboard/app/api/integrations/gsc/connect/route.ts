@@ -32,9 +32,21 @@ export const GET = route(
       return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
 
-    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    if (
+      !process.env.GSC_GOOGLE_CLIENT_ID?.trim() &&
+      !process.env.GOOGLE_CLIENT_ID?.trim()
+    ) {
       return NextResponse.json(
-        { error: "Google OAuth is not configured" },
+        { error: "Google Search Console OAuth is not configured" },
+        { status: 503 }
+      )
+    }
+    if (
+      !process.env.GSC_GOOGLE_CLIENT_SECRET?.trim() &&
+      !process.env.GOOGLE_CLIENT_SECRET?.trim()
+    ) {
+      return NextResponse.json(
+        { error: "Google Search Console OAuth is not configured" },
         { status: 503 }
       )
     }

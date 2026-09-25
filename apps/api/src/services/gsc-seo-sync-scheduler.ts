@@ -16,7 +16,16 @@ export function startGscSeoSyncScheduler(options?: {
 
   const tick = async () => {
     if (running) return
-    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    if (
+      !(
+        process.env.GSC_GOOGLE_CLIENT_ID?.trim() ||
+        process.env.GOOGLE_CLIENT_ID?.trim()
+      ) ||
+      !(
+        process.env.GSC_GOOGLE_CLIENT_SECRET?.trim() ||
+        process.env.GOOGLE_CLIENT_SECRET?.trim()
+      )
+    ) {
       return
     }
     running = true
