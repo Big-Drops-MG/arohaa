@@ -59,11 +59,16 @@ function bracket(name: string): string {
 const PHONE_KEY_RE =
   /^(phone|mobile|tel|cell|telephone|phone_number|phonenumber|mobile_number)$/i
 
+const NON_PHONE_KEY_RE =
+  /^(dob|dob[-_].+|birthday|birth[-_]?date|birth[-_]?year|birth[-_]?month|birth[-_]?day|age|zip|zipcode|zip_code|postal|year|month|day|ssn|cvv|otp|pin|code)$/i
+
 function isPhoneFieldKey(name: string): boolean {
   const n = name.trim()
   if (!n) return false
-  if (PHONE_KEY_RE.test(n)) return true
   if (/consent|type/i.test(n)) return false
+  if (NON_PHONE_KEY_RE.test(n)) return false
+  if (/dob|birth|zip/i.test(n)) return false
+  if (PHONE_KEY_RE.test(n)) return true
   return /phone|mobile|cell|(^|_)tel($|_)/i.test(n)
 }
 
@@ -76,7 +81,10 @@ function isPhoneControl(
   el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null,
   fieldName?: string,
 ): boolean {
-  if (fieldName && isPhoneFieldKey(fieldName)) return true
+  if (fieldName) {
+    if (NON_PHONE_KEY_RE.test(fieldName.trim())) return false
+    if (isPhoneFieldKey(fieldName)) return true
+  }
   if (!el) return false
 
   const name = (
@@ -85,17 +93,24 @@ function isPhoneControl(
     el.getAttribute("data-arohaa-field") ||
     ""
   ).trim()
+  if (NON_PHONE_KEY_RE.test(name) || /dob|birth/i.test(name)) return false
   if (isPhoneFieldKey(name)) return true
 
   const placeholder = (el.getAttribute("placeholder") || "").trim()
   const blob = `${name} ${placeholder} ${classNameOf(el)}`
-  if (/consent|type/i.test(blob)) return false
+  if (/dob|birth|zip|consent|type/i.test(blob) && !/phone|mobile|cell/i.test(blob)) {
+    return false
+  }
   if (/phone|mobile|cell/i.test(blob)) return true
 
   const ac = el.getAttribute("autocomplete")?.toLowerCase() ?? ""
-  if (ac.includes("tel") || ac.includes("phone")) return true
+  if (ac.startsWith("tel") || ac.includes("phone")) return true
+  if (/^bday|cc-|one-time/i.test(ac)) return false
 
-  if (el instanceof HTMLInputElement && el.type === "tel") return true
+  if (el instanceof HTMLInputElement && el.type === "tel") {
+    if (/x{3}|\(\s*x|\+?\d/i.test(placeholder)) return true
+    return /phone|mobile|tel|cell/i.test(blob)
+  }
   return false
 }
 

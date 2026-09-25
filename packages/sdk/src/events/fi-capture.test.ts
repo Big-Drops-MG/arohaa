@@ -105,6 +105,26 @@ describe("fi message builders", () => {
     expect(__fiTest.isPhoneFieldKey("PhoneNumber")).toBe(true)
     expect(__fiTest.isPhoneFieldKey("email")).toBe(false)
     expect(__fiTest.isPhoneFieldKey("telephone_consent")).toBe(false)
+    expect(__fiTest.isPhoneFieldKey("dob-0-month")).toBe(false)
+    expect(__fiTest.isPhoneFieldKey("dob-0-year")).toBe(false)
+    expect(__fiTest.isPhoneFieldKey("dob-0-day")).toBe(false)
+    expect(__fiTest.isPhoneFieldKey("zip")).toBe(false)
+    expect(__fiTest.isPhoneFieldKey("year")).toBe(false)
+  })
+
+  it("does not mask dob or other non-phone numbers", () => {
+    expect(__fiTest.formatTyped("1", "dob-0-month")).toBe(
+      "typed '1' in [dob-0-month]",
+    )
+    expect(__fiTest.formatChanged("09", "dob-0-month")).toBe(
+      'changed value to "09" in [dob-0-month]',
+    )
+    expect(__fiTest.formatChanged("1990", "dob-0-year")).toBe(
+      'changed value to "1990" in [dob-0-year]',
+    )
+    expect(__fiTest.formatTyped("5", "dob-0-year", __fiTest.isPhoneFieldKey("dob-0-year"))).toBe(
+      "typed '5' in [dob-0-year]",
+    )
   })
 
   it("formats step messages", () => {
