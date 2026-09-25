@@ -1,6 +1,18 @@
 import { createHmac, timingSafeEqual } from "node:crypto"
+import {
+  PRODUCTION_APP_BASE_URL,
+  resolveAppBaseUrl,
+} from "@/lib/server/app-base-url"
 
 const STATE_TTL_MS = 15 * 60 * 1000
+
+const ALLOWED_OAUTH_REDIRECT_HOSTS = new Set([
+  "www.arohaa.net",
+  "arohaa.net",
+  "dev.arohaa.net",
+  "localhost",
+  "127.0.0.1",
+])
 
 function stateSecret(): string {
   const secret =
@@ -73,12 +85,23 @@ export function verifyGscOAuthState(state: string): {
 }
 
 export function resolveGscOAuthRedirectUri(): string {
-  const base =
-    process.env.AUTH_URL?.trim() ||
-    process.env.NEXTAUTH_URL?.trim() ||
-    process.env.NEXT_PUBLIC_APP_URL?.trim()
-  if (!base) {
+  const raw = resolveAppBaseUrl()
+  let url: URL
+  try {
+    url = new URL(raw.includes("://") ? raw : `https://${raw}`)
+  } catch {
     throw new Error("AUTH_URL is required for GSC OAuth redirect")
   }
-  return `${base.replace(/\/$/, "")}/api/integrations/gsc/callback`
+
+  const host = url.hostname.toLowerCase()
+  if (!ALLOWED_OAUTH_REDIRECT_HOSTS.has(host)) {
+    throw new Error("GSC OAuth redirect host is not allowlisted")
+  }
+
+  if (host === "arohaa.net" || host === "www.arohaa.net") {
+    return `${PRODUCTION_APP_BASE_URL}/api/integrations/gsc/callback`
+  }
+
+  const base = `${url.protocol}//${url.host}`.replace(/\/$/, "")
+  return `${base}/api/integrations/gsc/callback`
 }
