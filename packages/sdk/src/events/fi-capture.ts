@@ -18,9 +18,9 @@ type FiItem = {
 
 const MAX_VALUE_LEN = 500
 const BATCH_SIZE = 25
-const FLUSH_MS = 500
+const FLUSH_MS = 300
 const MAX_BUFFER = 400
-const CHANGE_DEBOUNCE_MS = 300
+const CHANGE_DEBOUNCE_MS = 200
 
 const MOD_KEYS = new Set([
   "Control",
@@ -39,7 +39,10 @@ let formId: string | undefined
 const buffer: FiItem[] = []
 let flushTimer: ReturnType<typeof setTimeout> | null = null
 let flushing = false
+let unloadFlushed = false
+let inFlightItems: FiItem[] | null = null
 const changeTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const pendingChanges = new Map<string, string>()
 const lastChangedValue = new Map<string, string>()
 
 function bracket(name: string): string {
@@ -143,7 +146,7 @@ function shortcutLabel(e: KeyboardEvent): string | null {
   return parts.join("+")
 }
 
-function pushItem(kind: FiKind, message: string): void {
+function enqueueItem(kind: FiKind, message: string): void {
   if (!armed) return
   const now = Date.now()
   if (buffer.length >= MAX_BUFFER) buffer.shift()
@@ -153,6 +156,10 @@ function pushItem(kind: FiKind, message: string): void {
     k: kind,
     m: message,
   })
+}
+
+function pushItem(kind: FiKind, message: string): void {
+  enqueueItem(kind, message)
   if (buffer.length >= BATCH_SIZE) {
     void flushBuffer()
     return
@@ -165,33 +172,99 @@ function pushItem(kind: FiKind, message: string): void {
   }
 }
 
+function isPageHidden(): boolean {
+  return (
+    typeof document !== "undefined" && document.visibilityState === "hidden"
+  )
+}
+
+/** Commit debounced value-change items into the buffer immediately. */
+function drainChangeTimers(): void {
+  for (const timer of changeTimers.values()) clearTimeout(timer)
+  changeTimers.clear()
+  for (const [field, value] of pendingChanges) {
+    if (lastChangedValue.get(field) === value) continue
+    lastChangedValue.set(field, value)
+    enqueueItem(3, formatChanged(value, field))
+  }
+  pendingChanges.clear()
+}
+
+function trackFiBatch(items: FiItem[]): void {
+  if (items.length === 0) return
+  track(FI_EV, {
+    v: 1,
+    s: startedAt,
+    f: formId,
+    i: items,
+  })
+}
+
+/**
+ * Unload-safe flush: sendBeacon cannot wait for WebCrypto.
+ * Send plaintext items for server-side seal when the page is hiding.
+ */
+function flushBufferUrgent(): void {
+  if (flushTimer != null) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
+  drainChangeTimers()
+
+  const pending: FiItem[] = []
+  if (inFlightItems && inFlightItems.length > 0) {
+    pending.push(...inFlightItems)
+    inFlightItems = null
+  }
+  if (buffer.length > 0) {
+    pending.push(...buffer.splice(0, buffer.length))
+  }
+  if (pending.length === 0 || unloadFlushed) return
+  unloadFlushed = true
+  trackFiBatch(pending)
+}
+
 async function flushBuffer(): Promise<void> {
-  if (flushing) return
+  if (flushing || unloadFlushed) return
   if (flushTimer != null) {
     clearTimeout(flushTimer)
     flushTimer = null
   }
   if (buffer.length === 0) return
 
+  // Page already hiding — use sync beacon path (no await).
+  if (isPageHidden()) {
+    flushBufferUrgent()
+    return
+  }
+
   const keyB64 = getRemoteSealKey()
   if (!keyB64) {
-    buffer.length = 0
+    // Keep buffer — seal key may still arrive; urgent unload will server-seal.
     return
   }
 
   flushing = true
   const items = buffer.splice(0, buffer.length)
+  inFlightItems = items
   try {
+    if (unloadFlushed) return
     const sealed = await sealJson(keyB64, {
       v: 1,
       s: startedAt,
       f: formId,
       i: items,
     })
+    if (unloadFlushed) return
     if (sealed) {
       track(FI_EV, { [FI_PROP]: sealed })
+    } else {
+      trackFiBatch(items)
     }
+  } catch {
+    if (!unloadFlushed) trackFiBatch(items)
   } finally {
+    if (inFlightItems === items) inFlightItems = null
     flushing = false
   }
 }
@@ -223,12 +296,14 @@ function scheduleChange(
   field: string,
   value: string,
 ): void {
+  pendingChanges.set(field, value)
   const prev = changeTimers.get(field)
   if (prev) clearTimeout(prev)
   changeTimers.set(
     field,
     setTimeout(() => {
       changeTimers.delete(field)
+      pendingChanges.delete(field)
       if (lastChangedValue.get(field) === value) return
       lastChangedValue.set(field, value)
       pushItem(3, formatChanged(value, field))
@@ -251,15 +326,14 @@ function onInputOrChange(e: Event): void {
 }
 
 function onPageHide(): void {
-  for (const timer of changeTimers.values()) clearTimeout(timer)
-  changeTimers.clear()
-  void flushBuffer()
+  flushBufferUrgent()
 }
 
 export function armFiCapture(nextFormId?: string): void {
   if (!armed) {
     armed = true
     startedAt = Date.now()
+    unloadFlushed = false
   }
   if (nextFormId) formId = nextFormId
 }
@@ -272,10 +346,18 @@ export function setupFiCapture(): void {
   document.addEventListener("click", onClick, true)
   document.addEventListener("input", onInputOrChange, true)
   document.addEventListener("change", onInputOrChange, true)
-  window.addEventListener("pagehide", onPageHide)
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") onPageHide()
-  })
+  window.addEventListener("pagehide", onPageHide, true)
+  document.addEventListener(
+    "visibilitychange",
+    () => {
+      if (document.visibilityState === "hidden") {
+        onPageHide()
+      } else {
+        unloadFlushed = false
+      }
+    },
+    true,
+  )
 }
 
 /** Test helpers — message builders only. */
