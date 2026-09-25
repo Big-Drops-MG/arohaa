@@ -13,6 +13,10 @@ describe("fi-tokens", () => {
     expect(FI_MSG.pressed).toBe("pressed")
     expect(FI_MSG.clickedOn).toBe("clicked on")
     expect(FI_MSG.changedTo).toBe("changed value to")
+    expect(FI_MSG.selected).toBe("selected")
+    expect(FI_MSG.formStarted).toBe("form started")
+    expect(FI_MSG.formSubmitted).toBe("form submitted")
+    expect(FI_MSG.formCompleted).toBe("form completed")
     expect(FI_MSG.inSep).toBe(" in ")
   })
 })
@@ -25,10 +29,20 @@ describe("fi message builders", () => {
     )
   })
 
-  it("formats click and change messages", () => {
+  it("formats click, change, and selected messages", () => {
     expect(__fiTest.formatClicked("submit")).toBe("clicked on [submit]")
     expect(__fiTest.formatChanged("5551234", "phone")).toBe(
       'changed value to "5551234" in [phone]',
     )
+    expect(__fiTest.formatSelected("Yes", "insured")).toBe(
+      'selected "Yes" in [insured]',
+    )
+  })
+
+  it("formats step messages", () => {
+    expect(__fiTest.formatStep("viewed", 2, "vehicle")).toBe(
+      "step 2:vehicle viewed",
+    )
+    expect(__fiTest.formatStep("completed", 1)).toBe("step 1 completed")
   })
 })

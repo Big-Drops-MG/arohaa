@@ -1,5 +1,7 @@
 import { track } from "../core/tracker"
 import { getRemoteSealKey } from "../core/sdk-config"
+import { getIdentity } from "../model/identity"
+import { getItem, setItem } from "../services/storage.service"
 import { sealJson } from "../crypto/seal"
 import {
   resolveFormControl,
@@ -7,7 +9,7 @@ import {
 } from "./form-field-key"
 import { FI_EV, FI_MSG, FI_PROP } from "./fi-tokens"
 
-type FiKind = 0 | 1 | 2 | 3
+type FiKind = 0 | 1 | 2 | 3 | 4 | 5
 
 type FiItem = {
   t: number
@@ -17,10 +19,12 @@ type FiItem = {
 }
 
 const MAX_VALUE_LEN = 500
+const MAX_LABEL_LEN = 80
 const BATCH_SIZE = 25
 const FLUSH_MS = 300
-const MAX_BUFFER = 400
+const MAX_BUFFER = 800
 const CHANGE_DEBOUNCE_MS = 200
+const META_KEY = "aro_fi_meta"
 
 const MOD_KEYS = new Set([
   "Control",
@@ -36,6 +40,7 @@ let installed = false
 let armed = false
 let startedAt = 0
 let formId: string | undefined
+let loggedFormStart = false
 const buffer: FiItem[] = []
 let flushTimer: ReturnType<typeof setTimeout> | null = null
 let flushing = false
@@ -66,6 +71,23 @@ function formatChanged(value: string, field: string): string {
   return `${FI_MSG.changedTo} "${safe}"${FI_MSG.inSep}${bracket(field)}`
 }
 
+function formatSelected(value: string, field: string): string {
+  const safe = value.slice(0, MAX_VALUE_LEN)
+  return `${FI_MSG.selected} "${safe}"${FI_MSG.inSep}${bracket(field)}`
+}
+
+function formatStep(kind: "viewed" | "completed", stepIndex: number, stepName?: string): string {
+  const label = stepName?.trim()
+    ? `${stepIndex}:${stepName.trim().slice(0, 40)}`
+    : String(stepIndex)
+  const verb = kind === "viewed" ? FI_MSG.viewed : FI_MSG.completed
+  return `${FI_MSG.step} ${label} ${verb}`
+}
+
+function cleanLabel(raw: string): string {
+  return raw.replace(/\s+/g, " ").trim().slice(0, MAX_LABEL_LEN)
+}
+
 function isSkippedControl(
   el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null,
 ): boolean {
@@ -77,55 +99,104 @@ function isSkippedControl(
   return false
 }
 
-function resolveFieldLabel(target: EventTarget | null): string {
-  const fromHeatmap = resolveHeatmapFieldName(target)
+function fieldKeyFromControl(
+  el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+): string {
+  const fromHeatmap = resolveHeatmapFieldName(el)
   if (fromHeatmap) return fromHeatmap
 
-  const el = resolveFormControl(target)
   if (el instanceof HTMLInputElement) {
     const t = el.type.toLowerCase()
-    if (t === "submit" || t === "button" || t === "image") {
+    if (t === "submit" || t === "button" || t === "image" || t === "radio" || t === "checkbox") {
       return (
         el.getAttribute("name")?.trim() ||
         el.id?.trim() ||
+        el.getAttribute("data-arohaa-field")?.trim() ||
         el.value?.trim() ||
         t
       )
     }
   }
-  return ""
+
+  return (
+    el.getAttribute("data-arohaa-field")?.trim() ||
+    el.getAttribute("name")?.trim() ||
+    el.id?.trim() ||
+    ""
+  )
+}
+
+function resolveFieldLabel(target: EventTarget | null): string {
+  const el = resolveFormControl(target)
+  if (!el || isSkippedControl(el)) return ""
+  return fieldKeyFromControl(el)
+}
+
+function readableNodeLabel(el: Element): string {
+  const named =
+    el.getAttribute("data-arohaa-field")?.trim() ||
+    el.getAttribute("name")?.trim() ||
+    el.id?.trim() ||
+    el.getAttribute("aria-label")?.trim() ||
+    el.getAttribute("data-value")?.trim() ||
+    el.getAttribute("value")?.trim() ||
+    ""
+  if (named) return cleanLabel(named)
+
+  if (el instanceof HTMLInputElement || el instanceof HTMLButtonElement) {
+    const v = el.value?.trim()
+    if (v) return cleanLabel(v)
+  }
+
+  const text = cleanLabel(el.textContent || "")
+  if (text) return text
+
+  return `${FI_MSG.unnamed} ${el.tagName.toLowerCase()}`
 }
 
 function resolveClickLabel(target: EventTarget | null): string {
   if (!(target instanceof Element)) return FI_MSG.unnamed
+
   const control = resolveFormControl(target)
   if (control && !isSkippedControl(control)) {
-    const field = resolveFieldLabel(control)
+    const field = fieldKeyFromControl(control)
     if (field) return field
   }
 
-  const el =
-    target instanceof HTMLElement
-      ? target
-      : target.parentElement instanceof HTMLElement
-        ? target.parentElement
-        : null
-  if (!el) return FI_MSG.unnamed
+  const interesting =
+    target.closest(
+      '[role="option"], [role="radio"], [role="checkbox"], [role="button"], label, button, a, li, [data-arohaa-field], [data-arohaa-step], [data-value]',
+    ) ?? (target instanceof HTMLElement ? target : target.parentElement)
 
-  const name =
-    el.getAttribute("name")?.trim() ||
-    el.id?.trim() ||
-    el.getAttribute("aria-label")?.trim() ||
-    (el instanceof HTMLInputElement || el instanceof HTMLButtonElement
-      ? el.value?.trim()
-      : "") ||
-    el.getAttribute("data-arohaa-field")?.trim() ||
-    ""
+  if (!(interesting instanceof Element)) return FI_MSG.unnamed
+  return readableNodeLabel(interesting)
+}
 
-  if (name) return name.slice(0, 80)
+function controlDisplayValue(
+  el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+): string {
+  if (el instanceof HTMLSelectElement) {
+    const opt = el.selectedOptions?.[0]
+    const text = cleanLabel(opt?.textContent || "")
+    return text || el.value
+  }
+  if (el instanceof HTMLInputElement) {
+    const t = el.type.toLowerCase()
+    if (t === "checkbox") return el.checked ? el.value || "true" : "false"
+    if (t === "radio") return el.checked ? el.value || "true" : ""
+  }
+  return "value" in el ? String(el.value) : ""
+}
 
-  const tag = el.tagName.toLowerCase()
-  return `${FI_MSG.unnamed} ${tag}`
+function isChoiceControl(
+  el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+): boolean {
+  if (el instanceof HTMLSelectElement) return true
+  if (el instanceof HTMLInputElement) {
+    const t = el.type.toLowerCase()
+    return t === "checkbox" || t === "radio"
+  }
+  return false
 }
 
 function shortcutLabel(e: KeyboardEvent): string | null {
@@ -144,6 +215,49 @@ function shortcutLabel(e: KeyboardEvent): string | null {
   }
   parts.push(key)
   return parts.join("+")
+}
+
+function isFormLikeTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false
+  return Boolean(
+    target.closest(
+      "form, [data-arohaa-form], [data-arohaa-zip-form], [data-arohaa-field], [data-arohaa-step], [data-arohaa-zip], input, textarea, select, label, [role='option'], [role='radio'], [role='checkbox']",
+    ),
+  )
+}
+
+function persistMeta(): void {
+  try {
+    const sid = getIdentity().sid
+    setItem(
+      META_KEY,
+      JSON.stringify({ sid, startedAt, formId: formId ?? null }),
+    )
+  } catch {
+    /* ignore */
+  }
+}
+
+function restoreMeta(): void {
+  try {
+    const raw = getItem(META_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw) as {
+      sid?: string
+      startedAt?: number
+      formId?: string | null
+    }
+    const sid = getIdentity().sid
+    if (parsed.sid !== sid) return
+    if (typeof parsed.startedAt === "number" && Number.isFinite(parsed.startedAt)) {
+      startedAt = parsed.startedAt
+    }
+    if (typeof parsed.formId === "string" && parsed.formId) {
+      formId = parsed.formId
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 function enqueueItem(kind: FiKind, message: string): void {
@@ -178,7 +292,6 @@ function isPageHidden(): boolean {
   )
 }
 
-/** Commit debounced value-change items into the buffer immediately. */
 function drainChangeTimers(): void {
   for (const timer of changeTimers.values()) clearTimeout(timer)
   changeTimers.clear()
@@ -200,10 +313,6 @@ function trackFiBatch(items: FiItem[]): void {
   })
 }
 
-/**
- * Unload-safe flush: sendBeacon cannot wait for WebCrypto.
- * Send plaintext items for server-side seal when the page is hiding.
- */
 function flushBufferUrgent(): void {
   if (flushTimer != null) {
     clearTimeout(flushTimer)
@@ -232,17 +341,13 @@ async function flushBuffer(): Promise<void> {
   }
   if (buffer.length === 0) return
 
-  // Page already hiding — use sync beacon path (no await).
   if (isPageHidden()) {
     flushBufferUrgent()
     return
   }
 
   const keyB64 = getRemoteSealKey()
-  if (!keyB64) {
-    // Keep buffer — seal key may still arrive; urgent unload will server-seal.
-    return
-  }
+  if (!keyB64) return
 
   flushing = true
   const items = buffer.splice(0, buffer.length)
@@ -269,7 +374,26 @@ async function flushBuffer(): Promise<void> {
   }
 }
 
+function ensureArmed(target?: EventTarget | null, nextFormId?: string): void {
+  if (!armed) {
+    if (target && !isFormLikeTarget(target) && !nextFormId) return
+    restoreMeta()
+    armed = true
+    if (!startedAt) startedAt = Date.now()
+    unloadFlushed = false
+  }
+  if (nextFormId) formId = nextFormId
+  persistMeta()
+
+  if (!loggedFormStart) {
+    loggedFormStart = true
+    const label = formId ? ` (${formId})` : ""
+    pushItem(5, `${FI_MSG.formStarted}${label}`)
+  }
+}
+
 function onKeyDown(e: KeyboardEvent): void {
+  ensureArmed(e.target)
   if (!armed) return
   const control = resolveFormControl(e.target)
   if (isSkippedControl(control)) return
@@ -286,16 +410,41 @@ function onKeyDown(e: KeyboardEvent): void {
 }
 
 function onClick(e: MouseEvent): void {
+  ensureArmed(e.target)
   if (!armed) return
   const control = resolveFormControl(e.target)
   if (control && isSkippedControl(control)) return
-  pushItem(2, formatClicked(resolveClickLabel(e.target)))
+
+  const label = resolveClickLabel(e.target)
+  pushItem(2, formatClicked(label))
+
+  if (control && !isSkippedControl(control) && isChoiceControl(control)) {
+    const field = fieldKeyFromControl(control) || FI_MSG.unnamed
+    const value = controlDisplayValue(control)
+    if (value) {
+      pushItem(4, formatSelected(value, field))
+      lastChangedValue.set(field, value)
+    }
+  } else if (e.target instanceof Element) {
+    const optionish = e.target.closest(
+      '[role="option"], [role="radio"], [data-value]',
+    )
+    if (optionish instanceof Element) {
+      const field =
+        optionish.getAttribute("name")?.trim() ||
+        optionish.closest("[data-arohaa-field], [name], [id]")?.getAttribute("data-arohaa-field") ||
+        optionish.closest("[name]")?.getAttribute("name") ||
+        FI_MSG.unnamed
+      const value =
+        optionish.getAttribute("data-value")?.trim() ||
+        optionish.getAttribute("aria-label")?.trim() ||
+        cleanLabel(optionish.textContent || "")
+      if (value) pushItem(4, formatSelected(value, field || FI_MSG.unnamed))
+    }
+  }
 }
 
-function scheduleChange(
-  field: string,
-  value: string,
-): void {
+function scheduleChange(field: string, value: string, selected: boolean): void {
   pendingChanges.set(field, value)
   const prev = changeTimers.get(field)
   if (prev) clearTimeout(prev)
@@ -306,23 +455,19 @@ function scheduleChange(
       pendingChanges.delete(field)
       if (lastChangedValue.get(field) === value) return
       lastChangedValue.set(field, value)
-      pushItem(3, formatChanged(value, field))
+      pushItem(selected ? 4 : 3, selected ? formatSelected(value, field) : formatChanged(value, field))
     }, CHANGE_DEBOUNCE_MS),
   )
 }
 
 function onInputOrChange(e: Event): void {
+  ensureArmed(e.target)
   if (!armed) return
   const control = resolveFormControl(e.target)
   if (!control || isSkippedControl(control)) return
-  const field = resolveFieldLabel(control) || FI_MSG.unnamed
-  const value =
-    control instanceof HTMLSelectElement
-      ? control.value
-      : "value" in control
-        ? String((control as HTMLInputElement | HTMLTextAreaElement).value)
-        : ""
-  scheduleChange(field, value)
+  const field = fieldKeyFromControl(control) || FI_MSG.unnamed
+  const value = controlDisplayValue(control)
+  scheduleChange(field, value, isChoiceControl(control))
 }
 
 function onPageHide(): void {
@@ -330,17 +475,42 @@ function onPageHide(): void {
 }
 
 export function armFiCapture(nextFormId?: string): void {
-  if (!armed) {
-    armed = true
-    startedAt = Date.now()
-    unloadFlushed = false
-  }
-  if (nextFormId) formId = nextFormId
+  ensureArmed(null, nextFormId)
+}
+
+export function markFiFormSubmit(formIdValue?: string): void {
+  ensureArmed(null, formIdValue)
+  if (!armed) return
+  const label = formIdValue || formId
+  pushItem(5, label ? `${FI_MSG.formSubmitted} (${label})` : FI_MSG.formSubmitted)
+  void flushBuffer()
+}
+
+export function markFiFormComplete(formIdValue?: string): void {
+  ensureArmed(null, formIdValue)
+  if (!armed) return
+  const label = formIdValue || formId
+  pushItem(5, label ? `${FI_MSG.formCompleted} (${label})` : FI_MSG.formCompleted)
+  flushBufferUrgent()
+}
+
+export function markFiStepView(stepIndex: number, stepName?: string): void {
+  if (!armed) ensureArmed(null)
+  if (!armed) return
+  pushItem(5, formatStep("viewed", stepIndex, stepName))
+}
+
+export function markFiStepComplete(stepIndex: number, stepName?: string): void {
+  if (!armed) ensureArmed(null)
+  if (!armed) return
+  pushItem(5, formatStep("completed", stepIndex, stepName))
+  void flushBuffer()
 }
 
 export function setupFiCapture(): void {
   if (installed || typeof document === "undefined") return
   installed = true
+  restoreMeta()
 
   document.addEventListener("keydown", onKeyDown, true)
   document.addEventListener("click", onClick, true)
@@ -360,12 +530,13 @@ export function setupFiCapture(): void {
   )
 }
 
-/** Test helpers — message builders only. */
 export const __fiTest = {
   formatTyped,
   formatPressed,
   formatClicked,
   formatChanged,
+  formatSelected,
+  formatStep,
   shortcutLabel,
   resolveClickLabel,
 }

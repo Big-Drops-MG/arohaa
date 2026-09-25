@@ -1,5 +1,9 @@
 import { track } from "../core/tracker"
-import { armFiCapture } from "./fi-capture"
+import {
+  armFiCapture,
+  markFiFormComplete,
+  markFiFormSubmit,
+} from "./fi-capture"
 
 type FormEventProps = {
   formId?: string
@@ -20,9 +24,11 @@ export function trackFormStart(formId?: string): void {
 }
 
 export function trackFormSubmit(formId?: string, zip?: string): void {
+  markFiFormSubmit(formId)
   track("form_submit", buildFormProps({ formId, zip }) ?? {})
 }
 
 export function trackFormSuccess(formId?: string, zip?: string): void {
+  markFiFormComplete(formId)
   track("form_success", buildFormProps({ formId, zip }) ?? {})
 }
