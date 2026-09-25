@@ -59,6 +59,26 @@ export function LoginPage() {
     }
   }, [requiresTwoFactorParam])
 
+  useEffect(() => {
+    const authError = searchParams.get("error")
+    if (!authError) return
+    if (authError === "Configuration") {
+      setServerError(
+        "Google sign-in is misconfigured (invalid OAuth client or missing redirect URI). Use email/password, or ask an admin to fix GOOGLE_CLIENT_ID in GCP."
+      )
+      return
+    }
+    if (authError === "AccessDenied") {
+      setServerError("Google sign-in was denied for this account.")
+      return
+    }
+    if (authError === "OAuthCallback" || authError === "Callback") {
+      setServerError(
+        "Google sign-in failed during callback. Confirm the redirect URI is registered in Google Cloud."
+      )
+    }
+  }, [searchParams])
+
   const trimmedEmail = email.trim()
   const normalizedEmail = trimmedEmail.toLowerCase()
   const emailValid = EMAIL_PATTERN.test(normalizedEmail)
