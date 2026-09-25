@@ -1,7 +1,10 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import {
   decryptFieldBlob,
+  decryptJsonBlob,
   encryptFieldBlob,
+  encryptJsonBlob,
+  sealFiPropsForStorage,
   sealPropsForStorage,
   materializeOpaqueProps,
 } from './field-blob.js'
@@ -46,5 +49,34 @@ describe('field-blob sealPropsForStorage', () => {
     expect(typeof sealed._k).toBe('string')
     const decrypted = decryptFieldBlob(sealed._k as string)
     expect(decrypted).toMatchObject({ email: 'x@y.com', zip: '90210' })
+  })
+
+  it('seals interaction payloads without stripping item arrays', () => {
+    const payload = {
+      v: 1,
+      s: 1_700_000_000_000,
+      f: 'offer',
+      i: [{ t: 1200, ts: 1_700_000_001_200, k: 0, m: "typed '5' in [phone]" }],
+    }
+    const blob = encryptJsonBlob(payload)
+    expect(blob).toBeTruthy()
+    const sealed = sealFiPropsForStorage({ _k: blob! })
+    expect(Object.keys(sealed)).toEqual(['_k'])
+    expect(decryptJsonBlob(sealed._k as string)).toEqual(payload)
+  })
+
+  it('seals plaintext interaction items server-side', () => {
+    const sealed = sealFiPropsForStorage({
+      i: [{ t: 0, ts: 1, k: 2, m: 'clicked on [submit]' }],
+      s: 1,
+    })
+    expect(typeof sealed._k).toBe('string')
+    expect(sealed.i).toBeUndefined()
+    const decrypted = decryptJsonBlob(sealed._k as string) as {
+      i: unknown[]
+      s: number
+    }
+    expect(decrypted.s).toBe(1)
+    expect(decrypted.i).toHaveLength(1)
   })
 })

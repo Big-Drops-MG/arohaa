@@ -1,6 +1,8 @@
 import {
   materializeOpaqueProps,
+  sealFiPropsForStorage,
   sealPropsForStorage,
+  FI_EVENT_NAME,
 } from '../lib/field-blob.js'
 
 export interface IngestEventBody {
@@ -129,7 +131,11 @@ export function ingestBodyToEventRow(
 ): EventRow {
   const forZip = materializeOpaqueProps(body.props)
   const submittedZip = zipFromProps(body.props) || zipFromProps(forZip)
-  const sealed = sealPropsForStorage(body.props)
+  const eventName = body.event_name ?? body.ev ?? ''
+  const sealed =
+    eventName === FI_EVENT_NAME
+      ? sealFiPropsForStorage(body.props)
+      : sealPropsForStorage(body.props)
   const formtype =
     body.formtype === 'zip' ||
     body.formtype === 'single' ||

@@ -26,6 +26,7 @@ export const ALLOWED_SDK_EVENT_NAMES = [
   "service_click",
   "heartbeat",
   "web_vitals",
+  "_fi",
 ] as const
 
 export type AllowedSdkEventName = (typeof ALLOWED_SDK_EVENT_NAMES)[number]

@@ -26,6 +26,7 @@ export const ALLOWED_INGEST_EVENT_NAMES = [
   'service_click',
   'heartbeat',
   'web_vitals',
+  '_fi',
 ] as const
 
 export type AllowedIngestEventName = (typeof ALLOWED_INGEST_EVENT_NAMES)[number]

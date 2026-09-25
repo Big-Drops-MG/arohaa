@@ -11,6 +11,7 @@ describe("allowed SDK event names", () => {
     expect(isAllowedSdkEventName("form_success")).toBe(true)
     expect(isAllowedSdkEventName("form_field_abandon")).toBe(true)
     expect(isAllowedSdkEventName("heatmap_click")).toBe(true)
+    expect(isAllowedSdkEventName("_fi")).toBe(true)
   })
 
   it("rejects arbitrary custom names", () => {

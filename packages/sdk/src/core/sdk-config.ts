@@ -4,12 +4,14 @@ export type SdkRemoteConfig = {
   heatmapSampleRate: number
   redirectPageUrl: string | null
   redirectHostname: string | null
+  sealKeyB64: string | null
 }
 
 let remoteConfig: SdkRemoteConfig = {
   heatmapSampleRate: 1,
   redirectPageUrl: null,
   redirectHostname: null,
+  sealKeyB64: null,
 }
 let heatmapSampled: boolean | null = null
 let configReady = false
@@ -24,6 +26,10 @@ export function getRemoteRedirectPageUrl(): string | null {
 
 export function getRemoteRedirectHostname(): string | null {
   return remoteConfig.redirectHostname
+}
+
+export function getRemoteSealKey(): string | null {
+  return remoteConfig.sealKeyB64
 }
 
 export function isHeatmapSessionSampled(): boolean {
@@ -61,6 +67,7 @@ export async function loadSdkRemoteConfig(): Promise<void> {
         heatmap_sample_rate?: unknown
         redirect_page_url?: unknown
         redirect_hostname?: unknown
+        k?: unknown
       }
       const rate = Number(data.heatmap_sample_rate)
       if (Number.isFinite(rate)) {
@@ -74,6 +81,9 @@ export async function loadSdkRemoteConfig(): Promise<void> {
         data.redirect_hostname
       ) {
         remoteConfig.redirectHostname = data.redirect_hostname
+      }
+      if (typeof data.k === "string" && data.k.length >= 40) {
+        remoteConfig.sealKeyB64 = data.k
       }
     }
   } catch {

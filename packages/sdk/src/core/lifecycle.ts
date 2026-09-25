@@ -6,6 +6,7 @@ import { setupAttentionTracking } from "../events/attention.events"
 import { setupFormTracking } from "../events/form-tracking"
 import { setupServiceClickTracking } from "../events/service-click.events"
 import { setupOpaqueFieldCapture } from "../events/opaque-field-capture"
+import { setupFiCapture } from "../events/fi-capture"
 import { setupRedirectLinkStamping } from "./redirect-stamp"
 import { startHeartbeat } from "../events/heartbeat"
 import { monitorWebVitals } from "../performance/vitals"
@@ -38,13 +39,15 @@ export function setupLifecycle(): void {
     trackFieldFocus: !onRedirectHost,
     trackFormSuccess: !onRedirectHost,
   })
+  if (getConfig().formtype !== "none") {
+    setupFiCapture()
+  }
   setupServiceClickTracking()
   setupRedirectLinkStamping()
 
   if (onRedirectHost) {
     setupOpaqueFieldCapture()
   } else if (getConfig().formtype === "zip") {
-    // zip page only stamps links; no full-field capture
   }
 
   startHeartbeat()

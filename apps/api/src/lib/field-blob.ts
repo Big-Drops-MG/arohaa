@@ -29,22 +29,17 @@ export function resolveFieldBlobKeyB64(): string | null {
   return key ? key.toString('base64') : null
 }
 
-export function encryptFieldBlob(
-  fields: Record<string, string>,
-): string | null {
+function encryptRaw(plaintext: Buffer): string | null {
   const key = resolveRawKey()
   if (!key) return null
   const iv = randomBytes(IV_LEN)
   const cipher = createCipheriv(ALGO, key, iv)
-  const plaintext = Buffer.from(JSON.stringify(fields), 'utf8')
   const enc = Buffer.concat([cipher.update(plaintext), cipher.final()])
   const tag = cipher.getAuthTag()
   return Buffer.concat([iv, enc, tag]).toString('base64')
 }
 
-export function decryptFieldBlob(
-  blob: string,
-): Record<string, string> | null {
+function decryptRaw(blob: string): Buffer | null {
   const key = resolveRawKey()
   if (!key || !blob) return null
   try {
@@ -55,7 +50,24 @@ export function decryptFieldBlob(
     const data = raw.subarray(IV_LEN, raw.length - TAG_LEN)
     const decipher = createDecipheriv(ALGO, key, iv)
     decipher.setAuthTag(tag)
-    const dec = Buffer.concat([decipher.update(data), decipher.final()])
+    return Buffer.concat([decipher.update(data), decipher.final()])
+  } catch {
+    return null
+  }
+}
+
+export function encryptFieldBlob(
+  fields: Record<string, string>,
+): string | null {
+  return encryptRaw(Buffer.from(JSON.stringify(fields), 'utf8'))
+}
+
+export function decryptFieldBlob(
+  blob: string,
+): Record<string, string> | null {
+  const dec = decryptRaw(blob)
+  if (!dec) return null
+  try {
     const parsed = JSON.parse(dec.toString('utf8')) as unknown
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return null
@@ -70,6 +82,70 @@ export function decryptFieldBlob(
   } catch {
     return null
   }
+}
+
+export function encryptJsonBlob(value: unknown): string | null {
+  try {
+    return encryptRaw(Buffer.from(JSON.stringify(value), 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+export function decryptJsonBlob(blob: string): unknown | null {
+  const dec = decryptRaw(blob)
+  if (!dec) return null
+  try {
+    return JSON.parse(dec.toString('utf8')) as unknown
+  } catch {
+    return null
+  }
+}
+
+export const FI_EVENT_NAME = '_fi'
+
+
+export function sealFiPropsForStorage(
+  props: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...(props ?? {}) }
+  const existingBlob =
+    typeof next[OPAQUE_PROP_KEY] === 'string'
+      ? (next[OPAQUE_PROP_KEY] as string)
+      : ''
+
+  const plaintextPayload =
+    next.i !== undefined || next.items !== undefined
+      ? {
+          v: typeof next.v === 'number' ? next.v : 1,
+          s: typeof next.s === 'number' ? next.s : undefined,
+          f: typeof next.f === 'string' ? next.f : undefined,
+          i: Array.isArray(next.i)
+            ? next.i
+            : Array.isArray(next.items)
+              ? next.items
+              : undefined,
+        }
+      : null
+
+  for (const key of Object.keys(next)) {
+    delete next[key]
+  }
+
+  if (existingBlob) {
+    const verified = decryptJsonBlob(existingBlob)
+    if (verified !== null) {
+      next[OPAQUE_PROP_KEY] = existingBlob
+      return next
+    }
+  }
+
+  if (plaintextPayload && plaintextPayload.i) {
+    const sealed = encryptJsonBlob(plaintextPayload)
+    if (sealed) next[OPAQUE_PROP_KEY] = sealed
+  }
+
+  return next
 }
 
 const PHONE_KEY_RE =

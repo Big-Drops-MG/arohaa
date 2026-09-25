@@ -1,4 +1,5 @@
 import { track } from "../core/tracker"
+import { armFiCapture } from "./fi-capture"
 
 type FormEventProps = {
   formId?: string
@@ -14,6 +15,7 @@ function buildFormProps(props?: FormEventProps): Record<string, string> | undefi
 }
 
 export function trackFormStart(formId?: string): void {
+  armFiCapture(formId)
   track("form_start", formId ? { formId } : {})
 }
 

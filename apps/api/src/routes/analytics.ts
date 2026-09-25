@@ -13,6 +13,7 @@ import {
 import {
   getFunnelLeads,
 } from '../services/analytics-funnel-leads.service.js'
+import { getSessionInteractionLog } from '../services/analytics-interaction-log.service.js'
 import { landingPageHasRedirect } from '../lib/landing-redirect.js'
 import {
   getAnalyticsTraffic,
@@ -684,6 +685,44 @@ export async function analyticsRoutes(server: FastifyInstance) {
           }),
         logLabel: 'analytics funnel leads query ok',
         logContext: { range_id: parsed.rangeId, returning_only: returningOnly },
+      })
+    },
+  )
+
+  server.get<{
+    Querystring: {
+      workspace_id: string
+      session_id: string
+    }
+  }>(
+    '/v1/analytics/funnel/leads/interaction-log',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['workspace_id', 'session_id'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            session_id: { type: 'string', minLength: 1, maxLength: 128 },
+          },
+        },
+      },
+      config: ANALYTICS_RATE_LIMIT,
+    },
+    async (request, reply) => {
+      const { workspace_id, session_id } = request.query
+      await sendAnalyticsQuery({
+        request,
+        reply,
+        workspaceId: workspace_id,
+        guard: guardFunnelLeadsRequest,
+        run: () =>
+          getSessionInteractionLog({
+            workspaceId: workspace_id,
+            sessionId: session_id,
+          }),
+        logLabel: 'analytics funnel interaction log ok',
+        logContext: { session_id: session_id.slice(0, 8) },
       })
     },
   )

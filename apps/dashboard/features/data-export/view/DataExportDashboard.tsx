@@ -16,6 +16,7 @@ import {
   type DataExportDashboardData,
 } from "@/features/data-export/model/data-export"
 import { discoverVisibleLeadFieldKeys } from "@/features/data-export/model/lead-field-columns"
+import { LeadInteractionLogDialog } from "@/features/data-export/view/LeadInteractionLogDialog"
 import {
   overviewAnalyticCardHeaderClassName,
   overviewAnalyticCardShellClassName,
@@ -176,6 +177,7 @@ export function DataExportDashboard({
   const [pageOffset, setPageOffset] = useState(initialData.offset)
   const [isBlockingLoad, setIsBlockingLoad] = useState(false)
   const [isPageLoading, setIsPageLoading] = useState(false)
+  const [logSessionId, setLogSessionId] = useState<string | null>(null)
   const returningOnly = leadFilter === "returning"
 
   const pageSize = dashboardData.limit || DATA_EXPORT_PAGE_SIZE
@@ -368,7 +370,7 @@ export function DataExportDashboard({
     )
   }
 
-  const colCount = (returningOnly ? 11 : 10) + fieldColumns.length
+  const colCount = (returningOnly ? 12 : 11) + fieldColumns.length
   const projectLabel = dashboardData.brandName.trim() || "Project"
 
   return (
@@ -417,6 +419,7 @@ export function DataExportDashboard({
                   <th className={thClassName}>utm_source</th>
                   <th className={thClassName}>utm_id</th>
                   <th className={thClassName}>TrustedForm</th>
+                  <th className={thClassName}>Logs</th>
                   <th className={thClassName}>Form Submitted</th>
                   {returningOnly ? (
                     <th className={thClassName}>Returns</th>
@@ -488,6 +491,17 @@ export function DataExportDashboard({
                         ) : (
                           "—"
                         )}
+                      </td>
+                      <td className={tdClassName}>
+                        <Button
+                          type="button"
+                          variant="link"
+                          size="sm"
+                          className="h-auto px-0 text-sm font-medium text-sky-700"
+                          onClick={() => setLogSessionId(lead.sessionId)}
+                        >
+                          View log
+                        </Button>
                       </td>
                       <td className={tdClassName}>
                         <span
@@ -599,6 +613,15 @@ export function DataExportDashboard({
           </div>
         </CardContent>
       </Card>
+
+      <LeadInteractionLogDialog
+        open={logSessionId != null}
+        onOpenChange={(open) => {
+          if (!open) setLogSessionId(null)
+        }}
+        projectId={projectId}
+        sessionId={logSessionId ?? ""}
+      />
     </div>
   )
 }
