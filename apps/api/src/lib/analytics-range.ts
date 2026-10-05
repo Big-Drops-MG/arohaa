@@ -329,6 +329,14 @@ export function previousRangeFilter(utmFilter?: AnalyticsUtmFilter): string {
   return `workspace_id = {wid:UUID} AND created_at >= toDateTime64({prev_from:String}, 3, 'UTC') AND created_at < toDateTime64({prev_to:String}, 3, 'UTC')${utmFilterSql(utmFilter)}`
 }
 
+/**
+ * Stable Redis cache identity for an analytics window.
+ *
+ * Open-ended presets use `end = now` for queries. Embedding that millisecond
+ * instant in the key made every request unique, so the 45s analytics cache
+ * never hit. Bucket by ET calendar day instead; query windows still use live
+ * `now` for freshness after TTL expiry.
+ */
 export function rangeCacheKey(
   window: AnalyticsWindow,
   utmKey = 'all',
@@ -336,7 +344,11 @@ export function rangeCacheKey(
   if (window.rangeId === 'custom' && window.custom) {
     return `custom:${window.custom.from}:${window.custom.to}:${utmKey}`
   }
-  return `${window.rangeId}:${formatClickHouseDateTime(window.start)}:${formatClickHouseDateTime(window.end)}:${utmKey}`
+  const startDay = analyticsDayKey(window.start)
+  const asOf = new Date(
+    Math.max(window.start.getTime(), window.end.getTime() - 1),
+  )
+  return `${window.rangeId}:${startDay}:${analyticsDayKey(asOf)}:${utmKey}`
 }
 
 /** @deprecated Prefer resolveAnalyticsWindow + rangeFilter(). */

@@ -13,7 +13,23 @@ import { resolveApiVersion } from '../lib/api-version.js'
 import { db, sql } from '@workspace/database'
 
 const PING_TIMEOUT_MS = 3000
+/** Soften frequent readiness scrapes; dependency probes stay real after TTL. */
+const READY_PROBE_CACHE_MS = 10_000
 const HEALTH_RATE_LIMIT_OPT_OUT = { rateLimit: false } as const
+
+type ReadyProbeSnapshot = {
+  checkedAt: number
+  clickhouseStatus: Awaited<ReturnType<typeof probeClickHouse>>
+  isRedisUp: boolean
+  isPostgresUp: boolean
+  queueLen: number
+  heatmapLen: number
+  dlqLen: number
+  probeLatencyMs: number
+}
+
+let readyProbeCache: ReadyProbeSnapshot | null = null
+let readyProbeInFlight: Promise<ReadyProbeSnapshot> | null = null
 
 async function timedCheck(
   fn: () => Promise<boolean>,
@@ -25,6 +41,63 @@ async function timedCheck(
   )
   const ok = await Promise.race([fn().catch(() => false), timeout])
   return { status: ok ? 'ok' : 'unreachable', latency_ms: Date.now() - start }
+}
+
+async function runReadyProbes(): Promise<ReadyProbeSnapshot> {
+  const start = Date.now()
+  const timeoutPromise = new Promise<boolean>((resolve) =>
+    setTimeout(() => resolve(false), PING_TIMEOUT_MS),
+  )
+
+  const [clickhouseStatus, isRedisUp, isPostgresUp, queueLen, heatmapLen, dlqLen] =
+    await Promise.all([
+      probeClickHouse(PING_TIMEOUT_MS),
+      Promise.race([
+        redis.ping().then(() => true).catch(() => false),
+        timeoutPromise,
+      ]),
+      Promise.race([
+        db.execute(sql`SELECT 1 AS ok`).then(() => true).catch(() => false),
+        timeoutPromise,
+      ]),
+      redis.llen('analytics_queue').catch(() => -1),
+      redis.llen('heatmap_queue').catch(() => -1),
+      redis.llen('failed_events').catch(() => -1),
+    ])
+
+  return {
+    checkedAt: Date.now(),
+    clickhouseStatus,
+    isRedisUp: Boolean(isRedisUp),
+    isPostgresUp: Boolean(isPostgresUp),
+    queueLen,
+    heatmapLen,
+    dlqLen,
+    probeLatencyMs: Date.now() - start,
+  }
+}
+
+async function getReadyProbeSnapshot(): Promise<ReadyProbeSnapshot> {
+  const now = Date.now()
+  if (
+    readyProbeCache &&
+    now - readyProbeCache.checkedAt < READY_PROBE_CACHE_MS
+  ) {
+    return readyProbeCache
+  }
+
+  if (!readyProbeInFlight) {
+    readyProbeInFlight = runReadyProbes()
+      .then((snapshot) => {
+        readyProbeCache = snapshot
+        return snapshot
+      })
+      .finally(() => {
+        readyProbeInFlight = null
+      })
+  }
+
+  return readyProbeInFlight
 }
 
 export async function healthRoutes(server: FastifyInstance) {
@@ -39,30 +112,17 @@ export async function healthRoutes(server: FastifyInstance) {
     { config: HEALTH_RATE_LIMIT_OPT_OUT },
     async (request, reply) => {
       try {
-        const start = Date.now()
-
-        const timeoutPromise = new Promise<boolean>((resolve) =>
-          setTimeout(() => resolve(false), PING_TIMEOUT_MS),
-        )
-
-        const [clickhouseStatus, isRedisUp, isPostgresUp, queueLen, heatmapLen, dlqLen] =
-          await Promise.all([
-            probeClickHouse(PING_TIMEOUT_MS),
-            Promise.race([
-              redis.ping().then(() => true).catch(() => false),
-              timeoutPromise,
-            ]),
-            Promise.race([
-              db.execute(sql`SELECT 1 AS ok`).then(() => true).catch(() => false),
-              timeoutPromise,
-            ]),
-            redis.llen('analytics_queue').catch(() => -1),
-            redis.llen('heatmap_queue').catch(() => -1),
-            redis.llen('failed_events').catch(() => -1),
-          ])
+        const {
+          clickhouseStatus,
+          isRedisUp,
+          isPostgresUp,
+          queueLen,
+          heatmapLen,
+          dlqLen,
+          probeLatencyMs,
+        } = await getReadyProbeSnapshot()
 
         const isClickHouseUp = clickhouseStatus === 'ok'
-        const latencyMs = Date.now() - start
 
         if (!isClickHouseUp || !isRedisUp || !isPostgresUp) {
           void sendAlertWebhook({
@@ -85,7 +145,7 @@ export async function healthRoutes(server: FastifyInstance) {
               heatmap_queue: heatmapLen,
               failed_events: dlqLen,
             },
-            latency_ms: latencyMs,
+            latency_ms: probeLatencyMs,
             trace_id: request.id,
           })
         }
@@ -103,7 +163,7 @@ export async function healthRoutes(server: FastifyInstance) {
             heatmap_queue: heatmapLen,
             failed_events: dlqLen,
           },
-          latency_ms: latencyMs,
+          latency_ms: probeLatencyMs,
           timestamp: new Date().toISOString(),
           trace_id: request.id,
         }

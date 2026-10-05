@@ -15,9 +15,11 @@ export async function readAnalyticsCache<T>(key: string): Promise<T | null> {
 export async function writeAnalyticsCache(
   key: string,
   value: unknown,
+  ttlSec: number = ANALYTICS_CACHE_TTL_SEC,
 ): Promise<void> {
   try {
-    await redis.set(key, JSON.stringify(value), 'EX', ANALYTICS_CACHE_TTL_SEC)
+    const ttl = Number.isFinite(ttlSec) && ttlSec > 0 ? Math.floor(ttlSec) : ANALYTICS_CACHE_TTL_SEC
+    await redis.set(key, JSON.stringify(value), 'EX', ttl)
   } catch {
     // ignore cache write errors
   }

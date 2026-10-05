@@ -11,34 +11,10 @@ import type {
   LandingPageNavItem,
 } from "@/features/dashboard/model/landing-page"
 import { parseLandingPageChannelType } from "@/features/settings/model/landing-page-channel-types"
-import { fetchLandingPageCardMetrics } from "@/lib/server/landing-page-metrics-load"
+import { fetchLandingPageCardMetricsBatch } from "@/lib/server/landing-page-metrics-load"
 import { isLandingPageLive } from "@/lib/server/landing-page-live"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { canAccessProject, getActorAccess } from "@/lib/server/external-access"
-
-const METRICS_FETCH_CONCURRENCY = 6
-
-async function mapWithConcurrency<T, R>(
-  items: readonly T[],
-  concurrency: number,
-  mapper: (item: T, index: number) => Promise<R>
-): Promise<R[]> {
-  if (items.length === 0) return []
-  const results = new Array<R>(items.length)
-  let nextIndex = 0
-
-  async function worker() {
-    while (nextIndex < items.length) {
-      const index = nextIndex
-      nextIndex += 1
-      results[index] = await mapper(items[index]!, index)
-    }
-  }
-
-  const workers = Math.min(Math.max(concurrency, 1), items.length)
-  await Promise.all(Array.from({ length: workers }, () => worker()))
-  return results
-}
 
 export async function getLandingPageNavItems(): Promise<LandingPageNavItem[]> {
   const actor = await requireLandingPageActor()
@@ -87,9 +63,12 @@ export async function getLandingPageList(): Promise<LandingPageListItem[]> {
     canAccessProject(access, row.publicId)
   )
 
-  const [metricsList, variantByLandingPageId] = await Promise.all([
-    mapWithConcurrency(visibleRows, METRICS_FETCH_CONCURRENCY, (row) =>
-      fetchLandingPageCardMetrics(row.id, row.formType)
+  const [metricsByLandingPageId, variantByLandingPageId] = await Promise.all([
+    fetchLandingPageCardMetricsBatch(
+      visibleRows.map((row) => ({
+        landingPageId: row.id,
+        formType: row.formType,
+      }))
     ),
     getVariantMembership(),
   ])
@@ -98,7 +77,7 @@ export async function getLandingPageList(): Promise<LandingPageListItem[]> {
     visibleRows.map((row) => [row.id, row.publicId] as const)
   )
 
-  return visibleRows.map((row, index) => {
+  return visibleRows.map((row) => {
     const membership = variantByLandingPageId.get(row.id) ?? null
     const hubPublicId = membership?.hubLandingPageId
       ? (idToPublicId.get(membership.hubLandingPageId) ?? null)
@@ -111,7 +90,7 @@ export async function getLandingPageList(): Promise<LandingPageListItem[]> {
       landingPageUrl: row.landingPageUrl,
       faviconUrl: row.faviconUrl,
       isLive: isLandingPageLive(row.status),
-      metrics: metricsList[index]!,
+      metrics: metricsByLandingPageId[row.id]!,
       channelType: parseLandingPageChannelType(
         row.metadata as Record<string, unknown> | null
       ),
@@ -145,15 +124,16 @@ export async function getLandingPageCardMetricsByPublicId(): Promise<
     canAccessProject(access, row.publicId)
   )
 
-  const metricsList = await mapWithConcurrency(
-    visibleRows,
-    METRICS_FETCH_CONCURRENCY,
-    (row) => fetchLandingPageCardMetrics(row.id, row.formType)
+  const metricsByLandingPageId = await fetchLandingPageCardMetricsBatch(
+    visibleRows.map((row) => ({
+      landingPageId: row.id,
+      formType: row.formType,
+    }))
   )
 
   const byPublicId: Record<string, LandingPageMetric[]> = {}
-  for (let index = 0; index < visibleRows.length; index += 1) {
-    byPublicId[visibleRows[index]!.publicId] = metricsList[index]!
+  for (const row of visibleRows) {
+    byPublicId[row.publicId] = metricsByLandingPageId[row.id]!
   }
   return byPublicId
 }

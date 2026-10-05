@@ -23,6 +23,7 @@ import {
   getAnalyticsOverviewCities,
   getAnalyticsOverviewZipcodes,
   getLandingPageCardMetrics,
+  getLandingPageCardMetricsBatch,
 } from '../services/analytics.service.js'
 import {
   getAnalyticsEvents,
@@ -1013,6 +1014,79 @@ export async function analyticsRoutes(server: FastifyInstance) {
         run: () => getLandingPageCardMetrics(workspace_id, form_type),
         logLabel: 'landing summary query ok',
       })
+    },
+  )
+
+  server.post<{
+    Body: {
+      pages?: Array<{ workspace_id?: string; form_type?: string }>
+    }
+  }>(
+    '/v1/analytics/landing-summary-batch',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['pages'],
+          properties: {
+            pages: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 100,
+              items: {
+                type: 'object',
+                required: ['workspace_id'],
+                properties: {
+                  workspace_id: { type: 'string', format: 'uuid' },
+                  form_type: {
+                    type: 'string',
+                    enum: ['zip', 'single', 'multiple', 'none'],
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      config: ANALYTICS_RATE_LIMIT,
+    },
+    async (request, reply) => {
+      if (!verifyInternalApiRequest(request.headers['x-arohaa-internal'])) {
+        return reply.code(401).send({ error: 'Unauthorized' })
+      }
+
+      const pages = (request.body?.pages ?? [])
+        .filter(
+          (page): page is { workspace_id: string; form_type?: string } =>
+            typeof page?.workspace_id === 'string' && UUID_RE.test(page.workspace_id),
+        )
+        .map((page) => ({
+          workspaceId: page.workspace_id,
+          formType: page.form_type,
+        }))
+
+      if (pages.length === 0) {
+        return reply.code(400).send({ error: 'pages required' })
+      }
+
+      try {
+        const metricsByWorkspaceId = await getLandingPageCardMetricsBatch(pages)
+        request.log.info(
+          { page_count: pages.length },
+          'landing summary batch query ok',
+        )
+        return { metricsByWorkspaceId }
+      } catch (err) {
+        if (isClickHouseUnavailableError(err)) {
+          request.log.warn({ err }, 'landing summary batch clickhouse unavailable')
+          return reply.code(503).send({
+            error: 'analytics_unavailable',
+            code: 'CLICKHOUSE_DOWN',
+          })
+        }
+        request.log.error({ err }, 'landing summary batch failed')
+        return reply.code(500).send({ error: 'Analytics query failed' })
+      }
     },
   )
 
