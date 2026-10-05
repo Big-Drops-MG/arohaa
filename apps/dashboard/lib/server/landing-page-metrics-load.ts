@@ -38,30 +38,49 @@ export async function fetchLandingPageCardMetrics(
   landingPageId: string,
   formType = "single"
 ): Promise<LandingPageMetric[]> {
+  const batch = await fetchLandingPageCardMetricsBatch([
+    { landingPageId, formType },
+  ])
+  return batch[landingPageId] ?? emptyLandingPageMetrics(formType)
+}
+
+export async function fetchLandingPageCardMetricsBatch(
+  pages: Array<{ landingPageId: string; formType?: string }>
+): Promise<Record<string, LandingPageMetric[]>> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
+  const result: Record<string, LandingPageMetric[]> = {}
 
-  if (!apiBase || !secret) {
-    return emptyLandingPageMetrics(formType)
+  if (!apiBase || !secret || pages.length === 0) {
+    for (const page of pages) {
+      result[page.landingPageId] = emptyLandingPageMetrics(
+        page.formType ?? "single"
+      )
+    }
+    return result
   }
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 15_000)
+  const timer = setTimeout(() => controller.abort(), 30_000)
 
   try {
-    const url = new URL(`${apiBase}/v1/analytics/landing-summary`)
-    url.searchParams.set("workspace_id", landingPageId)
-    if (
-      formType === "zip" ||
-      formType === "single" ||
-      formType === "multiple" ||
-      formType === "none"
-    ) {
-      url.searchParams.set("form_type", formType)
-    }
-
-    const resp = await fetch(url.toString(), {
-      headers: { "x-arohaa-internal": secret },
+    const resp = await fetch(`${apiBase}/v1/analytics/landing-summary-batch`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-arohaa-internal": secret,
+      },
+      body: JSON.stringify({
+        pages: pages.map((page) => ({
+          workspace_id: page.landingPageId,
+          ...(page.formType === "zip" ||
+          page.formType === "single" ||
+          page.formType === "multiple" ||
+          page.formType === "none"
+            ? { form_type: page.formType }
+            : {}),
+        })),
+      }),
       signal: controller.signal,
       cache: "no-store",
     })
@@ -69,21 +88,40 @@ export async function fetchLandingPageCardMetrics(
     if (!resp.ok) {
       const body = await resp.text().catch(() => "")
       console.error(
-        `[landing-metrics] API ${resp.status} ${url.pathname}`,
+        `[landing-metrics] batch API ${resp.status}`,
         body.slice(0, 200)
       )
-      return emptyLandingPageMetrics(formType)
+      for (const page of pages) {
+        result[page.landingPageId] = emptyLandingPageMetrics(
+          page.formType ?? "single"
+        )
+      }
+      return result
     }
 
-    const data = (await resp.json()) as LandingPageCardMetrics
-    return buildLandingPageMetrics(data, formType)
+    const data = (await resp.json()) as {
+      metricsByWorkspaceId?: Record<string, LandingPageCardMetrics>
+    }
+
+    for (const page of pages) {
+      const metrics = data.metricsByWorkspaceId?.[page.landingPageId]
+      result[page.landingPageId] = metrics
+        ? buildLandingPageMetrics(metrics, page.formType ?? "single")
+        : emptyLandingPageMetrics(page.formType ?? "single")
+    }
+    return result
   } catch (err: any) {
     if (err?.name === "AbortError") {
-      console.warn(`[landing-metrics] fetch timed out for ${landingPageId}`)
-      return emptyLandingPageMetrics(formType)
+      console.warn("[landing-metrics] batch fetch timed out")
+    } else {
+      console.error("[landing-metrics] batch fetch failed", err?.message || err)
     }
-    console.error("[landing-metrics] fetch failed", err?.message || err)
-    return emptyLandingPageMetrics(formType)
+    for (const page of pages) {
+      result[page.landingPageId] = emptyLandingPageMetrics(
+        page.formType ?? "single"
+      )
+    }
+    return result
   } finally {
     clearTimeout(timer)
   }

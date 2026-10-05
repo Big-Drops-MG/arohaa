@@ -7,6 +7,10 @@ services:
     ports:
       - "8123:8123" # HTTP port (Fastify connects here)
       - "9000:9000" # Native port
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: localdev
+      CLICKHOUSE_DB: default
     volumes:
       - clickhouse_data:/var/lib/clickhouse
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   parseAnalyticsCustomRange,
+  rangeCacheKey,
   resolveAnalyticsWindow,
 } from './analytics-range.js'
 import {
@@ -128,5 +129,44 @@ describe('resolveAnalyticsWindow', () => {
     expect(
       parseAnalyticsCustomRange('2026-07-10', '2026-07-01'),
     ).toBeUndefined()
+  })
+})
+
+describe('rangeCacheKey', () => {
+  it('is stable for open-ended presets within the same ET day', () => {
+    const a = resolveAnalyticsWindow(
+      '7d',
+      new Date('2026-07-15T19:00:00.000Z'),
+    )
+    const b = resolveAnalyticsWindow(
+      '7d',
+      new Date('2026-07-15T19:00:00.001Z'),
+    )
+    expect(rangeCacheKey(a)).toBe(rangeCacheKey(b))
+    expect(rangeCacheKey(a)).toBe('7d:2026-07-09:2026-07-15:all')
+  })
+
+  it('changes when the ET calendar day rolls over', () => {
+    const before = resolveAnalyticsWindow(
+      'today',
+      new Date('2026-07-15T03:59:59.000Z'), // still 2026-07-14 ET
+    )
+    const after = resolveAnalyticsWindow(
+      'today',
+      new Date('2026-07-15T04:00:01.000Z'), // 2026-07-15 ET
+    )
+    expect(rangeCacheKey(before)).not.toBe(rangeCacheKey(after))
+  })
+
+  it('keeps custom ranges on explicit from/to keys', () => {
+    const custom = parseAnalyticsCustomRange('2026-07-01', '2026-07-10')
+    const window = resolveAnalyticsWindow(
+      'custom',
+      new Date('2026-07-15T19:00:00.000Z'),
+      custom,
+    )
+    expect(rangeCacheKey(window, 'src:google')).toBe(
+      'custom:2026-07-01:2026-07-10:src:google',
+    )
   })
 })

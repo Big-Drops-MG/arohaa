@@ -1252,76 +1252,192 @@ export interface LandingPageCardMetrics {
   bounceRate: number
 }
 
+/** Card bounce should match recent traffic, not a 24-month full-session scan. */
+const CARD_BOUNCE_LOOKBACK = '30 DAY'
+/** Slightly longer than the dashboard poll so collection refreshes can hit Redis. */
+const LANDING_SUMMARY_CACHE_TTL_SEC = 60
+
+function landingSummaryCacheKey(
+  workspaceId: string,
+  formType: LandingFormType,
+): string {
+  return `analytics:landing-summary:v6:${workspaceId}:${formType}`
+}
+
 export async function getLandingPageCardMetrics(
   workspaceId: string,
   formTypeRaw?: string,
 ): Promise<LandingPageCardMetrics> {
   const formType = parseLandingFormType(formTypeRaw)
-  const cacheKey = `analytics:landing-summary:v5:${workspaceId}:${formType}`
+  const cacheKey = landingSummaryCacheKey(workspaceId, formType)
   const cached = await readAnalyticsCache<LandingPageCardMetrics>(cacheKey)
   if (cached) return cached
 
+  const byId = await queryLandingPageCardMetrics([
+    { workspaceId, formType },
+  ])
+  const result = byId[workspaceId] ?? emptyLandingPageCardMetrics()
+  await writeAnalyticsCache(cacheKey, result, LANDING_SUMMARY_CACHE_TTL_SEC)
+  return result
+}
+
+export type LandingPageCardMetricsRequest = {
+  workspaceId: string
+  formType?: string
+}
+
+/**
+ * Batch card metrics for many landing pages.
+ * Groups by form_type so ClickHouse does one scan set per form type, not per page.
+ */
+export async function getLandingPageCardMetricsBatch(
+  pages: LandingPageCardMetricsRequest[],
+): Promise<Record<string, LandingPageCardMetrics>> {
+  const normalized = pages
+    .filter((page) => typeof page.workspaceId === 'string' && page.workspaceId)
+    .map((page) => ({
+      workspaceId: page.workspaceId,
+      formType: parseLandingFormType(page.formType),
+    }))
+
+  if (normalized.length === 0) return {}
+
+  const result: Record<string, LandingPageCardMetrics> = {}
+  const missing: Array<{ workspaceId: string; formType: LandingFormType }> = []
+
+  await Promise.all(
+    normalized.map(async (page) => {
+      const cached = await readAnalyticsCache<LandingPageCardMetrics>(
+        landingSummaryCacheKey(page.workspaceId, page.formType),
+      )
+      if (cached) {
+        result[page.workspaceId] = cached
+        return
+      }
+      missing.push(page)
+    }),
+  )
+
+  if (missing.length === 0) return result
+
+  const byFormType = new Map<LandingFormType, string[]>()
+  for (const page of missing) {
+    const list = byFormType.get(page.formType) ?? []
+    list.push(page.workspaceId)
+    byFormType.set(page.formType, list)
+  }
+
+  for (const [formType, workspaceIds] of byFormType) {
+    const uniqueIds = [...new Set(workspaceIds)]
+    const queried = await queryLandingPageCardMetrics(
+      uniqueIds.map((workspaceId) => ({ workspaceId, formType })),
+    )
+    await Promise.all(
+      uniqueIds.map(async (workspaceId) => {
+        const metrics = queried[workspaceId] ?? emptyLandingPageCardMetrics()
+        result[workspaceId] = metrics
+        await writeAnalyticsCache(
+          landingSummaryCacheKey(workspaceId, formType),
+          metrics,
+          LANDING_SUMMARY_CACHE_TTL_SEC,
+        )
+      }),
+    )
+  }
+
+  return result
+}
+
+async function queryLandingPageCardMetrics(
+  pages: Array<{ workspaceId: string; formType: LandingFormType }>,
+): Promise<Record<string, LandingPageCardMetrics>> {
+  if (pages.length === 0) return {}
+
+  // Callers group by formType; mixed types would make submission SQL ambiguous.
+  const formType = pages[0]!.formType
+  const workspaceIds = [...new Set(pages.map((page) => page.workspaceId))]
   const ch = getClickHouseClient()
-  const metricsRes = await ch.query({
+  const submissionPred = submissionEventSqlPredicate(formType)
+
+  const res = await ch.query({
     query: `
+      WITH
+        metrics AS (
+          SELECT
+            workspace_id,
+            uniqExactIf(
+              user_id,
+              created_at >= now() - INTERVAL 5 MINUTE
+                AND event_name IN ('heartbeat', 'page_view')
+            ) AS active_users,
+            uniqExactIf(
+              user_id,
+              created_at >= now() - INTERVAL 7 DAY
+                AND event_name = 'page_view'
+            ) AS visitors_7d,
+            uniqExactIf(
+              session_id,
+              ${submissionPred}
+            ) AS form_submissions
+          FROM events_raw
+          WHERE workspace_id IN ({wids:Array(UUID)})
+          GROUP BY workspace_id
+        ),
+        bounce AS (
+          SELECT
+            workspace_id,
+            sumIf(1, is_bounce = 1) AS bounces,
+            count() AS sessions
+          FROM (
+            SELECT
+              workspace_id,
+              session_id,
+              toUInt8(count() = 1) AS is_bounce
+            FROM events_raw
+            WHERE workspace_id IN ({wids:Array(UUID)})
+              AND created_at >= now() - INTERVAL ${CARD_BOUNCE_LOOKBACK}
+            GROUP BY workspace_id, session_id
+          )
+          GROUP BY workspace_id
+        )
       SELECT
-        uniqExactIf(
-          user_id,
-          created_at >= now() - INTERVAL 5 MINUTE
-            AND event_name IN ('heartbeat', 'page_view')
-        ) AS active_users,
-        uniqExactIf(
-          user_id,
-          created_at >= now() - INTERVAL 7 DAY
-            AND event_name = 'page_view'
-        ) AS visitors_7d,
-        uniqExactIf(
-          session_id,
-          ${submissionEventSqlPredicate(formType)}
-        ) AS form_submissions
-      FROM events_raw
-      WHERE workspace_id = {wid:UUID}
+        m.workspace_id AS workspace_id,
+        m.active_users AS active_users,
+        m.visitors_7d AS visitors_7d,
+        m.form_submissions AS form_submissions,
+        b.bounces AS bounces,
+        b.sessions AS sessions
+      FROM metrics AS m
+      LEFT JOIN bounce AS b ON b.workspace_id = m.workspace_id
     `,
-    query_params: { wid: workspaceId },
+    query_params: { wids: workspaceIds },
     format: 'JSON',
   })
-  const [row] = (
-    (await metricsRes.json()) as CHJson<{
+
+  const rows = (
+    (await res.json()) as CHJson<{
+      workspace_id: string
       active_users: string
       visitors_7d: string
       form_submissions: string
+      bounces: string
+      sessions: string
     }>
   ).data
 
-  const bounceRes = await ch.query({
-    query: `
-      SELECT
-        sumIf(1, is_bounce = 1) AS bounces,
-        count() AS sessions
-      FROM (
-        SELECT session_id, toUInt8(count() = 1) AS is_bounce
-        FROM events_raw
-        WHERE workspace_id = {wid:UUID}
-          AND created_at >= now() - INTERVAL 24 MONTH
-        GROUP BY session_id
-      )
-    `,
-    query_params: { wid: workspaceId },
-    format: 'JSON',
-  })
-  const [bounceRow] = (
-    (await bounceRes.json()) as CHJson<{ sessions: string; bounces: string }>
-  ).data
-
-  const result = {
-    activeUsers: n(row?.active_users),
-    visitors7d: n(row?.visitors_7d),
-    formSubmissions: n(row?.form_submissions),
-    bounceRate: bouncePct(n(bounceRow?.bounces), n(bounceRow?.sessions)),
+  const byId: Record<string, LandingPageCardMetrics> = {}
+  for (const workspaceId of workspaceIds) {
+    byId[workspaceId] = emptyLandingPageCardMetrics()
   }
-
-  await writeAnalyticsCache(cacheKey, result)
-  return result
+  for (const row of rows ?? []) {
+    byId[row.workspace_id] = {
+      activeUsers: n(row.active_users),
+      visitors7d: n(row.visitors_7d),
+      formSubmissions: n(row.form_submissions),
+      bounceRate: bouncePct(n(row.bounces), n(row.sessions)),
+    }
+  }
+  return byId
 }
 
 export function emptyLandingPageCardMetrics(): LandingPageCardMetrics {

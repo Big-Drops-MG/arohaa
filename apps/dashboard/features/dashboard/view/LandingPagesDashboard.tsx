@@ -20,7 +20,8 @@ import { LandingPagesBrandSidebar } from "@/features/dashboard/view/LandingPages
 import { dashboardPageInsetClassName } from "@/features/overview/view/overview-card-density"
 import { cn } from "@workspace/ui/lib/utils"
 
-const METRICS_REFRESH_MS = 30_000
+/** Keep at/above landing-summary Redis TTL so refreshes can hit cache. */
+const METRICS_REFRESH_MS = 60_000
 
 type LandingPagesDashboardProps = {
   pages: LandingPageListItem[]
