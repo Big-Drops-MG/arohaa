@@ -1,16 +1,14 @@
 import { CLICKHOUSE_EVENTS_TABLE } from '../lib/clickhouse-events-table.js'
-import { decryptFieldBlob } from '../lib/field-blob.js'
 import {
   normalizeLeadFields,
   pickLeadEmail,
-  pickLeadZip,
-  pickTrustedFormUrl,
 } from '../lib/lead-fields.js'
 import { LEAD_FRAUD_MODEL_VERSION } from '../lib/lead-fraud/constants.js'
 import { emailDomain } from '../lib/lead-fraud/disposable-domains.js'
-import { emptyFeatures } from '../lib/lead-fraud/features.js'
+import { extractRawFieldMap } from '../lib/lead-fraud/field-signals.js'
+import { loadLeadSessionSignals } from '../lib/lead-fraud/load-sessions.js'
 import { upsertLeadRiskBatch } from '../lib/lead-fraud/persist.js'
-import { scoreLeadFraud } from '../lib/lead-fraud/score.js'
+import { classifyLeadSessionRows } from '../lib/lead-fraud/service.js'
 import type {
   LeadFraudAssessment,
   LeadFraudFeatures,
@@ -120,52 +118,6 @@ async function loadPostgresTotals(): Promise<{
   }
 }
 
-function extractRawFieldMap(raw: string): Record<string, string> {
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    if (!parsed || typeof parsed !== 'object') return {}
-    const props = parsed as Record<string, unknown>
-    const blob = props._k
-    if (typeof blob === 'string' && blob.length > 0) {
-      const decrypted = decryptFieldBlob(blob)
-      if (decrypted) return decrypted
-    }
-    const source =
-      props.fields &&
-      typeof props.fields === 'object' &&
-      !Array.isArray(props.fields)
-        ? (props.fields as Record<string, unknown>)
-        : props
-    const out: Record<string, string> = {}
-    for (const [k, v] of Object.entries(source)) {
-      if (k === 'fields' || k === '_k') continue
-      if (
-        typeof v === 'string' ||
-        typeof v === 'number' ||
-        typeof v === 'boolean'
-      ) {
-        out[k] = String(v)
-      }
-    }
-    return out
-  } catch {
-    return {}
-  }
-}
-
-type LeadSessionRow = {
-  workspace_id: string
-  session_id: string
-  fingerprint: string
-  browser: string
-  geo_zip: string
-  geo_state: string
-  client_ip_hash: string
-  form_submitted: number | boolean | string
-  props: string
-  zip_val: string
-}
-
 type WarehouseLeadInsights = {
   risk: {
     legit: number
@@ -200,74 +152,13 @@ function parseReasonsJson(raw: unknown): string[] {
   return []
 }
 
-function isTruthyFlag(value: unknown): boolean {
-  return value === true || value === 1 || value === '1'
-}
-
 /**
- * Classify every lead/form-submit session with scoreLeadFraud.
- * Field signals only (no per-session FI round-trips) so warehouse can finish
- * against tens of thousands of sessions and still return real counts.
+ * Classify every lead/form-submit session with the same field-signal scorer
+ * Data Leads uses, so Legit/Fraud totals and per-lead badges stay aligned.
  */
 async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
   const ch = getClickHouseClient()
-
-  let leadRows: LeadSessionRow[] = []
-  try {
-    const leadRes = await ch.query({
-      format: 'JSON',
-      query: `
-        SELECT
-          toString(workspace_id) AS workspace_id,
-          session_id,
-          anyIf(fingerprint, fingerprint != '') AS fingerprint,
-          anyIf(browser, browser != '') AS browser,
-          max(nullIf(geo_zipcode, '')) AS geo_zip,
-          anyIf(state, state != '') AS geo_state,
-          anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
-          max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
-          argMax(properties, (length(properties), created_at)) AS props,
-          max(nullIf(zipcode, '')) AS zip_val
-        FROM ${CLICKHOUSE_EVENTS_TABLE}
-        WHERE session_id != ''
-          AND (
-            event_name IN ('form_submit', 'form_success')
-            OR positionCaseInsensitive(properties, '"_k"') > 0
-            OR positionCaseInsensitive(properties, '"fields"') > 0
-          )
-        GROUP BY workspace_id, session_id
-        LIMIT 100000
-      `,
-    })
-    leadRows = ((await leadRes.json()) as CHJson<LeadSessionRow>).data ?? []
-  } catch {
-    const leadRes = await ch.query({
-      format: 'JSON',
-      query: `
-        SELECT
-          toString(workspace_id) AS workspace_id,
-          session_id,
-          anyIf(fingerprint, fingerprint != '') AS fingerprint,
-          anyIf(browser, browser != '') AS browser,
-          '' AS geo_zip,
-          anyIf(state, state != '') AS geo_state,
-          anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
-          max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
-          argMax(properties, (length(properties), created_at)) AS props,
-          max(nullIf(zipcode, '')) AS zip_val
-        FROM ${CLICKHOUSE_EVENTS_TABLE}
-        WHERE session_id != ''
-          AND (
-            event_name IN ('form_submit', 'form_success')
-            OR positionCaseInsensitive(properties, '"_k"') > 0
-            OR positionCaseInsensitive(properties, '"fields"') > 0
-          )
-        GROUP BY workspace_id, session_id
-        LIMIT 100000
-      `,
-    })
-    leadRows = ((await leadRes.json()) as CHJson<LeadSessionRow>).data ?? []
-  }
+  const leadRows = await loadLeadSessionSignals()
 
   const riskRes = await ch.query({
     format: 'JSON',
@@ -326,38 +217,14 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
     })
   }
 
-  const fpSubmitCounts = new Map<string, number>()
-  const ipSubmitCounts = new Map<string, number>()
-  const domainSubmitCounts = new Map<string, number>()
-  const fpSessionCounts = new Map<string, number>()
-
-  for (const row of leadRows) {
-    const submitted = isTruthyFlag(row.form_submitted)
-    const fp = (row.fingerprint || '').trim()
-    const ip = (row.client_ip_hash || '').trim()
-    if (fp) fpSessionCounts.set(fp, (fpSessionCounts.get(fp) ?? 0) + 1)
-    if (!submitted) continue
-    if (fp) fpSubmitCounts.set(fp, (fpSubmitCounts.get(fp) ?? 0) + 1)
-    if (ip) ipSubmitCounts.set(ip, (ipSubmitCounts.get(ip) ?? 0) + 1)
-    const email = pickLeadEmail(
-      normalizeLeadFields(extractRawFieldMap(row.props || '{}')),
-    )
-    const domain = emailDomain(email)
-    if (domain) {
-      domainSubmitCounts.set(domain, (domainSubmitCounts.get(domain) ?? 0) + 1)
-    }
-  }
-
   const labelByKey = new Map<string, 'legit' | 'fraud'>()
   const emailByKey = new Map<string, string>()
   const fraudReasonCounts = new Map<string, number>()
-  const toPersist: Array<{
-    workspaceId: string
-    sessionId: string
-    assessment: LeadFraudAssessment
-    features: LeadFraudFeatures
-  }> = []
-  let failed = 0
+  const needsScore = leadRows.filter((row) => {
+    const key = `${row.workspaceId}:${row.sessionId}`
+    const existing = existingRisk.get(key)
+    return !(existing && existing.modelVersion === LEAD_FRAUD_MODEL_VERSION)
+  })
 
   function addFraudReasons(reasons: string[]) {
     for (const reason of reasons) {
@@ -368,79 +235,45 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
   }
 
   for (const row of leadRows) {
-    const wid = String(row.workspace_id || '').trim()
-    const sid = String(row.session_id || '').trim()
-    if (!wid || !sid) continue
-    const key = `${wid}:${sid}`
-
-    try {
-      const rawFields = extractRawFieldMap(row.props || '{}')
-      const fields = normalizeLeadFields(rawFields)
-      const email = pickLeadEmail(fields)
+    const key = `${row.workspaceId}:${row.sessionId}`
+    const existing = existingRisk.get(key)
+    if (existing && existing.modelVersion === LEAD_FRAUD_MODEL_VERSION) {
+      labelByKey.set(key, existing.label)
+      const email =
+        existing.email.includes('@')
+          ? existing.email
+          : pickLeadEmail(
+              normalizeLeadFields(extractRawFieldMap(row.props || '{}')),
+            )
       if (email.includes('@')) emailByKey.set(key, email)
+      if (existing.label === 'fraud') addFraudReasons(existing.reasons)
+    }
+  }
 
-      const existing = existingRisk.get(key)
-      if (existing && existing.modelVersion === LEAD_FRAUD_MODEL_VERSION) {
-        labelByKey.set(key, existing.label)
-        if (!email.includes('@') && existing.email.includes('@')) {
-          emailByKey.set(key, existing.email)
-        }
-        if (existing.label === 'fraud') addFraudReasons(existing.reasons)
-        continue
+  const toPersist: Array<{
+    workspaceId: string
+    sessionId: string
+    assessment: LeadFraudAssessment
+    features: LeadFraudFeatures
+  }> = []
+
+  if (needsScore.length > 0) {
+    // Score against full lead-set velocity (same builder Data Leads uses).
+    const classified = classifyLeadSessionRows(leadRows)
+    const needKeys = new Set(
+      needsScore.map((row) => `${row.workspaceId}:${row.sessionId}`),
+    )
+    for (const item of classified.toPersist) {
+      const key = `${item.workspaceId}:${item.sessionId}`
+      if (!needKeys.has(key)) continue
+      labelByKey.set(key, item.assessment.label)
+      if (item.features.email.includes('@')) {
+        emailByKey.set(key, item.features.email)
       }
-
-      const zip = (row.zip_val || pickLeadZip(fields) || '').trim()
-      const fingerprint = (row.fingerprint || '').trim()
-      const ipHash = (row.client_ip_hash || '').trim()
-      const domain = emailDomain(email)
-      const formSubmitted = isTruthyFlag(row.form_submitted)
-
-      const features = emptyFeatures({
-        fingerprint,
-        browser: (row.browser || '').trim(),
-        formSubmitted,
-        email,
-        firstName: (fields.first_name || '').trim(),
-        lastName: (fields.last_name || '').trim(),
-        zip,
-        geoZip: (row.geo_zip || '').trim(),
-        stateField: (fields.state || '').trim(),
-        geoState: (row.geo_state || '').trim(),
-        trustedFormUrl: pickTrustedFormUrl(rawFields),
-        clientIpHash: ipHash,
-        hasFormStarted: formSubmitted,
-        hasFieldInteraction: formSubmitted || Boolean(email || zip),
-        fillDurationMs: null,
-        typedCount: formSubmitted ? 1 : 0,
-        pasteCount: 0,
-        pastedEmail: false,
-        pastedName: false,
-        pastedPhone: false,
-        fingerprintSessionsSameDay: fingerprint
-          ? (fpSessionCounts.get(fingerprint) ?? 0)
-          : 0,
-        fingerprintSubmits24h: fingerprint
-          ? (fpSubmitCounts.get(fingerprint) ?? 0)
-          : 0,
-        ipHashSubmits24h: ipHash ? (ipSubmitCounts.get(ipHash) ?? 0) : 0,
-        emailDomainSubmits24h: domain
-          ? (domainSubmitCounts.get(domain) ?? 0)
-          : 0,
-        fieldCount:
-          Object.keys(fields).length + (email ? 1 : 0) + (zip ? 1 : 0),
-      })
-
-      const assessment = scoreLeadFraud(features)
-      labelByKey.set(key, assessment.label)
-      if (assessment.label === 'fraud') addFraudReasons(assessment.reasons)
-      toPersist.push({
-        workspaceId: wid,
-        sessionId: sid,
-        assessment,
-        features,
-      })
-    } catch {
-      failed += 1
+      if (item.assessment.label === 'fraud') {
+        addFraudReasons(item.assessment.reasons)
+      }
+      toPersist.push(item)
     }
   }
 
@@ -488,11 +321,12 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
     .slice(0, 25)
 
   const scoredLeads = legit + fraud
+  const failed = Math.max(0, needsScore.length - toPersist.length)
   return {
     risk: {
       legit,
       fraud,
-      unscoredFormSubmits: Math.max(0, failed),
+      unscoredFormSubmits: failed,
     },
     scoredLeads,
     emailDomains,

@@ -1,7 +1,7 @@
 import type { LeadFraudLabel } from './types.js'
 
 /** Bumped when score semantics change (trust score, binary labels). */
-export const LEAD_FRAUD_MODEL_VERSION = 'v2'
+export const LEAD_FRAUD_MODEL_VERSION = 'v3'
 
 export type { LeadFraudLabel }
 

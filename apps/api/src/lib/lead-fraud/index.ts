@@ -7,8 +7,13 @@ export {
 export { scoreLeadFraud } from './score.js'
 export { parseFiBehavior, looksLikeNonsenseName, emptyFeatures } from './features.js'
 export {
+  buildFeaturesFromLeadSessionSignal,
+  computeLeadVelocityMaps,
+} from './field-signals.js'
+export {
   ensureSessionFraudAssessment,
   ensureSessionsFraudAssessments,
+  classifyLeadSessionRows,
 } from './service.js'
 export type {
   LeadFraudAssessment,
