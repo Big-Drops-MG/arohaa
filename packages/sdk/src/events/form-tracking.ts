@@ -1,7 +1,6 @@
 import { getConfig } from "../model/config"
 import { trackFormStart, trackFormSubmit, trackFormSuccess } from "./form.events"
 import {
-  formIdFromForm,
   formSubmitsToInternalApi,
   findZipFormRoot,
   findZipSubmitControl,
@@ -13,6 +12,7 @@ import {
   isZipInput,
   normalizeZipValue,
   readZipValue,
+  resolveFormId,
 } from "./form-dom.utils"
 import {
   hasFormSessionSucceeded,
@@ -64,7 +64,7 @@ function fireZipStartIfApplicable(formId?: string): void {
 }
 
 function fireFormSuccessOnSubmit(form: HTMLFormElement): void {
-  const id = formIdFromForm(form)
+  const id = resolveFormId(form)
   if (hasFormSessionSucceeded(id)) return
 
   const zip = resolveZipForSubmit(id)
@@ -81,7 +81,7 @@ function handleZipControlSubmit(control: HTMLElement): void {
   if (!zip || !isValidZipValue(zip)) return
 
   const form = control.closest("form")
-  const formId = form ? formIdFromForm(form) : "zip"
+  const formId = form ? resolveFormId(form) : "zip"
   if (hasFormSessionSucceeded(formId)) return
 
   fireZipStartIfApplicable(formId)
@@ -136,7 +136,7 @@ function setupFormSubmitTracking(): void {
       const form = e.target
       if (!(form instanceof HTMLFormElement)) return
 
-      const id = formIdFromForm(form)
+      const id = resolveFormId(form)
       trackFormSubmit(id)
 
       if (!formSubmitsToInternalApi(form)) {
@@ -197,11 +197,11 @@ export function setupFormDomTracking(): void {
 
       const form = target.closest("form")
       if (!form) return
-      if (isWithinZipForm(target)) fireZipStartIfApplicable(formIdFromForm(form))
+      if (isWithinZipForm(target)) fireZipStartIfApplicable(resolveFormId(form))
       if (startedForms.has(form)) return
       startedForms.add(form)
       markFormSessionStarted(form)
-      trackFormStart(formIdFromForm(form))
+      trackFormStart(resolveFormId(form))
     },
     true,
   )
@@ -224,11 +224,11 @@ export function setupFormDomTracking(): void {
 
       const form = target.closest("form")
       if (!form) return
-      if (isWithinZipForm(target)) fireZipStartIfApplicable(formIdFromForm(form))
+      if (isWithinZipForm(target)) fireZipStartIfApplicable(resolveFormId(form))
       if (startedForms.has(form)) return
       startedForms.add(form)
       markFormSessionStarted(form)
-      trackFormStart(formIdFromForm(form))
+      trackFormStart(resolveFormId(form))
     },
     true,
   )

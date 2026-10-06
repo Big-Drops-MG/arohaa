@@ -239,6 +239,7 @@ async function ingestOne(
     accuracyRadius: ctx.geo.accuracyRadius,
     tenantWorkspaceId: landing.tenantWorkspaceId,
     landingPageId,
+    clientIpHash: ctx.ipHash,
   })
 
   try {

@@ -13,9 +13,32 @@ import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import type {
   InteractionLogData,
   InteractionLogEntry,
+  LeadFraudAssessment,
 } from "@/features/data-export/model/interaction-log"
 
-export type { InteractionLogData, InteractionLogEntry }
+export type { InteractionLogData, InteractionLogEntry, LeadFraudAssessment }
+
+function mapFraud(raw: unknown): LeadFraudAssessment | null {
+  if (!raw || typeof raw !== "object") return null
+  const row = raw as Record<string, unknown>
+  const rawLabel = row.label === "review" ? "fraud" : row.label
+  const rawEffective =
+    row.effectiveLabel === "review" ? "fraud" : row.effectiveLabel
+  if (rawLabel !== "legit" && rawLabel !== "fraud") return null
+  const effective =
+    rawEffective === "legit" || rawEffective === "fraud"
+      ? rawEffective
+      : rawLabel
+  return {
+    score: typeof row.score === "number" ? row.score : 0,
+    label: rawLabel,
+    effectiveLabel: effective,
+    reasons: Array.isArray(row.reasons)
+      ? row.reasons.map((r) => String(r))
+      : [],
+    modelVersion: typeof row.modelVersion === "string" ? row.modelVersion : "",
+  }
+}
 
 export async function loadInteractionLogForApi(
   landingPagePublicId: string,
@@ -82,7 +105,30 @@ export async function loadInteractionLogForApi(
           typeof data.startedAt === "string" || data.startedAt === null
             ? data.startedAt
             : null,
-        entries: Array.isArray(data.entries) ? data.entries : [],
+        formId:
+          typeof data.formId === "string" && data.formId.trim()
+            ? data.formId.trim()
+            : null,
+        firstName:
+          typeof data.firstName === "string" ? data.firstName.trim() : "",
+        lastName: typeof data.lastName === "string" ? data.lastName.trim() : "",
+        email: typeof data.email === "string" ? data.email.trim() : "",
+        fraud: mapFraud(data.fraud),
+        entries: Array.isArray(data.entries)
+          ? data.entries.map((entry) => ({
+              at: typeof entry?.at === "string" ? entry.at : "",
+              offsetMs:
+                typeof entry?.offsetMs === "number" &&
+                Number.isFinite(entry.offsetMs)
+                  ? entry.offsetMs
+                  : 0,
+              message: typeof entry?.message === "string" ? entry.message : "",
+              kind:
+                typeof entry?.kind === "number" && Number.isFinite(entry.kind)
+                  ? entry.kind
+                  : null,
+            }))
+          : [],
       },
     }
   } catch {

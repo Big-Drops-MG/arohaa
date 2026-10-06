@@ -11,6 +11,7 @@ import { redis } from './services/redis.service.js'
 import { ingestRoutes } from './routes/ingest.js'
 import { sdkConfigRoutes } from './routes/sdk-config.js'
 import { healthRoutes } from './routes/health.js'
+import { warehouseRoutes } from './routes/warehouse.js'
 import { devRoutes } from './routes/dev.js'
 import { analyticsRoutes } from './routes/analytics.js'
 import { segmentRoutes } from './routes/segments.js'
@@ -252,6 +253,7 @@ server.register(analyticsRoutes)
 server.register(segmentRoutes)
 server.register(webPushRoutes)
 server.register(healthRoutes)
+server.register(warehouseRoutes)
 if (isDev) {
   server.register(devRoutes)
 }

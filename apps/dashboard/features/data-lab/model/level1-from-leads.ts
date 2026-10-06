@@ -82,6 +82,29 @@ export function mapDataExportLeadRow(
       return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
     })(),
     fields,
+    fraud: mapLeadFraud(raw.fraud),
+  }
+}
+
+function mapLeadFraud(raw: unknown): DataExportLeadRow["fraud"] {
+  if (!raw || typeof raw !== "object") return null
+  const row = raw as Record<string, unknown>
+  const rawLabel = row.label === "review" ? "fraud" : row.label
+  const rawEffective =
+    row.effectiveLabel === "review" ? "fraud" : row.effectiveLabel
+  if (rawLabel !== "legit" && rawLabel !== "fraud") return null
+  const effective =
+    rawEffective === "legit" || rawEffective === "fraud"
+      ? rawEffective
+      : rawLabel
+  return {
+    score: typeof row.score === "number" ? row.score : 0,
+    label: rawLabel,
+    effectiveLabel: effective,
+    reasons: Array.isArray(row.reasons)
+      ? row.reasons.map((r) => String(r))
+      : [],
+    modelVersion: typeof row.modelVersion === "string" ? row.modelVersion : "",
   }
 }
 

@@ -2,8 +2,16 @@
 
 import { useState } from "react"
 import Image from "next/image"
-import { CircleUserRound, LogOut, Server, User, Users } from "lucide-react"
+import {
+  CircleUserRound,
+  LogOut,
+  Server,
+  User,
+  Users,
+  Warehouse,
+} from "lucide-react"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { logout } from "@/actions/auth.actions"
 import { replaceToAuthPath } from "@/lib/auth-navigation"
 import type { LandingPageNavItem } from "@/features/dashboard/model/landing-page"
@@ -45,9 +53,11 @@ export function Navbar({
   landingPageNavItems,
   showTeamAndOps = true,
 }: NavbarProps) {
+  const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
   const fullName = `${firstName} ${lastName}`.trim()
   const initials = buildInitials(firstName, lastName)
+  const hideProjectDropdown = pathname === "/dashboard/warehouse"
 
   function closeMenu() {
     setMenuOpen(false)
@@ -76,7 +86,9 @@ export function Navbar({
               priority
             />
           </Link>
-          <LandingPageProjectDropdown pages={landingPageNavItems} />
+          {!hideProjectDropdown ? (
+            <LandingPageProjectDropdown pages={landingPageNavItems} />
+          ) : null}
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
           <NavbarClock />
@@ -106,7 +118,7 @@ export function Navbar({
                 />
               </button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-48 p-2">
+            <PopoverContent align="end" className="w-52 p-2">
               <div className="flex flex-col gap-0.5">
                 {showTeamAndOps ? (
                   <>
@@ -145,6 +157,19 @@ export function Navbar({
                     Profile
                   </Link>
                 </Button>
+                {showTeamAndOps ? (
+                  <Button
+                    asChild
+                    variant="ghost"
+                    size="sm"
+                    className="justify-start px-2.5"
+                  >
+                    <Link href="/dashboard/warehouse" onClick={closeMenu}>
+                      <Warehouse className="size-4" aria-hidden />
+                      Warehouse
+                    </Link>
+                  </Button>
+                ) : null}
                 <form
                   onSubmit={(event) => {
                     event.preventDefault()

@@ -1,8 +1,8 @@
 import { track } from "../core/tracker"
 import {
-  formIdFromForm,
   isMarkedArohaaField,
   isZipInput,
+  resolveFormId,
   resolveMarkedFieldName,
 } from "./form-dom.utils"
 
@@ -18,7 +18,7 @@ const STANDALONE_ZIP_KEY = "standalone-zip"
 let fieldTrackingInstalled = false
 
 function sessionKey(form: HTMLFormElement): string {
-  return formIdFromForm(form) ?? "default-form"
+  return resolveFormId(form)
 }
 
 function getSession(key: string): FormSessionState {
@@ -37,7 +37,7 @@ function getFormSession(form: HTMLFormElement): FormSessionState {
 export function markFormSessionStarted(form: HTMLFormElement): void {
   const state = getFormSession(form)
   state.started = true
-  state.formId = formIdFromForm(form)
+  state.formId = resolveFormId(form)
 }
 
 export function markStandaloneZipStarted(): void {
@@ -80,14 +80,14 @@ export function trackFormFieldFocus(
   const state = getFormSession(form)
   if (!state.started) {
     state.started = true
-    state.formId = formIdFromForm(form)
+    state.formId = resolveFormId(form)
   }
 
   const fieldName = resolveMarkedFieldName(field)
   state.lastField = fieldName
   track("form_field_focus", {
     fieldName,
-    ...(state.formId ? { formId: state.formId } : {}),
+    formId: state.formId ?? resolveFormId(form),
   })
 }
 

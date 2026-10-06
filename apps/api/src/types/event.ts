@@ -59,6 +59,8 @@ export interface EventRow {
   city: string
   state: string
   zipcode: string
+  geo_zipcode: string
+  client_ip_hash: string
   state_code: string
   latitude: number
   longitude: number
@@ -87,6 +89,7 @@ export interface EnrichmentForRow {
   accuracyRadius: number | null
   tenantWorkspaceId?: string
   landingPageId?: string
+  clientIpHash?: string
 }
 
 function zipFromValue(raw: unknown): string {
@@ -177,6 +180,8 @@ export function ingestBodyToEventRow(
     city: enrichment.city,
     state: enrichment.state,
     zipcode: submittedZip || enrichment.zipcode,
+    geo_zipcode: enrichment.zipcode?.trim() || '',
+    client_ip_hash: enrichment.clientIpHash?.trim() || '',
     state_code: enrichment.stateCode,
     latitude: enrichment.latitude ?? 0,
     longitude: enrichment.longitude ?? 0,

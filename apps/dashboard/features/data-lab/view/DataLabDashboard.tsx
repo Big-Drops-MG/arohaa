@@ -37,7 +37,10 @@ import { Level3Panel } from "@/features/data-lab/view/Level3Panel"
 import { DataLabLeadsPanel } from "@/features/data-lab/view/DataLabLeadsPanel"
 import type { DataExportDashboardData } from "@/features/data-export/model/data-export"
 import { getDataExportEmptyDashboardData } from "@/features/data-export/controller/data-export-empty-data"
-import { discoverVisibleLeadFieldKeys } from "@/features/data-export/model/lead-field-columns"
+import {
+  discoverVisibleLeadFieldKeys,
+  sortLeadFieldKeys,
+} from "@/features/data-export/model/lead-field-columns"
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-range"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
@@ -263,9 +266,11 @@ export function DataLabDashboard({
   )
   const visibleLeadFieldKeys = useMemo(
     () =>
-      exportData?.visibleLeadFieldKeys.length
-        ? exportData.visibleLeadFieldKeys
-        : discoverVisibleLeadFieldKeys(exportData?.leads ?? []),
+      sortLeadFieldKeys(
+        exportData?.visibleLeadFieldKeys.length
+          ? exportData.visibleLeadFieldKeys
+          : discoverVisibleLeadFieldKeys(exportData?.leads ?? [])
+      ),
     [exportData?.leads, exportData?.visibleLeadFieldKeys]
   )
 

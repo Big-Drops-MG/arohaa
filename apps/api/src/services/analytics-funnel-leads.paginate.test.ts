@@ -20,6 +20,13 @@ function lead(sessionId: string): FunnelLeadRow {
     formSubmitted: false,
     returnCount: 0,
     fields: {},
+    fraud: {
+      score: 100,
+      label: 'legit',
+      effectiveLabel: 'legit',
+      reasons: [],
+      modelVersion: 'v2',
+    },
   }
 }
 

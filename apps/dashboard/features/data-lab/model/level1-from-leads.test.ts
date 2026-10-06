@@ -23,6 +23,7 @@ function lead(sessionId: string): DataExportLeadRow {
     formSubmitted: true,
     returnCount: 0,
     fields: { city: "New York", state: "NY" },
+    fraud: null,
   }
 }
 
