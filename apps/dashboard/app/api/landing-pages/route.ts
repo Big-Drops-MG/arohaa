@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import type { InferSelectModel } from "drizzle-orm"
-import { desc, eq, and, isNull } from "drizzle-orm"
+import { eq, and, isNull } from "drizzle-orm"
 import { NextResponse } from "next/server"
 import {
   db,
@@ -13,7 +13,6 @@ import {
   normalizedBrandName,
   normalizedOptionalBrand,
 } from "@workspace/database"
-import { canAccessProject, getActorAccess } from "@/lib/server/external-access"
 import { writeLandingPageAuditLog } from "@/lib/server/landing-audit-log"
 import {
   attachLandingPageAsVariant,
@@ -21,6 +20,7 @@ import {
 } from "@/lib/server/experiments-store"
 import {
   getActiveLandingPageForActor,
+  listAccessibleLandingPagesForActor,
   type LandingPageRow,
 } from "@/lib/server/landing-pages-store"
 import {
@@ -87,18 +87,9 @@ export const GET = route(
     rateLimit: "landing",
   },
   async ({ actor }) => {
-    const access = await getActorAccess(actor)
-
-    const rows = await db
-      .select()
-      .from(landingPages)
-      .where(isNull(landingPages.deletedAt))
-      .orderBy(desc(landingPages.createdAt))
-
+    const rows = await listAccessibleLandingPagesForActor(actor)
     return NextResponse.json({
-      landingPages: rows
-        .filter((row) => canAccessProject(access, row.publicId))
-        .map(toJson),
+      landingPages: rows.map(toJson),
     })
   }
 )

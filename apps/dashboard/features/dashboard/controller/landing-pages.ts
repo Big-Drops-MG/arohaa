@@ -1,4 +1,4 @@
-import { desc, eq, isNull } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import {
   db,
   experiments,
@@ -14,54 +14,26 @@ import { parseLandingPageChannelType } from "@/features/settings/model/landing-p
 import { fetchLandingPageCardMetricsBatch } from "@/lib/server/landing-page-metrics-load"
 import { isLandingPageLive } from "@/lib/server/landing-page-live"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
-import { canAccessProject, getActorAccess } from "@/lib/server/external-access"
+import { listAccessibleLandingPagesForActor } from "@/lib/server/landing-pages-store"
 
 export async function getLandingPageNavItems(): Promise<LandingPageNavItem[]> {
   const actor = await requireLandingPageActor()
   if (!actor) return []
 
-  const access = await getActorAccess(actor)
-
-  const rows = await db
-    .select({
-      publicId: landingPages.publicId,
-      slug: landingPages.slug,
-      brandName: landingPages.brandName,
-      faviconUrl: landingPages.faviconUrl,
-    })
-    .from(landingPages)
-    .where(isNull(landingPages.deletedAt))
-    .orderBy(desc(landingPages.createdAt))
-
-  return rows.filter((row) => canAccessProject(access, row.publicId))
+  const rows = await listAccessibleLandingPagesForActor(actor)
+  return rows.map((row) => ({
+    publicId: row.publicId,
+    slug: row.slug,
+    brandName: row.brandName,
+    faviconUrl: row.faviconUrl,
+  }))
 }
 
 export async function getLandingPageList(): Promise<LandingPageListItem[]> {
   const actor = await requireLandingPageActor()
   if (!actor) return []
 
-  const access = await getActorAccess(actor)
-
-  const rows = await db
-    .select({
-      id: landingPages.id,
-      publicId: landingPages.publicId,
-      slug: landingPages.slug,
-      brandName: landingPages.brandName,
-      brand: landingPages.brand,
-      landingPageUrl: landingPages.landingPageUrl,
-      faviconUrl: landingPages.faviconUrl,
-      status: landingPages.status,
-      formType: landingPages.formType,
-      metadata: landingPages.metadata,
-    })
-    .from(landingPages)
-    .where(isNull(landingPages.deletedAt))
-    .orderBy(desc(landingPages.createdAt))
-
-  const visibleRows = rows.filter((row) =>
-    canAccessProject(access, row.publicId)
-  )
+  const visibleRows = await listAccessibleLandingPagesForActor(actor)
 
   const [metricsByLandingPageId, variantByLandingPageId] = await Promise.all([
     fetchLandingPageCardMetricsBatch(
@@ -109,20 +81,7 @@ export async function getLandingPageCardMetricsByPublicId(): Promise<
   const actor = await requireLandingPageActor()
   if (!actor) return {}
 
-  const access = await getActorAccess(actor)
-
-  const rows = await db
-    .select({
-      id: landingPages.id,
-      publicId: landingPages.publicId,
-      formType: landingPages.formType,
-    })
-    .from(landingPages)
-    .where(isNull(landingPages.deletedAt))
-
-  const visibleRows = rows.filter((row) =>
-    canAccessProject(access, row.publicId)
-  )
+  const visibleRows = await listAccessibleLandingPagesForActor(actor)
 
   const metricsByLandingPageId = await fetchLandingPageCardMetricsBatch(
     visibleRows.map((row) => ({
