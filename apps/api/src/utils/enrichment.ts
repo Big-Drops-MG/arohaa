@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { UAParser } from 'ua-parser-js'
 import type { FastifyRequest } from 'fastify'
 import { lookupGeoIp, type GeoInfo } from '../services/geo.service.js'
@@ -12,17 +13,29 @@ export interface UserAgentInfo {
 
 export interface EnrichmentContext {
   ip: string
+  ipHash: string
   ua: UserAgentInfo
   geo: GeoInfo
 }
 
 const MAX_UA_LEN = 1024
 
+export function hashClientIp(ip: string): string {
+  const trimmed = ip.trim()
+  if (!trimmed) return ''
+  const salt =
+    process.env.AROHAA_INTERNAL_API_SECRET?.trim() ||
+    process.env.AROHAA_FIELD_BLOB_KEY?.trim() ||
+    'arohaa-ip-hash'
+  return createHash('sha256').update(`ip:${salt}:${trimmed}`).digest('hex')
+}
+
 export function parseUserAgent(uaHeader: string | undefined): UserAgentInfo {
   if (!uaHeader) {
     return { browser: 'Unknown', os: 'Unknown', device: 'desktop' }
   }
-  const safe = uaHeader.length > MAX_UA_LEN ? uaHeader.slice(0, MAX_UA_LEN) : uaHeader
+  const safe =
+    uaHeader.length > MAX_UA_LEN ? uaHeader.slice(0, MAX_UA_LEN) : uaHeader
   const parser = new UAParser(safe)
 
   const browser = parser.getBrowser().name?.trim() || 'Unknown'
@@ -30,7 +43,12 @@ export function parseUserAgent(uaHeader: string | undefined): UserAgentInfo {
   const rawDevice = parser.getDevice().type?.trim()
 
   const device =
-    rawDevice === 'mobile' || rawDevice === 'tablet' || rawDevice === 'wearable' || rawDevice === 'console' || rawDevice === 'smarttv' || rawDevice === 'embedded'
+    rawDevice === 'mobile' ||
+    rawDevice === 'tablet' ||
+    rawDevice === 'wearable' ||
+    rawDevice === 'console' ||
+    rawDevice === 'smarttv' ||
+    rawDevice === 'embedded'
       ? rawDevice
       : 'desktop'
 
@@ -52,5 +70,5 @@ export function buildEnrichmentContext(
   const uaHeader = request.headers['user-agent']
   const ua = parseUserAgent(typeof uaHeader === 'string' ? uaHeader : undefined)
   const geo = lookupGeoIp(ip)
-  return { ip, ua, geo }
+  return { ip, ipHash: hashClientIp(ip), ua, geo }
 }

@@ -5,6 +5,9 @@ import type {
 import type { Level1Stat } from "@/features/data-lab/model/level1"
 import type { Level2Stat } from "@/features/data-lab/model/level2"
 import type { IntelligenceCenterPayload } from "@/features/data-lab/model/intelligence"
+import type { LeadFraudAssessment } from "@/features/data-export/model/interaction-log"
+
+export type { LeadFraudAssessment }
 
 export type DataExportLeadRow = {
   sessionId: string
@@ -19,6 +22,7 @@ export type DataExportLeadRow = {
   formSubmitted: boolean
   returnCount: number
   fields: Record<string, string>
+  fraud: LeadFraudAssessment | null
 }
 
 export type DataExportDashboardData = {

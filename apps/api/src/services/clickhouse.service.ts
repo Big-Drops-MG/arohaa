@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_EVENTS_TABLE} (
     city LowCardinality(String) DEFAULT '',
     state LowCardinality(String) DEFAULT '',
     zipcode LowCardinality(String) DEFAULT '',
+    geo_zipcode LowCardinality(String) DEFAULT '',
+    client_ip_hash String DEFAULT '',
     state_code LowCardinality(String) DEFAULT '',
     latitude Float64 DEFAULT 0,
     longitude Float64 DEFAULT 0,
@@ -164,6 +166,14 @@ export async function ensureEventsTable(): Promise<void> {
   })
   await ch.command({
     query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS geo_zipcode LowCardinality(String) DEFAULT ''`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS client_ip_hash String DEFAULT ''`,
+  })
+  await ch.command({
+    query:
       `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS state_code LowCardinality(String) DEFAULT ''`,
   })
   await ch.command({
@@ -223,7 +233,32 @@ export async function ensureEventsTable(): Promise<void> {
   })
 
   await ensureHeatmapSchema(ch)
+  await ensureLeadRiskTable(ch)
   await rebuildDailyMetricsIfNeeded(ch)
+}
+
+export const LEAD_RISK_TABLE = 'lead_risk'
+
+async function ensureLeadRiskTable(ch: ClickHouseClient): Promise<void> {
+  await ch.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS ${LEAD_RISK_TABLE} (
+          workspace_id UUID,
+          session_id String,
+          score UInt8,
+          label LowCardinality(String),
+          reasons Array(String),
+          features_json String DEFAULT '',
+          model_version LowCardinality(String),
+          scored_at DateTime64(3, 'UTC') DEFAULT now64(3, 'UTC'),
+          override_label LowCardinality(String) DEFAULT '',
+          override_by String DEFAULT '',
+          override_at DateTime64(3, 'UTC') DEFAULT toDateTime64(0, 3, 'UTC'),
+          override_note String DEFAULT ''
+      ) ENGINE = ReplacingMergeTree(scored_at)
+      ORDER BY (workspace_id, session_id)
+    `,
+  })
 }
 
 const HEATMAP_EVENTS_TABLE = 'heatmap_events'

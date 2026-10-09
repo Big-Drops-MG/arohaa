@@ -32,6 +32,10 @@ import type {
   Level3Payload,
 } from '../types/analytics-insights.js'
 import { resolveVehicleNamesInLeads } from '../lib/vehicle-model-names.js'
+import {
+  ensureSessionsFraudAssessments,
+  type LeadFraudAssessment,
+} from '../lib/lead-fraud/index.js'
 
 type CHJson<T> = { data: T[] }
 
@@ -51,6 +55,7 @@ export type FunnelLeadRow = {
   formSubmitted: boolean
   returnCount: number
   fields: Record<string, string>
+  fraud: LeadFraudAssessment
 }
 
 export type FunnelLeadsResponse = {
@@ -225,6 +230,13 @@ function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
     formSubmitted,
     returnCount,
     fields: fieldsWithoutReserved(fields),
+    fraud: {
+      score: 100,
+      label: 'legit',
+      effectiveLabel: 'legit',
+      reasons: [],
+      modelVersion: '',
+    },
   }
 }
 
@@ -460,8 +472,16 @@ function isExcludedLevel2Key(key: string): boolean {
 }
 
 function humanizeLevel2ColumnLabel(key: string): string {
-  return key
-    .trim()
+  const trimmed = key.trim()
+  if (!trimmed) return ''
+  const overrides: Record<string, string> = {
+    dob: 'Date of Birth',
+    first_name: 'First Name',
+    last_name: 'Last Name',
+  }
+  const override = overrides[trimmed.toLowerCase()]
+  if (override) return override
+  return trimmed
     .replace(/[_-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -545,6 +565,32 @@ function level2RatioStat(
   }
 }
 
+function sortLeadFieldKeys(keys: string[]): string[] {
+  const preferred = new Map(
+    [
+      'first_name',
+      'last_name',
+      'address',
+      'city',
+      'state',
+      'dob',
+    ].map((key, index) => [key, index]),
+  )
+  return [...keys]
+    .filter((key) => {
+      const lower = key.trim().toLowerCase()
+      return lower !== 'first_name' && lower !== 'last_name'
+    })
+    .sort((a, b) => {
+    const ai = preferred.get(a.toLowerCase())
+    const bi = preferred.get(b.toLowerCase())
+    if (ai != null && bi != null) return ai - bi
+    if (ai != null) return -1
+    if (bi != null) return 1
+    return a.localeCompare(b)
+  })
+}
+
 function discoverVisibleLeadFieldKeys(leads: FunnelLeadRow[]): string[] {
   const keys = new Set<string>()
   for (const lead of leads) {
@@ -553,7 +599,7 @@ function discoverVisibleLeadFieldKeys(leads: FunnelLeadRow[]): string[] {
       if (trimmed) keys.add(trimmed)
     }
   }
-  return [...keys].sort((a, b) => a.localeCompare(b))
+  return sortLeadFieldKeys([...keys])
 }
 
 function discoverLevel2ColumnKeys(leads: FunnelLeadRow[]): string[] {
@@ -1644,6 +1690,28 @@ export async function getFunnelLeads({
     displayable = await resolveVehicleNamesInLeads(normalizedLeads)
   } catch (error) {
     console.error('[funnel-leads] vehicle model lookup failed', error)
+  }
+
+  try {
+    const fraudMap = await ensureSessionsFraudAssessments({
+      workspaceId,
+      sessionIds: displayable.map((lead) => lead.sessionId),
+      concurrency: 4,
+    })
+    displayable = displayable.map((lead) => ({
+      ...lead,
+        fraud:
+        fraudMap.get(lead.sessionId) ??
+        lead.fraud ?? {
+          score: 50,
+          label: 'fraud' as const,
+          effectiveLabel: 'fraud' as const,
+          reasons: [],
+          modelVersion: '',
+        },
+    }))
+  } catch (error) {
+    console.error('[funnel-leads] fraud scoring failed', error)
   }
 
   const level1Stats = computeLevel1StatsFromLeads(displayable)

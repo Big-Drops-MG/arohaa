@@ -33,6 +33,13 @@ function lead({
     formSubmitted,
     returnCount: 0,
     fields,
+    fraud: {
+      score: 100,
+      label: 'legit',
+      effectiveLabel: 'legit',
+      reasons: [],
+      modelVersion: 'v2',
+    },
   }
 }
 

@@ -1,10 +1,21 @@
 import { getConfig } from "../model/config"
 
+/**
+ * Resolves a form identifier for analytics.
+ * Prefer `data-arohaa-form-id`, then `id`, then `name`.
+ */
 export function formIdFromForm(form: HTMLFormElement): string | undefined {
+  const dataId = form.getAttribute("data-arohaa-form-id")?.trim()
+  if (dataId) return dataId
   const id = form.id?.trim()
   if (id) return id
   const name = form.getAttribute("name")?.trim()
   return name || undefined
+}
+
+/** Always returns a form id (falls back to `default-form`). */
+export function resolveFormId(form: HTMLFormElement): string {
+  return formIdFromForm(form) ?? "default-form"
 }
 
 export function isSubmitFormUrl(url: string): boolean {

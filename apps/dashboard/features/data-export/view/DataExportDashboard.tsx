@@ -15,8 +15,14 @@ import {
   DATA_EXPORT_PAGE_SIZE,
   type DataExportDashboardData,
 } from "@/features/data-export/model/data-export"
-import { discoverVisibleLeadFieldKeys } from "@/features/data-export/model/lead-field-columns"
+import {
+  discoverVisibleLeadFieldKeys,
+  humanizeLeadFieldLabel,
+  sortLeadFieldKeys,
+} from "@/features/data-export/model/lead-field-columns"
 import { LeadInteractionLogDialog } from "@/features/data-export/view/LeadInteractionLogDialog"
+import { LeadRiskBadge } from "@/features/data-export/view/LeadRiskBadge"
+import type { LeadFraudAssessment } from "@/features/data-export/model/interaction-log"
 import {
   overviewAnalyticCardHeaderClassName,
   overviewAnalyticCardShellClassName,
@@ -150,6 +156,8 @@ type DataExportFieldColumn =
 function buildFieldColumns(fieldKeys: string[]): DataExportFieldColumn[] {
   const columns: DataExportFieldColumn[] = []
   for (const key of fieldKeys) {
+    const lower = key.trim().toLowerCase()
+    if (lower === "first_name" || lower === "last_name") continue
     columns.push({ kind: "field", key })
     if (isDobFieldKey(key)) columns.push({ kind: "age", dobKey: key })
   }
@@ -177,7 +185,13 @@ export function DataExportDashboard({
   const [pageOffset, setPageOffset] = useState(initialData.offset)
   const [isBlockingLoad, setIsBlockingLoad] = useState(false)
   const [isPageLoading, setIsPageLoading] = useState(false)
-  const [logSessionId, setLogSessionId] = useState<string | null>(null)
+  const [logLead, setLogLead] = useState<{
+    sessionId: string
+    firstName: string
+    lastName: string
+    email: string
+    fraud: LeadFraudAssessment | null
+  } | null>(null)
   const returningOnly = leadFilter === "returning"
 
   const pageSize = dashboardData.limit || DATA_EXPORT_PAGE_SIZE
@@ -191,9 +205,11 @@ export function DataExportDashboard({
 
   const fieldKeys = useMemo(
     () =>
-      dashboardData.visibleLeadFieldKeys.length > 0
-        ? dashboardData.visibleLeadFieldKeys
-        : discoverVisibleLeadFieldKeys(dashboardData.leads),
+      sortLeadFieldKeys(
+        dashboardData.visibleLeadFieldKeys.length > 0
+          ? dashboardData.visibleLeadFieldKeys
+          : discoverVisibleLeadFieldKeys(dashboardData.leads)
+      ),
     [dashboardData.leads, dashboardData.visibleLeadFieldKeys]
   )
 
@@ -370,7 +386,7 @@ export function DataExportDashboard({
     )
   }
 
-  const colCount = (returningOnly ? 12 : 11) + fieldColumns.length
+  const colCount = (returningOnly ? 15 : 14) + fieldColumns.length
   const projectLabel = dashboardData.brandName.trim() || "Project"
 
   return (
@@ -414,10 +430,13 @@ export function DataExportDashboard({
                 <tr className="border-b border-border">
                   <th className={thClassName}>#</th>
                   <th className={thClassName}>When</th>
-                  <th className={thClassName}>Zip</th>
+                  <th className={thClassName}>Trust</th>
+                  <th className={thClassName}>First Name</th>
+                  <th className={thClassName}>Last Name</th>
                   <th className={thClassName}>Email</th>
-                  <th className={thClassName}>utm_source</th>
-                  <th className={thClassName}>utm_id</th>
+                  <th className={thClassName}>Zip</th>
+                  <th className={thClassName}>UTM Source</th>
+                  <th className={thClassName}>UTM ID</th>
                   <th className={thClassName}>TrustedForm</th>
                   <th className={thClassName}>Logs</th>
                   <th className={thClassName}>Form Submitted</th>
@@ -431,11 +450,11 @@ export function DataExportDashboard({
                       </th>
                     ) : (
                       <th key={column.key} className={thClassName}>
-                        {column.key}
+                        {humanizeLeadFieldLabel(column.key)}
                       </th>
                     )
                   )}
-                  <th className={thClassName}>MAC id</th>
+                  <th className={thClassName}>MAC ID</th>
                   <th className={thClassName}>Session</th>
                 </tr>
               </thead>
@@ -467,8 +486,17 @@ export function DataExportDashboard({
                       <td className={tdClassName}>
                         {formatWhen(lead.createdAt)}
                       </td>
-                      <td className={tdClassName}>{cellValue(lead.zip)}</td>
+                      <td className={tdClassName}>
+                        <LeadRiskBadge fraud={lead.fraud} />
+                      </td>
+                      <td className={tdClassName}>
+                        {cellValue(lead.fields.first_name)}
+                      </td>
+                      <td className={tdClassName}>
+                        {cellValue(lead.fields.last_name)}
+                      </td>
                       <td className={tdClassName}>{cellValue(lead.email)}</td>
+                      <td className={tdClassName}>{cellValue(lead.zip)}</td>
                       <td className={tdClassName}>
                         {cellValue(lead.utmSource)}
                       </td>
@@ -498,7 +526,15 @@ export function DataExportDashboard({
                           variant="link"
                           size="sm"
                           className="h-auto px-0 text-sm font-medium text-sky-700"
-                          onClick={() => setLogSessionId(lead.sessionId)}
+                          onClick={() =>
+                            setLogLead({
+                              sessionId: lead.sessionId,
+                              firstName: lead.fields.first_name ?? "",
+                              lastName: lead.fields.last_name ?? "",
+                              email: lead.email,
+                              fraud: lead.fraud,
+                            })
+                          }
                         >
                           View log
                         </Button>
@@ -615,12 +651,16 @@ export function DataExportDashboard({
       </Card>
 
       <LeadInteractionLogDialog
-        open={logSessionId != null}
+        open={logLead != null}
         onOpenChange={(open) => {
-          if (!open) setLogSessionId(null)
+          if (!open) setLogLead(null)
         }}
         projectId={projectId}
-        sessionId={logSessionId ?? ""}
+        sessionId={logLead?.sessionId ?? ""}
+        firstName={logLead?.firstName}
+        lastName={logLead?.lastName}
+        email={logLead?.email}
+        fraud={logLead?.fraud}
       />
     </div>
   )

@@ -1,5 +1,8 @@
 import type { DataExportLeadRow } from "@/features/data-export/model/data-export"
-import { discoverVisibleLeadFieldKeys } from "@/features/data-export/model/lead-field-columns"
+import {
+  discoverVisibleLeadFieldKeys,
+  humanizeLeadFieldLabel,
+} from "@/features/data-export/model/lead-field-columns"
 import type { Level1Stat } from "@/features/data-lab/model/level1"
 
 export type Level2Stat = Level1Stat
@@ -86,15 +89,6 @@ function isExcludedLevel2Key(key: string): boolean {
   if (/^dob/i.test(trimmed)) return true
   if (/trustedform/i.test(trimmed)) return true
   return false
-}
-
-function humanizeColumnLabel(key: string): string {
-  return key
-    .trim()
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
 function level2StatId(key: string): string {
@@ -184,7 +178,7 @@ function ratioStat(
   const total = firstCount + secondCount
   return {
     id: level2StatId(key),
-    label: `${humanizeColumnLabel(key)} Ratio (${kind.firstLabel} : ${kind.secondLabel})`,
+    label: `${humanizeLeadFieldLabel(key)} Ratio (${kind.firstLabel} : ${kind.secondLabel})`,
     value:
       total > 0
         ? `${formatPercentShare(firstCount, total)} : ${formatPercentShare(secondCount, total)}`
@@ -310,7 +304,7 @@ export function computeLevel2StatsFromLeads(
 
     return {
       id: level2StatId(key),
-      label: `Best ${humanizeColumnLabel(key)}`,
+      label: `Best ${humanizeLeadFieldLabel(key)}`,
       value: best && best.submitted > 0 ? best.value : "—",
       metricLabel: "Submitted leads",
       metricValue: best?.submitted ?? 0,

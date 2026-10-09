@@ -49,6 +49,8 @@ const EXPECTED_COLUMNS = [
   "created_at",
   "state",
   "zipcode",
+  "geo_zipcode",
+  "client_ip_hash",
   "state_code",
   "latitude",
   "longitude",
@@ -293,6 +295,12 @@ async function ensureAdditiveColumns(): Promise<void> {
   })
   await client.command({
     query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS zipcode LowCardinality(String) DEFAULT ''`,
+  })
+  await client.command({
+    query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS geo_zipcode LowCardinality(String) DEFAULT ''`,
+  })
+  await client.command({
+    query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS client_ip_hash String DEFAULT ''`,
   })
   await client.command({
     query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS state_code LowCardinality(String) DEFAULT ''`,
