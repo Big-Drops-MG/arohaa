@@ -1,5 +1,41 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+describe("signGscOAuthState / verifyGscOAuthState", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.resetModules()
+  })
+
+  it("round-trips workspace, publicId, and userId", async () => {
+    vi.stubEnv("AUTH_SECRET", "test-gsc-oauth-secret")
+    const { signGscOAuthState, verifyGscOAuthState } =
+      await import("./gsc-oauth-state")
+    const state = signGscOAuthState({
+      workspaceId: "ws-company",
+      publicId: "lp_abc",
+      userId: "user-owner",
+    })
+    expect(verifyGscOAuthState(state)).toEqual({
+      workspaceId: "ws-company",
+      publicId: "lp_abc",
+      userId: "user-owner",
+    })
+  })
+
+  it("rejects tampered state", async () => {
+    vi.stubEnv("AUTH_SECRET", "test-gsc-oauth-secret")
+    const { signGscOAuthState, verifyGscOAuthState } =
+      await import("./gsc-oauth-state")
+    const state = signGscOAuthState({
+      workspaceId: "ws-company",
+      publicId: "lp_abc",
+      userId: "user-owner",
+    })
+    const [body] = state.split(".")
+    expect(verifyGscOAuthState(`${body}.deadbeef`)).toBeNull()
+  })
+})
+
 describe("resolveGscOAuthRedirectUri", () => {
   afterEach(() => {
     vi.unstubAllEnvs()
