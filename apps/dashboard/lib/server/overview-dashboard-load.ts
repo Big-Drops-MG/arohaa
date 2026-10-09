@@ -217,6 +217,24 @@ export function buildEmptyOverviewForRange(
   }
 }
 
+/** Empty placeholders for analytics outages — never silent zeros. */
+export function buildUnavailableOverviewForRange(
+  landingPagePublicId: string,
+  formType: OverviewLandingFormType,
+  rangeId: RangeId,
+  customRange?: DashboardCustomRange
+): OverviewDashboardData {
+  return {
+    ...buildEmptyOverviewForRange(
+      landingPagePublicId,
+      formType,
+      rangeId,
+      customRange
+    ),
+    analyticsUnavailable: true,
+  }
+}
+
 export async function loadOverviewDashboardData(
   landingPagePublicId: string,
   rangeId: RangeId = DEFAULT_TRAFFIC_RANGE_ID,
@@ -240,13 +258,12 @@ export async function loadOverviewDashboardData(
   const secret = resolveInternalApiSecret()
 
   if (!apiBase || !secret) {
-    const empty = buildEmptyOverviewForRange(
+    return buildUnavailableOverviewForRange(
       landingPagePublicId,
       formType,
       rangeId,
       customRange
     )
-    return { ...empty, analyticsUnavailable: true }
   }
 
   const controller = new AbortController()
@@ -274,16 +291,9 @@ export async function loadOverviewDashboardData(
           body.slice(0, 200)
         )
       }
-      if (overviewResp.status === 503 || overviewResp.status === 502) {
-        const empty = buildEmptyOverviewForRange(
-          landingPagePublicId,
-          formType,
-          rangeId,
-          customRange
-        )
-        return { ...empty, analyticsUnavailable: true }
-      }
-      return buildEmptyOverviewForRange(
+      // Any non-OK status (timeouts surface as abort in catch) must flag
+      // unavailable — otherwise the UI looks like a real zero-traffic period.
+      return buildUnavailableOverviewForRange(
         landingPagePublicId,
         formType,
         rangeId,
@@ -297,7 +307,7 @@ export async function loadOverviewDashboardData(
     if (process.env.NODE_ENV === "development") {
       console.error("[overview] analytics fetch failed", err)
     }
-    return buildEmptyOverviewForRange(
+    return buildUnavailableOverviewForRange(
       landingPagePublicId,
       formType,
       rangeId,
