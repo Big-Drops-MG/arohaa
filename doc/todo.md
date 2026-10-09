@@ -15,7 +15,7 @@ The codebase now implements most of Sections 3–21 below. Original guidance is 
 ### Ownership and tenancy
 
 - `workspace` table with owner linkage; landing pages keyed by **`workspaceId`** with **`createdByUserId`** / **`updatedByUserId`**.
-- **`getOrCreateOwnerWorkspace`** on the dashboard ensures a workspace per owner before landing CRUD.
+- **`resolveLandingPageWorkspace` / `resolveCompanyWorkspace`** pin all landing CRUD to one shared **Company** workspace; access is RBAC + external privileges (not per-user Personal workspaces).
 
 ### Database (Postgres)
 

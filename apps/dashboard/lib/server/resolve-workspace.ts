@@ -8,45 +8,6 @@ import {
   workspaces,
 } from "@workspace/database"
 
-export async function getOrCreateOwnerWorkspace(ownerUserId: string) {
-  const existing = await db
-    .select()
-    .from(workspaces)
-    .where(
-      and(eq(workspaces.ownerUserId, ownerUserId), isNull(workspaces.deletedAt))
-    )
-    .limit(1)
-
-  const row = existing[0]
-  if (row) return row
-
-  try {
-    await db.insert(workspaces).values({
-      ownerUserId,
-      name: "Personal",
-    })
-  } catch (err) {
-    const code = (err as { code?: string; cause?: { code?: string } })?.code
-    const cause = (err as { cause?: { code?: string } })?.cause?.code ?? ""
-    const unique = code === "23505" || cause === "23505"
-    if (!unique) throw err
-  }
-
-  const again = await db
-    .select()
-    .from(workspaces)
-    .where(
-      and(eq(workspaces.ownerUserId, ownerUserId), isNull(workspaces.deletedAt))
-    )
-    .limit(1)
-
-  const created = again[0]
-  if (!created) {
-    throw new Error("Could not resolve workspace for user")
-  }
-  return created
-}
-
 async function resolveCompanyOwnerUserId(): Promise<string | null> {
   const candidates = await db
     .select({ id: users.id })
@@ -68,6 +29,11 @@ async function resolveCompanyOwnerUserId(): Promise<string | null> {
   return candidates[0]?.id ?? null
 }
 
+/**
+ * Shared Company workspace for all dashboard landing pages, API keys, and
+ * webhooks. Access is RBAC + external privileges — not per-user Personal
+ * workspaces.
+ */
 export async function resolveCompanyWorkspace() {
   const pinnedId = process.env.COMPANY_WORKSPACE_ID?.trim()
   if (pinnedId) {
@@ -131,6 +97,7 @@ export async function resolveCompanyWorkspace() {
   return created[0]
 }
 
+/** Landing-page tenancy: always the Company workspace (actor is ignored). */
 export async function resolveLandingPageWorkspace(_actorUserId?: string) {
   return resolveCompanyWorkspace()
 }
