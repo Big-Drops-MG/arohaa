@@ -32,3 +32,23 @@ export function getHeatmapEmptyDashboardData(
     opacity: 0.65,
   }
 }
+
+/** Empty shell for outages — must not look like a real zero-click page. */
+export function getHeatmapUnavailableDashboardData(
+  landingPagePublicId: string,
+  rangeId: OverviewDateRangeId = "7d",
+  mode: HeatmapMode = "click",
+  device: HeatmapDevice = "desktop",
+  pageUrl: string | null = null
+): HeatmapDashboardData {
+  return {
+    ...getHeatmapEmptyDashboardData(
+      landingPagePublicId,
+      rangeId,
+      mode,
+      device,
+      pageUrl
+    ),
+    analyticsUnavailable: true,
+  }
+}

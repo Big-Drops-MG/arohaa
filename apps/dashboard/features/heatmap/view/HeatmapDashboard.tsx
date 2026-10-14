@@ -118,15 +118,33 @@ export function HeatmapDashboard({
           if (process.env.NODE_ENV === "development") {
             console.error(`[heatmap] client fetch ${res.status}`, url)
           }
+          setDashboardData((prev) => ({
+            ...prev,
+            defaultDateRangeId: rangeId,
+            mode: next.mode,
+            device: next.device,
+            cells: [],
+            points: [],
+            scrollBuckets: [],
+            sections: [],
+            fields: [],
+            maxValue: 0,
+            totalEvents: 0,
+            analyticsUnavailable: true,
+          }))
           return
         }
         const payload = (await res.json()) as HeatmapDashboardData
-        setDashboardData(payload)
+        setDashboardData({ ...payload, analyticsUnavailable: false })
       } catch (err) {
         if (signal?.aborted) return
         if (process.env.NODE_ENV === "development") {
           console.error("[heatmap] client fetch failed", err)
         }
+        setDashboardData((prev) => ({
+          ...prev,
+          analyticsUnavailable: true,
+        }))
       } finally {
         if (!signal?.aborted) {
           if (fetchMode === "blocking") setIsBlockingLoad(false)
@@ -186,8 +204,11 @@ export function HeatmapDashboard({
     dashboardData.scrollBuckets.length > 0 ||
     dashboardData.fields.length > 0
 
-  const emptyMessage =
-    mode === "form"
+  const analyticsUnavailable = Boolean(dashboardData.analyticsUnavailable)
+
+  const emptyMessage = analyticsUnavailable
+    ? "Analytics is unavailable. Heatmap figures below are empty placeholders, not a page with zero clicks."
+    : mode === "form"
       ? "No form field heat for this range yet. Focus and clicks on form fields appear after the SDK update collects traffic on the redirect page."
       : "No heatmap data for this range yet. Clicks, scroll depth, and attention will appear here after the SDK starts collecting."
 
@@ -195,6 +216,16 @@ export function HeatmapDashboard({
 
   return (
     <div className="flex flex-col gap-4 pb-6">
+      {analyticsUnavailable ? (
+        <div
+          role="alert"
+          className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+        >
+          Analytics is unavailable. Check ingest API configuration, or wait
+          until the data store recovers. An empty heatmap here is not live click
+          data.
+        </div>
+      ) : null}
       <OverviewHeader
         title="Heatmap"
         projectId={projectId}
