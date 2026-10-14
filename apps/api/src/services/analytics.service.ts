@@ -44,6 +44,17 @@ import {
 import { redis } from './redis.service.js'
 import { resolveUsCityCoordinates } from './us-gazetteer.service.js'
 import { resolveCountyFipsForZips } from './us-zip-county.service.js'
+import {
+  CARD_METRICS_LOOKBACK,
+  emptyLandingPageCardMetrics,
+  type LandingPageCardMetrics,
+} from './analytics-landing-card-metrics.js'
+
+export {
+  CARD_METRICS_LOOKBACK,
+  emptyLandingPageCardMetrics,
+  type LandingPageCardMetrics,
+} from './analytics-landing-card-metrics.js'
 
 export type RangeId = AnalyticsRangeId
 
@@ -1245,15 +1256,6 @@ export async function getAnalyticsOverviewZipcodes({
   return result
 }
 
-export interface LandingPageCardMetrics {
-  activeUsers: number
-  visitors7d: number
-  formSubmissions: number
-  bounceRate: number
-}
-
-/** Card bounce should match recent traffic, not a 24-month full-session scan. */
-const CARD_BOUNCE_LOOKBACK = '30 DAY'
 /** Slightly longer than the dashboard poll so collection refreshes can hit Redis. */
 const LANDING_SUMMARY_CACHE_TTL_SEC = 60
 
@@ -1261,7 +1263,7 @@ function landingSummaryCacheKey(
   workspaceId: string,
   formType: LandingFormType,
 ): string {
-  return `analytics:landing-summary:v6:${workspaceId}:${formType}`
+  return `analytics:landing-summary:v7:${workspaceId}:${formType}`
 }
 
 export async function getLandingPageCardMetrics(
@@ -1372,12 +1374,13 @@ async function queryLandingPageCardMetrics(
             ) AS active_users,
             uniqExactIf(
               user_id,
-              created_at >= now() - INTERVAL 7 DAY
+              created_at >= now() - INTERVAL ${CARD_METRICS_LOOKBACK}
                 AND event_name = 'page_view'
             ) AS visitors_7d,
             uniqExactIf(
               session_id,
-              ${submissionPred}
+              created_at >= now() - INTERVAL ${CARD_METRICS_LOOKBACK}
+                AND (${submissionPred})
             ) AS form_submissions
           FROM events_raw
           WHERE workspace_id IN ({wids:Array(UUID)})
@@ -1395,7 +1398,7 @@ async function queryLandingPageCardMetrics(
               toUInt8(count() = 1) AS is_bounce
             FROM events_raw
             WHERE workspace_id IN ({wids:Array(UUID)})
-              AND created_at >= now() - INTERVAL ${CARD_BOUNCE_LOOKBACK}
+              AND created_at >= now() - INTERVAL ${CARD_METRICS_LOOKBACK}
             GROUP BY workspace_id, session_id
           )
           GROUP BY workspace_id
@@ -1438,13 +1441,4 @@ async function queryLandingPageCardMetrics(
     }
   }
   return byId
-}
-
-export function emptyLandingPageCardMetrics(): LandingPageCardMetrics {
-  return {
-    activeUsers: 0,
-    visitors7d: 0,
-    formSubmissions: 0,
-    bounceRate: 0,
-  }
 }

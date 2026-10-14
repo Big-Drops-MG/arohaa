@@ -1,7 +1,7 @@
 import type { LandingPageMetric } from "@/features/dashboard/model/landing-page"
 import {
   emptyLandingPageMetrics,
-  submissionMetricLabel,
+  submissionCardMetricLabel,
 } from "@/features/dashboard/model/landing-page"
 import type { LandingPageCardMetrics } from "@/lib/server/analytics-types"
 import {
@@ -16,21 +16,22 @@ function fmtCount(v: number): string {
   return String(v)
 }
 
-function fmtPct(v: number): string {
-  return `${v.toFixed(1)}%`
-}
-
+/**
+ * Collection cards: Active Now (5m) + Visitors/Submits over the shared 7d window.
+ * Bounce stays on the API payload for other consumers but is not mixed into
+ * unlabeled card slots.
+ */
 export function buildLandingPageMetrics(
   data: LandingPageCardMetrics,
   formType = "single"
 ): LandingPageMetric[] {
   return [
-    { label: "Active Users", value: fmtCount(data.activeUsers) },
+    { label: "Active Now", value: fmtCount(data.activeUsers) },
+    { label: "Visitors 7d", value: fmtCount(data.visitors7d) },
     {
-      label: submissionMetricLabel(formType),
+      label: submissionCardMetricLabel(formType),
       value: fmtCount(data.formSubmissions),
     },
-    { label: "Bounce Rate", value: fmtPct(data.bounceRate) },
   ]
 }
 
