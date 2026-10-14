@@ -3,6 +3,10 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import pg from "pg"
 import { config } from "dotenv"
+import {
+  isMigrationApplied,
+  planMigrationAliasUpdates,
+} from "./migration-aliases.js"
 
 const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -78,8 +82,28 @@ async function main() {
       }
     }
 
+    // Reconcile renumbered migrations (e.g. web-push 0046-48 → 0047-49) so
+    // apply does not re-run SQL that already landed under the old filenames.
+    for (const plan of planMigrationAliasUpdates(appliedSet)) {
+      if (plan.type === "rename") {
+        await client.query(
+          `UPDATE schema_migrations SET id = $1 WHERE id = $2`,
+          [plan.to, plan.from],
+        )
+        appliedSet.delete(plan.from)
+        appliedSet.add(plan.to)
+        console.log(`ledger rename ${plan.from} -> ${plan.to}`)
+      } else {
+        await client.query(`DELETE FROM schema_migrations WHERE id = $1`, [
+          plan.id,
+        ])
+        appliedSet.delete(plan.id)
+        console.log(`ledger drop obsolete ${plan.id}`)
+      }
+    }
+
     for (const file of files) {
-      if (appliedSet.has(file)) {
+      if (isMigrationApplied(file, appliedSet)) {
         console.log(`skip ${file}`)
         continue
       }
@@ -89,6 +113,7 @@ async function main() {
       await client.query(`INSERT INTO schema_migrations (id) VALUES ($1)`, [
         file,
       ])
+      appliedSet.add(file)
     }
 
     console.log("Migrations complete.")
