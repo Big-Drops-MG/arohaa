@@ -23,13 +23,16 @@ import {
 } from "@/lib/server/external-access"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
 import { resolveUtmFilterForActor } from "@/lib/server/analytics-utm-params"
+import { staleActiveUtmParamIds } from "@/lib/server/utm-catalog-prune"
 
 export type UtmParamStatus = "active" | "blocked"
 
 export const UTM_UI_ACTIVE_PREVIEW_LIMIT = 250
 export const UTM_UI_ACTIVE_PREVIEW_LIMIT_PER_KEY = 250
 
+/** Insert chunk size — discovery set itself is capped by the analytics API. */
 const UTM_DISCOVERY_SYNC_BATCH = 500
+const UTM_CATALOG_DELETE_BATCH = 500
 
 type DiscoveredUtmParam = {
   key: string
@@ -41,12 +44,16 @@ type LandingPageRef = {
   brandName: string
 }
 
+/**
+ * null = discovery failed (do not prune).
+ * [] = successful empty discovery (prune stale actives).
+ */
 async function fetchDiscoveredUtmParams(
   workspaceId: string
-): Promise<DiscoveredUtmParam[]> {
+): Promise<DiscoveredUtmParam[] | null> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
-  if (!apiBase || !secret) return []
+  if (!apiBase || !secret) return null
 
   try {
     const url = new URL(`${apiBase}/v1/analytics/utm-discovered`)
@@ -56,11 +63,11 @@ async function fetchDiscoveredUtmParams(
       cache: "no-store",
       signal: AbortSignal.timeout(15_000),
     })
-    if (!resp.ok) return []
+    if (!resp.ok) return null
     return (await resp.json()) as DiscoveredUtmParam[]
   } catch (err) {
     console.error("[utm] discovery fetch failed", err)
-    return []
+    return null
   }
 }
 
@@ -106,12 +113,8 @@ async function syncDiscoveredParams(
 ) {
   if (discovered.length === 0) return
 
-  for (const key of STORED_UTM_PARAM_KEYS) {
-    const batch = discovered
-      .filter((row) => row.key === key)
-      .slice(0, UTM_DISCOVERY_SYNC_BATCH)
-    if (batch.length === 0) continue
-
+  for (let i = 0; i < discovered.length; i += UTM_DISCOVERY_SYNC_BATCH) {
+    const batch = discovered.slice(i, i + UTM_DISCOVERY_SYNC_BATCH)
     await db
       .insert(landingPageUtmParams)
       .values(
@@ -129,6 +132,40 @@ async function syncDiscoveredParams(
           landingPageUtmParams.value,
         ],
       })
+  }
+}
+
+/**
+ * Drop active catalog rows that fell out of the discovery window.
+ * Blocked rows stay so legacy denylists keep working.
+ */
+async function pruneStaleActiveParams(
+  landingPageId: string,
+  discovered: DiscoveredUtmParam[]
+) {
+  const existing = await db
+    .select({
+      id: landingPageUtmParams.id,
+      key: landingPageUtmParams.key,
+      value: landingPageUtmParams.value,
+      status: landingPageUtmParams.status,
+    })
+    .from(landingPageUtmParams)
+    .where(
+      and(
+        eq(landingPageUtmParams.landingPageId, landingPageId),
+        inArray(landingPageUtmParams.key, [...STORED_UTM_PARAM_KEYS])
+      )
+    )
+
+  const staleIds = staleActiveUtmParamIds(existing, discovered)
+  if (staleIds.length === 0) return
+
+  for (let i = 0; i < staleIds.length; i += UTM_CATALOG_DELETE_BATCH) {
+    const batch = staleIds.slice(i, i + UTM_CATALOG_DELETE_BATCH)
+    await db
+      .delete(landingPageUtmParams)
+      .where(inArray(landingPageUtmParams.id, batch))
   }
 }
 
@@ -291,10 +328,14 @@ async function buildUtmDashboardForLandingPage(
   allowedSources: string[] | null = null
 ): Promise<UtmDashboardData> {
   try {
-    const discovered = sanitizeDiscovered(
-      await fetchDiscoveredUtmParams(row.id)
-    )
-    await syncDiscoveredParams(row.id, discovered)
+    const fetched = await fetchDiscoveredUtmParams(row.id)
+    // Only sync+prune on a successful discovery response. A failed fetch must
+    // not wipe the catalog (null), while an empty success still prunes actives.
+    if (fetched !== null) {
+      const discovered = sanitizeDiscovered(fetched)
+      await syncDiscoveredParams(row.id, discovered)
+      await pruneStaleActiveParams(row.id, discovered)
+    }
   } catch (err) {
     console.error("[utm] discovery sync failed", err)
   }
