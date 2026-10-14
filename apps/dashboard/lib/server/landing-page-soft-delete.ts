@@ -3,6 +3,7 @@ import "server-only"
 import { and, eq, isNull } from "drizzle-orm"
 import { db, landingPageAuditLogs, landingPages } from "@workspace/database"
 import { leaveExperimentForLandingPage } from "@/lib/server/experiments-store"
+import { purgeLandingPageSoftDeleteChildren } from "@/lib/server/landing-page-soft-delete-children"
 import { enqueueNotificationFromAuditLog } from "@/lib/server/notifications"
 import type { LandingPageRow } from "@/lib/server/landing-pages-store"
 
@@ -55,6 +56,11 @@ export async function scrubExperimentsAndSoftDeleteLandingPage(
           sdkInstallStatus: "failed",
         })
         .where(and(eq(landingPages.id, row.id), isNull(landingPages.deletedAt)))
+
+      await purgeLandingPageSoftDeleteChildren(tx, {
+        id: row.id,
+        publicId: row.publicId,
+      })
 
       if (audit && auditLogId) {
         resolvedAfterPayload =
