@@ -59,6 +59,8 @@ export type HeatmapDashboardData = {
   maxValue: number
   totalEvents: number
   opacity: number
+  /** True when analytics fetch failed — not the same as zero clicks. */
+  analyticsUnavailable?: boolean
 }
 
 export const HEATMAP_MODES: ReadonlyArray<{

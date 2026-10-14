@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation"
-import { getHeatmapEmptyDashboardData } from "@/features/heatmap/controller/heatmap-empty-data"
+import { getHeatmapUnavailableDashboardData } from "@/features/heatmap/controller/heatmap-empty-data"
 import {
   parseHeatmapDevice,
   parseHeatmapMode,
@@ -46,6 +46,10 @@ type AnalyticsHeatmapResponse = {
   totalEvents: number
 }
 
+export type HeatmapAnalyticsFetchResult =
+  | { ok: true; data: AnalyticsHeatmapResponse }
+  | { ok: false; reason: "unavailable" }
+
 export function buildHeatmapDashboardData(
   data: AnalyticsHeatmapResponse,
   rangeId: RangeId
@@ -78,10 +82,10 @@ export async function fetchHeatmapAnalytics(
     customRange?: DashboardCustomRange
     utmFilter?: DashboardUtmFilter
   }
-): Promise<AnalyticsHeatmapResponse | null> {
+): Promise<HeatmapAnalyticsFetchResult> {
   const apiBase = resolveIngestApiBase()
   const secret = resolveInternalApiSecret()
-  if (!apiBase || !secret) return null
+  if (!apiBase || !secret) return { ok: false, reason: "unavailable" }
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 20_000)
@@ -114,10 +118,13 @@ export async function fetchHeatmapAnalytics(
           body.slice(0, 200)
         )
       }
-      return null
+      return { ok: false, reason: "unavailable" }
     }
 
-    return (await resp.json()) as AnalyticsHeatmapResponse
+    return {
+      ok: true,
+      data: (await resp.json()) as AnalyticsHeatmapResponse,
+    }
   } catch (err: unknown) {
     const name =
       err && typeof err === "object" && "name" in err
@@ -127,12 +134,12 @@ export async function fetchHeatmapAnalytics(
       if (process.env.NODE_ENV === "development") {
         console.warn("[heatmap] analytics fetch timed out")
       }
-      return null
+      return { ok: false, reason: "unavailable" }
     }
     if (process.env.NODE_ENV === "development") {
       console.error("[heatmap] analytics fetch failed", err)
     }
-    return null
+    return { ok: false, reason: "unavailable" }
   } finally {
     clearTimeout(timer)
   }
@@ -175,8 +182,8 @@ export async function loadHeatmapDashboardData({
     customRange,
     utmFilter: scopedUtmFilter,
   })
-  if (!analytics) {
-    return getHeatmapEmptyDashboardData(
+  if (!analytics.ok) {
+    return getHeatmapUnavailableDashboardData(
       landingPagePublicId,
       rangeId,
       mode,
@@ -185,7 +192,7 @@ export async function loadHeatmapDashboardData({
     )
   }
 
-  return buildHeatmapDashboardData(analytics, rangeId)
+  return buildHeatmapDashboardData(analytics.data, rangeId)
 }
 
 export async function loadHeatmapDashboardDataForApi(
@@ -233,18 +240,14 @@ export async function loadHeatmapDashboardDataForApi(
     customRange: options.customRange,
     utmFilter: scopedUtmFilter,
   })
-  if (!analytics) {
+  if (!analytics.ok) {
+    // Do not return ok:true with an empty heatmap — that looks like zero clicks.
     return {
-      ok: true,
-      data: getHeatmapEmptyDashboardData(
-        landingPagePublicId,
-        rangeId,
-        mode,
-        device,
-        resolvedPageUrl
-      ),
+      ok: false,
+      status: 503,
+      error: "Analytics temporarily unavailable",
     }
   }
 
-  return { ok: true, data: buildHeatmapDashboardData(analytics, rangeId) }
+  return { ok: true, data: buildHeatmapDashboardData(analytics.data, rangeId) }
 }
