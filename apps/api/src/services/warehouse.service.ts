@@ -72,6 +72,26 @@ export type WarehouseFraudLead = {
   fraud: LeadFraudAssessment
 }
 
+export type WarehouseShortcutLead = {
+  workspaceId: string
+  sessionId: string
+  macId: string
+  createdAt: string
+  submittedAt: string | null
+  zip: string
+  email: string
+  firstName: string
+  lastName: string
+  utmSource: string
+  utmId: string
+  trustedFormUrl: string
+  formSubmitted: boolean
+  usedCopy: boolean
+  usedPaste: boolean
+  fields: Record<string, string>
+  fraud: LeadFraudAssessment | null
+}
+
 export type WarehouseSummary = {
   totals: {
     events: number
@@ -108,10 +128,12 @@ export type WarehouseSummary = {
   emailDomains: WarehouseDomainCount[]
   fraudReasons: WarehouseNameCount[]
   fraudLeads: WarehouseFraudLead[]
+  shortcutLeads: WarehouseShortcutLead[]
   generatedAt: string
 }
 
 const FRAUD_LEADS_LIMIT = 100
+const SHORTCUT_LEADS_LIMIT = 100
 
 const CLICK_EVENT_NAMES = [
   'button_click',
@@ -188,6 +210,7 @@ type WarehouseLeadInsights = {
   emailDomains: WarehouseDomainCount[]
   fraudReasons: WarehouseNameCount[]
   fraudLeads: WarehouseFraudLead[]
+  shortcutLeads: WarehouseShortcutLead[]
 }
 
 type SessionMeta = {
@@ -279,6 +302,140 @@ async function loadSessionMetaByKey(
   return out
 }
 
+async function loadShortcutSessionFlags(): Promise<
+  Array<{
+    workspaceId: string
+    sessionId: string
+    usedCopy: boolean
+    usedPaste: boolean
+  }>
+> {
+  const rows = await queryJson<{
+    workspace_id: string
+    session_id: string
+    used_copy: string | number | boolean
+    used_paste: string | number | boolean
+  }>(`
+    SELECT
+      toString(workspace_id) AS workspace_id,
+      session_id,
+      max(event_name = 'form_shortcut_copy') AS used_copy,
+      max(event_name = 'form_shortcut_paste') AS used_paste
+    FROM ${CLICKHOUSE_EVENTS_TABLE}
+    WHERE event_name IN ('form_shortcut_copy', 'form_shortcut_paste')
+      AND session_id != ''
+    GROUP BY workspace_id, session_id
+    ORDER BY max(created_at) DESC
+    LIMIT ${SHORTCUT_LEADS_LIMIT * 3}
+  `)
+
+  const out: Array<{
+    workspaceId: string
+    sessionId: string
+    usedCopy: boolean
+    usedPaste: boolean
+  }> = []
+  for (const row of rows) {
+    const workspaceId = String(row.workspace_id || '').trim()
+    const sessionId = String(row.session_id || '').trim()
+    if (!workspaceId || !sessionId) continue
+    out.push({
+      workspaceId,
+      sessionId,
+      usedCopy: Boolean(Number(row.used_copy)),
+      usedPaste: Boolean(Number(row.used_paste)),
+    })
+  }
+  return out
+}
+
+function leadRowFromSignal(
+  row: LeadSessionSignalRow,
+  meta: SessionMeta | undefined,
+  fraud: LeadFraudAssessment | null,
+): Omit<WarehouseShortcutLead, 'usedCopy' | 'usedPaste'> {
+  const rawFields = extractRawFieldMap(row.props || '{}')
+  const fields = normalizeLeadFields(rawFields)
+  const email =
+    pickLeadEmail(fields) ||
+    (typeof fields.email === 'string' ? fields.email : '')
+  return {
+    workspaceId: row.workspaceId,
+    sessionId: row.sessionId,
+    macId: formatFingerprintAsMacId(row.fingerprint || ''),
+    createdAt: meta?.createdAt || '',
+    submittedAt: meta?.submittedAt ?? null,
+    zip: (row.zipVal || pickLeadZip(fields) || '').trim(),
+    email,
+    firstName: (fields.first_name || '').trim(),
+    lastName: (fields.last_name || '').trim(),
+    utmSource: meta?.utmSource || '',
+    utmId: meta?.utmId || '',
+    trustedFormUrl: pickTrustedFormUrl(rawFields),
+    formSubmitted: row.formSubmitted,
+    fields: fieldsWithoutReserved(fields),
+    fraud,
+  }
+}
+
+async function buildShortcutLeads(
+  assessmentByKey: Map<string, LeadFraudAssessment>,
+): Promise<WarehouseShortcutLead[]> {
+  let flags: Array<{
+    workspaceId: string
+    sessionId: string
+    usedCopy: boolean
+    usedPaste: boolean
+  }> = []
+  try {
+    flags = await loadShortcutSessionFlags()
+  } catch (err) {
+    console.error('[warehouse] shortcut sessions failed', err)
+    return []
+  }
+  if (flags.length === 0) return []
+
+  const sessionIds = flags.map((row) => row.sessionId)
+  const [leadRows, metaByKey] = await Promise.all([
+    loadLeadSessionSignals({ sessionIds }),
+    loadSessionMetaByKey(sessionIds).catch((err) => {
+      console.error('[warehouse] shortcut lead meta failed', err)
+      return new Map<string, SessionMeta>()
+    }),
+  ])
+
+  const leadByKey = new Map<string, LeadSessionSignalRow>()
+  for (const row of leadRows) {
+    leadByKey.set(`${row.workspaceId}:${row.sessionId}`, row)
+  }
+
+  const leads: WarehouseShortcutLead[] = []
+  for (const flag of flags) {
+    const key = `${flag.workspaceId}:${flag.sessionId}`
+    const row = leadByKey.get(key)
+    if (!row) continue
+    const base = leadRowFromSignal(
+      row,
+      metaByKey.get(key),
+      assessmentByKey.get(key) ?? null,
+    )
+    leads.push({
+      ...base,
+      usedCopy: flag.usedCopy,
+      usedPaste: flag.usedPaste,
+    })
+    if (leads.length >= SHORTCUT_LEADS_LIMIT) break
+  }
+
+  leads.sort((a, b) => {
+    const at = a.createdAt || ''
+    const bt = b.createdAt || ''
+    if (at === bt) return a.sessionId.localeCompare(b.sessionId)
+    return bt.localeCompare(at)
+  })
+  return leads
+}
+
 async function buildFraudLeads(
   leadRows: LeadSessionSignalRow[],
   assessmentByKey: Map<string, LeadFraudAssessment>,
@@ -303,27 +460,9 @@ async function buildFraudLeads(
     const key = `${row.workspaceId}:${row.sessionId}`
     const fraud = assessmentByKey.get(key)
     if (!fraud) continue
-    const rawFields = extractRawFieldMap(row.props || '{}')
-    const fields = normalizeLeadFields(rawFields)
-    const meta = metaByKey.get(key)
-    const email =
-      pickLeadEmail(fields) ||
-      (typeof fields.email === 'string' ? fields.email : '')
+    const base = leadRowFromSignal(row, metaByKey.get(key), fraud)
     leads.push({
-      workspaceId: row.workspaceId,
-      sessionId: row.sessionId,
-      macId: formatFingerprintAsMacId(row.fingerprint || ''),
-      createdAt: meta?.createdAt || '',
-      submittedAt: meta?.submittedAt ?? null,
-      zip: (row.zipVal || pickLeadZip(fields) || '').trim(),
-      email,
-      firstName: (fields.first_name || '').trim(),
-      lastName: (fields.last_name || '').trim(),
-      utmSource: meta?.utmSource || '',
-      utmId: meta?.utmId || '',
-      trustedFormUrl: pickTrustedFormUrl(rawFields),
-      formSubmitted: row.formSubmitted,
-      fields: fieldsWithoutReserved(fields),
+      ...base,
       fraud,
     })
   }
@@ -540,7 +679,10 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
 
   const scoredLeads = legit + fraud
   const failed = Math.max(0, needsScore.length - toPersist.length)
-  const fraudLeads = await buildFraudLeads(leadRows, assessmentByKey)
+  const [fraudLeads, shortcutLeads] = await Promise.all([
+    buildFraudLeads(leadRows, assessmentByKey),
+    buildShortcutLeads(assessmentByKey),
+  ])
   return {
     risk: {
       legit,
@@ -551,6 +693,7 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
     emailDomains,
     fraudReasons,
     fraudLeads,
+    shortcutLeads,
   }
 }
 
@@ -585,6 +728,7 @@ function emptySummary(generatedAt: string): WarehouseSummary {
     emailDomains: [],
     fraudReasons: [],
     fraudLeads: [],
+    shortcutLeads: [],
     generatedAt,
   }
 }
@@ -619,6 +763,7 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
       emailDomains: [],
       fraudReasons: [],
       fraudLeads: [],
+      shortcutLeads: [],
     }
   }
 
@@ -752,6 +897,7 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
     emailDomains: leadInsights.emailDomains,
     fraudReasons: leadInsights.fraudReasons,
     fraudLeads: leadInsights.fraudLeads,
+    shortcutLeads: leadInsights.shortcutLeads,
     generatedAt,
   }
 }
