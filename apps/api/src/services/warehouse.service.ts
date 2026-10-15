@@ -31,6 +31,7 @@ import {
   LEAD_RISK_TABLE,
   shouldSkipClickHouse,
 } from './clickhouse.service.js'
+import { and, eq, inArray } from 'drizzle-orm'
 import {
   count,
   db,
@@ -81,6 +82,7 @@ export type WarehouseFraudLead = {
 
 export type WarehouseShortcutLead = {
   workspaceId: string
+  workspaceName: string
   sessionId: string
   macId: string
   createdAt: string
@@ -142,7 +144,7 @@ export type WarehouseSummary = {
 const SHORTCUT_LEADS_LIMIT = 100
 const FI_CLIPBOARD_SESSION_LIMIT = 4_000
 const FI_CLIPBOARD_SCAN_LIMIT = 40_000
-const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v4'
+const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v5'
 const WAREHOUSE_SUMMARY_CACHE_TTL_SEC = 90
 
 type ShortcutSessionFlag = {
@@ -280,7 +282,8 @@ async function loadSessionMetaByKey(
         maxIf(created_at, event_name IN ('form_submit', 'form_success')) AS submitted_at,
         anyIf(utm_source, utm_source != '') AS utm_source,
         anyIf(utm_id, utm_id != '') AS utm_id,
-        argMax(url, (length(properties), created_at)) AS sample_url
+        anyIf(utm_s1, utm_s1 != '') AS utm_s1,
+        argMaxIf(url, (length(url), created_at), url != '') AS sample_url
       FROM ${CLICKHOUSE_EVENTS_TABLE}
       WHERE session_id IN {sids:Array(String)}
       GROUP BY workspace_id, session_id
@@ -295,6 +298,7 @@ async function loadSessionMetaByKey(
         submitted_at: string
         utm_source: string
         utm_id: string
+        utm_s1: string
         sample_url: string
       }>
     ).data ?? []
@@ -311,12 +315,45 @@ async function loadSessionMetaByKey(
         : null,
       utmSource:
         String(row.utm_source || '').trim() ||
-        pickQueryParam(sampleUrl, ['utm_source', 'sid']),
+        String(row.utm_s1 || '').trim() ||
+        pickQueryParam(sampleUrl, ['utm_source', 'sid', 's1']),
       utmId:
         String(row.utm_id || '').trim() ||
         pickQueryParam(sampleUrl, ['utm_id', 'tid', 'uid']),
       sampleUrl,
     })
+  }
+  return out
+}
+
+async function loadWorkspaceNamesByLandingPageIds(
+  landingPageIds: string[],
+): Promise<Map<string, string>> {
+  const ids = [
+    ...new Set(landingPageIds.map((id) => id.trim()).filter(Boolean)),
+  ]
+  const out = new Map<string, string>()
+  if (ids.length === 0) return out
+
+  try {
+    const rows = await db
+      .select({
+        landingPageId: landingPages.id,
+        workspaceName: workspaces.name,
+        brandName: landingPages.brandName,
+      })
+      .from(landingPages)
+      .innerJoin(workspaces, eq(landingPages.workspaceId, workspaces.id))
+      .where(
+        and(inArray(landingPages.id, ids), isNull(landingPages.deletedAt)),
+      )
+
+    for (const row of rows) {
+      const name = (row.workspaceName || row.brandName || '').trim()
+      if (name) out.set(row.landingPageId, name)
+    }
+  } catch (err) {
+    console.error('[warehouse] workspace name lookup failed', err)
   }
   return out
 }
@@ -478,6 +515,7 @@ function leadRowFromSignal(
   row: LeadSessionSignalRow,
   meta: SessionMeta | undefined,
   fraud: LeadFraudAssessment | null,
+  workspaceName = '',
 ): Omit<WarehouseShortcutLead, 'usedCopy' | 'usedPaste'> {
   const rawFields = extractRawFieldMap(row.props || '{}')
   const fields = normalizeLeadFields(rawFields)
@@ -486,6 +524,7 @@ function leadRowFromSignal(
     (typeof fields.email === 'string' ? fields.email : '')
   return {
     workspaceId: row.workspaceId,
+    workspaceName,
     sessionId: row.sessionId,
     macId: formatFingerprintAsMacId(row.fingerprint || ''),
     createdAt: meta?.createdAt || '',
@@ -530,12 +569,14 @@ async function buildShortcutLeads(
   }
 
   const sessionIds = discovery.flags.map((row) => row.sessionId)
-  const [leadRows, metaByKey] = await Promise.all([
+  const landingPageIds = discovery.flags.map((row) => row.workspaceId)
+  const [leadRows, metaByKey, workspaceNames] = await Promise.all([
     loadLeadSessionSignals({ sessionIds }),
     loadSessionMetaByKey(sessionIds).catch((err) => {
       console.error('[warehouse] shortcut lead meta failed', err)
       return new Map<string, SessionMeta>()
     }),
+    loadWorkspaceNamesByLandingPageIds(landingPageIds),
   ])
 
   const leadByKey = new Map<string, LeadSessionSignalRow>()
@@ -548,11 +589,13 @@ async function buildShortcutLeads(
     const key = `${flag.workspaceId}:${flag.sessionId}`
     const row = leadByKey.get(key)
     const meta = metaByKey.get(key)
+    const workspaceName = workspaceNames.get(flag.workspaceId) || ''
     if (row) {
       const base = leadRowFromSignal(
         row,
         meta,
         assessmentByKey.get(key) ?? null,
+        workspaceName,
       )
       leads.push({
         ...base,
@@ -562,6 +605,7 @@ async function buildShortcutLeads(
     } else {
       leads.push({
         workspaceId: flag.workspaceId,
+        workspaceName,
         sessionId: flag.sessionId,
         macId: '',
         createdAt: meta?.createdAt || '',

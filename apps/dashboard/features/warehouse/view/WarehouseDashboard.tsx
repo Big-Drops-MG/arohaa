@@ -433,14 +433,8 @@ function ShortcutLeadsTable({ rows }: { rows: WarehouseShortcutLead[] }) {
             >
               {shortId(lead.sessionId)}
             </td>
-            <td
-              className={cn(
-                leadTdClassName,
-                "font-mono text-xs text-muted-foreground"
-              )}
-              title={lead.workspaceId}
-            >
-              {shortId(lead.workspaceId)}
+            <td className={leadTdClassName} title={lead.workspaceId}>
+              {cellValue(lead.workspaceName || lead.workspaceId)}
             </td>
           </tr>
         ))}
