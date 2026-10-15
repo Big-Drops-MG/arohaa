@@ -4,7 +4,7 @@ import {
   pickLeadZip,
   pickTrustedFormUrl,
 } from '../lead-fields.js'
-import { decryptFieldBlob } from '../field-blob.js'
+import { decryptFieldBlob, decryptJsonBlob } from '../field-blob.js'
 import { emailDomain } from './disposable-domains.js'
 import { emptyFeatures } from './features.js'
 import type { LeadFraudFeatures } from './types.js'
@@ -33,6 +33,27 @@ export function isTruthyFlag(value: unknown): boolean {
   return value === true || value === 1 || value === '1'
 }
 
+function isFiLogPayload(value: Record<string, unknown>): boolean {
+  return Array.isArray(value.i) || Array.isArray(value.items)
+}
+
+function coerceStringFieldMap(
+  source: Record<string, unknown>,
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(source)) {
+    if (k === 'fields' || k === '_k' || k === 'i' || k === 'items') continue
+    if (
+      typeof v === 'string' ||
+      typeof v === 'number' ||
+      typeof v === 'boolean'
+    ) {
+      out[k] = String(v)
+    }
+  }
+  return out
+}
+
 export function extractRawFieldMap(raw: string): Record<string, string> {
   try {
     const parsed = JSON.parse(raw) as unknown
@@ -40,8 +61,25 @@ export function extractRawFieldMap(raw: string): Record<string, string> {
     const props = parsed as Record<string, unknown>
     const blob = props._k
     if (typeof blob === 'string' && blob.length > 0) {
+      const asJson = decryptJsonBlob(blob)
+      if (
+        asJson &&
+        typeof asJson === 'object' &&
+        !Array.isArray(asJson) &&
+        !isFiLogPayload(asJson as Record<string, unknown>)
+      ) {
+        const fromJson = coerceStringFieldMap(asJson as Record<string, unknown>)
+        if (Object.keys(fromJson).length > 0) return fromJson
+      }
       const decrypted = decryptFieldBlob(blob)
-      if (decrypted) return decrypted
+      if (decrypted && Object.keys(decrypted).length > 0) {
+        // Ignore FI scalar leftovers ({ v, s, f }) when the log array was stripped.
+        const keys = Object.keys(decrypted)
+        const fiScalarsOnly = keys.every(
+          (k) => k === 'v' || k === 's' || k === 'f',
+        )
+        if (!fiScalarsOnly) return decrypted
+      }
     }
     const source =
       props.fields &&
@@ -49,18 +87,8 @@ export function extractRawFieldMap(raw: string): Record<string, string> {
       !Array.isArray(props.fields)
         ? (props.fields as Record<string, unknown>)
         : props
-    const out: Record<string, string> = {}
-    for (const [k, v] of Object.entries(source)) {
-      if (k === 'fields' || k === '_k') continue
-      if (
-        typeof v === 'string' ||
-        typeof v === 'number' ||
-        typeof v === 'boolean'
-      ) {
-        out[k] = String(v)
-      }
-    }
-    return out
+    if (isFiLogPayload(source)) return {}
+    return coerceStringFieldMap(source)
   } catch {
     return {}
   }

@@ -47,6 +47,33 @@ const LEAD_SESSION_WHERE = `
   )
 `
 
+
+const LEAD_PROPS_EXPR = `
+  coalesce(
+    nullIf(
+      argMaxIf(
+        properties,
+        (length(properties), created_at),
+        event_name IN ('form_submit', 'form_success', 'form_step_complete')
+      ),
+      ''
+    ),
+    nullIf(
+      argMaxIf(
+        properties,
+        (length(properties), created_at),
+        event_name != '_fi'
+          AND (
+            positionCaseInsensitive(properties, '"_k"') > 0
+            OR positionCaseInsensitive(properties, '"fields"') > 0
+          )
+      ),
+      ''
+    ),
+    ''
+  )
+`
+
 const LEAD_SESSION_SELECT = `
   toString(workspace_id) AS workspace_id,
   session_id,
@@ -56,7 +83,7 @@ const LEAD_SESSION_SELECT = `
   anyIf(state, state != '') AS geo_state,
   anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
   max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
-  argMax(properties, (length(properties), created_at)) AS props,
+  ${LEAD_PROPS_EXPR} AS props,
   max(nullIf(zipcode, '')) AS zip_val
 `
 
@@ -69,7 +96,7 @@ const LEAD_SESSION_SELECT_NO_GEO_ZIP = `
   anyIf(state, state != '') AS geo_state,
   anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
   max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
-  argMax(properties, (length(properties), created_at)) AS props,
+  ${LEAD_PROPS_EXPR} AS props,
   max(nullIf(zipcode, '')) AS zip_val
 `
 
@@ -101,9 +128,7 @@ async function queryLeadSessions(
   return out
 }
 
-/**
- * Load lead/session signal rows used by Warehouse and Data Leads scoring.
- */
+
 export async function loadLeadSessionSignals(input?: {
   workspaceId?: string
   sessionIds?: string[]
