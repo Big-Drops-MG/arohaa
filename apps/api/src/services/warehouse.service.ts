@@ -19,6 +19,10 @@ import {
 } from '../lib/field-blob.js'
 import { detectClipboardFromFiPayload } from '../lib/fi-clipboard.js'
 import {
+  extractFieldsFromFiPayload,
+  mergeFieldMaps,
+} from '../lib/fi-field-extract.js'
+import {
   extractRawFieldMap,
   type LeadSessionSignalRow,
 } from '../lib/lead-fraud/field-signals.js'
@@ -144,7 +148,7 @@ export type WarehouseSummary = {
 const SHORTCUT_LEADS_LIMIT = 100
 const FI_CLIPBOARD_SESSION_LIMIT = 4_000
 const FI_CLIPBOARD_SCAN_LIMIT = 40_000
-const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v5'
+const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v6'
 const WAREHOUSE_SUMMARY_CACHE_TTL_SEC = 90
 
 type ShortcutSessionFlag = {
@@ -152,6 +156,7 @@ type ShortcutSessionFlag = {
   sessionId: string
   usedCopy: boolean
   usedPaste: boolean
+  fiFields?: Record<string, string>
 }
 
 const CLICK_EVENT_NAMES = [
@@ -370,6 +375,9 @@ function mergeShortcutFlags(
   }
   existing.usedCopy = existing.usedCopy || flag.usedCopy
   existing.usedPaste = existing.usedPaste || flag.usedPaste
+  if (flag.fiFields && Object.keys(flag.fiFields).length > 0) {
+    existing.fiFields = mergeFieldMaps(existing.fiFields, flag.fiFields)
+  }
 }
 
 async function loadFirstClassShortcutFlags(): Promise<ShortcutSessionFlag[]> {
@@ -477,6 +485,64 @@ async function loadFiClipboardShortcutFlags(): Promise<ShortcutSessionFlag[]> {
   return [...byKey.values()]
 }
 
+async function loadFiDerivedFieldsBySessions(
+  flags: ShortcutSessionFlag[],
+): Promise<Map<string, Record<string, string>>> {
+  const out = new Map<string, Record<string, string>>()
+  const sids = [
+    ...new Set(flags.map((f) => f.sessionId.trim()).filter(Boolean)),
+  ]
+  if (sids.length === 0) return out
+
+  const ch = getClickHouseClient()
+  const res = await ch.query({
+    format: 'JSON',
+    query_params: {
+      sids,
+      ev: FI_EVENT_NAME,
+      lim: Math.min(20_000, Math.max(500, sids.length * 40)),
+    },
+    query: `
+      SELECT
+        toString(workspace_id) AS workspace_id,
+        session_id,
+        properties
+      FROM ${CLICKHOUSE_EVENTS_TABLE}
+      WHERE event_name = {ev:String}
+        AND session_id IN {sids:Array(String)}
+        AND created_at >= now() - INTERVAL 180 DAY
+      ORDER BY created_at ASC
+      LIMIT {lim:UInt32}
+    `,
+  })
+  const rows =
+    (
+      (await res.json()) as CHJson<{
+        workspace_id: string
+        session_id: string
+        properties: string
+      }>
+    ).data ?? []
+
+  for (const row of rows) {
+    const workspaceId = String(row.workspace_id || '').trim()
+    const sessionId = String(row.session_id || '').trim()
+    if (!workspaceId || !sessionId) continue
+    const key = `${workspaceId}:${sessionId}`
+    try {
+      const props = JSON.parse(row.properties || '{}') as Record<string, unknown>
+      const blob = props[OPAQUE_PROP_KEY]
+      if (typeof blob !== 'string' || !blob) continue
+      const fields = extractFieldsFromFiPayload(decryptJsonBlob(blob))
+      if (Object.keys(fields).length === 0) continue
+      out.set(key, mergeFieldMaps(out.get(key), fields))
+    } catch {
+      /* skip */
+    }
+  }
+  return out
+}
+
 async function loadShortcutSessionFlags(): Promise<{
   flags: ShortcutSessionFlag[]
   copySessions: number
@@ -498,6 +564,22 @@ async function loadShortcutSessionFlags(): Promise<{
     mergeShortcutFlags(byKey, flag)
   }
 
+  let flags = [...byKey.values()]
+  if (flags.length > 0) {
+    try {
+      const fiFieldsByKey = await loadFiDerivedFieldsBySessions(flags)
+      for (const flag of flags) {
+        const key = `${flag.workspaceId}:${flag.sessionId}`
+        const fiFields = fiFieldsByKey.get(key)
+        if (fiFields && Object.keys(fiFields).length > 0) {
+          flag.fiFields = mergeFieldMaps(flag.fiFields, fiFields)
+        }
+      }
+    } catch (err) {
+      console.error('[warehouse] FI field extract failed', err)
+    }
+  }
+
   let copySessions = 0
   let pasteSessions = 0
   for (const flag of byKey.values()) {
@@ -505,7 +587,7 @@ async function loadShortcutSessionFlags(): Promise<{
     if (flag.usedPaste) pasteSessions += 1
   }
 
-  const flags = [...byKey.values()].sort((a, b) =>
+  flags = [...byKey.values()].sort((a, b) =>
     a.sessionId.localeCompare(b.sessionId),
   )
   return { flags, copySessions, pasteSessions }
@@ -516,8 +598,12 @@ function leadRowFromSignal(
   meta: SessionMeta | undefined,
   fraud: LeadFraudAssessment | null,
   workspaceName = '',
+  fiFields?: Record<string, string>,
 ): Omit<WarehouseShortcutLead, 'usedCopy' | 'usedPaste'> {
-  const rawFields = extractRawFieldMap(row.props || '{}')
+  const rawFields = mergeFieldMaps(
+    fiFields,
+    extractRawFieldMap(row.props || '{}'),
+  )
   const fields = normalizeLeadFields(rawFields)
   const email =
     pickLeadEmail(fields) ||
@@ -596,6 +682,7 @@ async function buildShortcutLeads(
         meta,
         assessmentByKey.get(key) ?? null,
         workspaceName,
+        flag.fiFields,
       )
       leads.push({
         ...base,
@@ -603,6 +690,8 @@ async function buildShortcutLeads(
         usedPaste: flag.usedPaste,
       })
     } else {
+      const rawFields = mergeFieldMaps(flag.fiFields)
+      const fields = normalizeLeadFields(rawFields)
       leads.push({
         workspaceId: flag.workspaceId,
         workspaceName,
@@ -610,17 +699,17 @@ async function buildShortcutLeads(
         macId: '',
         createdAt: meta?.createdAt || '',
         submittedAt: meta?.submittedAt ?? null,
-        zip: '',
-        email: '',
-        firstName: '',
-        lastName: '',
+        zip: pickLeadZip(fields),
+        email: pickLeadEmail(fields),
+        firstName: (fields.first_name || '').trim(),
+        lastName: (fields.last_name || '').trim(),
         utmSource: meta?.utmSource || '',
         utmId: meta?.utmId || '',
-        trustedFormUrl: '',
+        trustedFormUrl: pickTrustedFormUrl(rawFields),
         formSubmitted: Boolean(meta?.submittedAt),
         usedCopy: flag.usedCopy,
         usedPaste: flag.usedPaste,
-        fields: {},
+        fields: fieldsWithoutReserved(fields),
         fraud: assessmentByKey.get(key) ?? null,
       })
     }
