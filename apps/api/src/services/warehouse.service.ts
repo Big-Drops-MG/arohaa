@@ -17,6 +17,7 @@ import {
   FI_EVENT_NAME,
   OPAQUE_PROP_KEY,
 } from '../lib/field-blob.js'
+import { detectClipboardFromFiPayload } from '../lib/fi-clipboard.js'
 import {
   extractRawFieldMap,
   type LeadSessionSignalRow,
@@ -139,8 +140,9 @@ export type WarehouseSummary = {
 }
 
 const SHORTCUT_LEADS_LIMIT = 100
-const FI_CLIPBOARD_SCAN_LIMIT = 6_000
-const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v3'
+const FI_CLIPBOARD_SESSION_LIMIT = 4_000
+const FI_CLIPBOARD_SCAN_LIMIT = 40_000
+const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v4'
 const WAREHOUSE_SUMMARY_CACHE_TTL_SEC = 90
 
 type ShortcutSessionFlag = {
@@ -319,27 +321,6 @@ async function loadSessionMetaByKey(
   return out
 }
 
-function detectClipboardFromFiMessage(message: string): {
-  usedCopy: boolean
-  usedPaste: boolean
-} {
-  const lower = message.toLowerCase()
-  const usedPaste =
-    lower.includes("pressed 'control+v'") ||
-    lower.includes("pressed 'meta+v'") ||
-    lower.includes("pressed 'control+shift+v'") ||
-    lower.includes("pressed 'meta+shift+v'") ||
-    lower.includes("pressed 'shift+insert'") ||
-    lower.startsWith('pasted') ||
-    lower.includes('pasted in')
-  const usedCopy =
-    lower.includes("pressed 'control+c'") ||
-    lower.includes("pressed 'meta+c'") ||
-    lower.startsWith('copied') ||
-    lower.includes('copied in')
-  return { usedCopy, usedPaste }
-}
-
 function mergeShortcutFlags(
   into: Map<string, ShortcutSessionFlag>,
   flag: ShortcutSessionFlag,
@@ -394,17 +375,35 @@ async function loadFiClipboardShortcutFlags(): Promise<ShortcutSessionFlag[]> {
   const ch = getClickHouseClient()
   const res = await ch.query({
     format: 'JSON',
-    query_params: { lim: FI_CLIPBOARD_SCAN_LIMIT, ev: FI_EVENT_NAME },
+    query_params: {
+      lim: FI_CLIPBOARD_SCAN_LIMIT,
+      sessionLim: FI_CLIPBOARD_SESSION_LIMIT,
+      ev: FI_EVENT_NAME,
+    },
     query: `
+      WITH form_sessions AS (
+        SELECT
+          workspace_id,
+          session_id
+        FROM ${CLICKHOUSE_EVENTS_TABLE}
+        WHERE event_name IN ('form_start', 'form_submit', 'form_success')
+          AND session_id != ''
+          AND created_at >= now() - INTERVAL 180 DAY
+        GROUP BY workspace_id, session_id
+        ORDER BY max(created_at) DESC
+        LIMIT {sessionLim:UInt32}
+      )
       SELECT
-        toString(workspace_id) AS workspace_id,
-        session_id,
-        properties
-      FROM ${CLICKHOUSE_EVENTS_TABLE}
-      WHERE event_name = {ev:String}
-        AND session_id != ''
-        AND created_at >= now() - INTERVAL 180 DAY
-      ORDER BY created_at DESC
+        toString(e.workspace_id) AS workspace_id,
+        e.session_id AS session_id,
+        e.properties AS properties
+      FROM ${CLICKHOUSE_EVENTS_TABLE} AS e
+      INNER JOIN form_sessions AS f
+        ON e.workspace_id = f.workspace_id
+       AND e.session_id = f.session_id
+      WHERE e.event_name = {ev:String}
+        AND e.created_at >= now() - INTERVAL 180 DAY
+      ORDER BY e.created_at DESC
       LIMIT {lim:UInt32}
     `,
   })
@@ -426,30 +425,13 @@ async function loadFiClipboardShortcutFlags(): Promise<ShortcutSessionFlag[]> {
       const props = JSON.parse(row.properties || '{}') as Record<string, unknown>
       const blob = props[OPAQUE_PROP_KEY]
       if (typeof blob !== 'string' || !blob) continue
-      const decrypted = decryptJsonBlob(blob)
-      if (!decrypted || typeof decrypted !== 'object' || Array.isArray(decrypted)) {
-        continue
-      }
-      const items = Array.isArray((decrypted as { i?: unknown }).i)
-        ? ((decrypted as { i: unknown[] }).i)
-        : []
-      let usedCopy = false
-      let usedPaste = false
-      for (const item of items) {
-        if (!item || typeof item !== 'object') continue
-        const message = (item as { m?: unknown }).m
-        if (typeof message !== 'string' || !message) continue
-        const hit = detectClipboardFromFiMessage(message)
-        usedCopy = usedCopy || hit.usedCopy
-        usedPaste = usedPaste || hit.usedPaste
-        if (usedCopy && usedPaste) break
-      }
-      if (!usedCopy && !usedPaste) continue
+      const hit = detectClipboardFromFiPayload(decryptJsonBlob(blob))
+      if (!hit.usedCopy && !hit.usedPaste) continue
       mergeShortcutFlags(byKey, {
         workspaceId,
         sessionId,
-        usedCopy,
-        usedPaste,
+        usedCopy: hit.usedCopy,
+        usedPaste: hit.usedPaste,
       })
     } catch {
       /* skip undecryptable batch */
@@ -565,17 +547,39 @@ async function buildShortcutLeads(
   for (const flag of discovery.flags) {
     const key = `${flag.workspaceId}:${flag.sessionId}`
     const row = leadByKey.get(key)
-    if (!row) continue
-    const base = leadRowFromSignal(
-      row,
-      metaByKey.get(key),
-      assessmentByKey.get(key) ?? null,
-    )
-    leads.push({
-      ...base,
-      usedCopy: flag.usedCopy,
-      usedPaste: flag.usedPaste,
-    })
+    const meta = metaByKey.get(key)
+    if (row) {
+      const base = leadRowFromSignal(
+        row,
+        meta,
+        assessmentByKey.get(key) ?? null,
+      )
+      leads.push({
+        ...base,
+        usedCopy: flag.usedCopy,
+        usedPaste: flag.usedPaste,
+      })
+    } else {
+      leads.push({
+        workspaceId: flag.workspaceId,
+        sessionId: flag.sessionId,
+        macId: '',
+        createdAt: meta?.createdAt || '',
+        submittedAt: meta?.submittedAt ?? null,
+        zip: '',
+        email: '',
+        firstName: '',
+        lastName: '',
+        utmSource: meta?.utmSource || '',
+        utmId: meta?.utmId || '',
+        trustedFormUrl: '',
+        formSubmitted: Boolean(meta?.submittedAt),
+        usedCopy: flag.usedCopy,
+        usedPaste: flag.usedPaste,
+        fields: {},
+        fraud: assessmentByKey.get(key) ?? null,
+      })
+    }
     if (leads.length >= SHORTCUT_LEADS_LIMIT) break
   }
 
