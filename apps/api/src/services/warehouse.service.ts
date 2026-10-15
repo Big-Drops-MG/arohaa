@@ -87,6 +87,7 @@ export type WarehouseFraudLead = {
 export type WarehouseShortcutLead = {
   workspaceId: string
   workspaceName: string
+  lpPublicId: string
   sessionId: string
   macId: string
   createdAt: string
@@ -148,7 +149,7 @@ export type WarehouseSummary = {
 const SHORTCUT_LEADS_LIMIT = 100
 const FI_CLIPBOARD_SESSION_LIMIT = 4_000
 const FI_CLIPBOARD_SCAN_LIMIT = 40_000
-const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v6'
+const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v7'
 const WAREHOUSE_SUMMARY_CACHE_TTL_SEC = 90
 
 type ShortcutSessionFlag = {
@@ -331,21 +332,27 @@ async function loadSessionMetaByKey(
   return out
 }
 
-async function loadWorkspaceNamesByLandingPageIds(
+type LandingPageMeta = {
+  projectName: string
+  publicId: string
+}
+
+async function loadLandingPageMetaByIds(
   landingPageIds: string[],
-): Promise<Map<string, string>> {
+): Promise<Map<string, LandingPageMeta>> {
   const ids = [
     ...new Set(landingPageIds.map((id) => id.trim()).filter(Boolean)),
   ]
-  const out = new Map<string, string>()
+  const out = new Map<string, LandingPageMeta>()
   if (ids.length === 0) return out
 
   try {
     const rows = await db
       .select({
         landingPageId: landingPages.id,
-        workspaceName: workspaces.name,
+        publicId: landingPages.publicId,
         brandName: landingPages.brandName,
+        workspaceName: workspaces.name,
       })
       .from(landingPages)
       .innerJoin(workspaces, eq(landingPages.workspaceId, workspaces.id))
@@ -354,11 +361,14 @@ async function loadWorkspaceNamesByLandingPageIds(
       )
 
     for (const row of rows) {
-      const name = (row.workspaceName || row.brandName || '').trim()
-      if (name) out.set(row.landingPageId, name)
+      const projectName = (row.brandName || row.workspaceName || '').trim()
+      out.set(row.landingPageId, {
+        projectName,
+        publicId: (row.publicId || '').trim(),
+      })
     }
   } catch (err) {
-    console.error('[warehouse] workspace name lookup failed', err)
+    console.error('[warehouse] landing page meta lookup failed', err)
   }
   return out
 }
@@ -597,7 +607,7 @@ function leadRowFromSignal(
   row: LeadSessionSignalRow,
   meta: SessionMeta | undefined,
   fraud: LeadFraudAssessment | null,
-  workspaceName = '',
+  lpMeta: LandingPageMeta | undefined,
   fiFields?: Record<string, string>,
 ): Omit<WarehouseShortcutLead, 'usedCopy' | 'usedPaste'> {
   const rawFields = mergeFieldMaps(
@@ -610,7 +620,8 @@ function leadRowFromSignal(
     (typeof fields.email === 'string' ? fields.email : '')
   return {
     workspaceId: row.workspaceId,
-    workspaceName,
+    workspaceName: lpMeta?.projectName || '',
+    lpPublicId: lpMeta?.publicId || '',
     sessionId: row.sessionId,
     macId: formatFingerprintAsMacId(row.fingerprint || ''),
     createdAt: meta?.createdAt || '',
@@ -656,13 +667,13 @@ async function buildShortcutLeads(
 
   const sessionIds = discovery.flags.map((row) => row.sessionId)
   const landingPageIds = discovery.flags.map((row) => row.workspaceId)
-  const [leadRows, metaByKey, workspaceNames] = await Promise.all([
+  const [leadRows, metaByKey, lpMetaById] = await Promise.all([
     loadLeadSessionSignals({ sessionIds }),
     loadSessionMetaByKey(sessionIds).catch((err) => {
       console.error('[warehouse] shortcut lead meta failed', err)
       return new Map<string, SessionMeta>()
     }),
-    loadWorkspaceNamesByLandingPageIds(landingPageIds),
+    loadLandingPageMetaByIds(landingPageIds),
   ])
 
   const leadByKey = new Map<string, LeadSessionSignalRow>()
@@ -675,13 +686,13 @@ async function buildShortcutLeads(
     const key = `${flag.workspaceId}:${flag.sessionId}`
     const row = leadByKey.get(key)
     const meta = metaByKey.get(key)
-    const workspaceName = workspaceNames.get(flag.workspaceId) || ''
+    const lpMeta = lpMetaById.get(flag.workspaceId)
     if (row) {
       const base = leadRowFromSignal(
         row,
         meta,
         assessmentByKey.get(key) ?? null,
-        workspaceName,
+        lpMeta,
         flag.fiFields,
       )
       leads.push({
@@ -694,7 +705,8 @@ async function buildShortcutLeads(
       const fields = normalizeLeadFields(rawFields)
       leads.push({
         workspaceId: flag.workspaceId,
-        workspaceName,
+        workspaceName: lpMeta?.projectName || '',
+        lpPublicId: lpMeta?.publicId || '',
         sessionId: flag.sessionId,
         macId: '',
         createdAt: meta?.createdAt || '',

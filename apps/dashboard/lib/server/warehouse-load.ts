@@ -51,6 +51,7 @@ export type WarehouseFraudLead = {
 export type WarehouseShortcutLead = {
   workspaceId: string
   workspaceName: string
+  lpPublicId: string
   sessionId: string
   macId: string
   createdAt: string
