@@ -5,16 +5,23 @@ import {
   Keyboard,
   MousePointerClick,
   ShieldAlert,
+  Users,
 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import { dashboardPageInsetClassName } from "@/features/overview/view/overview-card-density"
+import { LeadRiskBadge } from "@/features/data-export/view/LeadRiskBadge"
 import type {
   WarehouseDashboardData,
   WarehouseDomainCount,
+  WarehouseFraudLead,
   WarehouseNameCount,
   WarehouseShortcutCount,
 } from "@/lib/server/warehouse-load"
-import { formatDashboardDateTime } from "@/lib/datetime"
+import {
+  formatDashboardDateTime,
+  formatInDashboardTimezone,
+  getDashboardTimezoneAbbreviation,
+} from "@/lib/datetime"
 import { getEventDisplayName } from "@/features/warehouse/model/event-display-names"
 
 function formatCount(value: number): string {
@@ -255,6 +262,175 @@ function ShortcutTable({
   )
 }
 
+function formatWhen(value: string): string {
+  if (!value) return "—"
+  const d = new Date(
+    value.includes("T") ? value : value.replace(" ", "T") + "Z"
+  )
+  if (Number.isNaN(d.getTime())) return value
+  const formatted = formatInDashboardTimezone(d, {
+    month: "numeric",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  })
+  return `${formatted} ${getDashboardTimezoneAbbreviation(d)}`
+}
+
+function cellValue(value: string | undefined): string {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : "—"
+}
+
+function shortId(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return "—"
+  if (trimmed.length <= 12) return trimmed
+  return `${trimmed.slice(0, 8)}…`
+}
+
+const fraudThClassName =
+  "px-3 py-2.5 text-left text-xs font-medium tracking-wide whitespace-nowrap text-muted-foreground uppercase"
+const fraudTdClassName =
+  "px-3 py-2.5 align-middle text-sm whitespace-nowrap text-foreground"
+
+function FraudLeadsTable({ rows }: { rows: WarehouseFraudLead[] }) {
+  if (rows.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No fraud-detected leads yet.
+      </p>
+    )
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[1100px] border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-border">
+            <th className={fraudThClassName}>#</th>
+            <th className={fraudThClassName}>When</th>
+            <th className={fraudThClassName}>Trust</th>
+            <th className={fraudThClassName}>First Name</th>
+            <th className={fraudThClassName}>Last Name</th>
+            <th className={fraudThClassName}>Email</th>
+            <th className={fraudThClassName}>Zip</th>
+            <th className={fraudThClassName}>UTM Source</th>
+            <th className={fraudThClassName}>UTM ID</th>
+            <th className={fraudThClassName}>TrustedForm</th>
+            <th className={fraudThClassName}>Form Submitted</th>
+            <th className={fraudThClassName}>Reasons</th>
+            <th className={fraudThClassName}>MAC ID</th>
+            <th className={fraudThClassName}>Session</th>
+            <th className={fraudThClassName}>Workspace</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((lead, index) => (
+            <tr
+              key={`${lead.workspaceId}:${lead.sessionId}`}
+              className="border-b border-border/60 last:border-0"
+            >
+              <td
+                className={cn(
+                  fraudTdClassName,
+                  "text-muted-foreground tabular-nums"
+                )}
+              >
+                {index + 1}
+              </td>
+              <td className={fraudTdClassName}>{formatWhen(lead.createdAt)}</td>
+              <td className={fraudTdClassName}>
+                <LeadRiskBadge fraud={lead.fraud} />
+              </td>
+              <td className={fraudTdClassName}>
+                {cellValue(lead.firstName || lead.fields.first_name)}
+              </td>
+              <td className={fraudTdClassName}>
+                {cellValue(lead.lastName || lead.fields.last_name)}
+              </td>
+              <td className={fraudTdClassName}>{cellValue(lead.email)}</td>
+              <td className={fraudTdClassName}>{cellValue(lead.zip)}</td>
+              <td className={fraudTdClassName}>{cellValue(lead.utmSource)}</td>
+              <td className={fraudTdClassName}>{cellValue(lead.utmId)}</td>
+              <td
+                className={cn(
+                  fraudTdClassName,
+                  "max-w-[12rem] min-w-[8rem] whitespace-normal"
+                )}
+              >
+                {lead.trustedFormUrl ? (
+                  <a
+                    href={lead.trustedFormUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm font-medium break-all text-sky-700 underline-offset-2 hover:underline"
+                  >
+                    View certificate
+                  </a>
+                ) : (
+                  "—"
+                )}
+              </td>
+              <td className={fraudTdClassName}>
+                <span
+                  className={cn(
+                    "inline-flex rounded-md px-2 py-0.5 text-xs font-medium",
+                    lead.formSubmitted
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-neutral-100 text-neutral-600"
+                  )}
+                >
+                  {lead.formSubmitted ? "Yes" : "No"}
+                </span>
+              </td>
+              <td
+                className={cn(
+                  fraudTdClassName,
+                  "max-w-[16rem] min-w-[12rem] whitespace-normal text-muted-foreground"
+                )}
+              >
+                {lead.fraud.reasons.length > 0
+                  ? lead.fraud.reasons.slice(0, 3).join("; ")
+                  : "—"}
+              </td>
+              <td
+                className={cn(
+                  fraudTdClassName,
+                  "font-mono text-xs text-muted-foreground"
+                )}
+              >
+                {cellValue(lead.macId)}
+              </td>
+              <td
+                className={cn(
+                  fraudTdClassName,
+                  "font-mono text-xs text-muted-foreground"
+                )}
+                title={lead.sessionId}
+              >
+                {shortId(lead.sessionId)}
+              </td>
+              <td
+                className={cn(
+                  fraudTdClassName,
+                  "font-mono text-xs text-muted-foreground"
+                )}
+                title={lead.workspaceId}
+              >
+                {shortId(lead.workspaceId)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function DomainTable({ rows }: { rows: WarehouseDomainCount[] }) {
   if (rows.length === 0) {
     return (
@@ -442,6 +618,21 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
               </Panel>
             </div>
           </section>
+
+          <Panel
+            title="Fraud leads"
+            description={
+              summary.risk.fraud > 0
+                ? `Showing ${formatCount(summary.fraudLeads?.length ?? 0)} of ${formatCount(summary.risk.fraud)} fraud-detected leads (same columns as Leads table)`
+                : "Fraud-detected leads only — same columns as the Leads table"
+            }
+            icon={Users}
+            bodyClassName="px-0 py-0"
+          >
+            <div className="max-h-[28rem] overflow-auto overscroll-contain px-5 py-4">
+              <FraudLeadsTable rows={summary.fraudLeads ?? []} />
+            </div>
+          </Panel>
 
           <section className="grid items-stretch gap-4 lg:grid-cols-2">
             <Panel

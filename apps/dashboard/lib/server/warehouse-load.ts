@@ -22,6 +22,30 @@ export type WarehouseDomainCount = {
   fraud: number
 }
 
+export type WarehouseFraudLead = {
+  workspaceId: string
+  sessionId: string
+  macId: string
+  createdAt: string
+  submittedAt: string | null
+  zip: string
+  email: string
+  firstName: string
+  lastName: string
+  utmSource: string
+  utmId: string
+  trustedFormUrl: string
+  formSubmitted: boolean
+  fields: Record<string, string>
+  fraud: {
+    score: number
+    label: "legit" | "fraud"
+    effectiveLabel: "legit" | "fraud"
+    reasons: string[]
+    modelVersion: string
+  }
+}
+
 export type WarehouseSummary = {
   totals: {
     events: number
@@ -57,6 +81,7 @@ export type WarehouseSummary = {
   eventsByName: WarehouseNameCount[]
   emailDomains: WarehouseDomainCount[]
   fraudReasons: WarehouseNameCount[]
+  fraudLeads: WarehouseFraudLead[]
   generatedAt: string
 }
 
@@ -105,6 +130,7 @@ function emptySummary(generatedAt: string): WarehouseSummary {
     eventsByName: [],
     emailDomains: [],
     fraudReasons: [],
+    fraudLeads: [],
     generatedAt,
   }
 }
@@ -176,6 +202,7 @@ export async function loadWarehouseDashboardData(): Promise<WarehouseDashboardDa
         fraudReasons: Array.isArray(summary.fraudReasons)
           ? summary.fraudReasons
           : [],
+        fraudLeads: Array.isArray(summary.fraudLeads) ? summary.fraudLeads : [],
       },
       error: null,
       apiBase,
