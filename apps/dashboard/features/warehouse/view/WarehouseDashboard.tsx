@@ -307,127 +307,125 @@ function FraudLeadsTable({ rows }: { rows: WarehouseFraudLead[] }) {
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[1100px] border-collapse text-sm">
-        <thead>
-          <tr className="border-b border-border">
-            <th className={fraudThClassName}>#</th>
-            <th className={fraudThClassName}>When</th>
-            <th className={fraudThClassName}>Trust</th>
-            <th className={fraudThClassName}>First Name</th>
-            <th className={fraudThClassName}>Last Name</th>
-            <th className={fraudThClassName}>Email</th>
-            <th className={fraudThClassName}>Zip</th>
-            <th className={fraudThClassName}>UTM Source</th>
-            <th className={fraudThClassName}>UTM ID</th>
-            <th className={fraudThClassName}>TrustedForm</th>
-            <th className={fraudThClassName}>Form Submitted</th>
-            <th className={fraudThClassName}>Reasons</th>
-            <th className={fraudThClassName}>MAC ID</th>
-            <th className={fraudThClassName}>Session</th>
-            <th className={fraudThClassName}>Workspace</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((lead, index) => (
-            <tr
-              key={`${lead.workspaceId}:${lead.sessionId}`}
-              className="border-b border-border/60 last:border-0"
+    <table className="w-max min-w-full border-collapse text-sm">
+      <thead>
+        <tr className="border-b border-border">
+          <th className={fraudThClassName}>#</th>
+          <th className={fraudThClassName}>When</th>
+          <th className={fraudThClassName}>Trust</th>
+          <th className={fraudThClassName}>First Name</th>
+          <th className={fraudThClassName}>Last Name</th>
+          <th className={fraudThClassName}>Email</th>
+          <th className={fraudThClassName}>Zip</th>
+          <th className={fraudThClassName}>UTM Source</th>
+          <th className={fraudThClassName}>UTM ID</th>
+          <th className={fraudThClassName}>TrustedForm</th>
+          <th className={fraudThClassName}>Form Submitted</th>
+          <th className={fraudThClassName}>Reasons</th>
+          <th className={fraudThClassName}>MAC ID</th>
+          <th className={fraudThClassName}>Session</th>
+          <th className={fraudThClassName}>Workspace</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((lead, index) => (
+          <tr
+            key={`${lead.workspaceId}:${lead.sessionId}`}
+            className="border-b border-border/60 last:border-0"
+          >
+            <td
+              className={cn(
+                fraudTdClassName,
+                "text-muted-foreground tabular-nums"
+              )}
             >
-              <td
-                className={cn(
-                  fraudTdClassName,
-                  "text-muted-foreground tabular-nums"
-                )}
-              >
-                {index + 1}
-              </td>
-              <td className={fraudTdClassName}>{formatWhen(lead.createdAt)}</td>
-              <td className={fraudTdClassName}>
-                <LeadRiskBadge fraud={lead.fraud} />
-              </td>
-              <td className={fraudTdClassName}>
-                {cellValue(lead.firstName || lead.fields.first_name)}
-              </td>
-              <td className={fraudTdClassName}>
-                {cellValue(lead.lastName || lead.fields.last_name)}
-              </td>
-              <td className={fraudTdClassName}>{cellValue(lead.email)}</td>
-              <td className={fraudTdClassName}>{cellValue(lead.zip)}</td>
-              <td className={fraudTdClassName}>{cellValue(lead.utmSource)}</td>
-              <td className={fraudTdClassName}>{cellValue(lead.utmId)}</td>
-              <td
-                className={cn(
-                  fraudTdClassName,
-                  "max-w-[12rem] min-w-[8rem] whitespace-normal"
-                )}
-              >
-                {lead.trustedFormUrl ? (
-                  <a
-                    href={lead.trustedFormUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm font-medium break-all text-sky-700 underline-offset-2 hover:underline"
-                  >
-                    View certificate
-                  </a>
-                ) : (
-                  "—"
-                )}
-              </td>
-              <td className={fraudTdClassName}>
-                <span
-                  className={cn(
-                    "inline-flex rounded-md px-2 py-0.5 text-xs font-medium",
-                    lead.formSubmitted
-                      ? "bg-emerald-50 text-emerald-700"
-                      : "bg-neutral-100 text-neutral-600"
-                  )}
+              {index + 1}
+            </td>
+            <td className={fraudTdClassName}>{formatWhen(lead.createdAt)}</td>
+            <td className={fraudTdClassName}>
+              <LeadRiskBadge fraud={lead.fraud} />
+            </td>
+            <td className={fraudTdClassName}>
+              {cellValue(lead.firstName || lead.fields.first_name)}
+            </td>
+            <td className={fraudTdClassName}>
+              {cellValue(lead.lastName || lead.fields.last_name)}
+            </td>
+            <td className={fraudTdClassName}>{cellValue(lead.email)}</td>
+            <td className={fraudTdClassName}>{cellValue(lead.zip)}</td>
+            <td className={fraudTdClassName}>{cellValue(lead.utmSource)}</td>
+            <td className={fraudTdClassName}>{cellValue(lead.utmId)}</td>
+            <td
+              className={cn(
+                fraudTdClassName,
+                "max-w-[12rem] min-w-[8rem] whitespace-normal"
+              )}
+            >
+              {lead.trustedFormUrl ? (
+                <a
+                  href={lead.trustedFormUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm font-medium break-all text-sky-700 underline-offset-2 hover:underline"
                 >
-                  {lead.formSubmitted ? "Yes" : "No"}
-                </span>
-              </td>
-              <td
+                  View certificate
+                </a>
+              ) : (
+                "—"
+              )}
+            </td>
+            <td className={fraudTdClassName}>
+              <span
                 className={cn(
-                  fraudTdClassName,
-                  "max-w-[16rem] min-w-[12rem] whitespace-normal text-muted-foreground"
+                  "inline-flex rounded-md px-2 py-0.5 text-xs font-medium",
+                  lead.formSubmitted
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-neutral-100 text-neutral-600"
                 )}
               >
-                {lead.fraud.reasons.length > 0
-                  ? lead.fraud.reasons.slice(0, 3).join("; ")
-                  : "—"}
-              </td>
-              <td
-                className={cn(
-                  fraudTdClassName,
-                  "font-mono text-xs text-muted-foreground"
-                )}
-              >
-                {cellValue(lead.macId)}
-              </td>
-              <td
-                className={cn(
-                  fraudTdClassName,
-                  "font-mono text-xs text-muted-foreground"
-                )}
-                title={lead.sessionId}
-              >
-                {shortId(lead.sessionId)}
-              </td>
-              <td
-                className={cn(
-                  fraudTdClassName,
-                  "font-mono text-xs text-muted-foreground"
-                )}
-                title={lead.workspaceId}
-              >
-                {shortId(lead.workspaceId)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+                {lead.formSubmitted ? "Yes" : "No"}
+              </span>
+            </td>
+            <td
+              className={cn(
+                fraudTdClassName,
+                "max-w-[16rem] min-w-[12rem] whitespace-normal text-muted-foreground"
+              )}
+            >
+              {lead.fraud.reasons.length > 0
+                ? lead.fraud.reasons.slice(0, 3).join("; ")
+                : "—"}
+            </td>
+            <td
+              className={cn(
+                fraudTdClassName,
+                "font-mono text-xs text-muted-foreground"
+              )}
+            >
+              {cellValue(lead.macId)}
+            </td>
+            <td
+              className={cn(
+                fraudTdClassName,
+                "font-mono text-xs text-muted-foreground"
+              )}
+              title={lead.sessionId}
+            >
+              {shortId(lead.sessionId)}
+            </td>
+            <td
+              className={cn(
+                fraudTdClassName,
+                "font-mono text-xs text-muted-foreground"
+              )}
+              title={lead.workspaceId}
+            >
+              {shortId(lead.workspaceId)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 }
 
@@ -495,7 +493,7 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
   return (
     <div
       className={cn(
-        "mx-auto w-full max-w-360 space-y-10 py-8",
+        "mx-auto w-full max-w-360 min-w-0 space-y-10 py-8",
         dashboardPageInsetClassName
       )}
     >
@@ -627,9 +625,10 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
                 : "Fraud-detected leads only — same columns as the Leads table"
             }
             icon={Users}
-            bodyClassName="px-0 py-0"
+            className="min-w-0"
+            bodyClassName="min-w-0 px-0 py-0"
           >
-            <div className="max-h-[28rem] overflow-auto overscroll-contain px-5 py-4">
+            <div className="max-h-[28rem] min-w-0 overflow-x-auto overflow-y-auto overscroll-contain px-5 py-4">
               <FraudLeadsTable rows={summary.fraudLeads ?? []} />
             </div>
           </Panel>
