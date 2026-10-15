@@ -19,6 +19,8 @@ export const ALLOWED_INGEST_EVENT_NAMES = [
   'form_success',
   'form_field_focus',
   'form_field_abandon',
+  'form_shortcut_copy',
+  'form_shortcut_paste',
   'form_step_view',
   'form_step_complete',
   'zip_start',

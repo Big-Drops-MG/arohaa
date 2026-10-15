@@ -8,6 +8,13 @@ export type WarehouseNameCount = {
   count: number
 }
 
+export type WarehouseShortcutCount = {
+  name: string
+  label: string
+  sessions: number
+  percent: number
+}
+
 export type WarehouseDomainCount = {
   domain: string
   count: number
@@ -43,6 +50,10 @@ export type WarehouseSummary = {
     total: number
     byName: WarehouseNameCount[]
   }
+  shortcuts: {
+    formSessions: number
+    byName: WarehouseShortcutCount[]
+  }
   eventsByName: WarehouseNameCount[]
   emailDomains: WarehouseDomainCount[]
   fraudReasons: WarehouseNameCount[]
@@ -74,6 +85,23 @@ function emptySummary(generatedAt: string): WarehouseSummary {
     volume: { lastHour: 0, last24h: 0, last7d: 0 },
     risk: { legit: 0, fraud: 0, unscoredFormSubmits: 0 },
     clicks: { total: 0, byName: [] },
+    shortcuts: {
+      formSessions: 0,
+      byName: [
+        {
+          name: "form_shortcut_copy",
+          label: "Copy (Ctrl+C)",
+          sessions: 0,
+          percent: 0,
+        },
+        {
+          name: "form_shortcut_paste",
+          label: "Paste (Ctrl+V)",
+          sessions: 0,
+          percent: 0,
+        },
+      ],
+    },
     eventsByName: [],
     emailDomains: [],
     fraudReasons: [],
@@ -130,6 +158,14 @@ export async function loadWarehouseDashboardData(): Promise<WarehouseDashboardDa
           byName: Array.isArray(summary.clicks?.byName)
             ? summary.clicks.byName
             : [],
+        },
+        shortcuts: {
+          formSessions: Number(summary.shortcuts?.formSessions ?? 0),
+          byName:
+            Array.isArray(summary.shortcuts?.byName) &&
+            summary.shortcuts.byName.length > 0
+              ? summary.shortcuts.byName
+              : emptySummary(fetchedAt).shortcuts.byName,
         },
         eventsByName: Array.isArray(summary.eventsByName)
           ? summary.eventsByName

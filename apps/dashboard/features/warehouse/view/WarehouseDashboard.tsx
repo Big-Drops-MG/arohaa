@@ -1,11 +1,18 @@
 import type { ComponentType, ReactNode } from "react"
-import { Activity, AtSign, MousePointerClick, ShieldAlert } from "lucide-react"
+import {
+  Activity,
+  AtSign,
+  Keyboard,
+  MousePointerClick,
+  ShieldAlert,
+} from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import { dashboardPageInsetClassName } from "@/features/overview/view/overview-card-density"
 import type {
   WarehouseDashboardData,
   WarehouseDomainCount,
   WarehouseNameCount,
+  WarehouseShortcutCount,
 } from "@/lib/server/warehouse-load"
 import { formatDashboardDateTime } from "@/lib/datetime"
 import { getEventDisplayName } from "@/features/warehouse/model/event-display-names"
@@ -177,6 +184,73 @@ function CountTable({
           </tr>
         ))}
       </tbody>
+    </table>
+  )
+}
+
+function formatShortcutPercent(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "0%"
+  const rounded = Math.round(value * 10) / 10
+  return Number.isInteger(rounded) ? `${rounded}%` : `${rounded.toFixed(1)}%`
+}
+
+function ShortcutTable({
+  rows,
+  formSessions,
+}: {
+  rows: WarehouseShortcutCount[]
+  formSessions: number
+}) {
+  if (rows.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No shortcut usage recorded yet.
+      </p>
+    )
+  }
+
+  return (
+    <table className="w-full border-collapse text-sm">
+      <thead>
+        <tr className="border-b border-border text-left">
+          <th className="pb-2.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Shortcut
+          </th>
+          <th className="pb-2.5 text-right text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Sessions
+          </th>
+          <th className="pr-1 pb-2.5 text-right text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            % of form sessions
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr
+            key={row.name}
+            className="border-b border-border/60 last:border-0"
+          >
+            <td className="py-2.5 pr-4 font-medium text-foreground">
+              {row.label}
+            </td>
+            <td className="py-2.5 text-right font-semibold text-foreground tabular-nums">
+              {formatCount(row.sessions)}
+            </td>
+            <td className="py-2.5 pr-1 text-right font-semibold text-foreground tabular-nums">
+              {formatShortcutPercent(row.percent)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+      {formSessions > 0 ? (
+        <tfoot>
+          <tr>
+            <td colSpan={3} className="pt-3 text-xs text-muted-foreground">
+              Based on {formatCount(formSessions)} form-start sessions
+            </td>
+          </tr>
+        </tfoot>
+      ) : null}
     </table>
   )
 }
@@ -393,6 +467,17 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
               </ScrollBody>
             </Panel>
           </section>
+
+          <Panel
+            title="Form shortcuts"
+            description="Share of form sessions using Copy and Paste shortcuts"
+            icon={Keyboard}
+          >
+            <ShortcutTable
+              rows={summary.shortcuts?.byName ?? []}
+              formSessions={summary.shortcuts?.formSessions ?? 0}
+            />
+          </Panel>
 
           <Panel
             title="All events"

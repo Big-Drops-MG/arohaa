@@ -51,6 +51,21 @@ const pendingChanges = new Map<string, { value: string; phone: boolean }>()
 const lastChangedValue = new Map<string, string>()
 let lastPasteField = ""
 let lastPasteAt = 0
+let lastShortcutKind: "copy" | "paste" | "" = ""
+let lastShortcutAt = 0
+
+function trackFormShortcut(
+  kind: "copy" | "paste",
+  field: string,
+): void {
+  const now = Date.now()
+  if (kind === lastShortcutKind && now - lastShortcutAt < 120) return
+  lastShortcutKind = kind
+  lastShortcutAt = now
+  track(kind === "copy" ? "form_shortcut_copy" : "form_shortcut_paste", {
+    fieldName: field,
+  })
+}
 
 function bracket(name: string): string {
   return `[${name}]`
@@ -515,6 +530,10 @@ function onKeyDown(e: KeyboardEvent): void {
   const combo = shortcutLabel(e)
   if (combo) {
     pushItem(1, formatPressed(combo, field))
+    const clipboard = isClipboardShortcut(combo)
+    if (clipboard === "copy" || clipboard === "paste") {
+      trackFormShortcut(clipboard, field)
+    }
     return
   }
   if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -528,9 +547,15 @@ function onClipboardAction(kind: "paste" | "copy" | "cut", e: Event): void {
   const control = resolveFormControl(e.target)
   if (!control || isSkippedControl(control)) return
   const field = fieldKeyFromControl(control) || FI_MSG.unnamed
-  if (kind === "paste") pushPasted(field)
-  else if (kind === "copy") pushItem(1, formatCopied(field))
-  else pushItem(1, formatCut(field))
+  if (kind === "paste") {
+    pushPasted(field)
+    trackFormShortcut("paste", field)
+  } else if (kind === "copy") {
+    pushItem(1, formatCopied(field))
+    trackFormShortcut("copy", field)
+  } else {
+    pushItem(1, formatCut(field))
+  }
 }
 
 function onClick(e: MouseEvent): void {
@@ -613,6 +638,7 @@ function onInputOrChange(e: Event): void {
     e.inputType === "insertFromPaste"
   ) {
     pushPasted(field)
+    trackFormShortcut("paste", field)
   }
 
   scheduleChange(field, value, isChoiceControl(control), phone)

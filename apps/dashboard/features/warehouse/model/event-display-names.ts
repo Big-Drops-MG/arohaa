@@ -20,6 +20,8 @@ const EVENT_DISPLAY_NAMES: Record<string, string> = {
   form_success: "Form success",
   form_field_focus: "Form field focus",
   form_field_abandon: "Form field abandoned",
+  form_shortcut_copy: "Copy (Ctrl+C)",
+  form_shortcut_paste: "Paste (Ctrl+V)",
   form_step_view: "Form step viewed",
   form_step_complete: "Form step completed",
   zip_start: "ZIP started",
