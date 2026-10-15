@@ -10,12 +10,16 @@ import {
 import { cn } from "@workspace/ui/lib/utils"
 import { dashboardPageInsetClassName } from "@/features/overview/view/overview-card-density"
 import { LeadRiskBadge } from "@/features/data-export/view/LeadRiskBadge"
+import {
+  discoverVisibleLeadFieldKeys,
+  humanizeLeadFieldLabel,
+} from "@/features/data-export/model/lead-field-columns"
 import type {
   WarehouseDashboardData,
   WarehouseDomainCount,
-  WarehouseFraudLead,
   WarehouseNameCount,
   WarehouseShortcutCount,
+  WarehouseShortcutLead,
 } from "@/lib/server/warehouse-load"
 import {
   formatDashboardDateTime,
@@ -292,39 +296,53 @@ function shortId(value: string): string {
   return `${trimmed.slice(0, 8)}…`
 }
 
-const fraudThClassName =
+const leadThClassName =
   "px-3 py-2.5 text-left text-xs font-medium tracking-wide whitespace-nowrap text-muted-foreground uppercase"
-const fraudTdClassName =
+const leadTdClassName =
   "px-3 py-2.5 align-middle text-sm whitespace-nowrap text-foreground"
 
-function FraudLeadsTable({ rows }: { rows: WarehouseFraudLead[] }) {
+function shortcutLabel(lead: WarehouseShortcutLead): string {
+  if (lead.usedCopy && lead.usedPaste) return "Copy + Paste"
+  if (lead.usedCopy) return "Copy (Ctrl+C)"
+  if (lead.usedPaste) return "Paste (Ctrl+V)"
+  return "—"
+}
+
+function ShortcutLeadsTable({ rows }: { rows: WarehouseShortcutLead[] }) {
   if (rows.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No fraud-detected leads yet.
+        No Copy/Paste shortcut users yet. Percentages need updated SDK traffic.
       </p>
     )
   }
+
+  const fieldKeys = discoverVisibleLeadFieldKeys(rows)
 
   return (
     <table className="w-max min-w-full border-collapse text-sm">
       <thead>
         <tr className="border-b border-border">
-          <th className={fraudThClassName}>#</th>
-          <th className={fraudThClassName}>When</th>
-          <th className={fraudThClassName}>Trust</th>
-          <th className={fraudThClassName}>First Name</th>
-          <th className={fraudThClassName}>Last Name</th>
-          <th className={fraudThClassName}>Email</th>
-          <th className={fraudThClassName}>Zip</th>
-          <th className={fraudThClassName}>UTM Source</th>
-          <th className={fraudThClassName}>UTM ID</th>
-          <th className={fraudThClassName}>TrustedForm</th>
-          <th className={fraudThClassName}>Form Submitted</th>
-          <th className={fraudThClassName}>Reasons</th>
-          <th className={fraudThClassName}>MAC ID</th>
-          <th className={fraudThClassName}>Session</th>
-          <th className={fraudThClassName}>Workspace</th>
+          <th className={leadThClassName}>#</th>
+          <th className={leadThClassName}>When</th>
+          <th className={leadThClassName}>Shortcut</th>
+          <th className={leadThClassName}>Trust</th>
+          <th className={leadThClassName}>First Name</th>
+          <th className={leadThClassName}>Last Name</th>
+          <th className={leadThClassName}>Email</th>
+          <th className={leadThClassName}>Zip</th>
+          <th className={leadThClassName}>UTM Source</th>
+          <th className={leadThClassName}>UTM ID</th>
+          <th className={leadThClassName}>TrustedForm</th>
+          <th className={leadThClassName}>Form Submitted</th>
+          {fieldKeys.map((key) => (
+            <th key={key} className={leadThClassName}>
+              {humanizeLeadFieldLabel(key)}
+            </th>
+          ))}
+          <th className={leadThClassName}>MAC ID</th>
+          <th className={leadThClassName}>Session</th>
+          <th className={leadThClassName}>Workspace</th>
         </tr>
       </thead>
       <tbody>
@@ -335,29 +353,30 @@ function FraudLeadsTable({ rows }: { rows: WarehouseFraudLead[] }) {
           >
             <td
               className={cn(
-                fraudTdClassName,
+                leadTdClassName,
                 "text-muted-foreground tabular-nums"
               )}
             >
               {index + 1}
             </td>
-            <td className={fraudTdClassName}>{formatWhen(lead.createdAt)}</td>
-            <td className={fraudTdClassName}>
+            <td className={leadTdClassName}>{formatWhen(lead.createdAt)}</td>
+            <td className={leadTdClassName}>{shortcutLabel(lead)}</td>
+            <td className={leadTdClassName}>
               <LeadRiskBadge fraud={lead.fraud} />
             </td>
-            <td className={fraudTdClassName}>
+            <td className={leadTdClassName}>
               {cellValue(lead.firstName || lead.fields.first_name)}
             </td>
-            <td className={fraudTdClassName}>
+            <td className={leadTdClassName}>
               {cellValue(lead.lastName || lead.fields.last_name)}
             </td>
-            <td className={fraudTdClassName}>{cellValue(lead.email)}</td>
-            <td className={fraudTdClassName}>{cellValue(lead.zip)}</td>
-            <td className={fraudTdClassName}>{cellValue(lead.utmSource)}</td>
-            <td className={fraudTdClassName}>{cellValue(lead.utmId)}</td>
+            <td className={leadTdClassName}>{cellValue(lead.email)}</td>
+            <td className={leadTdClassName}>{cellValue(lead.zip)}</td>
+            <td className={leadTdClassName}>{cellValue(lead.utmSource)}</td>
+            <td className={leadTdClassName}>{cellValue(lead.utmId)}</td>
             <td
               className={cn(
-                fraudTdClassName,
+                leadTdClassName,
                 "max-w-[12rem] min-w-[8rem] whitespace-normal"
               )}
             >
@@ -374,7 +393,7 @@ function FraudLeadsTable({ rows }: { rows: WarehouseFraudLead[] }) {
                 "—"
               )}
             </td>
-            <td className={fraudTdClassName}>
+            <td className={leadTdClassName}>
               <span
                 className={cn(
                   "inline-flex rounded-md px-2 py-0.5 text-xs font-medium",
@@ -386,19 +405,20 @@ function FraudLeadsTable({ rows }: { rows: WarehouseFraudLead[] }) {
                 {lead.formSubmitted ? "Yes" : "No"}
               </span>
             </td>
+            {fieldKeys.map((key) => (
+              <td
+                key={key}
+                className={cn(
+                  leadTdClassName,
+                  "max-w-[14rem] whitespace-normal text-muted-foreground"
+                )}
+              >
+                {cellValue(lead.fields[key])}
+              </td>
+            ))}
             <td
               className={cn(
-                fraudTdClassName,
-                "max-w-[16rem] min-w-[12rem] whitespace-normal text-muted-foreground"
-              )}
-            >
-              {lead.fraud.reasons.length > 0
-                ? lead.fraud.reasons.slice(0, 3).join("; ")
-                : "—"}
-            </td>
-            <td
-              className={cn(
-                fraudTdClassName,
+                leadTdClassName,
                 "font-mono text-xs text-muted-foreground"
               )}
             >
@@ -406,7 +426,7 @@ function FraudLeadsTable({ rows }: { rows: WarehouseFraudLead[] }) {
             </td>
             <td
               className={cn(
-                fraudTdClassName,
+                leadTdClassName,
                 "font-mono text-xs text-muted-foreground"
               )}
               title={lead.sessionId}
@@ -415,7 +435,7 @@ function FraudLeadsTable({ rows }: { rows: WarehouseFraudLead[] }) {
             </td>
             <td
               className={cn(
-                fraudTdClassName,
+                leadTdClassName,
                 "font-mono text-xs text-muted-foreground"
               )}
               title={lead.workspaceId}
@@ -617,22 +637,6 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
             </div>
           </section>
 
-          <Panel
-            title="Fraud leads"
-            description={
-              summary.risk.fraud > 0
-                ? `Showing ${formatCount(summary.fraudLeads?.length ?? 0)} of ${formatCount(summary.risk.fraud)} fraud-detected leads (same columns as Leads table)`
-                : "Fraud-detected leads only — same columns as the Leads table"
-            }
-            icon={Users}
-            className="min-w-0"
-            bodyClassName="min-w-0 px-0 py-0"
-          >
-            <div className="max-h-[28rem] min-w-0 overflow-x-auto overflow-y-auto overscroll-contain px-5 py-4">
-              <FraudLeadsTable rows={summary.fraudLeads ?? []} />
-            </div>
-          </Panel>
-
           <section className="grid items-stretch gap-4 lg:grid-cols-2">
             <Panel
               title="Email domains"
@@ -667,6 +671,22 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
               rows={summary.shortcuts?.byName ?? []}
               formSessions={summary.shortcuts?.formSessions ?? 0}
             />
+          </Panel>
+
+          <Panel
+            title="Copy / Paste users"
+            description={
+              (summary.shortcutLeads?.length ?? 0) > 0
+                ? `${formatCount(summary.shortcutLeads.length)} sessions that used Ctrl+C or Ctrl+V — full lead form fields`
+                : "Sessions that used Ctrl+C or Ctrl+V — full lead form fields"
+            }
+            icon={Users}
+            className="min-w-0"
+            bodyClassName="min-w-0 px-0 py-0"
+          >
+            <div className="max-h-[28rem] min-w-0 overflow-x-auto overflow-y-auto overscroll-contain px-5 py-4">
+              <ShortcutLeadsTable rows={summary.shortcutLeads ?? []} />
+            </div>
           </Panel>
 
           <Panel
