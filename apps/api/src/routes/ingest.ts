@@ -15,6 +15,7 @@ import {
   releaseIngestEventId,
 } from '../lib/ingest-idempotency.js'
 import { ALLOWED_INGEST_EVENT_NAMES } from '../lib/allowed-event-names.js'
+import { buildShortcutRowsFromFi } from '../lib/fi-shortcut-derive.js'
 import { ingestBodyToEventRow, type IngestEventBody } from '../types/event.js'
 import { buildEnrichmentContext } from '../utils/enrichment.js'
 import { normalizeReferrer } from '../utils/referrer.js'
@@ -244,6 +245,27 @@ async function ingestOne(
 
   try {
     await pushEvent(row)
+    for (const derived of buildShortcutRowsFromFi(row)) {
+      const derivedId = derived.event_id.trim()
+      if (!derivedId || !isValidEventId(derivedId)) continue
+      const derivedClaim = await claimIngestEventId(derivedId)
+      if (derivedClaim !== 'claimed') continue
+      try {
+        await pushEvent(derived)
+      } catch (err) {
+        await releaseIngestEventId(derivedId)
+        request.log.error(
+          {
+            err,
+            trace_id: traceId,
+            event: 'ingest_fi_shortcut_derive_failed',
+            parent_event_id: eventId,
+            derived_event_id: derivedId,
+          },
+          'derived form_shortcut push failed',
+        )
+      }
+    }
   } catch (err) {
     if (eventId) {
       await releaseIngestEventId(eventId)
