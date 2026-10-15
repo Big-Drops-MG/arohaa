@@ -1,3 +1,7 @@
+import {
+  readAnalyticsCache,
+  writeAnalyticsCache,
+} from '../lib/analytics-cache.js'
 import { CLICKHOUSE_EVENTS_TABLE } from '../lib/clickhouse-events-table.js'
 import {
   fieldsWithoutReserved,
@@ -15,10 +19,7 @@ import {
 import { loadLeadSessionSignals } from '../lib/lead-fraud/load-sessions.js'
 import { upsertLeadRiskBatch } from '../lib/lead-fraud/persist.js'
 import { classifyLeadSessionRows } from '../lib/lead-fraud/service.js'
-import type {
-  LeadFraudAssessment,
-  LeadFraudFeatures,
-} from '../lib/lead-fraud/types.js'
+import type { LeadFraudAssessment } from '../lib/lead-fraud/types.js'
 import {
   getClickHouseClient,
   LEAD_RISK_TABLE,
@@ -132,8 +133,9 @@ export type WarehouseSummary = {
   generatedAt: string
 }
 
-const FRAUD_LEADS_LIMIT = 100
 const SHORTCUT_LEADS_LIMIT = 100
+const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v2'
+const WAREHOUSE_SUMMARY_CACHE_TTL_SEC = 90
 
 const CLICK_EVENT_NAMES = [
   'button_click',
@@ -436,44 +438,33 @@ async function buildShortcutLeads(
   return leads
 }
 
-async function buildFraudLeads(
-  leadRows: LeadSessionSignalRow[],
-  assessmentByKey: Map<string, LeadFraudAssessment>,
-): Promise<WarehouseFraudLead[]> {
-  const fraudRows = leadRows.filter((row) => {
-    const key = `${row.workspaceId}:${row.sessionId}`
-    return assessmentByKey.get(key)?.effectiveLabel === 'fraud'
-  })
-  if (fraudRows.length === 0) return []
 
-  let metaByKey = new Map<string, SessionMeta>()
-  try {
-    metaByKey = await loadSessionMetaByKey(
-      fraudRows.map((row) => row.sessionId),
-    )
-  } catch (err) {
-    console.error('[warehouse] fraud lead meta failed', err)
-  }
-
-  const leads: WarehouseFraudLead[] = []
-  for (const row of fraudRows) {
-    const key = `${row.workspaceId}:${row.sessionId}`
-    const fraud = assessmentByKey.get(key)
-    if (!fraud) continue
-    const base = leadRowFromSignal(row, metaByKey.get(key), fraud)
-    leads.push({
-      ...base,
-      fraud,
-    })
-  }
-
-  leads.sort((a, b) => {
-    const at = a.createdAt || ''
-    const bt = b.createdAt || ''
-    if (at === bt) return a.sessionId.localeCompare(b.sessionId)
-    return bt.localeCompare(at)
-  })
-  return leads.slice(0, FRAUD_LEADS_LIMIT)
+function scheduleWarehouseLeadRescore(
+  existingRisk: Map<string, { modelVersion: string }>,
+): void {
+  void (async () => {
+    try {
+      const leadRows = await loadLeadSessionSignals()
+      const needsScore = leadRows.filter((row) => {
+        const key = `${row.workspaceId}:${row.sessionId}`
+        const existing = existingRisk.get(key)
+        return !(existing && existing.modelVersion === LEAD_FRAUD_MODEL_VERSION)
+      })
+      if (needsScore.length === 0) return
+      const classified = classifyLeadSessionRows(leadRows)
+      const needKeys = new Set(
+        needsScore.map((row) => `${row.workspaceId}:${row.sessionId}`),
+      )
+      const toPersist = classified.toPersist.filter((item) =>
+        needKeys.has(`${item.workspaceId}:${item.sessionId}`),
+      )
+      if (toPersist.length > 0) {
+        await upsertLeadRiskBatch(toPersist)
+      }
+    } catch (err) {
+      console.error('[warehouse] background lead rescore failed', err)
+    }
+  })()
 }
 
 function normalizeFraudReason(reason: string): string {
@@ -499,13 +490,9 @@ function parseReasonsJson(raw: unknown): string[] {
   return []
 }
 
-/**
- * Classify every lead/form-submit session with the same field-signal scorer
- * Data Leads uses, so Legit/Fraud totals and per-lead badges stay aligned.
- */
+
 async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
   const ch = getClickHouseClient()
-  const leadRows = await loadLeadSessionSignals()
 
   const riskRes = await ch.query({
     format: 'JSON',
@@ -577,68 +564,25 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
   const emailByKey = new Map<string, string>()
   const assessmentByKey = new Map<string, LeadFraudAssessment>()
   const fraudReasonCounts = new Map<string, number>()
-  const needsScore = leadRows.filter((row) => {
-    const key = `${row.workspaceId}:${row.sessionId}`
-    const existing = existingRisk.get(key)
-    return !(existing && existing.modelVersion === LEAD_FRAUD_MODEL_VERSION)
-  })
 
-  function addFraudReasons(reasons: string[]) {
-    for (const reason of reasons) {
-      const key = normalizeFraudReason(reason)
-      if (!key) continue
-      fraudReasonCounts.set(key, (fraudReasonCounts.get(key) ?? 0) + 1)
-    }
-  }
-
-  for (const row of leadRows) {
-    const key = `${row.workspaceId}:${row.sessionId}`
-    const existing = existingRisk.get(key)
-    if (existing && existing.modelVersion === LEAD_FRAUD_MODEL_VERSION) {
-      labelByKey.set(key, existing.label)
-      assessmentByKey.set(key, existing.assessment)
-      const email =
-        existing.email.includes('@')
-          ? existing.email
-          : pickLeadEmail(
-              normalizeLeadFields(extractRawFieldMap(row.props || '{}')),
-            )
-      if (email.includes('@')) emailByKey.set(key, email)
-      if (existing.label === 'fraud') addFraudReasons(existing.assessment.reasons)
-    }
-  }
-
-  const toPersist: Array<{
-    workspaceId: string
-    sessionId: string
-    assessment: LeadFraudAssessment
-    features: LeadFraudFeatures
-  }> = []
-
-  if (needsScore.length > 0) {
-    const classified = classifyLeadSessionRows(leadRows)
-    const needKeys = new Set(
-      needsScore.map((row) => `${row.workspaceId}:${row.sessionId}`),
-    )
-    for (const item of classified.toPersist) {
-      const key = `${item.workspaceId}:${item.sessionId}`
-      if (!needKeys.has(key)) continue
-      labelByKey.set(key, item.assessment.label)
-      assessmentByKey.set(key, item.assessment)
-      if (item.features.email.includes('@')) {
-        emailByKey.set(key, item.features.email)
+  for (const [key, existing] of existingRisk) {
+    if (existing.modelVersion !== LEAD_FRAUD_MODEL_VERSION) continue
+    labelByKey.set(key, existing.label)
+    assessmentByKey.set(key, existing.assessment)
+    if (existing.email.includes('@')) emailByKey.set(key, existing.email)
+    if (existing.label === 'fraud') {
+      for (const reason of existing.assessment.reasons) {
+        const normalized = normalizeFraudReason(reason)
+        if (!normalized) continue
+        fraudReasonCounts.set(
+          normalized,
+          (fraudReasonCounts.get(normalized) ?? 0) + 1,
+        )
       }
-      if (item.assessment.label === 'fraud') {
-        addFraudReasons(item.assessment.reasons)
-      }
-      toPersist.push(item)
     }
   }
 
-  if (toPersist.length > 0) {
-    void upsertLeadRiskBatch(toPersist).catch(() => {
-    })
-  }
+  scheduleWarehouseLeadRescore(existingRisk)
 
   let legit = 0
   let fraud = 0
@@ -677,22 +621,17 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
     .slice(0, 25)
 
-  const scoredLeads = legit + fraud
-  const failed = Math.max(0, needsScore.length - toPersist.length)
-  const [fraudLeads, shortcutLeads] = await Promise.all([
-    buildFraudLeads(leadRows, assessmentByKey),
-    buildShortcutLeads(assessmentByKey),
-  ])
+  const shortcutLeads = await buildShortcutLeads(assessmentByKey)
   return {
     risk: {
       legit,
       fraud,
-      unscoredFormSubmits: failed,
+      unscoredFormSubmits: 0,
     },
-    scoredLeads,
+    scoredLeads: legit + fraud,
     emailDomains,
     fraudReasons,
-    fraudLeads,
+    fraudLeads: [],
     shortcutLeads,
   }
 }
@@ -736,6 +675,16 @@ function emptySummary(generatedAt: string): WarehouseSummary {
 export async function getWarehouseSummary(): Promise<WarehouseSummary> {
   const generatedAt = new Date().toISOString()
 
+  const cached = await readAnalyticsCache<WarehouseSummary>(
+    WAREHOUSE_SUMMARY_CACHE_KEY,
+  )
+  if (cached) {
+    return {
+      ...cached,
+      generatedAt: cached.generatedAt || generatedAt,
+    }
+  }
+
   if (shouldSkipClickHouse()) {
     const pg = await loadPostgresTotals().catch(() => ({
       landingPages: 0,
@@ -750,25 +699,21 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
   }
 
   const clickList = CLICK_EVENT_NAMES.map((name) => `'${name}'`).join(', ')
+  const clickSet = new Set<string>(CLICK_EVENT_NAMES)
 
-  // Score leads first so a slow CH inventory query cannot starve classification.
-  let leadInsights: WarehouseLeadInsights
-  try {
-    leadInsights = await loadWarehouseLeadInsights()
-  } catch (err) {
-    console.error('[warehouse] lead insights failed', err)
-    leadInsights = {
-      risk: { legit: 0, fraud: 0, unscoredFormSubmits: 0 },
-      scoredLeads: 0,
-      emailDomains: [],
-      fraudReasons: [],
-      fraudLeads: [],
-      shortcutLeads: [],
-    }
-  }
-
-  const [totalsRows, volumeRows, eventNameRows, clickRows, shortcutRows, pg] =
+  const [leadInsightsResult, inventoryResult, eventNameRows, pg] =
     await Promise.all([
+      loadWarehouseLeadInsights().catch((err) => {
+        console.error('[warehouse] lead insights failed', err)
+        return {
+          risk: { legit: 0, fraud: 0, unscoredFormSubmits: 0 },
+          scoredLeads: 0,
+          emailDomains: [] as WarehouseDomainCount[],
+          fraudReasons: [] as WarehouseNameCount[],
+          fraudLeads: [] as WarehouseFraudLead[],
+          shortcutLeads: [] as WarehouseShortcutLead[],
+        } satisfies WarehouseLeadInsights
+      }),
       queryJson<{
         events: string | number
         sessions: string | number
@@ -778,6 +723,12 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
         form_submits: string | number
         form_successes: string | number
         click_events: string | number
+        last_hour: string | number
+        last_24h: string | number
+        last_7d: string | number
+        form_sessions: string | number
+        copy_sessions: string | number
+        paste_sessions: string | number
       }>(`
       SELECT
         count() AS events,
@@ -787,53 +738,25 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
         countIf(event_name = 'form_start') AS form_starts,
         countIf(event_name = 'form_submit') AS form_submits,
         countIf(event_name = 'form_success') AS form_successes,
-        countIf(event_name IN (${clickList})) AS click_events
-      FROM ${CLICKHOUSE_EVENTS_TABLE}
-    `),
-      queryJson<{
-        last_hour: string | number
-        last_24h: string | number
-        last_7d: string | number
-      }>(`
-      SELECT
+        countIf(event_name IN (${clickList})) AS click_events,
         countIf(created_at >= now() - INTERVAL 1 HOUR) AS last_hour,
         countIf(created_at >= now() - INTERVAL 24 HOUR) AS last_24h,
-        countIf(created_at >= now() - INTERVAL 7 DAY) AS last_7d
-      FROM ${CLICKHOUSE_EVENTS_TABLE}
-    `),
-      queryJson<{
-        event_name: string
-        c: string | number
-      }>(`
-      SELECT
-        event_name,
-        count() AS c
-      FROM ${CLICKHOUSE_EVENTS_TABLE}
-      GROUP BY event_name
-      ORDER BY c DESC
-    `),
-      queryJson<{
-        event_name: string
-        c: string | number
-      }>(`
-      SELECT
-        event_name,
-        count() AS c
-      FROM ${CLICKHOUSE_EVENTS_TABLE}
-      WHERE event_name IN (${clickList})
-      GROUP BY event_name
-      ORDER BY c DESC
-    `),
-      queryJson<{
-        form_sessions: string | number
-        copy_sessions: string | number
-        paste_sessions: string | number
-      }>(`
-      SELECT
+        countIf(created_at >= now() - INTERVAL 7 DAY) AS last_7d,
         uniqExactIf(session_id, event_name = 'form_start') AS form_sessions,
         uniqExactIf(session_id, event_name = 'form_shortcut_copy') AS copy_sessions,
         uniqExactIf(session_id, event_name = 'form_shortcut_paste') AS paste_sessions
       FROM ${CLICKHOUSE_EVENTS_TABLE}
+    `),
+      queryJson<{
+        event_name: string
+        c: string | number
+      }>(`
+      SELECT
+        event_name,
+        count() AS c
+      FROM ${CLICKHOUSE_EVENTS_TABLE}
+      GROUP BY event_name
+      ORDER BY c DESC
     `),
       loadPostgresTotals().catch(() => ({
         landingPages: 0,
@@ -842,41 +765,42 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
       })),
     ])
 
-  const totalsRow = totalsRows[0]
-  const volumeRow = volumeRows[0]
-  const shortcutRow = shortcutRows[0]
-  const formSessions = n(shortcutRow?.form_sessions)
+  const leadInsights = leadInsightsResult
+  const inventory = inventoryResult[0]
+  const formSessions = n(inventory?.form_sessions)
   const shortcutCounts: Record<string, number> = {
-    form_shortcut_copy: n(shortcutRow?.copy_sessions),
-    form_shortcut_paste: n(shortcutRow?.paste_sessions),
+    form_shortcut_copy: n(inventory?.copy_sessions),
+    form_shortcut_paste: n(inventory?.paste_sessions),
   }
+  const eventsByName = eventNameRows.map((row) => ({
+    name: row.event_name || '(empty)',
+    count: n(row.c),
+  }))
+  const clicksByName = eventsByName.filter((row) => clickSet.has(row.name))
 
-  return {
+  const summary: WarehouseSummary = {
     totals: {
-      events: n(totalsRow?.events),
-      sessions: n(totalsRow?.sessions),
-      visitors: n(totalsRow?.visitors),
-      workspacesWithEvents: n(totalsRow?.workspaces_with_events),
-      formStarts: n(totalsRow?.form_starts),
-      formSubmits: n(totalsRow?.form_submits),
-      formSuccesses: n(totalsRow?.form_successes),
+      events: n(inventory?.events),
+      sessions: n(inventory?.sessions),
+      visitors: n(inventory?.visitors),
+      workspacesWithEvents: n(inventory?.workspaces_with_events),
+      formStarts: n(inventory?.form_starts),
+      formSubmits: n(inventory?.form_submits),
+      formSuccesses: n(inventory?.form_successes),
       scoredLeads: leadInsights.scoredLeads,
       landingPages: pg.landingPages,
       workspaces: pg.workspaces,
       users: pg.users,
     },
     volume: {
-      lastHour: n(volumeRow?.last_hour),
-      last24h: n(volumeRow?.last_24h),
-      last7d: n(volumeRow?.last_7d),
+      lastHour: n(inventory?.last_hour),
+      last24h: n(inventory?.last_24h),
+      last7d: n(inventory?.last_7d),
     },
     risk: leadInsights.risk,
     clicks: {
-      total: n(totalsRow?.click_events),
-      byName: clickRows.map((row) => ({
-        name: row.event_name,
-        count: n(row.c),
-      })),
+      total: n(inventory?.click_events),
+      byName: clicksByName,
     },
     shortcuts: {
       formSessions,
@@ -890,14 +814,18 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
         }
       }),
     },
-    eventsByName: eventNameRows.map((row) => ({
-      name: row.event_name || '(empty)',
-      count: n(row.c),
-    })),
+    eventsByName,
     emailDomains: leadInsights.emailDomains,
     fraudReasons: leadInsights.fraudReasons,
     fraudLeads: leadInsights.fraudLeads,
     shortcutLeads: leadInsights.shortcutLeads,
     generatedAt,
   }
+
+  void writeAnalyticsCache(
+    WAREHOUSE_SUMMARY_CACHE_KEY,
+    summary,
+    WAREHOUSE_SUMMARY_CACHE_TTL_SEC,
+  )
+  return summary
 }

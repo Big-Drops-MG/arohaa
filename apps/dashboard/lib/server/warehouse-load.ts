@@ -181,7 +181,7 @@ export async function loadWarehouseDashboardData(): Promise<WarehouseDashboardDa
     const response = await fetch(`${apiBase}/v1/warehouse/summary`, {
       cache: "no-store",
       headers,
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(45_000),
     })
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
