@@ -10,6 +10,8 @@ describe("allowed SDK event names", () => {
     expect(isAllowedSdkEventName("page_leave")).toBe(true)
     expect(isAllowedSdkEventName("form_success")).toBe(true)
     expect(isAllowedSdkEventName("form_field_abandon")).toBe(true)
+    expect(isAllowedSdkEventName("form_shortcut_copy")).toBe(true)
+    expect(isAllowedSdkEventName("form_shortcut_paste")).toBe(true)
     expect(isAllowedSdkEventName("heatmap_click")).toBe(true)
     expect(isAllowedSdkEventName("_fi")).toBe(true)
   })

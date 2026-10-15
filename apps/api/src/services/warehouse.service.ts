@@ -41,6 +41,13 @@ export type WarehouseDomainCount = {
   fraud: number
 }
 
+export type WarehouseShortcutCount = {
+  name: string
+  label: string
+  sessions: number
+  percent: number
+}
+
 export type WarehouseSummary = {
   totals: {
     events: number
@@ -69,9 +76,12 @@ export type WarehouseSummary = {
     total: number
     byName: WarehouseNameCount[]
   }
+  shortcuts: {
+    formSessions: number
+    byName: WarehouseShortcutCount[]
+  }
   eventsByName: WarehouseNameCount[]
   emailDomains: WarehouseDomainCount[]
-  /** Top signals that caused Fraud classifications across leads. */
   fraudReasons: WarehouseNameCount[]
   generatedAt: string
 }
@@ -83,6 +93,22 @@ const CLICK_EVENT_NAMES = [
   'call_click',
   'service_click',
 ] as const
+
+const SHORTCUT_ROWS = [
+  {
+    name: 'form_shortcut_copy',
+    label: 'Copy (Ctrl+C)',
+  },
+  {
+    name: 'form_shortcut_paste',
+    label: 'Paste (Ctrl+V)',
+  },
+] as const
+
+function shortcutPercent(sessions: number, formSessions: number): number {
+  if (formSessions <= 0 || sessions <= 0) return 0
+  return Math.round((sessions / formSessions) * 1000) / 10
+}
 
 function n(value: unknown): number {
   const num = Number(value)
@@ -352,6 +378,15 @@ function emptySummary(generatedAt: string): WarehouseSummary {
     volume: { lastHour: 0, last24h: 0, last7d: 0 },
     risk: { legit: 0, fraud: 0, unscoredFormSubmits: 0 },
     clicks: { total: 0, byName: [] },
+    shortcuts: {
+      formSessions: 0,
+      byName: SHORTCUT_ROWS.map((row) => ({
+        name: row.name,
+        label: row.label,
+        sessions: 0,
+        percent: 0,
+      })),
+    },
     eventsByName: [],
     emailDomains: [],
     fraudReasons: [],
@@ -391,7 +426,7 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
     }
   }
 
-  const [totalsRows, volumeRows, eventNameRows, clickRows, pg] =
+  const [totalsRows, volumeRows, eventNameRows, clickRows, shortcutRows, pg] =
     await Promise.all([
       queryJson<{
         events: string | number
@@ -448,6 +483,17 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
       GROUP BY event_name
       ORDER BY c DESC
     `),
+      queryJson<{
+        form_sessions: string | number
+        copy_sessions: string | number
+        paste_sessions: string | number
+      }>(`
+      SELECT
+        uniqExactIf(session_id, event_name = 'form_start') AS form_sessions,
+        uniqExactIf(session_id, event_name = 'form_shortcut_copy') AS copy_sessions,
+        uniqExactIf(session_id, event_name = 'form_shortcut_paste') AS paste_sessions
+      FROM ${CLICKHOUSE_EVENTS_TABLE}
+    `),
       loadPostgresTotals().catch(() => ({
         landingPages: 0,
         workspaces: 0,
@@ -457,6 +503,12 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
 
   const totalsRow = totalsRows[0]
   const volumeRow = volumeRows[0]
+  const shortcutRow = shortcutRows[0]
+  const formSessions = n(shortcutRow?.form_sessions)
+  const shortcutCounts: Record<string, number> = {
+    form_shortcut_copy: n(shortcutRow?.copy_sessions),
+    form_shortcut_paste: n(shortcutRow?.paste_sessions),
+  }
 
   return {
     totals: {
@@ -484,6 +536,18 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
         name: row.event_name,
         count: n(row.c),
       })),
+    },
+    shortcuts: {
+      formSessions,
+      byName: SHORTCUT_ROWS.map((row) => {
+        const sessions = shortcutCounts[row.name] ?? 0
+        return {
+          name: row.name,
+          label: row.label,
+          sessions,
+          percent: shortcutPercent(sessions, formSessions),
+        }
+      }),
     },
     eventsByName: eventNameRows.map((row) => ({
       name: row.event_name || '(empty)',
