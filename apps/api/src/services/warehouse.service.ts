@@ -13,6 +13,11 @@ import {
 import { LEAD_FRAUD_MODEL_VERSION } from '../lib/lead-fraud/constants.js'
 import { emailDomain } from '../lib/lead-fraud/disposable-domains.js'
 import {
+  decryptJsonBlob,
+  FI_EVENT_NAME,
+  OPAQUE_PROP_KEY,
+} from '../lib/field-blob.js'
+import {
   extractRawFieldMap,
   type LeadSessionSignalRow,
 } from '../lib/lead-fraud/field-signals.js'
@@ -134,8 +139,16 @@ export type WarehouseSummary = {
 }
 
 const SHORTCUT_LEADS_LIMIT = 100
-const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v2'
+const FI_CLIPBOARD_SCAN_LIMIT = 6_000
+const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v3'
 const WAREHOUSE_SUMMARY_CACHE_TTL_SEC = 90
+
+type ShortcutSessionFlag = {
+  workspaceId: string
+  sessionId: string
+  usedCopy: boolean
+  usedPaste: boolean
+}
 
 const CLICK_EVENT_NAMES = [
   'button_click',
@@ -213,6 +226,8 @@ type WarehouseLeadInsights = {
   fraudReasons: WarehouseNameCount[]
   fraudLeads: WarehouseFraudLead[]
   shortcutLeads: WarehouseShortcutLead[]
+  shortcutCopySessions: number
+  shortcutPasteSessions: number
 }
 
 type SessionMeta = {
@@ -304,14 +319,42 @@ async function loadSessionMetaByKey(
   return out
 }
 
-async function loadShortcutSessionFlags(): Promise<
-  Array<{
-    workspaceId: string
-    sessionId: string
-    usedCopy: boolean
-    usedPaste: boolean
-  }>
-> {
+function detectClipboardFromFiMessage(message: string): {
+  usedCopy: boolean
+  usedPaste: boolean
+} {
+  const lower = message.toLowerCase()
+  const usedPaste =
+    lower.includes("pressed 'control+v'") ||
+    lower.includes("pressed 'meta+v'") ||
+    lower.includes("pressed 'control+shift+v'") ||
+    lower.includes("pressed 'meta+shift+v'") ||
+    lower.includes("pressed 'shift+insert'") ||
+    lower.startsWith('pasted') ||
+    lower.includes('pasted in')
+  const usedCopy =
+    lower.includes("pressed 'control+c'") ||
+    lower.includes("pressed 'meta+c'") ||
+    lower.startsWith('copied') ||
+    lower.includes('copied in')
+  return { usedCopy, usedPaste }
+}
+
+function mergeShortcutFlags(
+  into: Map<string, ShortcutSessionFlag>,
+  flag: ShortcutSessionFlag,
+): void {
+  const key = `${flag.workspaceId}:${flag.sessionId}`
+  const existing = into.get(key)
+  if (!existing) {
+    into.set(key, { ...flag })
+    return
+  }
+  existing.usedCopy = existing.usedCopy || flag.usedCopy
+  existing.usedPaste = existing.usedPaste || flag.usedPaste
+}
+
+async function loadFirstClassShortcutFlags(): Promise<ShortcutSessionFlag[]> {
   const rows = await queryJson<{
     workspace_id: string
     session_id: string
@@ -331,12 +374,7 @@ async function loadShortcutSessionFlags(): Promise<
     LIMIT ${SHORTCUT_LEADS_LIMIT * 3}
   `)
 
-  const out: Array<{
-    workspaceId: string
-    sessionId: string
-    usedCopy: boolean
-    usedPaste: boolean
-  }> = []
+  const out: ShortcutSessionFlag[] = []
   for (const row of rows) {
     const workspaceId = String(row.workspace_id || '').trim()
     const sessionId = String(row.session_id || '').trim()
@@ -349,6 +387,109 @@ async function loadShortcutSessionFlags(): Promise<
     })
   }
   return out
+}
+
+
+async function loadFiClipboardShortcutFlags(): Promise<ShortcutSessionFlag[]> {
+  const ch = getClickHouseClient()
+  const res = await ch.query({
+    format: 'JSON',
+    query_params: { lim: FI_CLIPBOARD_SCAN_LIMIT, ev: FI_EVENT_NAME },
+    query: `
+      SELECT
+        toString(workspace_id) AS workspace_id,
+        session_id,
+        properties
+      FROM ${CLICKHOUSE_EVENTS_TABLE}
+      WHERE event_name = {ev:String}
+        AND session_id != ''
+        AND created_at >= now() - INTERVAL 180 DAY
+      ORDER BY created_at DESC
+      LIMIT {lim:UInt32}
+    `,
+  })
+  const rows =
+    (
+      (await res.json()) as CHJson<{
+        workspace_id: string
+        session_id: string
+        properties: string
+      }>
+    ).data ?? []
+
+  const byKey = new Map<string, ShortcutSessionFlag>()
+  for (const row of rows) {
+    const workspaceId = String(row.workspace_id || '').trim()
+    const sessionId = String(row.session_id || '').trim()
+    if (!workspaceId || !sessionId) continue
+    try {
+      const props = JSON.parse(row.properties || '{}') as Record<string, unknown>
+      const blob = props[OPAQUE_PROP_KEY]
+      if (typeof blob !== 'string' || !blob) continue
+      const decrypted = decryptJsonBlob(blob)
+      if (!decrypted || typeof decrypted !== 'object' || Array.isArray(decrypted)) {
+        continue
+      }
+      const items = Array.isArray((decrypted as { i?: unknown }).i)
+        ? ((decrypted as { i: unknown[] }).i)
+        : []
+      let usedCopy = false
+      let usedPaste = false
+      for (const item of items) {
+        if (!item || typeof item !== 'object') continue
+        const message = (item as { m?: unknown }).m
+        if (typeof message !== 'string' || !message) continue
+        const hit = detectClipboardFromFiMessage(message)
+        usedCopy = usedCopy || hit.usedCopy
+        usedPaste = usedPaste || hit.usedPaste
+        if (usedCopy && usedPaste) break
+      }
+      if (!usedCopy && !usedPaste) continue
+      mergeShortcutFlags(byKey, {
+        workspaceId,
+        sessionId,
+        usedCopy,
+        usedPaste,
+      })
+    } catch {
+      /* skip undecryptable batch */
+    }
+  }
+  return [...byKey.values()]
+}
+
+async function loadShortcutSessionFlags(): Promise<{
+  flags: ShortcutSessionFlag[]
+  copySessions: number
+  pasteSessions: number
+}> {
+  const [firstClass, fromFi] = await Promise.all([
+    loadFirstClassShortcutFlags().catch((err) => {
+      console.error('[warehouse] first-class shortcut sessions failed', err)
+      return [] as ShortcutSessionFlag[]
+    }),
+    loadFiClipboardShortcutFlags().catch((err) => {
+      console.error('[warehouse] FI clipboard scan failed', err)
+      return [] as ShortcutSessionFlag[]
+    }),
+  ])
+
+  const byKey = new Map<string, ShortcutSessionFlag>()
+  for (const flag of [...fromFi, ...firstClass]) {
+    mergeShortcutFlags(byKey, flag)
+  }
+
+  let copySessions = 0
+  let pasteSessions = 0
+  for (const flag of byKey.values()) {
+    if (flag.usedCopy) copySessions += 1
+    if (flag.usedPaste) pasteSessions += 1
+  }
+
+  const flags = [...byKey.values()].sort((a, b) =>
+    a.sessionId.localeCompare(b.sessionId),
+  )
+  return { flags, copySessions, pasteSessions }
 }
 
 function leadRowFromSignal(
@@ -382,22 +523,31 @@ function leadRowFromSignal(
 
 async function buildShortcutLeads(
   assessmentByKey: Map<string, LeadFraudAssessment>,
-): Promise<WarehouseShortcutLead[]> {
-  let flags: Array<{
-    workspaceId: string
-    sessionId: string
-    usedCopy: boolean
-    usedPaste: boolean
-  }> = []
+): Promise<{
+  leads: WarehouseShortcutLead[]
+  copySessions: number
+  pasteSessions: number
+}> {
+  let discovery = {
+    flags: [] as ShortcutSessionFlag[],
+    copySessions: 0,
+    pasteSessions: 0,
+  }
   try {
-    flags = await loadShortcutSessionFlags()
+    discovery = await loadShortcutSessionFlags()
   } catch (err) {
     console.error('[warehouse] shortcut sessions failed', err)
-    return []
+    return { leads: [], copySessions: 0, pasteSessions: 0 }
   }
-  if (flags.length === 0) return []
+  if (discovery.flags.length === 0) {
+    return {
+      leads: [],
+      copySessions: discovery.copySessions,
+      pasteSessions: discovery.pasteSessions,
+    }
+  }
 
-  const sessionIds = flags.map((row) => row.sessionId)
+  const sessionIds = discovery.flags.map((row) => row.sessionId)
   const [leadRows, metaByKey] = await Promise.all([
     loadLeadSessionSignals({ sessionIds }),
     loadSessionMetaByKey(sessionIds).catch((err) => {
@@ -412,7 +562,7 @@ async function buildShortcutLeads(
   }
 
   const leads: WarehouseShortcutLead[] = []
-  for (const flag of flags) {
+  for (const flag of discovery.flags) {
     const key = `${flag.workspaceId}:${flag.sessionId}`
     const row = leadByKey.get(key)
     if (!row) continue
@@ -435,7 +585,11 @@ async function buildShortcutLeads(
     if (at === bt) return a.sessionId.localeCompare(b.sessionId)
     return bt.localeCompare(at)
   })
-  return leads
+  return {
+    leads,
+    copySessions: discovery.copySessions,
+    pasteSessions: discovery.pasteSessions,
+  }
 }
 
 
@@ -621,7 +775,7 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
     .slice(0, 25)
 
-  const shortcutLeads = await buildShortcutLeads(assessmentByKey)
+  const shortcutDiscovery = await buildShortcutLeads(assessmentByKey)
   return {
     risk: {
       legit,
@@ -632,7 +786,9 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
     emailDomains,
     fraudReasons,
     fraudLeads: [],
-    shortcutLeads,
+    shortcutLeads: shortcutDiscovery.leads,
+    shortcutCopySessions: shortcutDiscovery.copySessions,
+    shortcutPasteSessions: shortcutDiscovery.pasteSessions,
   }
 }
 
@@ -672,6 +828,19 @@ function emptySummary(generatedAt: string): WarehouseSummary {
   }
 }
 
+function emptyLeadInsights(): WarehouseLeadInsights {
+  return {
+    risk: { legit: 0, fraud: 0, unscoredFormSubmits: 0 },
+    scoredLeads: 0,
+    emailDomains: [],
+    fraudReasons: [],
+    fraudLeads: [],
+    shortcutLeads: [],
+    shortcutCopySessions: 0,
+    shortcutPasteSessions: 0,
+  }
+}
+
 export async function getWarehouseSummary(): Promise<WarehouseSummary> {
   const generatedAt = new Date().toISOString()
 
@@ -705,14 +874,7 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
     await Promise.all([
       loadWarehouseLeadInsights().catch((err) => {
         console.error('[warehouse] lead insights failed', err)
-        return {
-          risk: { legit: 0, fraud: 0, unscoredFormSubmits: 0 },
-          scoredLeads: 0,
-          emailDomains: [] as WarehouseDomainCount[],
-          fraudReasons: [] as WarehouseNameCount[],
-          fraudLeads: [] as WarehouseFraudLead[],
-          shortcutLeads: [] as WarehouseShortcutLead[],
-        } satisfies WarehouseLeadInsights
+        return emptyLeadInsights()
       }),
       queryJson<{
         events: string | number
@@ -727,8 +889,6 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
         last_24h: string | number
         last_7d: string | number
         form_sessions: string | number
-        copy_sessions: string | number
-        paste_sessions: string | number
       }>(`
       SELECT
         count() AS events,
@@ -742,9 +902,7 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
         countIf(created_at >= now() - INTERVAL 1 HOUR) AS last_hour,
         countIf(created_at >= now() - INTERVAL 24 HOUR) AS last_24h,
         countIf(created_at >= now() - INTERVAL 7 DAY) AS last_7d,
-        uniqExactIf(session_id, event_name = 'form_start') AS form_sessions,
-        uniqExactIf(session_id, event_name = 'form_shortcut_copy') AS copy_sessions,
-        uniqExactIf(session_id, event_name = 'form_shortcut_paste') AS paste_sessions
+        uniqExactIf(session_id, event_name = 'form_start') AS form_sessions
       FROM ${CLICKHOUSE_EVENTS_TABLE}
     `),
       queryJson<{
@@ -769,8 +927,8 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
   const inventory = inventoryResult[0]
   const formSessions = n(inventory?.form_sessions)
   const shortcutCounts: Record<string, number> = {
-    form_shortcut_copy: n(inventory?.copy_sessions),
-    form_shortcut_paste: n(inventory?.paste_sessions),
+    form_shortcut_copy: leadInsights.shortcutCopySessions,
+    form_shortcut_paste: leadInsights.shortcutPasteSessions,
   }
   const eventsByName = eventNameRows.map((row) => ({
     name: row.event_name || '(empty)',
