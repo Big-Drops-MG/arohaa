@@ -10,10 +10,9 @@ import { getClickHouseClient } from './clickhouse.service.js'
 
 type CHJson<T> = { data: T[] }
 
-/** Distinct UTM values change slowly; avoid re-scanning 90 days on every open. */
 const UTM_DISCOVERED_CACHE_TTL_SEC = 600
-/** Cap payload size so the UTM screen does not download unbounded DISTINCT lists. */
-const UTM_DISCOVERED_MAX_ROWS = 2_000
+
+const UTM_DISCOVERED_MAX_PER_KEY = 1_000
 
 export type DiscoveredUtmParam = {
   key: string
@@ -23,7 +22,7 @@ export type DiscoveredUtmParam = {
 export async function getDiscoveredUtmParams(
   workspaceId: string,
 ): Promise<DiscoveredUtmParam[]> {
-  const cacheKey = `analytics:utm-discovered:v2:${workspaceId}`
+  const cacheKey = `analytics:utm-discovered:v3:${workspaceId}`
   const cached = await readAnalyticsCache<DiscoveredUtmParam[]>(cacheKey)
   if (cached) return cached
 
@@ -32,27 +31,37 @@ export async function getDiscoveredUtmParams(
     format: 'JSON',
     query_params: {
       wid: workspaceId,
-      max_rows: UTM_DISCOVERED_MAX_ROWS,
+      per_key: UTM_DISCOVERED_MAX_PER_KEY,
     },
     query: `
       SELECT key, value
       FROM (
-        SELECT 'utm_source' AS key, utm_source AS value
+        SELECT
+          'utm_source' AS key,
+          utm_source AS value
         FROM events_raw
         WHERE workspace_id = {wid:UUID}
           AND utm_source != ''
           AND created_at >= now() - INTERVAL 90 DAY
         GROUP BY utm_source
-        UNION ALL
-        SELECT 'utm_s1' AS key, utm_s1 AS value
+        ORDER BY count() DESC, utm_source ASC
+        LIMIT {per_key:UInt32}
+      )
+      UNION ALL
+      SELECT key, value
+      FROM (
+        SELECT
+          'utm_s1' AS key,
+          utm_s1 AS value
         FROM events_raw
         WHERE workspace_id = {wid:UUID}
           AND utm_s1 != ''
           AND created_at >= now() - INTERVAL 90 DAY
         GROUP BY utm_s1
+        ORDER BY count() DESC, utm_s1 ASC
+        LIMIT {per_key:UInt32}
       )
       ORDER BY key ASC, value ASC
-      LIMIT {max_rows:UInt32}
     `,
   })
 
