@@ -326,7 +326,7 @@ export function scoreLeadFraud(
       findings,
       'location_consistent',
       features.locationComparisonDetail ||
-        'Entered location agrees with IP estimate — not a verified-lead claim',
+        'Entered location agrees with IP estimate',
     )
   } else if (features.locationComparison === 'minor_difference') {
     pushFinding(

@@ -36,6 +36,7 @@ import {
 import type { LeadFraudAssessment } from '../lib/lead-fraud/types.js'
 import {
   getClickHouseClient,
+  LEAD_CONTACT_KEYS_TABLE,
   LEAD_RISK_TABLE,
   shouldSkipClickHouse,
 } from './clickhouse.service.js'
@@ -210,9 +211,10 @@ export type WarehousePartnerScorecard = {
 }
 
 const SHORTCUT_LEADS_LIMIT = 100
+const REVIEW_LEADS_LIMIT = 100
 const FI_CLIPBOARD_SESSION_LIMIT = 4_000
 const FI_CLIPBOARD_SCAN_LIMIT = 40_000
-const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v8'
+const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v9'
 const WAREHOUSE_SUMMARY_CACHE_TTL_SEC = 90
 
 type ShortcutSessionFlag = {
@@ -887,6 +889,234 @@ async function buildShortcutLeads(
   }
 }
 
+async function loadElevatedRiskSessionRefs(
+  limit: number,
+): Promise<Array<{ workspaceId: string; sessionId: string }>> {
+  const safeLimit = Math.max(1, Math.min(REVIEW_LEADS_LIMIT, Math.floor(limit)))
+  const ch = getClickHouseClient()
+  try {
+    const res = await ch.query({
+      format: 'JSON',
+      query: `
+        SELECT
+          toString(r.workspace_id) AS workspace_id,
+          r.session_id AS session_id
+        FROM ${LEAD_RISK_TABLE} AS r FINAL
+        WHERE r.label = 'fraud'
+          AND r.session_id != ''
+          AND (r.coverage = '' OR r.coverage != 'insufficient')
+        ORDER BY r.scored_at DESC
+        LIMIT ${safeLimit}
+      `,
+    })
+    const rows =
+      (
+        (await res.json()) as CHJson<{
+          workspace_id: string
+          session_id: string
+        }>
+      ).data ?? []
+    const out: Array<{ workspaceId: string; sessionId: string }> = []
+    for (const row of rows) {
+      const workspaceId = String(row.workspace_id || '').trim()
+      const sessionId = String(row.session_id || '').trim()
+      if (!workspaceId || !sessionId) continue
+      out.push({ workspaceId, sessionId })
+    }
+    return out
+  } catch (err) {
+    console.error('[warehouse] elevated-risk session load failed', err)
+    return []
+  }
+}
+
+async function loadRelatedSessionRefs(
+  limit: number,
+): Promise<Array<{ workspaceId: string; sessionId: string }>> {
+  const safeLimit = Math.max(1, Math.min(REVIEW_LEADS_LIMIT, Math.floor(limit)))
+  const ch = getClickHouseClient()
+  try {
+    const res = await ch.query({
+      format: 'JSON',
+      query: `
+        SELECT
+          k.landing_page_id AS workspace_id,
+          k.session_id AS session_id
+        FROM ${LEAD_CONTACT_KEYS_TABLE} AS k FINAL
+        INNER JOIN (
+          SELECT
+            g.tenant_workspace_id AS tenant_workspace_id,
+            g.key_type AS key_type,
+            g.key_hash AS key_hash
+          FROM ${LEAD_CONTACT_KEYS_TABLE} AS g FINAL
+          WHERE g.tenant_workspace_id != ''
+            AND g.key_hash != ''
+            AND g.session_id != ''
+          GROUP BY g.tenant_workspace_id, g.key_type, g.key_hash
+          HAVING uniqExact(g.session_id) >= 2
+        ) AS groups
+          ON k.tenant_workspace_id = groups.tenant_workspace_id
+         AND k.key_type = groups.key_type
+         AND k.key_hash = groups.key_hash
+        WHERE k.landing_page_id != ''
+          AND k.session_id != ''
+        GROUP BY k.landing_page_id, k.session_id
+        ORDER BY max(k.submitted_at) DESC
+        LIMIT ${safeLimit}
+      `,
+    })
+    const rows =
+      (
+        (await res.json()) as CHJson<{
+          workspace_id: string
+          session_id: string
+        }>
+      ).data ?? []
+    const out: Array<{ workspaceId: string; sessionId: string }> = []
+    for (const row of rows) {
+      const workspaceId = String(row.workspace_id || '').trim()
+      const sessionId = String(row.session_id || '').trim()
+      if (!workspaceId || !sessionId) continue
+      out.push({ workspaceId, sessionId })
+    }
+    return out
+  } catch (err) {
+    console.error('[warehouse] related-session load failed', err)
+    return []
+  }
+}
+
+async function loadRelatedCountBySession(
+  sessions: Array<{ workspaceId: string; sessionId: string }>,
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  const unique = new Map<string, { workspaceId: string; sessionId: string }>()
+  for (const s of sessions) {
+    const workspaceId = s.workspaceId.trim()
+    const sessionId = s.sessionId.trim()
+    if (!workspaceId || !sessionId) continue
+    unique.set(`${workspaceId}:${sessionId}`, { workspaceId, sessionId })
+  }
+  if (unique.size === 0) return out
+
+  const lpids = [...new Set([...unique.values()].map((s) => s.workspaceId))]
+  const sids = [...new Set([...unique.values()].map((s) => s.sessionId))]
+  const ch = getClickHouseClient()
+  try {
+    const res = await ch.query({
+      format: 'JSON',
+      query_params: { lpids, sids },
+      query: `
+        SELECT
+          seed.landing_page_id AS workspace_id,
+          seed.session_id AS session_id,
+          uniqExact(peer.session_id) AS related_count
+        FROM ${LEAD_CONTACT_KEYS_TABLE} AS seed FINAL
+        INNER JOIN ${LEAD_CONTACT_KEYS_TABLE} AS peer FINAL
+          ON seed.tenant_workspace_id = peer.tenant_workspace_id
+         AND seed.key_type = peer.key_type
+         AND seed.key_hash = peer.key_hash
+         AND peer.session_id != seed.session_id
+        WHERE seed.landing_page_id IN {lpids:Array(String)}
+          AND seed.session_id IN {sids:Array(String)}
+          AND seed.key_hash != ''
+        GROUP BY seed.landing_page_id, seed.session_id
+      `,
+    })
+    const rows =
+      (
+        (await res.json()) as CHJson<{
+          workspace_id: string
+          session_id: string
+          related_count: string | number
+        }>
+      ).data ?? []
+    for (const row of rows) {
+      const key = `${row.workspace_id}:${row.session_id}`
+      if (!unique.has(key)) continue
+      out.set(key, Number(row.related_count) || 0)
+    }
+  } catch (err) {
+    console.error('[warehouse] related-count load failed', err)
+  }
+  return out
+}
+
+async function expandReviewLeads(
+  seed: WarehouseShortcutLead[],
+  assessmentByKey: Map<string, LeadFraudAssessment>,
+): Promise<WarehouseShortcutLead[]> {
+  const byKey = new Map<string, WarehouseShortcutLead>()
+  for (const lead of seed) {
+    byKey.set(`${lead.workspaceId}:${lead.sessionId}`, lead)
+  }
+
+  const [elevatedRefs, relatedRefs] = await Promise.all([
+    loadElevatedRiskSessionRefs(REVIEW_LEADS_LIMIT),
+    loadRelatedSessionRefs(REVIEW_LEADS_LIMIT),
+  ])
+
+  const missing: Array<{ workspaceId: string; sessionId: string }> = []
+  for (const ref of [...elevatedRefs, ...relatedRefs]) {
+    const key = `${ref.workspaceId}:${ref.sessionId}`
+    if (byKey.has(key)) continue
+    missing.push(ref)
+  }
+
+  if (missing.length > 0) {
+    const sessionIds = missing.map((m) => m.sessionId)
+    const landingPageIds = missing.map((m) => m.workspaceId)
+    const [leadRows, metaByKey, lpMetaById] = await Promise.all([
+      loadLeadSessionSignals({ sessionIds }),
+      loadSessionMetaByKey(sessionIds).catch((err) => {
+        console.error('[warehouse] review lead meta failed', err)
+        return new Map<string, SessionMeta>()
+      }),
+      loadLandingPageMetaByIds(landingPageIds),
+    ])
+    const signalByKey = new Map<string, LeadSessionSignalRow>()
+    for (const row of leadRows) {
+      signalByKey.set(`${row.workspaceId}:${row.sessionId}`, row)
+    }
+    for (const ref of missing) {
+      const key = `${ref.workspaceId}:${ref.sessionId}`
+      if (byKey.has(key)) continue
+      const row = signalByKey.get(key)
+      if (!row) continue
+      const base = leadRowFromSignal(
+        row,
+        metaByKey.get(key),
+        assessmentByKey.get(key) ?? null,
+        lpMetaById.get(ref.workspaceId),
+      )
+      byKey.set(key, {
+        ...base,
+        usedCopy: false,
+        usedPaste: false,
+      })
+    }
+  }
+
+  const leads = [...byKey.values()]
+  const relatedByKey = await loadRelatedCountBySession(
+    leads.map((lead) => ({
+      workspaceId: lead.workspaceId,
+      sessionId: lead.sessionId,
+    })),
+  )
+  for (const lead of leads) {
+    lead.relatedCount =
+      relatedByKey.get(`${lead.workspaceId}:${lead.sessionId}`) ?? 0
+  }
+
+  leads.sort((a, b) => {
+    const at = a.createdAt || ''
+    const bt = b.createdAt || ''
+    if (at === bt) return a.sessionId.localeCompare(b.sessionId)
+    return bt.localeCompare(at)
+  })
+  return leads.slice(0, REVIEW_LEADS_LIMIT)
+}
 
 function scheduleWarehouseLeadRescore(
   existingRisk: Map<string, { modelVersion: string }>,
@@ -1114,8 +1344,12 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
     .slice(0, 25)
 
   const shortcutDiscovery = await buildShortcutLeads(assessmentByKey)
+  const reviewLeads = await expandReviewLeads(
+    shortcutDiscovery.leads,
+    assessmentByKey,
+  )
   const missingByWorkspace = new Map<string, string[]>()
-  for (const lead of shortcutDiscovery.leads) {
+  for (const lead of reviewLeads) {
     if (lead.fraud) continue
     const list = missingByWorkspace.get(lead.workspaceId) ?? []
     list.push(lead.sessionId)
@@ -1128,7 +1362,7 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
         sessionIds,
         concurrency: 4,
       })
-      for (const lead of shortcutDiscovery.leads) {
+      for (const lead of reviewLeads) {
         if (lead.workspaceId !== workspaceId || lead.fraud) continue
         const assessment = scored.get(lead.sessionId)
         if (assessment) {
@@ -1141,14 +1375,13 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
       }
     } catch (err) {
       console.error(
-        '[warehouse] shortcut lead scoring failed',
+        '[warehouse] review lead scoring failed',
         workspaceId,
         err,
       )
     }
   }
   let pendingReviews = 0
-  let relatedContactGroups = 0
   try {
     const { countPendingReviews } = await import(
       '../lib/lead-fraud/lead-review.js'
@@ -1157,25 +1390,23 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
   } catch {
     pendingReviews = 0
   }
-  try {
-    const { LEAD_CONTACT_KEYS_TABLE: keysTable } = await import(
-      './clickhouse.service.js'
-    )
-    const groupRes = await ch.query({
-      format: 'JSON',
-      query: `
-        SELECT uniqExact((tenant_workspace_id, key_type, key_hash)) AS groups
-        FROM ${keysTable} FINAL
-        WHERE tenant_workspace_id != ''
-      `,
-    })
-    relatedContactGroups =
-      Number(
-        ((await groupRes.json()) as CHJson<{ groups: string }>).data?.[0]
-          ?.groups ?? 0,
-      ) || 0
-  } catch {
-    relatedContactGroups = 0
+  let loadedElevated = 0
+  let loadedIncomplete = 0
+  let loadedRelated = 0
+  for (const lead of reviewLeads) {
+    const fraud = lead.fraud
+    if (
+      fraud?.scoreAvailable &&
+      (fraud.effectiveLabel === 'fraud' || fraud.label === 'fraud')
+    ) {
+      loadedElevated += 1
+    }
+    if (fraud?.coverage === 'insufficient' || fraud == null) {
+      loadedIncomplete += 1
+    }
+    if (lead.relatedCount > 0) {
+      loadedRelated += 1
+    }
   }
 
   return {
@@ -1188,17 +1419,17 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
       insufficientData,
     },
     quality: {
-      submissions: legit + fraud + insufficientData,
-      flagged: elevatedRisk,
-      incompleteAssessments: insufficientData,
+      submissions: reviewLeads.length,
+      flagged: loadedElevated,
+      incompleteAssessments: loadedIncomplete,
       pendingReviews,
-      relatedContactGroups,
+      relatedContactGroups: loadedRelated,
     },
     scoredLeads: legit + fraud + insufficientData,
     emailDomains,
     fraudReasons,
     fraudLeads: [],
-    shortcutLeads: shortcutDiscovery.leads,
+    shortcutLeads: reviewLeads,
     shortcutCopySessions: shortcutDiscovery.copySessions,
     shortcutPasteSessions: shortcutDiscovery.pasteSessions,
   }

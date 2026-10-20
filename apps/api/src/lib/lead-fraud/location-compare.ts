@@ -102,7 +102,7 @@ export function compareEnteredZipToIpGeo(input: {
     return {
       ...base,
       result: 'consistent',
-      detail: `Entered ZIP state ${entered.stateCode} agrees with IP geo state — not a verified-lead claim`,
+      detail: `Entered ZIP state ${entered.stateCode} agrees with IP geo state`,
     }
   }
 
