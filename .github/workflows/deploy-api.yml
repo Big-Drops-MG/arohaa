@@ -71,6 +71,12 @@ jobs:
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Log in to Amazon ECR Public (base image pulls)
+        uses: aws-actions/amazon-ecr-login@v2
+        continue-on-error: true
+        with:
+          registry-type: public
+
       - name: Build and push API image
         env:
           ECR_REGISTRY: 442042553666.dkr.ecr.us-east-1.amazonaws.com
