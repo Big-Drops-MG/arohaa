@@ -1,10 +1,19 @@
 export type LeadFraudLabel = 'legit' | 'fraud'
 
+export type LeadSignalCoverage = 'sufficient' | 'partial' | 'insufficient'
+
+export type LeadFraudFinding = {
+  code: string
+  detail: string
+}
+
 export type LeadFraudAssessment = {
-  /** Trust score 0–100 (higher = more legitimate). */
-  score: number
+  score: number | null
+  scoreAvailable: boolean
   label: LeadFraudLabel
   effectiveLabel: LeadFraudLabel
+  coverage: LeadSignalCoverage
+  findings: LeadFraudFinding[]
   reasons: string[]
   modelVersion: string
 }
@@ -16,6 +25,7 @@ export type LeadFraudFeatures = {
   email: string
   firstName: string
   lastName: string
+  formZipEntered: string
   zip: string
   geoZip: string
   stateField: string
@@ -30,11 +40,13 @@ export type LeadFraudFeatures = {
   pastedPhone: boolean
   hasFormStarted: boolean
   hasFieldInteraction: boolean
+  fiBehaviorKnown: boolean
   fingerprintSessionsSameDay: number
   fingerprintSubmits24h: number
   ipHashSubmits24h: number
   emailDomainSubmits24h: number
   fieldCount: number
+  velocityWindowKnown: boolean
 }
 
 export type LeadRiskRow = {
@@ -50,6 +62,11 @@ export type LeadRiskRow = {
   override_by: string
   override_at: string
   override_note: string
+  coverage?: string
+  findings_json?: string
+  tenant_workspace_id?: string
+  phone_hash?: string
+  email_hash?: string
 }
 
 export type FiLogItem = {

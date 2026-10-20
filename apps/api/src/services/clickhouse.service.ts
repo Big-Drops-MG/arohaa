@@ -33,7 +33,10 @@ CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_EVENTS_TABLE} (
     state LowCardinality(String) DEFAULT '',
     zipcode LowCardinality(String) DEFAULT '',
     geo_zipcode LowCardinality(String) DEFAULT '',
+    form_zip_entered LowCardinality(String) DEFAULT '',
     client_ip_hash String DEFAULT '',
+    phone_hash String DEFAULT '',
+    email_hash String DEFAULT '',
     state_code LowCardinality(String) DEFAULT '',
     latitude Float64 DEFAULT 0,
     longitude Float64 DEFAULT 0,
@@ -174,6 +177,18 @@ export async function ensureEventsTable(): Promise<void> {
   })
   await ch.command({
     query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS form_zip_entered LowCardinality(String) DEFAULT ''`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS phone_hash String DEFAULT ''`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS email_hash String DEFAULT ''`,
+  })
+  await ch.command({
+    query:
       `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS state_code LowCardinality(String) DEFAULT ''`,
   })
   await ch.command({
@@ -234,6 +249,8 @@ export async function ensureEventsTable(): Promise<void> {
 
   await ensureHeatmapSchema(ch)
   await ensureLeadRiskTable(ch)
+  await ensureLeadContactKeysTable(ch)
+  await ensureLeadReviewTable(ch)
   await rebuildDailyMetricsIfNeeded(ch)
 }
 
@@ -254,9 +271,75 @@ async function ensureLeadRiskTable(ch: ClickHouseClient): Promise<void> {
           override_label LowCardinality(String) DEFAULT '',
           override_by String DEFAULT '',
           override_at DateTime64(3, 'UTC') DEFAULT toDateTime64(0, 3, 'UTC'),
-          override_note String DEFAULT ''
+          override_note String DEFAULT '',
+          coverage LowCardinality(String) DEFAULT '',
+          findings_json String DEFAULT '',
+          tenant_workspace_id String DEFAULT '',
+          phone_hash String DEFAULT '',
+          email_hash String DEFAULT ''
       ) ENGINE = ReplacingMergeTree(scored_at)
       ORDER BY (workspace_id, session_id)
+    `,
+  })
+  for (const col of [
+    `ALTER TABLE ${LEAD_RISK_TABLE} ADD COLUMN IF NOT EXISTS coverage LowCardinality(String) DEFAULT ''`,
+    `ALTER TABLE ${LEAD_RISK_TABLE} ADD COLUMN IF NOT EXISTS findings_json String DEFAULT ''`,
+    `ALTER TABLE ${LEAD_RISK_TABLE} ADD COLUMN IF NOT EXISTS tenant_workspace_id String DEFAULT ''`,
+    `ALTER TABLE ${LEAD_RISK_TABLE} ADD COLUMN IF NOT EXISTS phone_hash String DEFAULT ''`,
+    `ALTER TABLE ${LEAD_RISK_TABLE} ADD COLUMN IF NOT EXISTS email_hash String DEFAULT ''`,
+  ]) {
+    await ch.command({ query: col })
+  }
+}
+
+export const LEAD_CONTACT_KEYS_TABLE = 'lead_contact_keys'
+export const LEAD_REVIEW_TABLE = 'lead_review'
+
+async function ensureLeadContactKeysTable(ch: ClickHouseClient): Promise<void> {
+  await ch.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS ${LEAD_CONTACT_KEYS_TABLE} (
+          tenant_workspace_id String,
+          key_type LowCardinality(String),
+          key_hash String,
+          landing_page_id String,
+          session_id String,
+          event_id String DEFAULT '',
+          utm_source String DEFAULT '',
+          utm_s1 String DEFAULT '',
+          utm_campaign String DEFAULT '',
+          submitted_at DateTime64(3, 'UTC') DEFAULT now64(3, 'UTC'),
+          first_name String DEFAULT '',
+          last_name String DEFAULT '',
+          email_masked String DEFAULT '',
+          zip String DEFAULT '',
+          norm_version LowCardinality(String) DEFAULT ''
+      ) ENGINE = ReplacingMergeTree(submitted_at)
+      ORDER BY (tenant_workspace_id, key_type, key_hash, landing_page_id, session_id)
+    `,
+  })
+}
+
+async function ensureLeadReviewTable(ch: ClickHouseClient): Promise<void> {
+  await ch.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS ${LEAD_REVIEW_TABLE} (
+          tenant_workspace_id String,
+          workspace_id UUID,
+          session_id String,
+          review_status LowCardinality(String) DEFAULT 'unreviewed',
+          decision LowCardinality(String) DEFAULT '',
+          decision_note String DEFAULT '',
+          decision_by String DEFAULT '',
+          decision_at DateTime64(3, 'UTC') DEFAULT toDateTime64(0, 3, 'UTC'),
+          call_outcome LowCardinality(String) DEFAULT '',
+          call_outcome_by String DEFAULT '',
+          call_outcome_at DateTime64(3, 'UTC') DEFAULT toDateTime64(0, 3, 'UTC'),
+          assessment_snapshot String DEFAULT '',
+          revision UInt32 DEFAULT 1,
+          updated_at DateTime64(3, 'UTC') DEFAULT now64(3, 'UTC')
+      ) ENGINE = ReplacingMergeTree(updated_at)
+      ORDER BY (tenant_workspace_id, workspace_id, session_id)
     `,
   })
 }

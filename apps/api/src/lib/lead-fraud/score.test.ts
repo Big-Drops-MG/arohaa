@@ -44,7 +44,7 @@ describe('scoreLeadFraud', () => {
         email: 'jane.doe@gmail.com',
         firstName: 'Jane',
         lastName: 'Doe',
-        zip: '90210',
+        formZipEntered: '90210',
         geoZip: '90210',
         trustedFormUrl: 'https://cert.trustedform.com/abc',
         fillDurationMs: 45_000,
@@ -52,14 +52,40 @@ describe('scoreLeadFraud', () => {
         pasteCount: 0,
         hasFormStarted: true,
         hasFieldInteraction: true,
+        fiBehaviorKnown: true,
+        velocityWindowKnown: true,
         fieldCount: 8,
       }),
     )
     expect(assessment.label).toBe('legit')
+    expect(assessment.scoreAvailable).toBe(true)
     expect(assessment.score).toBeGreaterThanOrEqual(80)
+    expect(assessment.coverage).toBe('sufficient')
   })
 
-  it('classifies paste-heavy bot-like fill as fraud with low trust', () => {
+  it('marks missing FI as session_signals_unknown without inventing interaction', () => {
+    const assessment = scoreLeadFraud(
+      emptyFeatures({
+        fingerprint: 'fp1',
+        browser: 'Chrome',
+        formSubmitted: true,
+        email: 'jane.doe@gmail.com',
+        firstName: 'Jane',
+        lastName: 'Doe',
+        formZipEntered: '90210',
+        fiBehaviorKnown: false,
+        velocityWindowKnown: true,
+        fieldCount: 5,
+      }),
+    )
+    expect(assessment.coverage).toBe('partial')
+    expect(
+      assessment.findings.some((f) => f.code === 'session_signals_unknown'),
+    ).toBe(true)
+    expect(assessment.scoreAvailable).toBe(true)
+  })
+
+  it('classifies paste-heavy bot-like fill as elevated risk', () => {
     const assessment = scoreLeadFraud(
       emptyFeatures({
         fingerprint: '',
@@ -68,7 +94,7 @@ describe('scoreLeadFraud', () => {
         email: 'x@mailinator.com',
         firstName: 'asdf',
         lastName: 'test',
-        zip: '',
+        formZipEntered: '',
         trustedFormUrl: '',
         fillDurationMs: 900,
         typedCount: 0,
@@ -77,16 +103,19 @@ describe('scoreLeadFraud', () => {
         pastedName: true,
         hasFormStarted: false,
         hasFieldInteraction: true,
+        fiBehaviorKnown: true,
+        velocityWindowKnown: true,
         fieldCount: 1,
         fingerprintSubmits24h: 6,
       }),
     )
     expect(assessment.label).toBe('fraud')
-    expect(assessment.score).toBeLessThan(50)
+    expect(assessment.score).not.toBeNull()
+    expect(assessment.score!).toBeLessThan(50)
     expect(assessment.reasons.length).toBeGreaterThan(2)
   })
 
-  it('flags invalid email format as fraud', () => {
+  it('flags invalid email format as elevated risk', () => {
     const assessment = scoreLeadFraud(
       emptyFeatures({
         fingerprint: 'fp1',
@@ -95,11 +124,13 @@ describe('scoreLeadFraud', () => {
         email: 'not-an-email',
         firstName: 'Sam',
         lastName: 'Lee',
-        zip: '10001',
+        formZipEntered: '10001',
         fillDurationMs: 20_000,
         typedCount: 15,
         hasFormStarted: true,
         hasFieldInteraction: true,
+        fiBehaviorKnown: true,
+        velocityWindowKnown: true,
         fieldCount: 5,
       }),
     )
@@ -107,7 +138,7 @@ describe('scoreLeadFraud', () => {
     expect(assessment.reasons.some((r) => /Invalid email/i.test(r))).toBe(true)
   })
 
-  it('only returns legit or fraud', () => {
+  it('only compares explicit form ZIP to geo ZIP', () => {
     const assessment = scoreLeadFraud(
       emptyFeatures({
         fingerprint: 'fp1',
@@ -116,18 +147,20 @@ describe('scoreLeadFraud', () => {
         email: 'info@company.com',
         firstName: 'Sam',
         lastName: 'Lee',
-        zip: '10001',
+        formZipEntered: '',
+        zip: '',
         geoZip: '90210',
         fillDurationMs: 12_000,
         typedCount: 10,
-        pasteCount: 1,
-        pastedEmail: true,
         hasFormStarted: true,
         hasFieldInteraction: true,
+        fiBehaviorKnown: true,
+        velocityWindowKnown: true,
         fieldCount: 5,
       }),
     )
-    expect(['legit', 'fraud']).toContain(assessment.label)
-    expect(assessment.effectiveLabel).toBe(assessment.label)
+    expect(
+      assessment.findings.some((f) => f.code === 'location_inconsistency'),
+    ).toBe(false)
   })
 })

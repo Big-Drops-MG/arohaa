@@ -5,8 +5,13 @@ import {
   pickTrustedFormUrl,
 } from '../lead-fields.js'
 import { decryptFieldBlob, decryptJsonBlob } from '../field-blob.js'
+import {
+  FP_REUSE_DAY_THRESHOLD,
+  VELOCITY_WINDOW_HOURS,
+} from './constants.js'
 import { emailDomain } from './disposable-domains.js'
 import { emptyFeatures } from './features.js'
+import type { FiBehaviorSummary } from './fi-batch.js'
 import type { LeadFraudFeatures } from './types.js'
 
 export type LeadSessionSignalRow = {
@@ -20,13 +25,21 @@ export type LeadSessionSignalRow = {
   formSubmitted: boolean
   props: string
   zipVal: string
+  submittedAtMs: number
+  tenantWorkspaceId?: string
+  phoneHash?: string
+  emailHash?: string
+  eventId?: string
+  utmSource?: string
+  utmS1?: string
+  utmCampaign?: string
 }
 
 export type LeadVelocityMaps = {
-  fpSessions: Map<string, number>
-  fpSubmits: Map<string, number>
-  ipSubmits: Map<string, number>
-  domainSubmits: Map<string, number>
+  fpSessionTimes: Map<string, number[]>
+  fpSubmitTimes: Map<string, number[]>
+  ipSubmitTimes: Map<string, number[]>
+  domainSubmitTimes: Map<string, number[]>
 }
 
 export function isTruthyFlag(value: unknown): boolean {
@@ -73,7 +86,6 @@ export function extractRawFieldMap(raw: string): Record<string, string> {
       }
       const decrypted = decryptFieldBlob(blob)
       if (decrypted && Object.keys(decrypted).length > 0) {
-        // Ignore FI scalar leftovers ({ v, s, f }) when the log array was stripped.
         const keys = Object.keys(decrypted)
         const fiScalarsOnly = keys.every(
           (k) => k === 'v' || k === 's' || k === 'f',
@@ -98,24 +110,66 @@ function velocityKey(workspaceId: string, value: string): string {
   return `${workspaceId}:${value}`
 }
 
-/**
- * Field-signal features shared by Warehouse and Data Leads.
- * FI behavior is not loaded here (too expensive at warehouse scale); submit
- * stubs avoid false "no typing / no interaction" penalties when FI is absent.
- */
+function pushTime(map: Map<string, number[]>, key: string, atMs: number): void {
+  const list = map.get(key) ?? []
+  list.push(atMs)
+  map.set(key, list)
+}
+
+function countInWindow(
+  times: number[] | undefined,
+  centerMs: number,
+  windowMs: number,
+): number {
+  if (!times || times.length === 0 || !Number.isFinite(centerMs)) return 0
+  let n = 0
+  for (const t of times) {
+    if (Math.abs(t - centerMs) <= windowMs) n += 1
+  }
+  return n
+}
+
+
 export function buildFeaturesFromLeadSessionSignal(
   row: LeadSessionSignalRow,
   velocity: LeadVelocityMaps,
+  fiBehavior?: FiBehaviorSummary | null,
 ): LeadFraudFeatures {
   const rawFields = extractRawFieldMap(row.props || '{}')
   const fields = normalizeLeadFields(rawFields)
   const email = pickLeadEmail(fields)
-  const zip = (row.zipVal || pickLeadZip(fields) || '').trim()
+  const formZipEntered = pickLeadZip(fields).trim()
   const fingerprint = (row.fingerprint || '').trim()
   const ipHash = (row.clientIpHash || '').trim()
   const domain = emailDomain(email)
   const formSubmitted = row.formSubmitted
   const wid = row.workspaceId
+  const centerMs = row.submittedAtMs > 0 ? row.submittedAtMs : Date.now()
+  const dayMs = 24 * 60 * 60_000
+  const windowMs = VELOCITY_WINDOW_HOURS * 60 * 60_000
+
+  const fiKnown = Boolean(fiBehavior?.fiBehaviorKnown)
+  const behavior = fiBehavior
+    ? {
+        fillDurationMs: fiBehavior.fillDurationMs,
+        typedCount: fiBehavior.typedCount,
+        pasteCount: fiBehavior.pasteCount,
+        pastedEmail: fiBehavior.pastedEmail,
+        pastedName: fiBehavior.pastedName,
+        pastedPhone: fiBehavior.pastedPhone,
+        hasFormStarted: fiBehavior.hasFormStarted,
+        hasFieldInteraction: fiBehavior.hasFieldInteraction,
+      }
+    : {
+        fillDurationMs: null,
+        typedCount: 0,
+        pasteCount: 0,
+        pastedEmail: false,
+        pastedName: false,
+        pastedPhone: false,
+        hasFormStarted: false,
+        hasFieldInteraction: false,
+      }
 
   return emptyFeatures({
     fingerprint,
@@ -124,70 +178,90 @@ export function buildFeaturesFromLeadSessionSignal(
     email,
     firstName: (fields.first_name || '').trim(),
     lastName: (fields.last_name || '').trim(),
-    zip,
+    formZipEntered,
+    zip: formZipEntered,
     geoZip: (row.geoZip || '').trim(),
     stateField: (fields.state || '').trim(),
     geoState: (row.geoState || '').trim(),
     trustedFormUrl: pickTrustedFormUrl(rawFields),
     clientIpHash: ipHash,
-    hasFormStarted: formSubmitted,
-    hasFieldInteraction: formSubmitted || Boolean(email || zip),
-    fillDurationMs: null,
-    typedCount: formSubmitted ? 1 : 0,
-    pasteCount: 0,
-    pastedEmail: false,
-    pastedName: false,
-    pastedPhone: false,
+    ...behavior,
+    fiBehaviorKnown: fiKnown,
     fingerprintSessionsSameDay: fingerprint
-      ? (velocity.fpSessions.get(velocityKey(wid, fingerprint)) ?? 0)
+      ? countInWindow(
+          velocity.fpSessionTimes.get(velocityKey(wid, fingerprint)),
+          centerMs,
+          dayMs,
+        )
       : 0,
     fingerprintSubmits24h: fingerprint
-      ? (velocity.fpSubmits.get(velocityKey(wid, fingerprint)) ?? 0)
+      ? countInWindow(
+          velocity.fpSubmitTimes.get(velocityKey(wid, fingerprint)),
+          centerMs,
+          windowMs,
+        )
       : 0,
     ipHashSubmits24h: ipHash
-      ? (velocity.ipSubmits.get(velocityKey(wid, ipHash)) ?? 0)
+      ? countInWindow(
+          velocity.ipSubmitTimes.get(velocityKey(wid, ipHash)),
+          centerMs,
+          windowMs,
+        )
       : 0,
     emailDomainSubmits24h: domain
-      ? (velocity.domainSubmits.get(velocityKey(wid, domain)) ?? 0)
+      ? countInWindow(
+          velocity.domainSubmitTimes.get(velocityKey(wid, domain)),
+          centerMs,
+          windowMs,
+        )
       : 0,
-    fieldCount: Object.keys(fields).length + (email ? 1 : 0) + (zip ? 1 : 0),
+    fieldCount:
+      Object.keys(fields).length + (email ? 1 : 0) + (formZipEntered ? 1 : 0),
+    velocityWindowKnown: true,
   })
 }
 
 export function computeLeadVelocityMaps(
   rows: LeadSessionSignalRow[],
 ): LeadVelocityMaps {
-  const fpSessions = new Map<string, number>()
-  const fpSubmits = new Map<string, number>()
-  const ipSubmits = new Map<string, number>()
-  const domainSubmits = new Map<string, number>()
+  const fpSessionTimes = new Map<string, number[]>()
+  const fpSubmitTimes = new Map<string, number[]>()
+  const ipSubmitTimes = new Map<string, number[]>()
+  const domainSubmitTimes = new Map<string, number[]>()
 
   for (const row of rows) {
     const wid = row.workspaceId
+    const at =
+      row.submittedAtMs > 0 && Number.isFinite(row.submittedAtMs)
+        ? row.submittedAtMs
+        : Date.now()
     const fp = (row.fingerprint || '').trim()
     const ip = (row.clientIpHash || '').trim()
     if (fp) {
-      const key = velocityKey(wid, fp)
-      fpSessions.set(key, (fpSessions.get(key) ?? 0) + 1)
+      pushTime(fpSessionTimes, velocityKey(wid, fp), at)
     }
     if (!row.formSubmitted) continue
     if (fp) {
-      const key = velocityKey(wid, fp)
-      fpSubmits.set(key, (fpSubmits.get(key) ?? 0) + 1)
+      pushTime(fpSubmitTimes, velocityKey(wid, fp), at)
     }
     if (ip) {
-      const key = velocityKey(wid, ip)
-      ipSubmits.set(key, (ipSubmits.get(key) ?? 0) + 1)
+      pushTime(ipSubmitTimes, velocityKey(wid, ip), at)
     }
     const email = pickLeadEmail(
       normalizeLeadFields(extractRawFieldMap(row.props || '{}')),
     )
     const domain = emailDomain(email)
     if (domain) {
-      const key = velocityKey(wid, domain)
-      domainSubmits.set(key, (domainSubmits.get(key) ?? 0) + 1)
+      pushTime(domainSubmitTimes, velocityKey(wid, domain), at)
     }
   }
 
-  return { fpSessions, fpSubmits, ipSubmits, domainSubmits }
+  void FP_REUSE_DAY_THRESHOLD
+
+  return {
+    fpSessionTimes,
+    fpSubmitTimes,
+    ipSubmitTimes,
+    domainSubmitTimes,
+  }
 }

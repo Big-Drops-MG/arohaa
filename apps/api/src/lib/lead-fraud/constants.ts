@@ -1,16 +1,13 @@
-import type { LeadFraudLabel } from './types.js'
+import type { LeadFraudLabel, LeadSignalCoverage } from './types.js'
 
-/** Bumped when score semantics change (trust score, binary labels). */
-export const LEAD_FRAUD_MODEL_VERSION = 'v3'
+export const LEAD_FRAUD_MODEL_VERSION = 'v4'
 
-export type { LeadFraudLabel }
+export type { LeadFraudLabel, LeadSignalCoverage }
 
-/** Trust score below this → Fraud; otherwise Legit. */
 export const LEAD_FRAUD_THRESHOLDS = {
   fraudBelowTrust: 50,
 } as const
 
-/** Risk points subtracted from 100 to produce trust score. */
 export const LEAD_FRAUD_WEIGHTS = {
   emptyFingerprint: 12,
   botUserAgent: 28,
@@ -38,6 +35,8 @@ export const LEAD_FRAUD_WEIGHTS = {
   velocityEmailDomain: 8,
   zipMismatch: 10,
   emptySubmittedLead: 22,
+  contactRepeated: 6,
+  samePhoneDifferentIdentity: 10,
 } as const
 
 export const LEAD_FRAUD_CAPS = {
@@ -48,6 +47,7 @@ export const LEAD_FRAUD_CAPS = {
   velocity: 28,
   consistency: 12,
   completeness: 22,
+  contact: 16,
 } as const
 
 export const FILL_TOO_FAST_MS = 3_000
@@ -58,13 +58,20 @@ export const VELOCITY_IP_THRESHOLD = 8
 export const VELOCITY_DOMAIN_THRESHOLD = 12
 export const FP_REUSE_DAY_THRESHOLD = 3
 
-/**
- * @param trustScore 0–100 where higher is more trustworthy
- */
+export const PHONE_NORM_VERSION = 'phone_norm_v1'
+export const EMAIL_NORM_VERSION = 'email_norm_v1'
+export const CONTACT_HASH_VERSION = 'contact_hash_v1'
+
 export function labelFromTrustScore(trustScore: number): LeadFraudLabel {
   return trustScore < LEAD_FRAUD_THRESHOLDS.fraudBelowTrust ? 'fraud' : 'legit'
 }
 
 export function isLeadFraudLabel(value: string): value is LeadFraudLabel {
   return value === 'legit' || value === 'fraud'
+}
+
+export function isLeadSignalCoverage(value: string): value is LeadSignalCoverage {
+  return (
+    value === 'sufficient' || value === 'partial' || value === 'insufficient'
+  )
 }

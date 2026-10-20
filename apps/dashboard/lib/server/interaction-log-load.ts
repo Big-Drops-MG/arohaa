@@ -29,10 +29,34 @@ function mapFraud(raw: unknown): LeadFraudAssessment | null {
     rawEffective === "legit" || rawEffective === "fraud"
       ? rawEffective
       : rawLabel
+  const coverage =
+    row.coverage === "sufficient" ||
+    row.coverage === "partial" ||
+    row.coverage === "insufficient"
+      ? row.coverage
+      : "partial"
+  const scoreAvailable =
+    typeof row.scoreAvailable === "boolean"
+      ? row.scoreAvailable
+      : coverage !== "insufficient"
   return {
-    score: typeof row.score === "number" ? row.score : 0,
+    score: scoreAvailable && typeof row.score === "number" ? row.score : null,
+    scoreAvailable,
     label: rawLabel,
     effectiveLabel: effective,
+    coverage,
+    findings: Array.isArray(row.findings)
+      ? row.findings
+          .filter((f): f is { code: string; detail: string } =>
+            Boolean(
+              f &&
+              typeof f === "object" &&
+              typeof (f as { code?: unknown }).code === "string" &&
+              typeof (f as { detail?: unknown }).detail === "string"
+            )
+          )
+          .map((f) => ({ code: f.code, detail: f.detail }))
+      : [],
     reasons: Array.isArray(row.reasons)
       ? row.reasons.map((r) => String(r))
       : [],

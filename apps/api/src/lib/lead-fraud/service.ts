@@ -4,6 +4,8 @@ import {
   computeLeadVelocityMaps,
   type LeadSessionSignalRow,
 } from './field-signals.js'
+import { persistContactKeysFromSignals } from './contact-keys.js'
+import { loadFiBehaviorBySessions } from './fi-batch.js'
 import { loadLeadSessionSignals } from './load-sessions.js'
 import {
   assessmentFromRiskRow,
@@ -18,10 +20,25 @@ function sessionKey(workspaceId: string, sessionId: string): string {
   return `${workspaceId}:${sessionId}`
 }
 
-/**
- * Score sessions with the same field-signal model as Warehouse so Data Leads
- * badges match warehouse Legit/Fraud counts for the same sessions.
- */
+function unavailableAssessment(): LeadFraudAssessment {
+  return {
+    score: null,
+    scoreAvailable: false,
+    label: 'fraud',
+    effectiveLabel: 'fraud',
+    coverage: 'insufficient',
+    findings: [
+      {
+        code: 'scoring_unavailable',
+        detail: 'Risk scoring temporarily unavailable',
+      },
+    ],
+    reasons: ['Risk scoring temporarily unavailable'],
+    modelVersion: LEAD_FRAUD_MODEL_VERSION,
+  }
+}
+
+
 export async function ensureSessionFraudAssessment(input: {
   workspaceId: string
   sessionId: string
@@ -45,15 +62,7 @@ export async function ensureSessionFraudAssessment(input: {
     sessionIds: [input.sessionId],
     forceRescore: input.forceRescore,
   })
-  return (
-    map.get(input.sessionId) ?? {
-      score: 0,
-      label: 'fraud',
-      effectiveLabel: 'fraud',
-      reasons: ['Risk scoring temporarily unavailable'],
-      modelVersion: LEAD_FRAUD_MODEL_VERSION,
-    }
-  )
+  return map.get(input.sessionId) ?? unavailableAssessment()
 }
 
 export async function ensureSessionsFraudAssessments(input: {
@@ -86,7 +95,6 @@ export async function ensureSessionsFraudAssessments(input: {
 
   if (needScore.length === 0) return out
 
-  // Load all workspace lead sessions so velocity matches warehouse aggregates.
   const workspaceRows = await loadLeadSessionSignals({
     workspaceId: input.workspaceId,
   })
@@ -95,7 +103,6 @@ export async function ensureSessionsFraudAssessments(input: {
     workspaceRows.map((row) => [row.sessionId, row] as const),
   )
 
-  // Any requested sessions missing from the bulk lead query still get scored.
   const missingIds = needScore.filter((sid) => !bySession.has(sid))
   if (missingIds.length > 0) {
     const extra = await loadLeadSessionSignals({
@@ -107,27 +114,35 @@ export async function ensureSessionsFraudAssessments(input: {
     }
   }
 
+  const scoreRows = needScore
+    .map((sid) => bySession.get(sid))
+    .filter((row): row is LeadSessionSignalRow => Boolean(row))
+  const fiMap = await loadFiBehaviorBySessions(
+    scoreRows.map((row) => ({
+      workspaceId: row.workspaceId,
+      sessionId: row.sessionId,
+    })),
+  )
+
   const toPersist: Array<{
     workspaceId: string
     sessionId: string
     assessment: LeadFraudAssessment
     features: LeadFraudFeatures
+    tenantWorkspaceId?: string
+    phoneHash?: string
+    emailHash?: string
   }> = []
 
   for (const sid of needScore) {
     const row = bySession.get(sid)
     if (!row) {
-      out.set(sid, {
-        score: 0,
-        label: 'fraud',
-        effectiveLabel: 'fraud',
-        reasons: ['Risk scoring temporarily unavailable'],
-        modelVersion: LEAD_FRAUD_MODEL_VERSION,
-      })
+      out.set(sid, unavailableAssessment())
       continue
     }
     try {
-      const features = buildFeaturesFromLeadSessionSignal(row, velocity)
+      const fi = fiMap.get(sessionKey(row.workspaceId, row.sessionId)) ?? null
+      const features = buildFeaturesFromLeadSessionSignal(row, velocity, fi)
       const assessment = scoreLeadFraud(features)
       out.set(sid, assessment)
       toPersist.push({
@@ -135,15 +150,12 @@ export async function ensureSessionsFraudAssessments(input: {
         sessionId: sid,
         assessment,
         features,
+        tenantWorkspaceId: row.tenantWorkspaceId,
+        phoneHash: row.phoneHash,
+        emailHash: row.emailHash,
       })
     } catch {
-      out.set(sid, {
-        score: 0,
-        label: 'fraud',
-        effectiveLabel: 'fraud',
-        reasons: ['Risk scoring temporarily unavailable'],
-        modelVersion: LEAD_FRAUD_MODEL_VERSION,
-      })
+      out.set(sid, unavailableAssessment())
     }
   }
 
@@ -155,11 +167,18 @@ export async function ensureSessionsFraudAssessments(input: {
     }
   }
 
+  try {
+    await persistContactKeysFromSignals(scoreRows)
+  } catch {
+    /* contact keys are best-effort */
+  }
+
   return out
 }
 
-/** Classify a preloaded set of lead sessions (Warehouse path). */
-export function classifyLeadSessionRows(rows: LeadSessionSignalRow[]): {
+export async function classifyLeadSessionRows(
+  rows: LeadSessionSignalRow[],
+): Promise<{
   labelByKey: Map<string, 'legit' | 'fraud'>
   emailByKey: Map<string, string>
   assessments: Map<
@@ -174,9 +193,18 @@ export function classifyLeadSessionRows(rows: LeadSessionSignalRow[]): {
     sessionId: string
     assessment: LeadFraudAssessment
     features: LeadFraudFeatures
+    tenantWorkspaceId?: string
+    phoneHash?: string
+    emailHash?: string
   }>
-} {
+}> {
   const velocity = computeLeadVelocityMaps(rows)
+  const fiMap = await loadFiBehaviorBySessions(
+    rows.map((row) => ({
+      workspaceId: row.workspaceId,
+      sessionId: row.sessionId,
+    })),
+  )
   const labelByKey = new Map<string, 'legit' | 'fraud'>()
   const emailByKey = new Map<string, string>()
   const assessments = new Map<
@@ -191,12 +219,16 @@ export function classifyLeadSessionRows(rows: LeadSessionSignalRow[]): {
     sessionId: string
     assessment: LeadFraudAssessment
     features: LeadFraudFeatures
+    tenantWorkspaceId?: string
+    phoneHash?: string
+    emailHash?: string
   }> = []
 
   for (const row of rows) {
     const key = sessionKey(row.workspaceId, row.sessionId)
     try {
-      const features = buildFeaturesFromLeadSessionSignal(row, velocity)
+      const fi = fiMap.get(key) ?? null
+      const features = buildFeaturesFromLeadSessionSignal(row, velocity, fi)
       if (features.email.includes('@')) emailByKey.set(key, features.email)
       const assessment = scoreLeadFraud(features)
       labelByKey.set(key, assessment.label)
@@ -206,10 +238,19 @@ export function classifyLeadSessionRows(rows: LeadSessionSignalRow[]): {
         sessionId: row.sessionId,
         assessment,
         features,
+        tenantWorkspaceId: row.tenantWorkspaceId,
+        phoneHash: row.phoneHash,
+        emailHash: row.emailHash,
       })
     } catch {
       /* skip failed row */
     }
+  }
+
+  try {
+    await persistContactKeysFromSignals(rows)
+  } catch {
+    /* contact keys are best-effort */
   }
 
   return { labelByKey, emailByKey, assessments, toPersist }

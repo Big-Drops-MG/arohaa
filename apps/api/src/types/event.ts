@@ -4,6 +4,7 @@ import {
   sealPropsForStorage,
   FI_EVENT_NAME,
 } from '../lib/field-blob.js'
+import { extractContactHashesFromProps } from '../lib/lead-fraud/contact-hash.js'
 
 export interface IngestEventBody {
   event_id?: string
@@ -60,7 +61,10 @@ export interface EventRow {
   state: string
   zipcode: string
   geo_zipcode: string
+  form_zip_entered: string
   client_ip_hash: string
+  phone_hash: string
+  email_hash: string
   state_code: string
   latitude: number
   longitude: number
@@ -134,6 +138,10 @@ export function ingestBodyToEventRow(
 ): EventRow {
   const forZip = materializeOpaqueProps(body.props)
   const submittedZip = zipFromProps(body.props) || zipFromProps(forZip)
+  const contacts = extractContactHashesFromProps(body.props, {
+    country: enrichment.country,
+    stateCode: enrichment.stateCode,
+  })
   const eventName = body.event_name ?? body.ev ?? ''
   const sealed =
     eventName === FI_EVENT_NAME
@@ -181,7 +189,10 @@ export function ingestBodyToEventRow(
     state: enrichment.state,
     zipcode: submittedZip || enrichment.zipcode,
     geo_zipcode: enrichment.zipcode?.trim() || '',
+    form_zip_entered: submittedZip,
     client_ip_hash: enrichment.clientIpHash?.trim() || '',
+    phone_hash: contacts.phoneHash,
+    email_hash: contacts.emailHash,
     state_code: enrichment.stateCode,
     latitude: enrichment.latitude ?? 0,
     longitude: enrichment.longitude ?? 0,

@@ -18,6 +18,7 @@ import type {
 import { formatDashboardDateTime } from "@/lib/datetime"
 import { getEventDisplayName } from "@/features/warehouse/model/event-display-names"
 import { ShortcutLeadsTable } from "@/features/warehouse/view/ShortcutLeadsTable"
+import { PartnerScorecardsPanel } from "@/features/warehouse/view/PartnerScorecardsPanel"
 
 function formatCount(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
@@ -275,10 +276,10 @@ function DomainTable({ rows }: { rows: WarehouseDomainCount[] }) {
             Total
           </th>
           <th className="pb-2.5 text-right text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Legit
+            Lower risk
           </th>
           <th className="pr-1 pb-2.5 text-right text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Fraud
+            Elevated
           </th>
         </tr>
       </thead>
@@ -334,7 +335,8 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
             Warehouse
           </h1>
           <p className="mt-2 max-w-lg text-sm text-muted-foreground">
-            Global Arohaa inventory — traffic, leads, and trust.
+            Global Arohaa inventory — traffic, leads, and trust. Lead review is
+            limited to Superadmin and CEO.
           </p>
         </div>
         <p className="text-xs text-muted-foreground">
@@ -381,31 +383,80 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
 
           <section className="space-y-3">
             <h2 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              Lead trust
+              Lead quality overview
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+              <StatCard
+                label="Submissions"
+                value={formatCount(summary.quality?.submissions ?? 0)}
+                hint="Scored lead sessions"
+                compact
+              />
+              <StatCard
+                label="Elevated risk"
+                value={formatCount(
+                  summary.quality?.flagged ?? summary.risk.elevatedRisk ?? 0
+                )}
+                hint="Fewer observed risk indicators below threshold"
+                tone="fraud"
+                compact
+              />
+              <StatCard
+                label="Incomplete data"
+                value={formatCount(
+                  summary.quality?.incompleteAssessments ??
+                    summary.risk.insufficientData ??
+                    0
+                )}
+                hint="Insufficient signal coverage"
+                compact
+              />
+              <StatCard
+                label="Related groups"
+                value={formatCount(summary.quality?.relatedContactGroups ?? 0)}
+                hint="Contact keys within organisations"
+                compact
+              />
+              <StatCard
+                label="Pending reviews"
+                value={formatCount(summary.quality?.pendingReviews ?? 0)}
+                hint="Administrator backlog"
+                compact
+              />
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+              Lead assessment
             </h2>
             <div className="grid gap-4 lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
               <div className="flex flex-col gap-4">
                 <StatCard
-                  label="Legit"
-                  value={formatCount(summary.risk.legit)}
-                  hint="Trust score 50–100"
+                  label="Lower risk"
+                  value={formatCount(
+                    summary.risk.lowerRisk ?? summary.risk.legit
+                  )}
+                  hint="Trust score 50–100 when coverage allows"
                   tone="legit"
                   compact
                 />
                 <StatCard
-                  label="Fraud"
-                  value={formatCount(summary.risk.fraud)}
-                  hint="Trust score below 50"
+                  label="Elevated risk"
+                  value={formatCount(
+                    summary.risk.elevatedRisk ?? summary.risk.fraud
+                  )}
+                  hint="Trust score below 50 — not an auto-reject"
                   tone="fraud"
                   compact
                 />
               </div>
               <Panel
-                title="Why fraud"
+                title="Top findings"
                 description={
-                  summary.risk.fraud > 0
-                    ? `${formatCount(summary.risk.fraud)} leads flagged`
-                    : "No fraud leads yet"
+                  (summary.risk.elevatedRisk ?? summary.risk.fraud) > 0
+                    ? `${formatCount(summary.risk.elevatedRisk ?? summary.risk.fraud)} elevated-risk assessments`
+                    : "No elevated-risk assessments yet"
                 }
                 icon={ShieldAlert}
                 bodyClassName="pt-3"
@@ -430,17 +481,9 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
                   </ScrollBody>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    {summary.risk.fraud > 0
-                      ? "Reason details are not available yet."
-                      : "No fraud signals recorded."}
+                    No assessment findings recorded yet.
                   </p>
                 )}
-                {summary.risk.unscoredFormSubmits > 0 ? (
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    {formatCount(summary.risk.unscoredFormSubmits)} sessions
-                    could not be scored.
-                  </p>
-                ) : null}
               </Panel>
             </div>
           </section>
@@ -448,7 +491,7 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
           <section className="grid items-stretch gap-4 lg:grid-cols-2">
             <Panel
               title="Email domains"
-              description="Lead emails with legit / fraud split"
+              description="Lead emails with lower / elevated risk split"
               icon={AtSign}
             >
               <ScrollBody>
@@ -482,11 +525,11 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
           </Panel>
 
           <Panel
-            title="Copy / Paste users"
+            title="Lead review"
             description={
               (summary.shortcutLeads?.length ?? 0) > 0
-                ? `${formatCount(summary.shortcutLeads.length)} sessions that used Ctrl+C or Ctrl+V — full lead form fields`
-                : "Sessions that used Ctrl+C or Ctrl+V — full lead form fields"
+                ? `${formatCount(summary.shortcutLeads.length)} Copy/Paste sessions — assessments are informational only`
+                : "Copy/Paste sessions with trust, coverage, related submissions and review"
             }
             icon={Users}
             className="min-w-0"
@@ -495,6 +538,14 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
             <div className="max-h-[28rem] min-w-0 overflow-x-auto overflow-y-auto overscroll-contain px-5 py-4">
               <ShortcutLeadsTable rows={summary.shortcutLeads ?? []} />
             </div>
+          </Panel>
+
+          <Panel
+            title="Partner scorecards"
+            description="Confirmed call outcomes by partner — sample sizes included"
+            icon={ShieldAlert}
+          >
+            <PartnerScorecardsPanel />
           </Panel>
 
           <Panel
