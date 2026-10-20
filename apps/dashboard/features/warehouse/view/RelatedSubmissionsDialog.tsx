@@ -43,11 +43,31 @@ function pageLabel(row: RelatedRow): string {
 function displayS1(raw: string | undefined): string {
   const value = (raw || "").trim()
   if (!value) return "—"
+
+  let current = value
   try {
-    return decodeURIComponent(value)
+    current = decodeURIComponent(current)
   } catch {
-    return value
+    /* keep raw */
   }
+
+  // Partner s1 values are often base64 of ids like "B_40821".
+  if (/^[A-Za-z0-9+/]+={0,2}$/.test(current) && current.length % 4 === 0) {
+    try {
+      const decoded = atob(current)
+      if (
+        decoded.length >= 2 &&
+        decoded.length <= 128 &&
+        /^[\x20-\x7E]+$/.test(decoded)
+      ) {
+        return decoded
+      }
+    } catch {
+      /* keep current */
+    }
+  }
+
+  return current
 }
 
 function displayEmail(row: RelatedRow): string {
