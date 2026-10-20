@@ -18,6 +18,7 @@ type RelatedRow = {
   utmS1?: string
   firstName: string
   lastName: string
+  email?: string
   emailMasked: string
   zip: string
   matchBasis: string
@@ -36,7 +37,21 @@ function pageLabel(row: RelatedRow): string {
   const publicId = (row.lpPublicId || "").trim()
   if (publicId) return publicId
   const id = (row.landingPageId || "").trim()
-  return id ? `${id.slice(0, 8)}…` : "—"
+  return id || "—"
+}
+
+function displayS1(raw: string | undefined): string {
+  const value = (raw || "").trim()
+  if (!value) return "—"
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+function displayEmail(row: RelatedRow): string {
+  return (row.email || "").trim() || (row.emailMasked || "").trim() || "—"
 }
 
 type RelatedPayload = {
@@ -225,7 +240,7 @@ export function RelatedSubmissionsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-4xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] w-[min(96vw,80rem)] max-w-[80rem] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Related submissions</DialogTitle>
         </DialogHeader>
@@ -285,23 +300,25 @@ export function RelatedSubmissionsDialog({
                         {row.submittedAt || "—"}
                       </td>
                       <td
-                        className="max-w-[12rem] truncate py-2 pr-3"
+                        className="min-w-[14rem] py-2 pr-3 break-words whitespace-normal"
                         title={row.landingPageId || undefined}
                       >
                         {pageLabel(row)}
                       </td>
-                      <td className="py-2 pr-3">{row.utmSource || "—"}</td>
+                      <td className="py-2 pr-3 whitespace-nowrap">
+                        {row.utmSource || "—"}
+                      </td>
                       <td
-                        className="max-w-[10rem] truncate py-2 pr-3 font-mono text-xs"
+                        className="min-w-[10rem] py-2 pr-3 font-mono text-xs break-all whitespace-normal"
                         title={row.utmS1 || undefined}
                       >
-                        {row.utmS1 || "—"}
+                        {displayS1(row.utmS1)}
                       </td>
                       <td
                         className={
                           row.conflicts.includes("same_phone_different_names")
-                            ? "bg-amber-50 py-2 pr-3"
-                            : "py-2 pr-3"
+                            ? "bg-amber-50 py-2 pr-3 whitespace-nowrap"
+                            : "py-2 pr-3 whitespace-nowrap"
                         }
                       >
                         {[row.firstName, row.lastName]
@@ -311,11 +328,11 @@ export function RelatedSubmissionsDialog({
                       <td
                         className={
                           row.conflicts.includes("same_phone_different_emails")
-                            ? "bg-amber-50 py-2 pr-3"
-                            : "py-2 pr-3"
+                            ? "bg-amber-50 py-2 pr-3 break-all whitespace-normal"
+                            : "py-2 pr-3 break-all whitespace-normal"
                         }
                       >
-                        {row.emailMasked || "—"}
+                        {displayEmail(row)}
                       </td>
                       <td
                         className={

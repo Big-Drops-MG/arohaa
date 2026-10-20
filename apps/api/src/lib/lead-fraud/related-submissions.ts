@@ -1,6 +1,10 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db, landingPages, workspaces } from '@workspace/database'
 import {
+  normalizeLeadFields,
+  pickLeadEmail,
+} from '../lead-fields.js'
+import {
   getClickHouseClient,
   LEAD_REVIEW_TABLE,
   LEAD_RISK_TABLE,
@@ -9,6 +13,8 @@ import {
   loadRelatedContactMatches,
   type RelatedMatchBasis,
 } from './contact-match.js'
+import { extractRawFieldMap } from './field-signals.js'
+import { loadLeadSessionSignals } from './load-sessions.js'
 
 type CHJson<T> = { data: T[] }
 
@@ -27,6 +33,7 @@ export type RelatedSubmissionRow = {
   utmCampaign: string
   firstName: string
   lastName: string
+  email: string
   emailMasked: string
   zip: string
   matchBasis: RelatedMatchBasis
@@ -169,6 +176,35 @@ export async function getRelatedSubmissions(input: {
     match.rows.map((r) => r.landingPageId),
   )
 
+  const contactByKey = new Map<
+    string,
+    { email: string; firstName: string; lastName: string }
+  >()
+  if (match.rows.length > 0) {
+    try {
+      const signals = await loadLeadSessionSignals({
+        sessionIds: match.rows.map((r) => r.sessionId),
+      })
+      const wanted = new Set(
+        match.rows.map((r) => `${r.landingPageId}:${r.sessionId}`),
+      )
+      for (const signal of signals) {
+        const key = `${signal.workspaceId}:${signal.sessionId}`
+        if (!wanted.has(key)) continue
+        const fields = normalizeLeadFields(
+          extractRawFieldMap(signal.props || '{}'),
+        )
+        contactByKey.set(key, {
+          email: pickLeadEmail(fields),
+          firstName: (fields.first_name || '').trim(),
+          lastName: (fields.last_name || '').trim(),
+        })
+      }
+    } catch (err) {
+      console.error('[related-submissions] session contact enrich failed', err)
+    }
+  }
+
   return {
     status: match.status,
     tenantWorkspaceId: match.tenantWorkspaceId,
@@ -183,6 +219,8 @@ export async function getRelatedSubmissions(input: {
       const risk = riskBySession.get(r.sessionId)
       const review = reviewBySession.get(r.sessionId)
       const page = pageLabels.get(r.landingPageId)
+      const contact = contactByKey.get(`${r.landingPageId}:${r.sessionId}`)
+      const email = (contact?.email || '').trim()
       return {
         tenantWorkspaceId: match.tenantWorkspaceId,
         landingPageId: r.landingPageId,
@@ -194,8 +232,9 @@ export async function getRelatedSubmissions(input: {
         utmSource: r.utmSource,
         utmS1: r.utmS1,
         utmCampaign: r.utmCampaign,
-        firstName: r.firstName,
-        lastName: r.lastName,
+        firstName: contact?.firstName || r.firstName,
+        lastName: contact?.lastName || r.lastName,
+        email,
         emailMasked: r.emailMasked,
         zip: r.zip,
         matchBasis: r.matchBasis,
