@@ -197,25 +197,24 @@ const LEAD_SESSION_SELECT_MINIMAL = `
 
 async function queryLeadSessions(
   selectSql: string,
+  whereClause: string,
   whereExtra: string,
   query_params: Record<string, unknown>,
   limit = 100_000,
 ): Promise<LeadSessionSignalRow[]> {
+  const safeLimit = Math.max(1, Math.min(100_000, Math.floor(limit)))
   const ch = getClickHouseClient()
   const res = await ch.query({
     format: 'JSON',
-    query_params: {
-      ...query_params,
-      session_lim: Math.max(1, Math.min(100_000, Math.floor(limit))),
-    },
+    query_params,
     query: `
       SELECT
         ${selectSql}
       FROM ${CLICKHOUSE_EVENTS_TABLE}
-      WHERE ${LEAD_SESSION_WHERE}
+      WHERE ${whereClause}
         ${whereExtra}
       GROUP BY workspace_id, session_id
-      LIMIT {session_lim:UInt32}
+      LIMIT ${safeLimit}
     `,
   })
   const rows = ((await res.json()) as CHJson<RawSignalRow>).data ?? []
@@ -345,10 +344,16 @@ export async function loadLeadSessionSignals(input?: {
     query_params.lookback = lookbackDays
   }
 
+  // Explicit session ids are already lead sessions from the funnel — do not
+  // re-filter by lead event shapes or we can miss rows and return n/a scores.
+  const whereClause =
+    sessionIds.length > 0 ? `session_id != ''` : LEAD_SESSION_WHERE
+
   let rows: LeadSessionSignalRow[]
   try {
     rows = await queryLeadSessions(
       LEAD_SESSION_SELECT,
+      whereClause,
       whereExtra,
       query_params,
       limit,
@@ -357,6 +362,7 @@ export async function loadLeadSessionSignals(input?: {
     try {
       rows = await queryLeadSessions(
         LEAD_SESSION_SELECT_BASE,
+        whereClause,
         whereExtra,
         query_params,
         limit,
@@ -364,6 +370,7 @@ export async function loadLeadSessionSignals(input?: {
     } catch {
       rows = await queryLeadSessions(
         LEAD_SESSION_SELECT_MINIMAL,
+        whereClause,
         whereExtra,
         query_params,
         limit,

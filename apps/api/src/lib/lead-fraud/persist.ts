@@ -98,41 +98,8 @@ export async function fetchLeadRiskRows(
   if (ids.length === 0) return map
 
   const ch = getClickHouseClient()
-  const res = await ch.query({
-    format: 'JSON',
-    query_params: { wid: workspaceId, sids: ids },
-    query: `
-      SELECT
-        toString(workspace_id) AS workspace_id,
-        session_id,
-        score,
-        label,
-        reasons,
-        features_json,
-        model_version,
-        toString(scored_at) AS scored_at,
-        override_label,
-        override_by,
-        toString(override_at) AS override_at,
-        override_note,
-        coverage,
-        findings_json,
-        tenant_workspace_id,
-        phone_hash,
-        email_hash
-      FROM ${LEAD_RISK_TABLE} FINAL
-      WHERE workspace_id = {wid:UUID}
-        AND session_id IN {sids:Array(String)}
-    `,
-  })
   try {
-    const rows = ((await res.json()) as CHJson<LeadRiskRow>).data ?? []
-    for (const row of rows) {
-      map.set(row.session_id, row)
-    }
-    return map
-  } catch {
-    const fallback = await ch.query({
+    const res = await ch.query({
       format: 'JSON',
       query_params: { wid: workspaceId, sids: ids },
       query: `
@@ -148,15 +115,52 @@ export async function fetchLeadRiskRows(
           override_label,
           override_by,
           toString(override_at) AS override_at,
-          override_note
+          override_note,
+          coverage,
+          findings_json,
+          tenant_workspace_id,
+          phone_hash,
+          email_hash
         FROM ${LEAD_RISK_TABLE} FINAL
         WHERE workspace_id = {wid:UUID}
           AND session_id IN {sids:Array(String)}
       `,
     })
-    const rows = ((await fallback.json()) as CHJson<LeadRiskRow>).data ?? []
+    const rows = ((await res.json()) as CHJson<LeadRiskRow>).data ?? []
     for (const row of rows) {
       map.set(row.session_id, row)
+    }
+    return map
+  } catch {
+    try {
+      const fallback = await ch.query({
+        format: 'JSON',
+        query_params: { wid: workspaceId, sids: ids },
+        query: `
+          SELECT
+            toString(workspace_id) AS workspace_id,
+            session_id,
+            score,
+            label,
+            reasons,
+            features_json,
+            model_version,
+            toString(scored_at) AS scored_at,
+            override_label,
+            override_by,
+            toString(override_at) AS override_at,
+            override_note
+          FROM ${LEAD_RISK_TABLE} FINAL
+          WHERE workspace_id = {wid:UUID}
+            AND session_id IN {sids:Array(String)}
+        `,
+      })
+      const rows = ((await fallback.json()) as CHJson<LeadRiskRow>).data ?? []
+      for (const row of rows) {
+        map.set(row.session_id, row)
+      }
+    } catch {
+      /* return empty — caller will rescore */
     }
     return map
   }
