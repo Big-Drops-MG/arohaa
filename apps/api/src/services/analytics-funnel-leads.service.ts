@@ -36,10 +36,19 @@ import {
   emptyFeatures,
   ensureSessionsFraudAssessments,
   isCommonConsumerEmailDomain,
+  loadContactRiskSignals,
   scoreLeadFraud,
   type LeadFraudAssessment,
 } from '../lib/lead-fraud/index.js'
-import { loadClientIpBySessions } from '../lib/lead-fraud/load-sessions.js'
+import { loadFiBehaviorBySessions } from '../lib/lead-fraud/fi-batch.js'
+import {
+  loadClientIpBySessions,
+  loadSessionContextByIds,
+} from '../lib/lead-fraud/load-sessions.js'
+import {
+  buildFeaturesFromLeadSessionSignal,
+  computeLeadVelocityMaps,
+} from '../lib/lead-fraud/field-signals.js'
 import { emailDomain } from '../lib/lead-fraud/disposable-domains.js'
 
 type CHJson<T> = { data: T[] }
@@ -273,7 +282,7 @@ function isScoringUnavailable(fraud: LeadFraudAssessment): boolean {
   return fraud.findings.some((f) => f.code === 'scoring_unavailable')
 }
 
-/** Score from already-loaded lead fields when session signal load fails. */
+/** Last-resort score from table fields only (no session context). */
 function scoreLeadFromFunnelFields(lead: FunnelLeadRow): LeadFraudAssessment {
   const email = (lead.email || '').trim()
   const domain = emailDomain(email)
@@ -299,7 +308,7 @@ function scoreLeadFromFunnelFields(lead: FunnelLeadRow): LeadFraudAssessment {
         : false,
       fiBehaviorKnown: false,
       velocityWindowKnown: false,
-      contactMatchStatus: 'unavailable',
+      contactMatchStatus: 'no_keys',
     }),
   )
 }
@@ -1825,25 +1834,97 @@ export async function getFunnelLeads({
   }
 
   try {
-    const fraudMap = await ensureSessionsFraudAssessments({
-      workspaceId,
-      sessionIds: pageLeads.map((lead) => lead.sessionId),
-      concurrency: 4,
-    })
-    pageLeads = pageLeads.map((lead) => {
-      const scored = fraudMap.get(lead.sessionId)
-      if (scored && !isScoringUnavailable(scored)) {
-        return { ...lead, fraud: scored }
-      }
-      try {
-        return { ...lead, fraud: scoreLeadFromFunnelFields(lead) }
-      } catch {
-        return {
-          ...lead,
-          fraud: scored ?? unavailableLeadFraud(),
+    const sessionIds = pageLeads.map((lead) => lead.sessionId)
+    const [fraudMap, ctxBySid, fiMap] = await Promise.all([
+      ensureSessionsFraudAssessments({
+        workspaceId,
+        sessionIds,
+        concurrency: 4,
+      }),
+      loadSessionContextByIds(workspaceId, sessionIds).catch(() => new Map()),
+      loadFiBehaviorBySessions(
+        sessionIds.map((sessionId) => ({ workspaceId, sessionId })),
+      ).catch(() => new Map()),
+    ])
+
+    const velocity = computeLeadVelocityMaps([...ctxBySid.values()])
+    const key = (sid: string) => `${workspaceId}:${sid}`
+
+    pageLeads = await Promise.all(
+      pageLeads.map(async (lead) => {
+        const ctx = ctxBySid.get(lead.sessionId)
+        const clientIp =
+          (lead.clientIp || '').trim() || (ctx?.clientIp || '').trim()
+        const scored = fraudMap.get(lead.sessionId)
+        if (scored && !isScoringUnavailable(scored)) {
+          return { ...lead, clientIp: clientIp || lead.clientIp, fraud: scored }
         }
-      }
-    })
+
+        try {
+          if (ctx) {
+            const fi = fiMap.get(key(lead.sessionId)) ?? null
+            const features = buildFeaturesFromLeadSessionSignal(
+              {
+                ...ctx,
+                props:
+                  ctx.props && ctx.props !== '{}'
+                    ? ctx.props
+                    : JSON.stringify({
+                        fields: {
+                          ...lead.fields,
+                          email: lead.email,
+                          zip: lead.zip,
+                        },
+                        xxTrustedFormCertUrl: lead.trustedFormUrl,
+                      }),
+                formSubmitted: lead.formSubmitted || ctx.formSubmitted,
+                fingerprint: ctx.fingerprint || lead.macId || '',
+              },
+              velocity,
+              fi,
+            )
+            features.velocityWindowKnown = ctxBySid.size > 0
+            if (!features.email.trim()) features.email = lead.email
+            if (!features.firstName.trim()) {
+              features.firstName = (lead.fields.first_name || '').trim()
+            }
+            if (!features.lastName.trim()) {
+              features.lastName = (lead.fields.last_name || '').trim()
+            }
+            if (!features.formZipEntered.trim()) {
+              features.formZipEntered = (lead.zip || '').trim()
+              features.zip = features.formZipEntered
+            }
+            if (!features.trustedFormUrl.trim()) {
+              features.trustedFormUrl = lead.trustedFormUrl
+            }
+            const contact = await loadContactRiskSignals({
+              tenantWorkspaceId: ctx.tenantWorkspaceId,
+              landingPageId: workspaceId,
+              sessionId: lead.sessionId,
+              matchLimit: 100,
+            })
+            Object.assign(features, contact)
+            return {
+              ...lead,
+              clientIp: clientIp || lead.clientIp,
+              fraud: scoreLeadFraud(features),
+            }
+          }
+          return {
+            ...lead,
+            clientIp: clientIp || lead.clientIp,
+            fraud: scoreLeadFromFunnelFields(lead),
+          }
+        } catch {
+          return {
+            ...lead,
+            clientIp: clientIp || lead.clientIp,
+            fraud: scored ?? unavailableLeadFraud(),
+          }
+        }
+      }),
+    )
   } catch (error) {
     console.error('[funnel-leads] fraud scoring failed', error)
     pageLeads = pageLeads.map((lead) => {
