@@ -18,6 +18,14 @@ export type LeadFraudAssessment = {
   modelVersion: string
 }
 
+export type TrustedFormEvidenceTier = 'missing' | 'url_present' | 'verified'
+
+export type AttributionConfidence =
+  | 'unknown'
+  | 'submit_only'
+  | 'first_matches_submit'
+  | 'first_differs_from_submit'
+
 export type LeadFraudFeatures = {
   fingerprint: string
   browser: string
@@ -30,7 +38,19 @@ export type LeadFraudFeatures = {
   geoZip: string
   stateField: string
   geoState: string
+  geoCountry: string
+  geoCountryCode: string
+  geoCity: string
+  locationComparison: 'consistent' | 'minor_difference' | 'inconsistency' | 'unavailable'
+  locationComparisonDetail: string
+  networkClass: 'known_proxy_list' | 'hosting_network' | 'no_known_match' | 'unavailable'
+  networkAsn: number | null
+  networkOrg: string
+  networkEvidenceSource: string
+  networkEvidenceAsOf: string
+  networkDetail: string
   trustedFormUrl: string
+  trustedFormEvidenceTier: TrustedFormEvidenceTier
   clientIpHash: string
   fillDurationMs: number | null
   typedCount: number
@@ -45,8 +65,22 @@ export type LeadFraudFeatures = {
   fingerprintSubmits24h: number
   ipHashSubmits24h: number
   emailDomainSubmits24h: number
+  emailDomainIsCommonConsumer: boolean
   fieldCount: number
   velocityWindowKnown: boolean
+  contactMatchStatus: 'ok' | 'unavailable' | 'no_keys' | 'no_tenant'
+  contactMatchTruncated: boolean
+  contactRepeatedAcrossPages: boolean
+  contactRepeatedAcrossPartners: boolean
+  samePhoneDifferentNames: boolean
+  samePhoneDifferentEmails: boolean
+  contactLocationChanged: boolean
+  relatedMarkedInvalidCount: number
+  evidenceToken: string
+  submitUtmSource: string
+  firstObservedUtmSource: string
+  attributionConfidence: AttributionConfidence
+  evidenceCutoffMs: number
 }
 
 export type LeadRiskRow = {

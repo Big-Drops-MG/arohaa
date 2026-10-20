@@ -2,6 +2,10 @@ import { createHash } from 'node:crypto'
 import { UAParser } from 'ua-parser-js'
 import type { FastifyRequest } from 'fastify'
 import { lookupGeoIp, type GeoInfo } from '../services/geo.service.js'
+import {
+  classifyNetworkSync,
+  type NetworkClassification,
+} from '../services/network-classify.service.js'
 
 export type { GeoInfo }
 
@@ -16,6 +20,7 @@ export interface EnrichmentContext {
   ipHash: string
   ua: UserAgentInfo
   geo: GeoInfo
+  network: NetworkClassification
 }
 
 const MAX_UA_LEN = 1024
@@ -70,5 +75,6 @@ export function buildEnrichmentContext(
   const uaHeader = request.headers['user-agent']
   const ua = parseUserAgent(typeof uaHeader === 'string' ? uaHeader : undefined)
   const geo = lookupGeoIp(ip)
-  return { ip, ipHash: hashClientIp(ip), ua, geo }
+  const network = classifyNetworkSync(ip)
+  return { ip, ipHash: hashClientIp(ip), ua, geo, network }
 }

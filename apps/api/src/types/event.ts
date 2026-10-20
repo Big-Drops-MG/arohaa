@@ -57,6 +57,7 @@ export interface EventRow {
   os: string
   device: string
   country: string
+  country_code: string
   city: string
   state: string
   zipcode: string
@@ -69,6 +70,11 @@ export interface EventRow {
   latitude: number
   longitude: number
   geo_accuracy: number
+  network_class: string
+  network_asn: number
+  network_org: string
+  network_evidence_source: string
+  network_evidence_as_of: string
   variant: string
   formtype: string
   metric_name: string
@@ -84,6 +90,7 @@ export interface EnrichmentForRow {
   os: string
   device: string
   country: string
+  countryCode?: string
   city: string
   state: string
   zipcode: string
@@ -94,6 +101,11 @@ export interface EnrichmentForRow {
   tenantWorkspaceId?: string
   landingPageId?: string
   clientIpHash?: string
+  networkClass?: string
+  networkAsn?: number | null
+  networkOrg?: string
+  networkEvidenceSource?: string
+  networkEvidenceAsOf?: string
 }
 
 function zipFromValue(raw: unknown): string {
@@ -185,9 +197,10 @@ export function ingestBodyToEventRow(
     os: enrichment.os,
     device: enrichment.device,
     country: enrichment.country,
+    country_code: enrichment.countryCode?.trim().toUpperCase() || '',
     city: enrichment.city,
     state: enrichment.state,
-    zipcode: submittedZip || enrichment.zipcode,
+    zipcode: submittedZip,
     geo_zipcode: enrichment.zipcode?.trim() || '',
     form_zip_entered: submittedZip,
     client_ip_hash: enrichment.clientIpHash?.trim() || '',
@@ -197,6 +210,15 @@ export function ingestBodyToEventRow(
     latitude: enrichment.latitude ?? 0,
     longitude: enrichment.longitude ?? 0,
     geo_accuracy: enrichment.accuracyRadius ?? 0,
+    network_class: enrichment.networkClass?.trim() || 'unavailable',
+    network_asn:
+      typeof enrichment.networkAsn === 'number' &&
+      Number.isFinite(enrichment.networkAsn)
+        ? enrichment.networkAsn
+        : 0,
+    network_org: enrichment.networkOrg?.trim() || '',
+    network_evidence_source: enrichment.networkEvidenceSource?.trim() || '',
+    network_evidence_as_of: enrichment.networkEvidenceAsOf?.trim() || '',
     variant: body.variant ?? '',
     formtype,
     metric_name: body.metric_name ?? '',

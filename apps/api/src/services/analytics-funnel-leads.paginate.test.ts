@@ -34,18 +34,20 @@ function lead(sessionId: string): FunnelLeadRow {
 }
 
 describe('formatFingerprintAsMacId', () => {
-  it('formats short fingerprints as colon-separated MAC-style ids', () => {
-    expect(formatFingerprintAsMacId('2c88ce64')).toBe('2c:88:ce:64:00:00')
-    expect(formatFingerprintAsMacId('c71d4fc')).toBe('c7:1d:4f:c0:00:00')
+  it('keeps short fingerprints as opaque ids (not MAC-style)', () => {
+    expect(formatFingerprintAsMacId('2c88ce64')).toBe('2c88ce64')
+    expect(formatFingerprintAsMacId('c71d4fc')).toBe('c71d4fc')
   })
 
-  it('formats full 12-char fingerprints', () => {
-    expect(formatFingerprintAsMacId('001a2b3c4d5e')).toBe('00:1a:2b:3c:4d:5e')
+  it('truncates long fingerprints without colon MAC formatting', () => {
+    expect(formatFingerprintAsMacId('001a2b3c4d5e9f08abcd')).toBe(
+      '001a2b3c…abcd',
+    )
   })
 
   it('returns empty for blank input', () => {
     expect(formatFingerprintAsMacId('')).toBe('')
-    expect(formatFingerprintAsMacId('---')).toBe('')
+    expect(formatFingerprintAsMacId('   ')).toBe('')
   })
 })
 

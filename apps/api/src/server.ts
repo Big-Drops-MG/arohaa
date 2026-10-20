@@ -23,6 +23,7 @@ import {
   noteClickHouseFailure,
 } from './services/clickhouse.service.js'
 import { initGeo } from './services/geo.service.js'
+import { initNetworkClassify } from './services/network-classify.service.js'
 import { sendAlertWebhook } from './lib/alert-webhook.js'
 import {
   startBufferProcessor,
@@ -272,6 +273,7 @@ const start = async () => {
     }
 
     await initGeo(server.log)
+    await initNetworkClassify(server.log)
 
     startBufferProcessor({ logger: server.log })
     startQueueDepthMonitor({ logger: server.log })

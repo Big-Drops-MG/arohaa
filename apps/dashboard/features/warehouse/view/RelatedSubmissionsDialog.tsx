@@ -28,10 +28,24 @@ type RelatedRow = {
 }
 
 type RelatedPayload = {
+  status?: "ok" | "unavailable" | "no_keys" | "no_tenant"
   totalDirect: number
+  totalIndirect: number
   truncated: boolean
   findings: Array<{ code: string; detail: string }>
   rows: RelatedRow[]
+}
+
+type HistoryEntry = {
+  revision: number
+  decision: string
+  decision_note: string
+  decision_by: string
+  decision_at: string
+  call_outcome: string
+  call_outcome_by: string
+  call_outcome_at: string
+  updated_at: string
 }
 
 export function RelatedSubmissionsDialog({
@@ -48,17 +62,73 @@ export function RelatedSubmissionsDialog({
   tenantWorkspaceId?: string
 }) {
   const [data, setData] = useState<RelatedPayload | null>(null)
+  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [expectedRevision, setExpectedRevision] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [decision, setDecision] = useState("")
   const [note, setNote] = useState("")
   const [outcome, setOutcome] = useState("")
   const [saving, setSaving] = useState(false)
 
+  async function loadReviewState(
+    tenant: string,
+    cancelled?: () => boolean
+  ): Promise<void> {
+    const histParams = new URLSearchParams({
+      tenantWorkspaceId: tenant,
+      workspaceId,
+      sessionId,
+    })
+    const [reviewRes, histRes] = await Promise.all([
+      fetch(
+        `/api/warehouse/review?${new URLSearchParams({
+          tenantWorkspaceId: tenant,
+          workspaceId,
+          sessionId,
+        })}`,
+        { cache: "no-store" }
+      ),
+      fetch(`/api/warehouse/review/history?${histParams}`, {
+        cache: "no-store",
+      }),
+    ])
+    if (cancelled?.()) return
+    if (reviewRes.ok) {
+      const body = (await reviewRes.json()) as {
+        review?: {
+          revision?: number
+          decision?: string
+          decision_note?: string
+          call_outcome?: string
+        } | null
+      }
+      const review = body.review
+      setExpectedRevision(
+        review && Number.isFinite(Number(review.revision))
+          ? Number(review.revision)
+          : 0
+      )
+      if (review) {
+        setDecision(review.decision || "")
+        setNote(review.decision_note || "")
+        setOutcome(review.call_outcome || "")
+      }
+    } else {
+      setExpectedRevision(0)
+    }
+    if (histRes.ok) {
+      const body = (await histRes.json()) as { history?: HistoryEntry[] }
+      setHistory(Array.isArray(body.history) ? body.history : [])
+    }
+  }
+
   useEffect(() => {
     if (!open) return
     let cancelled = false
     setError(null)
     setData(null)
+    setHistory([])
+    setExpectedRevision(0)
     const params = new URLSearchParams({
       landingPageId: workspaceId,
       sessionId,
@@ -82,6 +152,13 @@ export function RelatedSubmissionsDialog({
           setError(err instanceof Error ? err.message : "Failed to load")
         }
       })
+
+    if (tenantWorkspaceId) {
+      void loadReviewState(tenantWorkspaceId, () => cancelled).catch(() => {
+        /* optional */
+      })
+    }
+
     return () => {
       cancelled = true
     }
@@ -106,9 +183,27 @@ export function RelatedSubmissionsDialog({
           decisionNote: note,
           callOutcome: outcome,
           reviewStatus: decision || outcome ? "reviewed" : "in_review",
+          expectedRevision,
         }),
       })
+      if (res.status === 409) {
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string
+        }
+        await loadReviewState(tenantWorkspaceId)
+        throw new Error(
+          body.error ||
+            "Review was updated elsewhere — form reloaded; review and save again"
+        )
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const body = (await res.json()) as {
+        review?: { revision?: number }
+      }
+      if (body.review && Number.isFinite(Number(body.review.revision))) {
+        setExpectedRevision(Number(body.review.revision))
+      }
+      await loadReviewState(tenantWorkspaceId)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed")
     } finally {
@@ -128,9 +223,20 @@ export function RelatedSubmissionsDialog({
         ) : null}
         {data ? (
           <div className="space-y-4">
+            {data.status && data.status !== "ok" ? (
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                Matching status: {data.status}. Conflicts may be unknown — do
+                not treat an empty list as proof of no related contacts.
+              </p>
+            ) : null}
             <p className="text-sm text-muted-foreground">
-              {data.totalDirect} direct matches
-              {data.truncated ? " (list truncated)" : ""}. Evidence only —
+              {data.totalDirect} direct
+              {data.totalIndirect > 0
+                ? `, ${data.totalIndirect} indirect`
+                : ""}{" "}
+              matches
+              {data.truncated ? " (list truncated at shared fetch cap)" : ""}.
+              Shared contacts do not imply one person. Evidence only —
               administrators decide.
             </p>
             {data.findings.length > 0 ? (
@@ -151,6 +257,7 @@ export function RelatedSubmissionsDialog({
                     <th className="py-2 pr-3">Email</th>
                     <th className="py-2 pr-3">ZIP</th>
                     <th className="py-2 pr-3">Match</th>
+                    <th className="py-2 pr-3">Degree</th>
                     <th className="py-2 pr-3">Conflicts</th>
                     <th className="py-2 pr-3">Outcome</th>
                   </tr>
@@ -198,6 +305,7 @@ export function RelatedSubmissionsDialog({
                         {row.zip || "—"}
                       </td>
                       <td className="py-2 pr-3">{row.matchBasis}</td>
+                      <td className="py-2 pr-3">{row.matchDegree}</td>
                       <td className="py-2 pr-3 text-xs">
                         {row.conflicts.join(", ") || "—"}
                       </td>
@@ -209,6 +317,24 @@ export function RelatedSubmissionsDialog({
                 </tbody>
               </table>
             </div>
+
+            {history.length > 0 ? (
+              <div className="rounded-lg border border-border p-4">
+                <h3 className="mb-2 text-sm font-medium">Review history</h3>
+                <ul className="space-y-2 text-xs text-muted-foreground">
+                  {[...history].reverse().map((h) => (
+                    <li key={`${h.revision}:${h.updated_at}`}>
+                      rev {h.revision}: {h.decision || "—"} /{" "}
+                      {h.call_outcome || "—"} by{" "}
+                      {h.decision_by || h.call_outcome_by || "—"} at{" "}
+                      {h.updated_at}
+                      {h.decision_note ? ` — ${h.decision_note}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
             <div className="grid gap-3 rounded-lg border border-border p-4 sm:grid-cols-2">
               <label className="text-sm">
                 <span className="mb-1 block text-xs text-muted-foreground">
@@ -254,6 +380,10 @@ export function RelatedSubmissionsDialog({
                   onChange={(e) => setNote(e.target.value)}
                 />
               </label>
+              <p className="text-xs text-muted-foreground sm:col-span-2">
+                Revision {expectedRevision} — concurrent edits are rejected;
+                reload and retry if another reviewer saved first.
+              </p>
               <button
                 type="button"
                 disabled={saving}

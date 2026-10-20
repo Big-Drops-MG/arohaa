@@ -1,9 +1,13 @@
-import { LEAD_FRAUD_MODEL_VERSION } from './constants.js'
+import {
+  ASSESSMENT_MAX_AGE_MS,
+  LEAD_FRAUD_MODEL_VERSION,
+} from './constants.js'
 import {
   buildFeaturesFromLeadSessionSignal,
   computeLeadVelocityMaps,
   type LeadSessionSignalRow,
 } from './field-signals.js'
+import { loadContactRiskSignals } from './contact-risk.js'
 import { persistContactKeysFromSignals } from './contact-keys.js'
 import { loadFiBehaviorBySessions } from './fi-batch.js'
 import { loadLeadSessionSignals } from './load-sessions.js'
@@ -13,11 +17,56 @@ import {
   upsertLeadRisk,
   upsertLeadRiskBatch,
 } from './persist.js'
+import {
+  behaviorEvidenceToken,
+  composeEvidenceToken,
+} from './evidence-token.js'
 import { scoreLeadFraud } from './score.js'
-import type { LeadFraudAssessment, LeadFraudFeatures } from './types.js'
+import type {
+  LeadFraudAssessment,
+  LeadFraudFeatures,
+  LeadRiskRow,
+} from './types.js'
 
 function sessionKey(workspaceId: string, sessionId: string): string {
   return `${workspaceId}:${sessionId}`
+}
+
+function parseScoredAtMs(raw: string): number {
+  const trimmed = String(raw || '').trim()
+  if (!trimmed) return 0
+  const normalized = trimmed.includes('T')
+    ? trimmed
+    : `${trimmed.replace(' ', 'T')}${trimmed.includes('Z') ? '' : 'Z'}`
+  const ms = Date.parse(normalized)
+  return Number.isFinite(ms) ? ms : 0
+}
+
+function evidenceTokenFromFeaturesJson(featuresJson: string): string {
+  try {
+    const parsed = JSON.parse(featuresJson || '{}') as {
+      evidenceToken?: unknown
+    }
+    return typeof parsed.evidenceToken === 'string' ? parsed.evidenceToken : ''
+  } catch {
+    return ''
+  }
+}
+
+function canReuseAssessment(
+  row: LeadRiskRow | null | undefined,
+  currentEvidenceToken?: string,
+): boolean {
+  if (!row) return false
+  if (row.model_version !== LEAD_FRAUD_MODEL_VERSION) return false
+  const scoredAt = parseScoredAtMs(row.scored_at)
+  if (!scoredAt) return false
+  if (Date.now() - scoredAt > ASSESSMENT_MAX_AGE_MS) return false
+  if (currentEvidenceToken) {
+    const prior = evidenceTokenFromFeaturesJson(row.features_json)
+    if (!prior || prior !== currentEvidenceToken) return false
+  }
+  return true
 }
 
 function unavailableAssessment(): LeadFraudAssessment {
@@ -44,19 +93,6 @@ export async function ensureSessionFraudAssessment(input: {
   sessionId: string
   forceRescore?: boolean
 }): Promise<LeadFraudAssessment> {
-  const existingMap = await fetchLeadRiskRows(input.workspaceId, [
-    input.sessionId,
-  ])
-  const existing = existingMap.get(input.sessionId) ?? null
-  if (
-    existing &&
-    !input.forceRescore &&
-    existing.model_version === LEAD_FRAUD_MODEL_VERSION
-  ) {
-    const assessment = assessmentFromRiskRow(existing)
-    if (assessment) return assessment
-  }
-
   const map = await ensureSessionsFraudAssessments({
     workspaceId: input.workspaceId,
     sessionIds: [input.sessionId],
@@ -80,20 +116,6 @@ export async function ensureSessionsFraudAssessments(input: {
   const existing = input.forceRescore
     ? new Map()
     : await fetchLeadRiskRows(input.workspaceId, ids)
-  const needScore: string[] = []
-  for (const sid of ids) {
-    const row = existing.get(sid)
-    if (row && row.model_version === LEAD_FRAUD_MODEL_VERSION) {
-      const assessment = assessmentFromRiskRow(row)
-      if (assessment) {
-        out.set(sid, assessment)
-        continue
-      }
-    }
-    needScore.push(sid)
-  }
-
-  if (needScore.length === 0) return out
 
   const workspaceRows = await loadLeadSessionSignals({
     workspaceId: input.workspaceId,
@@ -103,7 +125,7 @@ export async function ensureSessionsFraudAssessments(input: {
     workspaceRows.map((row) => [row.sessionId, row] as const),
   )
 
-  const missingIds = needScore.filter((sid) => !bySession.has(sid))
+  const missingIds = ids.filter((sid) => !bySession.has(sid))
   if (missingIds.length > 0) {
     const extra = await loadLeadSessionSignals({
       workspaceId: input.workspaceId,
@@ -114,15 +136,67 @@ export async function ensureSessionsFraudAssessments(input: {
     }
   }
 
-  const scoreRows = needScore
+  const signalRows = ids
     .map((sid) => bySession.get(sid))
     .filter((row): row is LeadSessionSignalRow => Boolean(row))
   const fiMap = await loadFiBehaviorBySessions(
-    scoreRows.map((row) => ({
+    signalRows.map((row) => ({
       workspaceId: row.workspaceId,
       sessionId: row.sessionId,
     })),
   )
+
+  const needScore: string[] = []
+  const contactBySid = new Map<
+    string,
+    Awaited<ReturnType<typeof loadContactRiskSignals>>
+  >()
+  const REUSE_CONCURRENCY = 8
+  for (let i = 0; i < ids.length; i += REUSE_CONCURRENCY) {
+    const chunk = ids.slice(i, i + REUSE_CONCURRENCY)
+    const chunkNeed: string[] = []
+    await Promise.all(
+      chunk.map(async (sid) => {
+        const row = existing.get(sid)
+        const signal = bySession.get(sid)
+        if (!signal) {
+          chunkNeed.push(sid)
+          return
+        }
+        const contact = await loadContactRiskSignals({
+          tenantWorkspaceId: signal.tenantWorkspaceId,
+          landingPageId: signal.workspaceId,
+          sessionId: sid,
+        })
+        contactBySid.set(sid, contact)
+        const fi =
+          fiMap.get(sessionKey(signal.workspaceId, sid)) ?? null
+        const evidenceToken = composeEvidenceToken(
+          contact.evidenceToken,
+          behaviorEvidenceToken(fi),
+        )
+        if (
+          !input.forceRescore &&
+          row &&
+          canReuseAssessment(row, evidenceToken)
+        ) {
+          const assessment = assessmentFromRiskRow(row)
+          if (assessment) {
+            out.set(sid, assessment)
+            return
+          }
+        }
+        chunkNeed.push(sid)
+      }),
+    )
+    needScore.push(...chunkNeed)
+  }
+
+  if (needScore.length === 0) return out
+
+  const scoreRows = needScore
+    .map((sid) => bySession.get(sid))
+    .filter((row): row is LeadSessionSignalRow => Boolean(row))
 
   const toPersist: Array<{
     workspaceId: string
@@ -134,29 +208,48 @@ export async function ensureSessionsFraudAssessments(input: {
     emailHash?: string
   }> = []
 
-  for (const sid of needScore) {
-    const row = bySession.get(sid)
-    if (!row) {
-      out.set(sid, unavailableAssessment())
-      continue
-    }
-    try {
-      const fi = fiMap.get(sessionKey(row.workspaceId, row.sessionId)) ?? null
-      const features = buildFeaturesFromLeadSessionSignal(row, velocity, fi)
-      const assessment = scoreLeadFraud(features)
-      out.set(sid, assessment)
-      toPersist.push({
-        workspaceId: input.workspaceId,
-        sessionId: sid,
-        assessment,
-        features,
-        tenantWorkspaceId: row.tenantWorkspaceId,
-        phoneHash: row.phoneHash,
-        emailHash: row.emailHash,
-      })
-    } catch {
-      out.set(sid, unavailableAssessment())
-    }
+  const SCORE_CONCURRENCY = 8
+  for (let i = 0; i < needScore.length; i += SCORE_CONCURRENCY) {
+    const chunk = needScore.slice(i, i + SCORE_CONCURRENCY)
+    await Promise.all(
+      chunk.map(async (sid) => {
+        const row = bySession.get(sid)
+        if (!row) {
+          out.set(sid, unavailableAssessment())
+          return
+        }
+        try {
+          const fi =
+            fiMap.get(sessionKey(row.workspaceId, row.sessionId)) ?? null
+          const features = buildFeaturesFromLeadSessionSignal(row, velocity, fi)
+          const contact =
+            contactBySid.get(sid) ??
+            (await loadContactRiskSignals({
+              tenantWorkspaceId: row.tenantWorkspaceId,
+              landingPageId: row.workspaceId,
+              sessionId: sid,
+            }))
+          Object.assign(features, contact)
+          features.evidenceToken = composeEvidenceToken(
+            contact.evidenceToken,
+            behaviorEvidenceToken(fi),
+          )
+          const assessment = scoreLeadFraud(features)
+          out.set(sid, assessment)
+          toPersist.push({
+            workspaceId: input.workspaceId,
+            sessionId: sid,
+            assessment,
+            features,
+            tenantWorkspaceId: row.tenantWorkspaceId,
+            phoneHash: row.phoneHash,
+            emailHash: row.emailHash,
+          })
+        } catch {
+          out.set(sid, unavailableAssessment())
+        }
+      }),
+    )
   }
 
   if (toPersist.length > 0) {
@@ -224,27 +317,43 @@ export async function classifyLeadSessionRows(
     emailHash?: string
   }> = []
 
-  for (const row of rows) {
-    const key = sessionKey(row.workspaceId, row.sessionId)
-    try {
-      const fi = fiMap.get(key) ?? null
-      const features = buildFeaturesFromLeadSessionSignal(row, velocity, fi)
-      if (features.email.includes('@')) emailByKey.set(key, features.email)
-      const assessment = scoreLeadFraud(features)
-      labelByKey.set(key, assessment.label)
-      assessments.set(key, { assessment, features })
-      toPersist.push({
-        workspaceId: row.workspaceId,
-        sessionId: row.sessionId,
-        assessment,
-        features,
-        tenantWorkspaceId: row.tenantWorkspaceId,
-        phoneHash: row.phoneHash,
-        emailHash: row.emailHash,
-      })
-    } catch {
-      /* skip failed row */
-    }
+  const CONTACT_CONCURRENCY = 8
+  for (let i = 0; i < rows.length; i += CONTACT_CONCURRENCY) {
+    const chunk = rows.slice(i, i + CONTACT_CONCURRENCY)
+    await Promise.all(
+      chunk.map(async (row) => {
+        const key = sessionKey(row.workspaceId, row.sessionId)
+        try {
+          const fi = fiMap.get(key) ?? null
+          const features = buildFeaturesFromLeadSessionSignal(row, velocity, fi)
+          const contact = await loadContactRiskSignals({
+            tenantWorkspaceId: row.tenantWorkspaceId,
+            landingPageId: row.workspaceId,
+            sessionId: row.sessionId,
+          })
+          Object.assign(features, contact)
+          features.evidenceToken = composeEvidenceToken(
+            contact.evidenceToken,
+            behaviorEvidenceToken(fi),
+          )
+          if (features.email.includes('@')) emailByKey.set(key, features.email)
+          const assessment = scoreLeadFraud(features)
+          labelByKey.set(key, assessment.label)
+          assessments.set(key, { assessment, features })
+          toPersist.push({
+            workspaceId: row.workspaceId,
+            sessionId: row.sessionId,
+            assessment,
+            features,
+            tenantWorkspaceId: row.tenantWorkspaceId,
+            phoneHash: row.phoneHash,
+            emailHash: row.emailHash,
+          })
+        } catch {
+          /* skip failed row */
+        }
+      }),
+    )
   }
 
   try {

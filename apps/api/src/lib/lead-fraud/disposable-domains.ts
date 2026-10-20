@@ -55,7 +55,6 @@ const ROLE_LOCAL_PARTS = new Set([
   'asdf',
 ])
 
-/** Practical email shape check (not full RFC). */
 const EMAIL_FORMAT_RE =
   /^[a-zA-Z0-9](?:[a-zA-Z0-9._%+-]{0,62}[a-zA-Z0-9])?@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+$/
 
@@ -83,6 +82,42 @@ export function isValidEmailFormat(email: string): boolean {
   return true
 }
 
+const COMMON_CONSUMER_DOMAINS = new Set(
+  [
+    'gmail.com',
+    'googlemail.com',
+    'yahoo.com',
+    'yahoo.co.uk',
+    'ymail.com',
+    'outlook.com',
+    'hotmail.com',
+    'live.com',
+    'msn.com',
+    'icloud.com',
+    'me.com',
+    'mac.com',
+    'aol.com',
+    'proton.me',
+    'protonmail.com',
+    'mail.com',
+    'gmx.com',
+    'gmx.net',
+    'comcast.net',
+    'verizon.net',
+    'att.net',
+    'sbcglobal.net',
+    'cox.net',
+    'charter.net',
+    'btinternet.com',
+    'sky.com',
+  ].map((d) => d.toLowerCase()),
+)
+
+export function isCommonConsumerEmailDomain(domain: string): boolean {
+  const d = domain.trim().toLowerCase()
+  return Boolean(d) && COMMON_CONSUMER_DOMAINS.has(d)
+}
+
 export function isDisposableEmailDomain(domain: string): boolean {
   const d = domain.trim().toLowerCase()
   if (!d) return false
@@ -104,9 +139,7 @@ export function isRoleEmailLocalPart(email: string): boolean {
   return ROLE_LOCAL_PARTS.has(base)
 }
 
-/**
- * Detect random / generated local parts (e.g. "x7kq2m9p", "a1b2c3d4e5").
- */
+
 export function looksLikeRandomEmailLocal(email: string): boolean {
   const local = emailLocalPart(email).split('+')[0] ?? ''
   if (!local || local.length < 8) return false
@@ -123,7 +156,6 @@ export function looksLikeRandomEmailLocal(email: string): boolean {
     if (vowels / letters.length < 0.15) return true
   }
 
-  // No separators and mixed alnum soup
   if (
     !/[._-]/.test(local) &&
     /[a-z]/i.test(local) &&

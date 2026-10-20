@@ -9,10 +9,18 @@ import {
   FP_REUSE_DAY_THRESHOLD,
   VELOCITY_WINDOW_HOURS,
 } from './constants.js'
-import { emailDomain } from './disposable-domains.js'
+import {
+  emailDomain,
+  isCommonConsumerEmailDomain,
+} from './disposable-domains.js'
 import { emptyFeatures } from './features.js'
 import type { FiBehaviorSummary } from './fi-batch.js'
-import type { LeadFraudFeatures } from './types.js'
+import { compareEnteredZipToIpGeo } from './location-compare.js'
+import type {
+  AttributionConfidence,
+  LeadFraudFeatures,
+  TrustedFormEvidenceTier,
+} from './types.js'
 
 export type LeadSessionSignalRow = {
   workspaceId: string
@@ -21,6 +29,9 @@ export type LeadSessionSignalRow = {
   browser: string
   geoZip: string
   geoState: string
+  geoCountry: string
+  geoCountryCode: string
+  geoCity: string
   clientIpHash: string
   formSubmitted: boolean
   props: string
@@ -31,8 +42,27 @@ export type LeadSessionSignalRow = {
   emailHash?: string
   eventId?: string
   utmSource?: string
+  firstObservedUtmSource?: string
   utmS1?: string
   utmCampaign?: string
+  networkClass?: string
+  networkAsn?: number
+  networkOrg?: string
+  networkEvidenceSource?: string
+  networkEvidenceAsOf?: string
+}
+
+function resolveAttribution(
+  submitUtm: string,
+  firstUtm: string,
+): AttributionConfidence {
+  const submit = submitUtm.trim()
+  const first = firstUtm.trim()
+  if (!submit && !first) return 'unknown'
+  if (!first) return 'submit_only'
+  if (!submit) return 'submit_only'
+  if (submit.toLowerCase() === first.toLowerCase()) return 'first_matches_submit'
+  return 'first_differs_from_submit'
 }
 
 export type LeadVelocityMaps = {
@@ -171,6 +201,44 @@ export function buildFeaturesFromLeadSessionSignal(
         hasFieldInteraction: false,
       }
 
+  const trustedFormUrl = pickTrustedFormUrl(rawFields)
+  const trustedFormEvidenceTier: TrustedFormEvidenceTier = trustedFormUrl
+    ? 'url_present'
+    : 'missing'
+  const submitUtmSource = (row.utmSource || '').trim()
+  const firstObservedUtmSource = (
+    row.firstObservedUtmSource ||
+    row.utmSource ||
+    ''
+  ).trim()
+  const location = compareEnteredZipToIpGeo({
+    formZipEntered,
+    ipCountry: row.geoCountry || '',
+    ipCountryCode: row.geoCountryCode || '',
+    ipStateCode: row.geoState || '',
+    ipCity: row.geoCity || '',
+    ipPostal: row.geoZip || '',
+  })
+  const networkClassRaw = (row.networkClass || '').trim()
+  const networkClass =
+    networkClassRaw === 'known_proxy_list' ||
+    networkClassRaw === 'hosting_network' ||
+    networkClassRaw === 'no_known_match' ||
+    networkClassRaw === 'unavailable'
+      ? networkClassRaw
+      : 'unavailable'
+  const networkEvidenceSource = (row.networkEvidenceSource || '').trim()
+  const networkEvidenceAsOf = (row.networkEvidenceAsOf || '').trim()
+  const networkOrg = (row.networkOrg || '').trim()
+  const networkDetail =
+    networkClass === 'known_proxy_list'
+      ? `Known proxy/VPN-list match — source ${networkEvidenceSource || 'unknown'}, as of ${networkEvidenceAsOf || 'unknown'}. Alone cannot establish fraud.`
+      : networkClass === 'hosting_network'
+        ? `Hosting-network match${networkOrg ? ` (${networkOrg})` : ''} — suggests infrastructure use, not necessarily a proxy`
+        : networkClass === 'no_known_match'
+          ? 'No known proxy/VPN or hosting list match — does not mean “no proxy”'
+          : 'Network classification unavailable or stale — detection could not reliably run'
+
   return emptyFeatures({
     fingerprint,
     browser: (row.browser || '').trim(),
@@ -183,7 +251,22 @@ export function buildFeaturesFromLeadSessionSignal(
     geoZip: (row.geoZip || '').trim(),
     stateField: (fields.state || '').trim(),
     geoState: (row.geoState || '').trim(),
-    trustedFormUrl: pickTrustedFormUrl(rawFields),
+    geoCountry: (row.geoCountry || '').trim(),
+    geoCountryCode: (row.geoCountryCode || '').trim(),
+    geoCity: (row.geoCity || '').trim(),
+    locationComparison: location.result,
+    locationComparisonDetail: location.detail,
+    networkClass,
+    networkAsn:
+      typeof row.networkAsn === 'number' && row.networkAsn > 0
+        ? row.networkAsn
+        : null,
+    networkOrg,
+    networkEvidenceSource,
+    networkEvidenceAsOf,
+    networkDetail,
+    trustedFormUrl,
+    trustedFormEvidenceTier,
     clientIpHash: ipHash,
     ...behavior,
     fiBehaviorKnown: fiKnown,
@@ -215,9 +298,19 @@ export function buildFeaturesFromLeadSessionSignal(
           windowMs,
         )
       : 0,
+    emailDomainIsCommonConsumer: domain
+      ? isCommonConsumerEmailDomain(domain)
+      : false,
     fieldCount:
       Object.keys(fields).length + (email ? 1 : 0) + (formZipEntered ? 1 : 0),
     velocityWindowKnown: true,
+    submitUtmSource,
+    firstObservedUtmSource,
+    attributionConfidence: resolveAttribution(
+      submitUtmSource,
+      firstObservedUtmSource,
+    ),
+    evidenceCutoffMs: centerMs > 0 ? centerMs : Date.now(),
   })
 }
 

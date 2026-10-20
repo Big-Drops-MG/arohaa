@@ -40,11 +40,6 @@ function add(bucket: Bucket, points: number, reason: string): void {
   bucket.reasons.push(`${reason} (−${applied} trust)`)
 }
 
-function isBotUa(browser: string): boolean {
-  const b = browser.toLowerCase()
-  return b.includes('bot') || b.includes('crawler') || b.includes('spider')
-}
-
 function pushFinding(
   findings: LeadFraudFinding[],
   code: string,
@@ -63,12 +58,20 @@ function resolveCoverage(features: LeadFraudFeatures): LeadSignalCoverage {
   if (!features.fiBehaviorKnown && !features.velocityWindowKnown && !hasIdentity) {
     return 'insufficient'
   }
-  if (!features.fiBehaviorKnown || !features.velocityWindowKnown) {
-    return 'partial'
+  let coverage: LeadSignalCoverage =
+    !features.fiBehaviorKnown || !features.velocityWindowKnown
+      ? 'partial'
+      : 'sufficient'
+  if (
+    coverage === 'sufficient' &&
+    (features.contactMatchTruncated ||
+      features.contactMatchStatus === 'unavailable' ||
+      features.contactMatchStatus === 'no_tenant')
+  ) {
+    coverage = 'partial'
   }
-  return 'sufficient'
+  return coverage
 }
-
 
 export function scoreLeadFraud(
   features: LeadFraudFeatures,
@@ -90,11 +93,21 @@ export function scoreLeadFraud(
       'Rolling velocity could not be assessed with a real time window',
     )
   }
-  if (features.formSubmitted && !features.trustedFormUrl.trim()) {
+
+  const tfTier =
+    features.trustedFormEvidenceTier ||
+    (features.trustedFormUrl.trim() ? 'url_present' : 'missing')
+  if (features.formSubmitted && tfTier === 'missing') {
     pushFinding(
       findings,
       'missing_evidence',
       'TrustedForm certificate URL was not present (capture only; not verified)',
+    )
+  } else if (features.formSubmitted && tfTier === 'url_present') {
+    pushFinding(
+      findings,
+      'trustedform_url_present',
+      'TrustedForm URL present; certificate verification is a separate future capability',
     )
   }
 
@@ -142,14 +155,15 @@ export function scoreLeadFraud(
     cap: LEAD_FRAUD_CAPS.completeness,
     reasons: [],
   }
+  const contact: Bucket = {
+    points: 0,
+    cap: LEAD_FRAUD_CAPS.contact,
+    reasons: [],
+  }
 
   if (!features.fingerprint.trim()) {
     add(device, W.emptyFingerprint, 'Empty device fingerprint')
     pushFinding(findings, 'empty_fingerprint', 'Device fingerprint was empty')
-  }
-  if (isBotUa(features.browser)) {
-    add(device, W.botUserAgent, 'Bot / crawler user agent')
-    pushFinding(findings, 'bot_user_agent', 'Bot or crawler user agent')
   }
   if (features.fingerprintSessionsSameDay >= FP_REUSE_DAY_THRESHOLD) {
     add(
@@ -271,7 +285,7 @@ export function scoreLeadFraud(
     add(identity, W.nonsenseName, 'Nonsense name pattern')
   }
 
-  if (features.formSubmitted && !features.trustedFormUrl.trim()) {
+  if (features.formSubmitted && tfTier === 'missing') {
     add(trustBucket, W.missingTrustedForm, 'Missing TrustedForm certificate')
   }
 
@@ -295,7 +309,10 @@ export function scoreLeadFraud(
         `${features.ipHashSubmits24h} submits from same IP hash in 24h`,
       )
     }
-    if (features.emailDomainSubmits24h >= VELOCITY_DOMAIN_THRESHOLD) {
+    if (
+      features.emailDomainSubmits24h >= VELOCITY_DOMAIN_THRESHOLD &&
+      !features.emailDomainIsCommonConsumer
+    ) {
       add(
         velocity,
         W.velocityEmailDomain,
@@ -304,23 +321,181 @@ export function scoreLeadFraud(
     }
   }
 
-  const formZip = features.formZipEntered.trim() || features.zip.trim()
-  const geoZip = features.geoZip.trim()
-  if (formZip && geoZip && formZip !== geoZip) {
+  if (features.locationComparison === 'consistent') {
+    pushFinding(
+      findings,
+      'location_consistent',
+      features.locationComparisonDetail ||
+        'Entered location agrees with IP estimate — not a verified-lead claim',
+    )
+  } else if (features.locationComparison === 'minor_difference') {
+    pushFinding(
+      findings,
+      'location_minor_difference',
+      features.locationComparisonDetail ||
+        'Minor location difference — informational',
+    )
+  } else if (features.locationComparison === 'inconsistency') {
     add(
       consistency,
-      W.zipMismatch,
-      `Form zip ${formZip} differs from geo zip ${geoZip}`,
+      W.locationInconsistency,
+      features.locationComparisonDetail ||
+        'Substantial location inconsistency between entered ZIP region and IP geo',
     )
     pushFinding(
       findings,
       'location_inconsistency',
-      `Entered ZIP ${formZip} differs from IP-derived ZIP ${geoZip}`,
+      features.locationComparisonDetail ||
+        'Substantial location inconsistency between entered ZIP region and IP geo',
+    )
+  } else {
+    pushFinding(
+      findings,
+      'location_comparison_unavailable',
+      features.locationComparisonDetail ||
+        'Location comparison unavailable — unknown, not match or mismatch',
+    )
+  }
+
+  const network: Bucket = {
+    points: 0,
+    cap: LEAD_FRAUD_CAPS.network,
+    reasons: [],
+  }
+  if (features.networkClass === 'known_proxy_list') {
+    add(
+      network,
+      W.knownProxyList,
+      `Known proxy/VPN-list match (${features.networkEvidenceSource || 'list'}; as of ${features.networkEvidenceAsOf || 'unknown'})`,
+    )
+    pushFinding(
+      findings,
+      'network_known_proxy_list',
+      features.networkDetail ||
+        `Known proxy/VPN-list match — source ${features.networkEvidenceSource || 'unknown'}, as of ${features.networkEvidenceAsOf || 'unknown'}. Alone cannot establish fraud.`,
+    )
+  } else if (features.networkClass === 'hosting_network') {
+    add(network, W.hostingNetwork, 'Hosting/infrastructure network match')
+    pushFinding(
+      findings,
+      'network_hosting',
+      `Hosting-network match${features.networkOrg ? ` (${features.networkOrg})` : ''} — suggests infrastructure use, not necessarily a proxy`,
+    )
+  } else if (features.networkClass === 'no_known_match') {
+    pushFinding(
+      findings,
+      'network_no_known_match',
+      'No known proxy/VPN or hosting list match — does not mean “no proxy”',
+    )
+  } else {
+    pushFinding(
+      findings,
+      'network_unavailable',
+      features.networkDetail ||
+        'Network classification unavailable or stale — detection could not reliably run',
     )
   }
 
   if (features.formSubmitted && features.fieldCount <= 1) {
     add(completeness, W.emptySubmittedLead, 'Submitted with almost empty fields')
+  }
+
+  if (features.contactMatchStatus === 'unavailable') {
+    pushFinding(
+      findings,
+      'contact_matching_unavailable',
+      'Related-contact matching temporarily unavailable; conflicts unknown',
+    )
+  } else if (features.contactMatchStatus === 'no_tenant') {
+    pushFinding(
+      findings,
+      'contact_matching_unavailable',
+      'Organisation id missing; cross-page matching disabled',
+    )
+  }
+
+  if (features.contactMatchTruncated) {
+    pushFinding(
+      findings,
+      'matching_truncated',
+      'Related-contact matching hit the shared fetch cap; related results may be incomplete',
+    )
+  }
+
+  if (
+    features.contactMatchStatus === 'ok' &&
+    features.contactRepeatedAcrossPages
+  ) {
+    pushFinding(
+      findings,
+      'contact_repeated_across_pages',
+      'Contact appears across multiple landing pages (informational)',
+    )
+  }
+  if (
+    features.contactMatchStatus === 'ok' &&
+    features.contactRepeatedAcrossPartners
+  ) {
+    pushFinding(
+      findings,
+      'contact_repeated_across_partners',
+      'Contact appears across multiple partners (informational)',
+    )
+  }
+
+  const correlatedConflict =
+    features.contactMatchStatus === 'ok' &&
+    (features.samePhoneDifferentNames ||
+      features.samePhoneDifferentEmails ||
+      features.contactLocationChanged)
+  if (correlatedConflict) {
+    add(
+      contact,
+      W.samePhoneDifferentIdentity,
+      'Correlated identity conflicts on related contact submissions',
+    )
+    if (features.samePhoneDifferentNames) {
+      pushFinding(
+        findings,
+        'same_phone_different_names',
+        'Same phone with different names on related submissions',
+      )
+    }
+    if (features.samePhoneDifferentEmails) {
+      pushFinding(
+        findings,
+        'same_phone_different_emails',
+        'Same phone with different emails on related submissions',
+      )
+    }
+    if (features.contactLocationChanged) {
+      pushFinding(
+        findings,
+        'contact_location_changed',
+        'ZIP differs across related submissions',
+      )
+    }
+  }
+
+  if (
+    features.contactMatchStatus === 'ok' &&
+    features.relatedMarkedInvalidCount > 0
+  ) {
+    pushFinding(
+      findings,
+      'related_submission_marked_invalid',
+      `${features.relatedMarkedInvalidCount} related submission(s) previously marked invalid (context only; not transferred)`,
+    )
+  }
+
+  if (
+    features.attributionConfidence === 'first_differs_from_submit'
+  ) {
+    pushFinding(
+      findings,
+      'attribution_first_touch_differs',
+      `First-observed partner (${features.firstObservedUtmSource || 'unknown'}) differs from submit-time (${features.submitUtmSource || 'unknown'}); earlier UTM is not automatically trustworthy`,
+    )
   }
 
   const buckets = [
@@ -331,16 +506,18 @@ export function scoreLeadFraud(
     velocity,
     consistency,
     completeness,
+    contact,
+    network,
   ]
   const riskPoints = buckets.reduce((sum, b) => sum + b.points, 0)
   let trustScore = Math.max(0, Math.min(100, 100 - Math.round(riskPoints)))
 
   if (
     features.fiBehaviorKnown &&
-    isBotUa(features.browser) &&
     !features.fingerprint.trim() &&
     features.fillDurationMs != null &&
-    features.fillDurationMs < FILL_TOO_FAST_MS
+    features.fillDurationMs < FILL_TOO_FAST_MS &&
+    features.typedCount === 0
   ) {
     trustScore = Math.min(trustScore, 15)
   }

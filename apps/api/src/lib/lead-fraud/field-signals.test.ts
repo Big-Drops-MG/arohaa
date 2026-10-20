@@ -16,6 +16,9 @@ function signal(
     browser: 'Chrome',
     geoZip: '10001',
     geoState: 'NY',
+    geoCountry: 'United States',
+    geoCountryCode: 'US',
+    geoCity: 'New York',
     clientIpHash: 'ip-1',
     formSubmitted: true,
     props: JSON.stringify({

@@ -5,7 +5,6 @@ import {
   Keyboard,
   MousePointerClick,
   ShieldAlert,
-  Users,
 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import { dashboardPageInsetClassName } from "@/features/overview/view/overview-card-density"
@@ -17,8 +16,8 @@ import type {
 } from "@/lib/server/warehouse-load"
 import { formatDashboardDateTime } from "@/lib/datetime"
 import { getEventDisplayName } from "@/features/warehouse/model/event-display-names"
-import { ShortcutLeadsTable } from "@/features/warehouse/view/ShortcutLeadsTable"
 import { PartnerScorecardsPanel } from "@/features/warehouse/view/PartnerScorecardsPanel"
+import { WarehouseLeadReviewSection } from "@/features/warehouse/view/WarehouseLeadReviewSection"
 
 function formatCount(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
@@ -381,50 +380,20 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
             </div>
           </section>
 
-          <section className="space-y-3">
-            <h2 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              Lead quality overview
-            </h2>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-              <StatCard
-                label="Submissions"
-                value={formatCount(summary.quality?.submissions ?? 0)}
-                hint="Scored lead sessions"
-                compact
-              />
-              <StatCard
-                label="Elevated risk"
-                value={formatCount(
-                  summary.quality?.flagged ?? summary.risk.elevatedRisk ?? 0
-                )}
-                hint="Fewer observed risk indicators below threshold"
-                tone="fraud"
-                compact
-              />
-              <StatCard
-                label="Incomplete data"
-                value={formatCount(
-                  summary.quality?.incompleteAssessments ??
-                    summary.risk.insufficientData ??
-                    0
-                )}
-                hint="Insufficient signal coverage"
-                compact
-              />
-              <StatCard
-                label="Related groups"
-                value={formatCount(summary.quality?.relatedContactGroups ?? 0)}
-                hint="Contact keys within organisations"
-                compact
-              />
-              <StatCard
-                label="Pending reviews"
-                value={formatCount(summary.quality?.pendingReviews ?? 0)}
-                hint="Administrator backlog"
-                compact
-              />
-            </div>
-          </section>
+          <WarehouseLeadReviewSection
+            submissions={summary.quality?.submissions ?? 0}
+            elevatedRisk={
+              summary.quality?.flagged ?? summary.risk.elevatedRisk ?? 0
+            }
+            incompleteAssessments={
+              summary.quality?.incompleteAssessments ??
+              summary.risk.insufficientData ??
+              0
+            }
+            relatedContactGroups={summary.quality?.relatedContactGroups ?? 0}
+            pendingReviews={summary.quality?.pendingReviews ?? 0}
+            shortcutLeads={summary.shortcutLeads ?? []}
+          />
 
           <section className="space-y-3">
             <h2 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
@@ -525,24 +494,8 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
           </Panel>
 
           <Panel
-            title="Lead review"
-            description={
-              (summary.shortcutLeads?.length ?? 0) > 0
-                ? `${formatCount(summary.shortcutLeads.length)} Copy/Paste sessions — assessments are informational only`
-                : "Copy/Paste sessions with trust, coverage, related submissions and review"
-            }
-            icon={Users}
-            className="min-w-0"
-            bodyClassName="min-w-0 px-0 py-0"
-          >
-            <div className="max-h-[28rem] min-w-0 overflow-x-auto overflow-y-auto overscroll-contain px-5 py-4">
-              <ShortcutLeadsTable rows={summary.shortcutLeads ?? []} />
-            </div>
-          </Panel>
-
-          <Panel
             title="Partner scorecards"
-            description="Confirmed call outcomes by partner — sample sizes included"
+            description="Confirmed call outcomes by partner — denominators and unresolved included. Context only."
             icon={ShieldAlert}
           >
             <PartnerScorecardsPanel />

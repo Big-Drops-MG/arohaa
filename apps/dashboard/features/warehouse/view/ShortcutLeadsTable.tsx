@@ -57,6 +57,41 @@ function shortcutLabel(lead: WarehouseShortcutLead): string {
   return "—"
 }
 
+function fingerprintDisplay(lead: WarehouseShortcutLead): string {
+  return lead.fingerprintId || lead.macId || ""
+}
+
+function locationCheckLabel(raw: string | undefined): string {
+  const key = (raw || "").replace(/^location_/, "").replace(/^comparison_/, "")
+  switch (key) {
+    case "consistent":
+      return "Location consistent"
+    case "minor_difference":
+      return "Minor location difference"
+    case "inconsistency":
+      return "Location inconsistency"
+    case "unavailable":
+      return "Location comparison unavailable"
+    default:
+      return key || ""
+  }
+}
+
+function networkClassLabel(raw: string | undefined): string {
+  switch ((raw || "").trim()) {
+    case "known_proxy_list":
+      return "Known proxy/VPN-list match"
+    case "hosting_network":
+      return "Hosting-network match"
+    case "no_known_match":
+      return "No known match"
+    case "unavailable":
+      return "Unavailable"
+    default:
+      return raw || ""
+  }
+}
+
 export function ShortcutLeadsTable({
   rows,
 }: {
@@ -66,6 +101,7 @@ export function ShortcutLeadsTable({
   const [relatedLead, setRelatedLead] = useState<WarehouseShortcutLead | null>(
     null
   )
+  const [showPii, setShowPii] = useState(false)
 
   if (rows.length === 0) {
     return (
@@ -79,6 +115,17 @@ export function ShortcutLeadsTable({
 
   return (
     <>
+      <div className="mb-3 flex items-center justify-end gap-3">
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={showPii}
+            onChange={(e) => setShowPii(e.target.checked)}
+            className="rounded border-border"
+          />
+          Show full email (authorised reviewers)
+        </label>
+      </div>
       <table className="w-max min-w-full border-collapse text-sm">
         <thead>
           <tr className="border-b border-border">
@@ -92,9 +139,12 @@ export function ShortcutLeadsTable({
             <th className={leadThClassName}>First Name</th>
             <th className={leadThClassName}>Last Name</th>
             <th className={leadThClassName}>Email</th>
-            <th className={leadThClassName}>Zip</th>
+            <th className={leadThClassName}>Entered ZIP</th>
+            <th className={leadThClassName}>IP location</th>
+            <th className={leadThClassName}>Location check</th>
+            <th className={leadThClassName}>Network</th>
             <th className={leadThClassName}>UTM Source</th>
-            <th className={leadThClassName}>UTM ID</th>
+            <th className={leadThClassName}>First UTM</th>
             <th className={leadThClassName}>TrustedForm</th>
             <th className={leadThClassName}>Form Submitted</th>
             {fieldKeys.map((key) => (
@@ -102,7 +152,7 @@ export function ShortcutLeadsTable({
                 {humanizeLeadFieldLabel(key)}
               </th>
             ))}
-            <th className={leadThClassName}>MAC ID</th>
+            <th className={leadThClassName}>Fingerprint</th>
             <th className={leadThClassName}>Session</th>
           </tr>
         </thead>
@@ -163,10 +213,74 @@ export function ShortcutLeadsTable({
               <td className={leadTdClassName}>
                 {cellValue(lead.lastName || lead.fields.last_name)}
               </td>
-              <td className={leadTdClassName}>{cellValue(lead.email)}</td>
+              <td className={leadTdClassName}>
+                {cellValue(
+                  showPii ? lead.email : lead.emailMasked || lead.email
+                )}
+              </td>
               <td className={leadTdClassName}>{cellValue(lead.zip)}</td>
+              <td
+                className={cn(
+                  leadTdClassName,
+                  "max-w-[12rem] whitespace-normal"
+                )}
+                title={
+                  lead.geoZip
+                    ? `IP postal (unreliable): ${lead.geoZip}`
+                    : undefined
+                }
+              >
+                {[
+                  lead.geoCity,
+                  lead.geoState || lead.geoCountryCode,
+                  lead.geoCountryCode || lead.geoCountry,
+                ]
+                  .filter(Boolean)
+                  .join(", ") || "—"}
+              </td>
+              <td
+                className={cn(
+                  leadTdClassName,
+                  "max-w-[14rem] whitespace-normal"
+                )}
+                title={lead.locationComparisonDetail || ""}
+              >
+                {cellValue(locationCheckLabel(lead.locationComparison))}
+              </td>
+              <td
+                className={cn(
+                  leadTdClassName,
+                  "max-w-[14rem] whitespace-normal"
+                )}
+                title={[
+                  lead.networkOrg,
+                  lead.networkEvidenceSource
+                    ? `source: ${lead.networkEvidenceSource}`
+                    : "",
+                  lead.networkEvidenceAsOf
+                    ? `as of: ${lead.networkEvidenceAsOf}`
+                    : "",
+                  lead.networkClass === "no_known_match"
+                    ? "Does not mean no proxy"
+                    : lead.networkClass === "hosting_network"
+                      ? "Infrastructure use, not necessarily a proxy"
+                      : lead.networkClass === "known_proxy_list"
+                        ? "Alone cannot establish fraud"
+                        : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              >
+                {cellValue(networkClassLabel(lead.networkClass))}
+                {lead.networkAsn ? ` AS${lead.networkAsn}` : ""}
+              </td>
               <td className={leadTdClassName}>{cellValue(lead.utmSource)}</td>
-              <td className={leadTdClassName}>{cellValue(lead.utmId)}</td>
+              <td
+                className={leadTdClassName}
+                title={lead.attributionConfidence || ""}
+              >
+                {cellValue(lead.firstObservedUtmSource)}
+              </td>
               <td
                 className={cn(
                   leadTdClassName,
@@ -179,6 +293,11 @@ export function ShortcutLeadsTable({
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm font-medium break-all text-sky-700 underline-offset-2 hover:underline"
+                    title={
+                      lead.trustedFormEvidenceTier === "url_present"
+                        ? "URL present — not verified"
+                        : undefined
+                    }
                   >
                     View certificate
                   </a>
@@ -215,7 +334,7 @@ export function ShortcutLeadsTable({
                   "font-mono text-xs text-muted-foreground"
                 )}
               >
-                {cellValue(lead.macId)}
+                {cellValue(fingerprintDisplay(lead))}
               </td>
               <td
                 className={cn(

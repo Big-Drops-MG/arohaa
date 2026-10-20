@@ -68,13 +68,15 @@ export function parseFiBehavior(items: FiLogItem[]): {
 const NONSENSE_NAME_RE =
   /^(asdf+|qwer+|zxcv+|test|testing|abc|xxx|aaa|bbb|none|n\/a|na|foo|bar|spam|asdfgh|qwerty)$/i
 
+
 export function looksLikeNonsenseName(value: string): boolean {
   const trimmed = value.trim()
   if (!trimmed) return false
   if (trimmed.length < 2) return true
   if (NONSENSE_NAME_RE.test(trimmed)) return true
   if (/^\d+$/.test(trimmed)) return true
-  if (/^[^a-zA-Z]+$/.test(trimmed)) return true
+  if (!/\p{L}/u.test(trimmed)) return true
+  if (/^(.)\1{2,}$/u.test(trimmed)) return true
   return false
 }
 
@@ -103,6 +105,17 @@ export function emptyFeatures(
     geoZip: '',
     stateField: '',
     geoState: '',
+    geoCountry: '',
+    geoCountryCode: '',
+    geoCity: '',
+    locationComparison: 'unavailable',
+    locationComparisonDetail: '',
+    networkClass: 'unavailable',
+    networkAsn: null,
+    networkOrg: '',
+    networkEvidenceSource: '',
+    networkEvidenceAsOf: '',
+    networkDetail: '',
     trustedFormUrl: '',
     clientIpHash: '',
     fillDurationMs: null,
@@ -118,10 +131,29 @@ export function emptyFeatures(
     fingerprintSubmits24h: 0,
     ipHashSubmits24h: 0,
     emailDomainSubmits24h: 0,
+    emailDomainIsCommonConsumer: false,
     fieldCount: 0,
     velocityWindowKnown: false,
+    contactMatchStatus: 'no_keys',
+    contactMatchTruncated: false,
+    contactRepeatedAcrossPages: false,
+    contactRepeatedAcrossPartners: false,
+    samePhoneDifferentNames: false,
+    samePhoneDifferentEmails: false,
+    contactLocationChanged: false,
+    relatedMarkedInvalidCount: 0,
+    evidenceToken: '',
+    submitUtmSource: '',
+    firstObservedUtmSource: '',
+    attributionConfidence: 'unknown',
+    evidenceCutoffMs: 0,
     ...rest,
     formZipEntered,
     zip: formZipEntered,
+    trustedFormEvidenceTier:
+      rest.trustedFormEvidenceTier ??
+      (rest.trustedFormUrl?.trim() || partial.trustedFormUrl?.trim()
+        ? 'url_present'
+        : 'missing'),
   }
 }
