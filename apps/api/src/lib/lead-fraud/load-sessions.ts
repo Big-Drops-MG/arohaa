@@ -17,6 +17,7 @@ type RawSignalRow = {
   geo_country: string
   geo_country_code: string
   geo_city: string
+  client_ip: string
   client_ip_hash: string
   form_submitted: number | boolean | string
   props: string
@@ -61,6 +62,7 @@ function mapRow(row: RawSignalRow): LeadSessionSignalRow | null {
     geoCountry: String(row.geo_country || ''),
     geoCountryCode: String(row.geo_country_code || ''),
     geoCity: String(row.geo_city || ''),
+    clientIp: String(row.client_ip || '').trim(),
     clientIpHash: String(row.client_ip_hash || ''),
     formSubmitted: isTruthyFlag(row.form_submitted),
     props: String(row.props || '{}'),
@@ -130,6 +132,7 @@ const LEAD_SESSION_SELECT = `
   anyIf(country, country != '') AS geo_country,
   anyIf(country_code, country_code != '') AS geo_country_code,
   anyIf(city, city != '') AS geo_city,
+  anyIf(client_ip, client_ip != '') AS client_ip,
   anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
   max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
   ${LEAD_PROPS_EXPR} AS props,
@@ -166,6 +169,7 @@ const LEAD_SESSION_SELECT_BASE = `
   anyIf(country, country != '') AS geo_country,
   '' AS geo_country_code,
   anyIf(city, city != '') AS geo_city,
+  anyIf(client_ip, client_ip != '') AS client_ip,
   anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
   max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
   ${LEAD_PROPS_EXPR} AS props,
@@ -183,6 +187,7 @@ const LEAD_SESSION_SELECT_MINIMAL = `
   anyIf(country, country != '') AS geo_country,
   '' AS geo_country_code,
   anyIf(city, city != '') AS geo_city,
+  '' AS client_ip,
   anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
   max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
   ${LEAD_PROPS_EXPR} AS props,
@@ -218,14 +223,100 @@ async function queryLeadSessions(
   return out
 }
 
+/**
+ * Session-wide IP lookup (any event including `_fi`), same idea as loading
+ * `_fi` behavior separately from lead field rows.
+ */
+export async function loadClientIpBySessions(
+  sessions: Array<{ workspaceId: string; sessionId: string }>,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const byWorkspace = new Map<string, string[]>()
+  for (const s of sessions) {
+    const wid = s.workspaceId.trim()
+    const sid = s.sessionId.trim()
+    if (!wid || !sid) continue
+    const list = byWorkspace.get(wid) ?? []
+    list.push(sid)
+    byWorkspace.set(wid, list)
+  }
+  if (byWorkspace.size === 0) return out
+
+  const ch = getClickHouseClient()
+  for (const [wid, sids] of byWorkspace) {
+    const uniqueSids = [...new Set(sids)]
+    for (let i = 0; i < uniqueSids.length; i += 400) {
+      const chunk = uniqueSids.slice(i, i + 400)
+      try {
+        const res = await ch.query({
+          format: 'JSON',
+          query_params: { wid, sids: chunk },
+          query: `
+            SELECT
+              toString(workspace_id) AS workspace_id,
+              session_id,
+              anyIf(client_ip, client_ip != '') AS client_ip
+            FROM ${CLICKHOUSE_EVENTS_TABLE}
+            WHERE workspace_id = {wid:UUID}
+              AND session_id IN {sids:Array(String)}
+            GROUP BY workspace_id, session_id
+          `,
+        })
+        const rows =
+          (
+            (await res.json()) as CHJson<{
+              workspace_id: string
+              session_id: string
+              client_ip: string
+            }>
+          ).data ?? []
+        for (const row of rows) {
+          const ip = String(row.client_ip || '').trim().slice(0, 45)
+          if (!ip) continue
+          out.set(`${row.workspace_id}:${row.session_id}`, ip)
+        }
+      } catch {
+        /* column may be missing until migrate; leave empty */
+      }
+    }
+  }
+  return out
+}
+
+async function attachSessionClientIps(
+  rows: LeadSessionSignalRow[],
+): Promise<LeadSessionSignalRow[]> {
+  const missing = rows.filter((row) => !row.clientIp.trim())
+  if (missing.length === 0) return rows
+  const ipByKey = await loadClientIpBySessions(
+    missing.map((row) => ({
+      workspaceId: row.workspaceId,
+      sessionId: row.sessionId,
+    })),
+  )
+  if (ipByKey.size === 0) return rows
+  return rows.map((row) => {
+    if (row.clientIp.trim()) return row
+    const ip = ipByKey.get(`${row.workspaceId}:${row.sessionId}`)
+    return ip ? { ...row, clientIp: ip } : row
+  })
+}
+
 export async function loadLeadSessionSignals(input?: {
   workspaceId?: string
   sessionIds?: string[]
+  lookbackDays?: number
 }): Promise<LeadSessionSignalRow[]> {
   const workspaceId = input?.workspaceId?.trim() || ''
   const sessionIds = [
     ...new Set((input?.sessionIds ?? []).map((s) => s.trim()).filter(Boolean)),
   ]
+  const lookbackDays =
+    typeof input?.lookbackDays === 'number' &&
+    Number.isFinite(input.lookbackDays) &&
+    input.lookbackDays > 0
+      ? Math.min(90, Math.floor(input.lookbackDays))
+      : 0
 
   let whereExtra = ''
   const query_params: Record<string, unknown> = {}
@@ -237,26 +328,33 @@ export async function loadLeadSessionSignals(input?: {
     whereExtra += ' AND session_id IN {sids:Array(String)}'
     query_params.sids = sessionIds
   }
+  if (lookbackDays > 0) {
+    whereExtra +=
+      ' AND created_at >= now64(3, \'UTC\') - toIntervalDay({lookback:UInt32})'
+    query_params.lookback = lookbackDays
+  }
 
+  let rows: LeadSessionSignalRow[]
   try {
-    return await queryLeadSessions(
+    rows = await queryLeadSessions(
       LEAD_SESSION_SELECT,
       whereExtra,
       query_params,
     )
   } catch {
     try {
-      return await queryLeadSessions(
+      rows = await queryLeadSessions(
         LEAD_SESSION_SELECT_BASE,
         whereExtra,
         query_params,
       )
     } catch {
-      return await queryLeadSessions(
+      rows = await queryLeadSessions(
         LEAD_SESSION_SELECT_MINIMAL,
         whereExtra,
         query_params,
       )
     }
   }
+  return attachSessionClientIps(rows)
 }

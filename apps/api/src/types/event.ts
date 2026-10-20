@@ -63,6 +63,7 @@ export interface EventRow {
   zipcode: string
   geo_zipcode: string
   form_zip_entered: string
+  client_ip: string
   client_ip_hash: string
   phone_hash: string
   email_hash: string
@@ -100,6 +101,7 @@ export interface EnrichmentForRow {
   accuracyRadius: number | null
   tenantWorkspaceId?: string
   landingPageId?: string
+  clientIp?: string
   clientIpHash?: string
   networkClass?: string
   networkAsn?: number | null
@@ -203,6 +205,7 @@ export function ingestBodyToEventRow(
     zipcode: submittedZip,
     geo_zipcode: enrichment.zipcode?.trim() || '',
     form_zip_entered: submittedZip,
+    client_ip: (enrichment.clientIp || '').trim().slice(0, 45),
     client_ip_hash: enrichment.clientIpHash?.trim() || '',
     phone_hash: contacts.phoneHash,
     email_hash: contacts.emailHash,

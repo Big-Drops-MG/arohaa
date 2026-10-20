@@ -48,6 +48,7 @@ function baseRow(overrides: Partial<EventRow> = {}): EventRow {
     zipcode: '',
     geo_zipcode: '',
     form_zip_entered: '',
+    client_ip: '',
     client_ip_hash: '',
     phone_hash: '',
     email_hash: '',

@@ -33,6 +33,7 @@ export async function loadContactRiskSignals(input: {
   landingPageId: string
   sessionId: string
   lookbackDays?: number
+  matchLimit?: number
 }): Promise<ContactRiskSignals> {
   const tenant = (input.tenantWorkspaceId || '').trim()
   if (!tenant) {
@@ -43,12 +44,16 @@ export async function loadContactRiskSignals(input: {
     }
   }
   try {
+    const matchLimit = Math.min(
+      500,
+      Math.max(25, Math.floor(input.matchLimit ?? 100)),
+    )
     const match = await loadRelatedContactMatches({
       tenantWorkspaceId: tenant,
       landingPageId: input.landingPageId,
       sessionId: input.sessionId,
       lookbackDays: input.lookbackDays,
-      limit: 500,
+      limit: matchLimit,
       offset: 0,
     })
     const risk = await contactRiskFromMatches(match)

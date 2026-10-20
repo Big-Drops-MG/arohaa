@@ -70,6 +70,7 @@ export function mapDataExportLeadRow(
       return String(value)
     })(),
     zip: String(raw.zip ?? ""),
+    clientIp: String(raw.clientIp ?? raw.client_ip ?? "").trim(),
     email: String(raw.email ?? ""),
     utmSource: String(raw.utmSource ?? raw.utm_source ?? ""),
     utmId: String(raw.utmId ?? raw.utm_id ?? ""),

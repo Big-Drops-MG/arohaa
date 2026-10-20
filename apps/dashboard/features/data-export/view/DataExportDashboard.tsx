@@ -386,7 +386,7 @@ export function DataExportDashboard({
     )
   }
 
-  const colCount = (returningOnly ? 15 : 14) + fieldColumns.length
+  const colCount = (returningOnly ? 16 : 15) + fieldColumns.length
   const projectLabel = dashboardData.brandName.trim() || "Project"
 
   return (
@@ -435,6 +435,7 @@ export function DataExportDashboard({
                   <th className={thClassName}>Last Name</th>
                   <th className={thClassName}>Email</th>
                   <th className={thClassName}>Zip</th>
+                  <th className={thClassName}>IP</th>
                   <th className={thClassName}>UTM Source</th>
                   <th className={thClassName}>UTM ID</th>
                   <th className={thClassName}>TrustedForm</th>
@@ -497,6 +498,14 @@ export function DataExportDashboard({
                       </td>
                       <td className={tdClassName}>{cellValue(lead.email)}</td>
                       <td className={tdClassName}>{cellValue(lead.zip)}</td>
+                      <td
+                        className={cn(
+                          tdClassName,
+                          "font-mono text-xs text-muted-foreground"
+                        )}
+                      >
+                        {cellValue(lead.clientIp)}
+                      </td>
                       <td className={tdClassName}>
                         {cellValue(lead.utmSource)}
                       </td>

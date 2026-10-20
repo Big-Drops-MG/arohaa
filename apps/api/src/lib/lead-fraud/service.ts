@@ -117,24 +117,27 @@ export async function ensureSessionsFraudAssessments(input: {
     ? new Map()
     : await fetchLeadRiskRows(input.workspaceId, ids)
 
-  const workspaceRows = await loadLeadSessionSignals({
+  const targetRows = await loadLeadSessionSignals({
     workspaceId: input.workspaceId,
+    sessionIds: ids,
   })
-  const velocity = computeLeadVelocityMaps(workspaceRows)
   const bySession = new Map(
-    workspaceRows.map((row) => [row.sessionId, row] as const),
+    targetRows.map((row) => [row.sessionId, row] as const),
   )
 
-  const missingIds = ids.filter((sid) => !bySession.has(sid))
-  if (missingIds.length > 0) {
-    const extra = await loadLeadSessionSignals({
+  let velocityRows = targetRows
+  let velocityWindowKnown = false
+  try {
+    velocityRows = await loadLeadSessionSignals({
       workspaceId: input.workspaceId,
-      sessionIds: missingIds,
+      lookbackDays: 7,
     })
-    for (const row of extra) {
-      bySession.set(row.sessionId, row)
-    }
+    velocityWindowKnown = true
+  } catch {
+    velocityRows = targetRows
+    velocityWindowKnown = false
   }
+  const velocity = computeLeadVelocityMaps(velocityRows)
 
   const signalRows = ids
     .map((sid) => bySession.get(sid))
@@ -167,6 +170,7 @@ export async function ensureSessionsFraudAssessments(input: {
           tenantWorkspaceId: signal.tenantWorkspaceId,
           landingPageId: signal.workspaceId,
           sessionId: sid,
+          matchLimit: 100,
         })
         contactBySid.set(sid, contact)
         const fi =
@@ -222,12 +226,14 @@ export async function ensureSessionsFraudAssessments(input: {
           const fi =
             fiMap.get(sessionKey(row.workspaceId, row.sessionId)) ?? null
           const features = buildFeaturesFromLeadSessionSignal(row, velocity, fi)
+          features.velocityWindowKnown = velocityWindowKnown
           const contact =
             contactBySid.get(sid) ??
             (await loadContactRiskSignals({
               tenantWorkspaceId: row.tenantWorkspaceId,
               landingPageId: row.workspaceId,
               sessionId: sid,
+              matchLimit: 100,
             }))
           Object.assign(features, contact)
           features.evidenceToken = composeEvidenceToken(
@@ -330,6 +336,7 @@ export async function classifyLeadSessionRows(
             tenantWorkspaceId: row.tenantWorkspaceId,
             landingPageId: row.workspaceId,
             sessionId: row.sessionId,
+            matchLimit: 100,
           })
           Object.assign(features, contact)
           features.evidenceToken = composeEvidenceToken(

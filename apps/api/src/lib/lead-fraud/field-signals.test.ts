@@ -19,6 +19,7 @@ function signal(
     geoCountry: 'United States',
     geoCountryCode: 'US',
     geoCity: 'New York',
+    clientIp: '203.0.113.10',
     clientIpHash: 'ip-1',
     formSubmitted: true,
     props: JSON.stringify({

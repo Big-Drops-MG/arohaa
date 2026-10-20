@@ -62,6 +62,7 @@ export type WarehouseShortcutLead = {
   createdAt: string
   submittedAt: string | null
   zip: string
+  clientIp?: string
   geoZip?: string
   geoCountry?: string
   geoCountryCode?: string

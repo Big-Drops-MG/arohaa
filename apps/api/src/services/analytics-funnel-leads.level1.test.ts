@@ -25,6 +25,7 @@ function lead({
     createdAt,
     submittedAt,
     zip,
+    clientIp: '',
     email: 'a@example.com',
     utmSource: '',
     utmId: '',

@@ -12,6 +12,7 @@ function lead(sessionId: string): FunnelLeadRow {
     createdAt: '2026-01-01T00:00:00Z',
     submittedAt: null,
     zip: '90210',
+    clientIp: '',
     email: `${sessionId}@example.com`,
     utmSource: '',
     utmId: '',
