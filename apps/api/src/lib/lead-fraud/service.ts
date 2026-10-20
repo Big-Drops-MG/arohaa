@@ -62,6 +62,14 @@ function canReuseAssessment(
   const scoredAt = parseScoredAtMs(row.scored_at)
   if (!scoredAt) return false
   if (Date.now() - scoredAt > ASSESSMENT_MAX_AGE_MS) return false
+  const priorAssessment = assessmentFromRiskRow(row)
+  if (
+    !priorAssessment ||
+    !priorAssessment.scoreAvailable ||
+    priorAssessment.coverage === 'insufficient'
+  ) {
+    return false
+  }
   if (currentEvidenceToken) {
     const prior = evidenceTokenFromFeaturesJson(row.features_json)
     if (!prior || prior !== currentEvidenceToken) return false
@@ -128,11 +136,15 @@ export async function ensureSessionsFraudAssessments(input: {
   let velocityRows = targetRows
   let velocityWindowKnown = false
   try {
-    velocityRows = await loadLeadSessionSignals({
+    const lookedBack = await loadLeadSessionSignals({
       workspaceId: input.workspaceId,
       lookbackDays: 7,
+      limit: 3000,
     })
-    velocityWindowKnown = true
+    if (lookedBack.length > 0) {
+      velocityRows = lookedBack
+      velocityWindowKnown = true
+    }
   } catch {
     velocityRows = targetRows
     velocityWindowKnown = false
