@@ -10,9 +10,12 @@ import {
 
 type RelatedRow = {
   landingPageId: string
+  landingPageName?: string
+  lpPublicId?: string
   sessionId: string
   submittedAt: string
   utmSource: string
+  utmS1?: string
   firstName: string
   lastName: string
   emailMasked: string
@@ -25,6 +28,15 @@ type RelatedRow = {
   reviewStatus: string
   decision: string
   callOutcome: string
+}
+
+function pageLabel(row: RelatedRow): string {
+  const name = (row.landingPageName || "").trim()
+  if (name) return name
+  const publicId = (row.lpPublicId || "").trim()
+  if (publicId) return publicId
+  const id = (row.landingPageId || "").trim()
+  return id ? `${id.slice(0, 8)}…` : "—"
 }
 
 type RelatedPayload = {
@@ -252,7 +264,8 @@ export function RelatedSubmissionsDialog({
                   <tr className="border-b text-left text-xs text-muted-foreground uppercase">
                     <th className="py-2 pr-3">When</th>
                     <th className="py-2 pr-3">Page</th>
-                    <th className="py-2 pr-3">Partner</th>
+                    <th className="py-2 pr-3">Source</th>
+                    <th className="py-2 pr-3">S1</th>
                     <th className="py-2 pr-3">Name</th>
                     <th className="py-2 pr-3">Email</th>
                     <th className="py-2 pr-3">ZIP</th>
@@ -271,10 +284,19 @@ export function RelatedSubmissionsDialog({
                       <td className="py-2 pr-3 whitespace-nowrap">
                         {row.submittedAt || "—"}
                       </td>
-                      <td className="py-2 pr-3 font-mono text-xs">
-                        {row.landingPageId.slice(0, 8)}…
+                      <td
+                        className="max-w-[12rem] truncate py-2 pr-3"
+                        title={row.landingPageId || undefined}
+                      >
+                        {pageLabel(row)}
                       </td>
                       <td className="py-2 pr-3">{row.utmSource || "—"}</td>
+                      <td
+                        className="max-w-[10rem] truncate py-2 pr-3 font-mono text-xs"
+                        title={row.utmS1 || undefined}
+                      >
+                        {row.utmS1 || "—"}
+                      </td>
                       <td
                         className={
                           row.conflicts.includes("same_phone_different_names")
