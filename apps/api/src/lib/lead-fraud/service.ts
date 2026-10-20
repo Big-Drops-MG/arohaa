@@ -10,7 +10,10 @@ import {
 import { loadContactRiskSignals } from './contact-risk.js'
 import { persistContactKeysFromSignals } from './contact-keys.js'
 import { loadFiBehaviorBySessions } from './fi-batch.js'
-import { loadLeadSessionSignals } from './load-sessions.js'
+import {
+  loadLeadSessionSignals,
+  loadVelocityNeighborRows,
+} from './load-sessions.js'
 import {
   assessmentFromRiskRow,
   fetchLeadRiskRows,
@@ -27,6 +30,9 @@ import type {
   LeadFraudFeatures,
   LeadRiskRow,
 } from './types.js'
+
+const VELOCITY_LOOKBACK_PAD_MS = 24 * 60 * 60_000
+const VELOCITY_DOMAIN_SAMPLE_LIMIT = 1500
 
 function sessionKey(workspaceId: string, sessionId: string): string {
   return `${workspaceId}:${sessionId}`
@@ -147,22 +153,47 @@ export async function ensureSessionsFraudAssessments(input: {
 
     let velocityRows = targetRows
     let velocityWindowKnown = false
-    try {
-      const lookedBack = await loadLeadSessionSignals({
-        workspaceId: input.workspaceId,
-        lookbackDays: 7,
-        limit: 3000,
-      })
-      if (lookedBack.length > 0) {
-        velocityRows = lookedBack
+    if (targetRows.length > 0) {
+      const submitTimes = targetRows
+        .map((row) => row.submittedAtMs)
+        .filter((ms) => ms > 0)
+      const minMs = submitTimes.length ? Math.min(...submitTimes) : Date.now()
+      const maxMs = submitTimes.length ? Math.max(...submitTimes) : Date.now()
+      try {
+        const window = {
+          workspaceId: input.workspaceId,
+          createdFromMs: minMs - VELOCITY_LOOKBACK_PAD_MS,
+          createdToMs: maxMs + VELOCITY_LOOKBACK_PAD_MS,
+        }
+        const [neighbors, recentSubmits] = await Promise.all([
+          loadVelocityNeighborRows({
+            ...window,
+            fingerprints: targetRows.map((row) => row.fingerprint),
+            ipHashes: targetRows.map((row) => row.clientIpHash),
+          }),
+          loadLeadSessionSignals({
+            ...window,
+            limit: VELOCITY_DOMAIN_SAMPLE_LIMIT,
+            newestFirst: true,
+            withIpBackfill: false,
+          }),
+        ])
+        const bySid = new Map(
+          targetRows.map((row) => [row.sessionId, row] as const),
+        )
+        for (const row of recentSubmits) {
+          if (!bySid.has(row.sessionId)) bySid.set(row.sessionId, row)
+        }
+        for (const row of neighbors) {
+          if (!bySid.has(row.sessionId)) bySid.set(row.sessionId, row)
+        }
+        velocityRows = [...bySid.values()]
         velocityWindowKnown = true
+      } catch (err) {
+        console.error('[lead-fraud] velocity lookback failed', err)
+        velocityRows = targetRows
+        velocityWindowKnown = false
       }
-    } catch {
-      velocityRows = targetRows
-      velocityWindowKnown = targetRows.length > 0
-    }
-    if (!velocityWindowKnown && targetRows.length > 0) {
-      velocityWindowKnown = true
     }
     const velocity = computeLeadVelocityMaps(velocityRows)
 

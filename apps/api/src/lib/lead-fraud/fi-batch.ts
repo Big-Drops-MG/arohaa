@@ -88,15 +88,15 @@ export async function loadFiBehaviorBySessions(
           query_params: { wid, sids: chunk, ev: FI_EVENT_NAME },
           query: `
             SELECT
-              toString(workspace_id) AS workspace_id,
-              session_id,
-              properties,
-              toString(created_at) AS created_at
-            FROM ${CLICKHOUSE_EVENTS_TABLE}
-            WHERE workspace_id = {wid:UUID}
-              AND session_id IN {sids:Array(String)}
-              AND event_name = {ev:String}
-            ORDER BY created_at ASC
+              toString(e.workspace_id) AS workspace_id,
+              e.session_id AS session_id,
+              e.properties AS properties,
+              toString(e.created_at) AS created_at
+            FROM ${CLICKHOUSE_EVENTS_TABLE} AS e
+            WHERE e.workspace_id = {wid:UUID}
+              AND e.session_id IN {sids:Array(String)}
+              AND e.event_name = {ev:String}
+            ORDER BY e.created_at ASC
             LIMIT 20000
           `,
         })
@@ -120,8 +120,8 @@ export async function loadFiBehaviorBySessions(
             /* skip */
           }
         }
-      } catch {
-        /* leave sessions unknown */
+      } catch (err) {
+        console.error('[lead-fraud] loadFiBehaviorBySessions failed', err)
       }
     }
   }

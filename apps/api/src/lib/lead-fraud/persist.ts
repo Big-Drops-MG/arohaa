@@ -104,26 +104,26 @@ export async function fetchLeadRiskRows(
       query_params: { wid: workspaceId, sids: ids },
       query: `
         SELECT
-          toString(workspace_id) AS workspace_id,
-          session_id,
-          score,
-          label,
-          reasons,
-          features_json,
-          model_version,
-          toString(scored_at) AS scored_at,
-          override_label,
-          override_by,
-          toString(override_at) AS override_at,
-          override_note,
-          coverage,
-          findings_json,
-          tenant_workspace_id,
-          phone_hash,
-          email_hash
-        FROM ${LEAD_RISK_TABLE} FINAL
-        WHERE workspace_id = {wid:UUID}
-          AND session_id IN {sids:Array(String)}
+          toString(r.workspace_id) AS workspace_id,
+          r.session_id AS session_id,
+          r.score AS score,
+          r.label AS label,
+          r.reasons AS reasons,
+          r.features_json AS features_json,
+          r.model_version AS model_version,
+          toString(r.scored_at) AS scored_at,
+          r.override_label AS override_label,
+          r.override_by AS override_by,
+          toString(r.override_at) AS override_at,
+          r.override_note AS override_note,
+          r.coverage AS coverage,
+          r.findings_json AS findings_json,
+          r.tenant_workspace_id AS tenant_workspace_id,
+          r.phone_hash AS phone_hash,
+          r.email_hash AS email_hash
+        FROM ${LEAD_RISK_TABLE} AS r FINAL
+        WHERE r.workspace_id = {wid:UUID}
+          AND r.session_id IN {sids:Array(String)}
       `,
     })
     const rows = ((await res.json()) as CHJson<LeadRiskRow>).data ?? []
@@ -138,29 +138,29 @@ export async function fetchLeadRiskRows(
         query_params: { wid: workspaceId, sids: ids },
         query: `
           SELECT
-            toString(workspace_id) AS workspace_id,
-            session_id,
-            score,
-            label,
-            reasons,
-            features_json,
-            model_version,
-            toString(scored_at) AS scored_at,
-            override_label,
-            override_by,
-            toString(override_at) AS override_at,
-            override_note
-          FROM ${LEAD_RISK_TABLE} FINAL
-          WHERE workspace_id = {wid:UUID}
-            AND session_id IN {sids:Array(String)}
+            toString(r.workspace_id) AS workspace_id,
+            r.session_id AS session_id,
+            r.score AS score,
+            r.label AS label,
+            r.reasons AS reasons,
+            r.features_json AS features_json,
+            r.model_version AS model_version,
+            toString(r.scored_at) AS scored_at,
+            r.override_label AS override_label,
+            r.override_by AS override_by,
+            toString(r.override_at) AS override_at,
+            r.override_note AS override_note
+          FROM ${LEAD_RISK_TABLE} AS r FINAL
+          WHERE r.workspace_id = {wid:UUID}
+            AND r.session_id IN {sids:Array(String)}
         `,
       })
       const rows = ((await fallback.json()) as CHJson<LeadRiskRow>).data ?? []
       for (const row of rows) {
         map.set(row.session_id, row)
       }
-    } catch {
-      /* return empty — caller will rescore */
+    } catch (err) {
+      console.error('[lead-fraud] fetchLeadRiskRows failed', err)
     }
     return map
   }

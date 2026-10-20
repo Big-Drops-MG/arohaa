@@ -83,7 +83,7 @@ function truthyFlag(v: number | boolean | string | undefined): boolean {
 }
 
 function submissionGroupKeyExpr(): string {
-  return `multiIf(event_id != '', event_id, toString(submitted_at))`
+  return `multiIf(k.event_id != '', k.event_id, toString(k.submitted_at))`
 }
 
 function conflictCodes(
@@ -172,29 +172,29 @@ async function queryMatchesByHashes(input: {
     },
     query: `
       SELECT
-        landing_page_id,
-        session_id,
-        any(event_id) AS event_id,
-        toString(max(submitted_at)) AS submitted_at,
-        any(utm_source) AS utm_source,
-        any(utm_s1) AS utm_s1,
-        any(utm_campaign) AS utm_campaign,
-        any(first_name) AS first_name,
-        any(last_name) AS last_name,
-        any(email_masked) AS email_masked,
-        any(zip) AS zip,
-        max(key_type = 'phone') AS has_phone,
-        max(key_type = 'email') AS has_email
-      FROM ${LEAD_CONTACT_KEYS_TABLE} FINAL
-      WHERE tenant_workspace_id = {tenant:String}
-        AND session_id NOT IN {exclude:Array(String)}
-        AND submitted_at >= now64(3) - INTERVAL {days:UInt32} DAY
+        k.landing_page_id AS landing_page_id,
+        k.session_id AS session_id,
+        any(k.event_id) AS event_id,
+        toString(max(k.submitted_at)) AS submitted_at,
+        any(k.utm_source) AS utm_source,
+        any(k.utm_s1) AS utm_s1,
+        any(k.utm_campaign) AS utm_campaign,
+        any(k.first_name) AS first_name,
+        any(k.last_name) AS last_name,
+        any(k.email_masked) AS email_masked,
+        any(k.zip) AS zip,
+        max(k.key_type = 'phone') AS has_phone,
+        max(k.key_type = 'email') AS has_email
+      FROM ${LEAD_CONTACT_KEYS_TABLE} AS k FINAL
+      WHERE k.tenant_workspace_id = {tenant:String}
+        AND k.session_id NOT IN {exclude:Array(String)}
+        AND k.submitted_at >= now64(3) - INTERVAL {days:UInt32} DAY
         AND (
-          (key_type = 'phone' AND length({phones:Array(String)}) > 0 AND key_hash IN {phones:Array(String)})
-          OR (key_type = 'email' AND length({emails:Array(String)}) > 0 AND key_hash IN {emails:Array(String)})
+          (k.key_type = 'phone' AND length({phones:Array(String)}) > 0 AND k.key_hash IN {phones:Array(String)})
+          OR (k.key_type = 'email' AND length({emails:Array(String)}) > 0 AND k.key_hash IN {emails:Array(String)})
         )
-      GROUP BY landing_page_id, session_id, ${groupKey}
-      ORDER BY submitted_at DESC
+      GROUP BY k.landing_page_id, k.session_id, ${groupKey}
+      ORDER BY max(k.submitted_at) DESC
       LIMIT {lim:UInt32}
     `,
   })

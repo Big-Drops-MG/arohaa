@@ -1,6 +1,6 @@
 import type { LeadFraudLabel, LeadSignalCoverage } from './types.js'
 
-export const LEAD_FRAUD_MODEL_VERSION = 'v8'
+export const LEAD_FRAUD_MODEL_VERSION = 'v9'
 
 export const ASSESSMENT_MAX_AGE_MS = 7 * 24 * 60 * 60_000
 

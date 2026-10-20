@@ -2,6 +2,7 @@ import maxmind, { type CityResponse, type Reader } from 'maxmind'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { usStateCodeFromNameOrCode } from '../lib/us-states.js'
 
 export interface GeoInfo {
   country: string
@@ -94,7 +95,10 @@ export function lookupGeoIp(ip: string): GeoInfo {
       stateSubdivision?.names?.en?.trim() ||
       stateSubdivision?.iso_code?.trim() ||
       ''
-    const stateCode = stateSubdivision?.iso_code?.trim().toUpperCase() || ''
+    const isoStateCode = stateSubdivision?.iso_code?.trim().toUpperCase() || ''
+    const stateCode =
+      isoStateCode ||
+      (countryCode === 'US' ? usStateCodeFromNameOrCode(state) : '')
     const zipcode = result.postal?.code?.trim() || ''
 
     const rawLat = result.location?.latitude
