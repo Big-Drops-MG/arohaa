@@ -1,0 +1,26 @@
+{
+  "asOf": "2026-03-20",
+  "source": "arohaa-seed-hosting-asns",
+  "proxyCidrs": [],
+  "hostingAsns": [
+    16509, 14618, 15169, 396982, 8075, 13335, 14061, 20473, 16276, 24940, 63949,
+    62567, 31898, 45102, 36351, 209242
+  ],
+  "hostingOrgPatterns": [
+    "amazon",
+    "aws",
+    "google cloud",
+    "google llc",
+    "microsoft",
+    "azure",
+    "digitalocean",
+    "linode",
+    "akamai",
+    "ovh",
+    "hetzner",
+    "vultr",
+    "cloudflare",
+    "oracle cloud",
+    "alibaba"
+  ]
+}

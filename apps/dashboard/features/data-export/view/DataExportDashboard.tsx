@@ -454,7 +454,7 @@ export function DataExportDashboard({
                       </th>
                     )
                   )}
-                  <th className={thClassName}>MAC ID</th>
+                  <th className={thClassName}>Fingerprint</th>
                   <th className={thClassName}>Session</th>
                 </tr>
               </thead>

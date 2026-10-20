@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_EVENTS_TABLE} (
     variant LowCardinality(String) DEFAULT '',
     formtype LowCardinality(String) DEFAULT '',
     country LowCardinality(String) DEFAULT 'Unknown',
+    country_code LowCardinality(String) DEFAULT '',
     city LowCardinality(String) DEFAULT '',
     state LowCardinality(String) DEFAULT '',
     zipcode LowCardinality(String) DEFAULT '',
@@ -41,6 +42,11 @@ CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_EVENTS_TABLE} (
     latitude Float64 DEFAULT 0,
     longitude Float64 DEFAULT 0,
     geo_accuracy UInt16 DEFAULT 0,
+    network_class LowCardinality(String) DEFAULT '',
+    network_asn UInt32 DEFAULT 0,
+    network_org String DEFAULT '',
+    network_evidence_source LowCardinality(String) DEFAULT '',
+    network_evidence_as_of LowCardinality(String) DEFAULT '',
     metric_name LowCardinality(String) DEFAULT '',
     metric_value Float64 DEFAULT 0,
     properties String,
@@ -189,6 +195,30 @@ export async function ensureEventsTable(): Promise<void> {
   })
   await ch.command({
     query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS country_code LowCardinality(String) DEFAULT ''`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS network_class LowCardinality(String) DEFAULT ''`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS network_asn UInt32 DEFAULT 0`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS network_org String DEFAULT ''`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS network_evidence_source LowCardinality(String) DEFAULT ''`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS network_evidence_as_of LowCardinality(String) DEFAULT ''`,
+  })
+  await ch.command({
+    query:
       `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS state_code LowCardinality(String) DEFAULT ''`,
   })
   await ch.command({
@@ -251,6 +281,7 @@ export async function ensureEventsTable(): Promise<void> {
   await ensureLeadRiskTable(ch)
   await ensureLeadContactKeysTable(ch)
   await ensureLeadReviewTable(ch)
+  await ensureLeadReviewAuditTable(ch)
   await rebuildDailyMetricsIfNeeded(ch)
 }
 
@@ -294,8 +325,11 @@ async function ensureLeadRiskTable(ch: ClickHouseClient): Promise<void> {
 
 export const LEAD_CONTACT_KEYS_TABLE = 'lead_contact_keys'
 export const LEAD_REVIEW_TABLE = 'lead_review'
+export const LEAD_REVIEW_AUDIT_TABLE = 'lead_review_audit'
 
 async function ensureLeadContactKeysTable(ch: ClickHouseClient): Promise<void> {
+  const desiredOrder =
+    '(tenant_workspace_id, key_type, key_hash, landing_page_id, session_id, event_id)'
   await ch.command({
     query: `
       CREATE TABLE IF NOT EXISTS ${LEAD_CONTACT_KEYS_TABLE} (
@@ -315,9 +349,67 @@ async function ensureLeadContactKeysTable(ch: ClickHouseClient): Promise<void> {
           zip String DEFAULT '',
           norm_version LowCardinality(String) DEFAULT ''
       ) ENGINE = ReplacingMergeTree(submitted_at)
-      ORDER BY (tenant_workspace_id, key_type, key_hash, landing_page_id, session_id)
+      ORDER BY ${desiredOrder}
     `,
   })
+  try {
+    const res = await ch.query({
+      format: 'JSON',
+      query: `
+        SELECT sorting_key
+        FROM system.tables
+        WHERE database = currentDatabase()
+          AND name = '${LEAD_CONTACT_KEYS_TABLE}'
+        LIMIT 1
+      `,
+    })
+    const sortingKey = String(
+      ((await res.json()) as { data?: Array<{ sorting_key?: string }> }).data?.[0]
+        ?.sorting_key || '',
+    )
+    if (sortingKey && !sortingKey.includes('event_id')) {
+      const migrated = `${LEAD_CONTACT_KEYS_TABLE}_by_event`
+      await ch.command({
+        query: `
+          CREATE TABLE IF NOT EXISTS ${migrated} (
+              tenant_workspace_id String,
+              key_type LowCardinality(String),
+              key_hash String,
+              landing_page_id String,
+              session_id String,
+              event_id String DEFAULT '',
+              utm_source String DEFAULT '',
+              utm_s1 String DEFAULT '',
+              utm_campaign String DEFAULT '',
+              submitted_at DateTime64(3, 'UTC') DEFAULT now64(3, 'UTC'),
+              first_name String DEFAULT '',
+              last_name String DEFAULT '',
+              email_masked String DEFAULT '',
+              zip String DEFAULT '',
+              norm_version LowCardinality(String) DEFAULT ''
+          ) ENGINE = ReplacingMergeTree(submitted_at)
+          ORDER BY ${desiredOrder}
+        `,
+      })
+      await ch.command({
+        query: `
+          INSERT INTO ${migrated}
+          SELECT
+            tenant_workspace_id, key_type, key_hash, landing_page_id, session_id,
+            if(event_id = '', concat('legacy:', toString(submitted_at)), event_id) AS event_id,
+            utm_source, utm_s1, utm_campaign, submitted_at,
+            first_name, last_name, email_masked, zip, norm_version
+          FROM ${LEAD_CONTACT_KEYS_TABLE}
+        `,
+      })
+      await ch.command({
+        query: `EXCHANGE TABLES ${LEAD_CONTACT_KEYS_TABLE} AND ${migrated}`,
+      })
+      await ch.command({ query: `DROP TABLE IF EXISTS ${migrated}` })
+    }
+  } catch (err) {
+    console.error('[clickhouse] lead_contact_keys event_id order migrate skipped', err)
+  }
 }
 
 async function ensureLeadReviewTable(ch: ClickHouseClient): Promise<void> {
@@ -336,10 +428,38 @@ async function ensureLeadReviewTable(ch: ClickHouseClient): Promise<void> {
           call_outcome_by String DEFAULT '',
           call_outcome_at DateTime64(3, 'UTC') DEFAULT toDateTime64(0, 3, 'UTC'),
           assessment_snapshot String DEFAULT '',
+          history_json String DEFAULT '[]',
           revision UInt32 DEFAULT 1,
           updated_at DateTime64(3, 'UTC') DEFAULT now64(3, 'UTC')
       ) ENGINE = ReplacingMergeTree(updated_at)
       ORDER BY (tenant_workspace_id, workspace_id, session_id)
+    `,
+  })
+  await ch.command({
+    query: `ALTER TABLE ${LEAD_REVIEW_TABLE} ADD COLUMN IF NOT EXISTS history_json String DEFAULT '[]'`,
+  })
+}
+
+async function ensureLeadReviewAuditTable(ch: ClickHouseClient): Promise<void> {
+  await ch.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS ${LEAD_REVIEW_AUDIT_TABLE} (
+          tenant_workspace_id String,
+          workspace_id UUID,
+          session_id String,
+          revision UInt32,
+          review_status LowCardinality(String) DEFAULT '',
+          decision LowCardinality(String) DEFAULT '',
+          decision_note String DEFAULT '',
+          decision_by String DEFAULT '',
+          decision_at DateTime64(3, 'UTC') DEFAULT toDateTime64(0, 3, 'UTC'),
+          call_outcome LowCardinality(String) DEFAULT '',
+          call_outcome_by String DEFAULT '',
+          call_outcome_at DateTime64(3, 'UTC') DEFAULT toDateTime64(0, 3, 'UTC'),
+          assessment_snapshot String DEFAULT '',
+          recorded_at DateTime64(3, 'UTC') DEFAULT now64(3, 'UTC')
+      ) ENGINE = MergeTree()
+      ORDER BY (tenant_workspace_id, workspace_id, session_id, revision, recorded_at)
     `,
   })
 }

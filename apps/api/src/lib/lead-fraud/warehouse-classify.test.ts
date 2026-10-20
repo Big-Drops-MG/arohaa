@@ -25,7 +25,7 @@ describe('warehouse bulk classification', () => {
     const fraud = scoreLeadFraud(
       emptyFeatures({
         fingerprint: '',
-        browser: 'bot crawler',
+        browser: 'Chrome',
         formSubmitted: true,
         email: 'x@mailinator.com',
         firstName: 'asdf',
@@ -33,6 +33,7 @@ describe('warehouse bulk classification', () => {
         hasFormStarted: false,
         hasFieldInteraction: false,
         typedCount: 0,
+        pasteCount: 0,
         fillDurationMs: 500,
         fieldCount: 1,
         fiBehaviorKnown: true,

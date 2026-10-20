@@ -27,6 +27,7 @@ import {
   type LeadSessionSignalRow,
 } from '../lib/lead-fraud/field-signals.js'
 import { loadLeadSessionSignals } from '../lib/lead-fraud/load-sessions.js'
+import { compareEnteredZipToIpGeo } from '../lib/lead-fraud/location-compare.js'
 import { upsertLeadRiskBatch } from '../lib/lead-fraud/persist.js'
 import { classifyLeadSessionRows } from '../lib/lead-fraud/service.js'
 import type { LeadFraudAssessment } from '../lib/lead-fraud/types.js'
@@ -69,16 +70,22 @@ export type WarehouseShortcutCount = {
 export type WarehouseFraudLead = {
   workspaceId: string
   sessionId: string
+  fingerprintId: string
   macId: string
   createdAt: string
   submittedAt: string | null
   zip: string
+  geoZip: string
   email: string
+  emailMasked: string
   firstName: string
   lastName: string
   utmSource: string
+  firstObservedUtmSource: string
+  attributionConfidence: string
   utmId: string
   trustedFormUrl: string
+  trustedFormEvidenceTier: string
   formSubmitted: boolean
   fields: Record<string, string>
   fraud: LeadFraudAssessment
@@ -90,22 +97,49 @@ export type WarehouseShortcutLead = {
   lpPublicId: string
   sessionId: string
   tenantWorkspaceId: string
+  fingerprintId: string
   macId: string
   createdAt: string
   submittedAt: string | null
   zip: string
+  geoZip: string
+  geoCountry: string
+  geoCountryCode: string
+  geoState: string
+  geoCity: string
+  locationComparison: string
+  locationComparisonDetail: string
+  networkClass: string
+  networkAsn: number | null
+  networkOrg: string
+  networkEvidenceSource: string
+  networkEvidenceAsOf: string
   email: string
+  emailMasked: string
   firstName: string
   lastName: string
   utmSource: string
+  firstObservedUtmSource: string
+  attributionConfidence: string
   utmId: string
   trustedFormUrl: string
+  trustedFormEvidenceTier: string
   formSubmitted: boolean
   usedCopy: boolean
   usedPaste: boolean
   fields: Record<string, string>
   fraud: LeadFraudAssessment | null
   relatedCount: number
+}
+
+function maskEmail(email: string): string {
+  const trimmed = email.trim()
+  const at = trimmed.indexOf('@')
+  if (at <= 0) return trimmed ? '•••' : ''
+  const local = trimmed.slice(0, at)
+  const domain = trimmed.slice(at + 1)
+  const visible = local.slice(0, Math.min(2, local.length))
+  return `${visible}•••@${domain}`
 }
 
 export type WarehouseSummary = {
@@ -164,9 +198,11 @@ export type WarehousePartnerScorecard = {
   elevatedRisk: number
   incompleteAssessments: number
   reviewed: number
+  unresolved: number
   wrongNumber: number
   neverRequested: number
   converted: number
+  reviewedRate: number
 }
 
 const SHORTCUT_LEADS_LIMIT = 100
@@ -212,11 +248,11 @@ function n(value: unknown): number {
   return Number.isFinite(num) ? num : 0
 }
 
-function formatFingerprintAsMacId(fingerprint: string): string {
-  const hex = fingerprint.replace(/[^a-fA-F0-9]/g, '').toLowerCase()
-  if (!hex) return ''
-  const padded = hex.padEnd(12, '0').slice(0, 12)
-  return padded.match(/.{2}/g)?.join(':') ?? ''
+function formatFingerprintId(fingerprint: string): string {
+  const raw = fingerprint.trim()
+  if (!raw) return ''
+  if (raw.length <= 16) return raw
+  return `${raw.slice(0, 8)}…${raw.slice(-4)}`
 }
 
 async function queryJson<T>(query: string): Promise<T[]> {
@@ -651,22 +687,70 @@ function leadRowFromSignal(
   const email =
     pickLeadEmail(fields) ||
     (typeof fields.email === 'string' ? fields.email : '')
+  const formZip = (pickLeadZip(fields) || '').trim()
+  const geoZip = (row.geoZip || '').trim()
+  const fingerprintId = formatFingerprintId(row.fingerprint || '')
+  const trustedFormUrl = pickTrustedFormUrl(rawFields)
+  const submitUtm = meta?.utmSource || row.utmSource || ''
+  const firstUtm = row.firstObservedUtmSource || submitUtm
+  let attributionConfidence = 'unknown'
+  if (submitUtm || firstUtm) {
+    if (!firstUtm || !submitUtm) attributionConfidence = 'submit_only'
+    else if (submitUtm.toLowerCase() === firstUtm.toLowerCase()) {
+      attributionConfidence = 'first_matches_submit'
+    } else attributionConfidence = 'first_differs_from_submit'
+  }
+  const locationFinding = fraud?.findings.find((f) =>
+    f.code.startsWith('location_'),
+  )
+  const locationComputed = compareEnteredZipToIpGeo({
+    formZipEntered: formZip,
+    ipCountry: row.geoCountry || '',
+    ipCountryCode: row.geoCountryCode || '',
+    ipStateCode: row.geoState || '',
+    ipCity: row.geoCity || '',
+    ipPostal: geoZip,
+  })
+  const locationComparison =
+    locationFinding?.code ||
+    (locationComputed.result === 'unavailable'
+      ? 'location_comparison_unavailable'
+      : `location_${locationComputed.result}`)
+  const locationComparisonDetail =
+    locationFinding?.detail || locationComputed.detail
   return {
     workspaceId: row.workspaceId,
     workspaceName: lpMeta?.projectName || '',
     lpPublicId: lpMeta?.publicId || '',
     sessionId: row.sessionId,
     tenantWorkspaceId: row.tenantWorkspaceId || '',
-    macId: formatFingerprintAsMacId(row.fingerprint || ''),
+    fingerprintId,
+    macId: fingerprintId,
     createdAt: meta?.createdAt || '',
     submittedAt: meta?.submittedAt ?? null,
-    zip: (pickLeadZip(fields) || '').trim(),
+    zip: formZip,
+    geoZip,
+    geoCountry: row.geoCountry || '',
+    geoCountryCode: row.geoCountryCode || '',
+    geoState: row.geoState || '',
+    geoCity: row.geoCity || '',
+    locationComparison,
+    locationComparisonDetail,
+    networkClass: row.networkClass || 'unavailable',
+    networkAsn: row.networkAsn && row.networkAsn > 0 ? row.networkAsn : null,
+    networkOrg: row.networkOrg || '',
+    networkEvidenceSource: row.networkEvidenceSource || '',
+    networkEvidenceAsOf: row.networkEvidenceAsOf || '',
     email,
+    emailMasked: maskEmail(email),
     firstName: (fields.first_name || '').trim(),
     lastName: (fields.last_name || '').trim(),
-    utmSource: meta?.utmSource || row.utmSource || '',
+    utmSource: submitUtm,
+    firstObservedUtmSource: firstUtm,
+    attributionConfidence,
     utmId: meta?.utmId || '',
-    trustedFormUrl: pickTrustedFormUrl(rawFields),
+    trustedFormUrl,
+    trustedFormEvidenceTier: trustedFormUrl ? 'url_present' : 'missing',
     formSubmitted: row.formSubmitted,
     fields: fieldsWithoutReserved(fields),
     fraud,
@@ -738,22 +822,41 @@ async function buildShortcutLeads(
     } else {
       const rawFields = mergeFieldMaps(flag.fiFields)
       const fields = normalizeLeadFields(rawFields)
+      const email = pickLeadEmail(fields)
+      const tf = pickTrustedFormUrl(rawFields)
       leads.push({
         workspaceId: flag.workspaceId,
         workspaceName: lpMeta?.projectName || '',
         lpPublicId: lpMeta?.publicId || '',
         sessionId: flag.sessionId,
         tenantWorkspaceId: '',
+        fingerprintId: '',
         macId: '',
         createdAt: meta?.createdAt || '',
         submittedAt: meta?.submittedAt ?? null,
         zip: pickLeadZip(fields),
-        email: pickLeadEmail(fields),
+        geoZip: '',
+        geoCountry: '',
+        geoCountryCode: '',
+        geoState: '',
+        geoCity: '',
+        locationComparison: 'location_comparison_unavailable',
+        locationComparisonDetail: '',
+        networkClass: 'unavailable',
+        networkAsn: null,
+        networkOrg: '',
+        networkEvidenceSource: '',
+        networkEvidenceAsOf: '',
+        email,
+        emailMasked: maskEmail(email),
         firstName: (fields.first_name || '').trim(),
         lastName: (fields.last_name || '').trim(),
         utmSource: meta?.utmSource || '',
+        firstObservedUtmSource: meta?.utmSource || '',
+        attributionConfidence: meta?.utmSource ? 'submit_only' : 'unknown',
         utmId: meta?.utmId || '',
-        trustedFormUrl: pickTrustedFormUrl(rawFields),
+        trustedFormUrl: tf,
+        trustedFormEvidenceTier: tf ? 'url_present' : 'missing',
         formSubmitted: Boolean(meta?.submittedAt),
         usedCopy: flag.usedCopy,
         usedPaste: flag.usedPaste,
@@ -1292,22 +1395,52 @@ export async function getWarehousePartnerScorecards(): Promise<
 > {
   const ch = getClickHouseClient()
   try {
-    const { LEAD_CONTACT_KEYS_TABLE: keysTable, LEAD_REVIEW_TABLE: reviewTable } =
-      await import('./clickhouse.service.js')
+    const {
+      LEAD_CONTACT_KEYS_TABLE: keysTable,
+      LEAD_REVIEW_TABLE: reviewTable,
+      LEAD_RISK_TABLE: riskTable,
+    } = await import('./clickhouse.service.js')
     const res = await ch.query({
       format: 'JSON',
       query: `
         SELECT
           if(k.utm_source = '', '(none)', k.utm_source) AS partner,
           uniqExact((k.landing_page_id, k.session_id)) AS submissions,
-          countIf(r.review_status = 'reviewed') AS reviewed,
-          countIf(r.call_outcome = 'wrong_number') AS wrong_number,
-          countIf(r.call_outcome = 'never_requested') AS never_requested,
-          countIf(r.call_outcome = 'converted') AS converted
+          uniqExactIf(
+            (k.landing_page_id, k.session_id),
+            risk.label = 'fraud' AND risk.coverage != 'insufficient'
+          ) AS elevated_risk,
+          uniqExactIf(
+            (k.landing_page_id, k.session_id),
+            risk.coverage = 'insufficient'
+          ) AS incomplete_assessments,
+          uniqExactIf(
+            (k.landing_page_id, k.session_id),
+            r.review_status = 'reviewed'
+          ) AS reviewed,
+          uniqExactIf(
+            (k.landing_page_id, k.session_id),
+            r.session_id = '' OR r.review_status IN ('unreviewed', 'in_review')
+          ) AS unresolved,
+          uniqExactIf(
+            (k.landing_page_id, k.session_id),
+            r.call_outcome = 'wrong_number'
+          ) AS wrong_number,
+          uniqExactIf(
+            (k.landing_page_id, k.session_id),
+            r.call_outcome = 'never_requested'
+          ) AS never_requested,
+          uniqExactIf(
+            (k.landing_page_id, k.session_id),
+            r.call_outcome = 'converted'
+          ) AS converted
         FROM ${keysTable} AS k FINAL
         LEFT JOIN ${reviewTable} AS r FINAL
           ON k.tenant_workspace_id = r.tenant_workspace_id
           AND k.session_id = r.session_id
+        LEFT JOIN ${riskTable} AS risk FINAL
+          ON k.landing_page_id = toString(risk.workspace_id)
+          AND k.session_id = risk.session_id
         WHERE k.tenant_workspace_id != ''
         GROUP BY partner
         ORDER BY submissions DESC
@@ -1319,24 +1452,143 @@ export async function getWarehousePartnerScorecards(): Promise<
         (await res.json()) as CHJson<{
           partner: string
           submissions: string
+          elevated_risk: string
+          incomplete_assessments: string
           reviewed: string
+          unresolved: string
           wrong_number: string
           never_requested: string
           converted: string
         }>
       ).data ?? []
-    return rows.map((row) => ({
-      partner: row.partner,
-      submissions: n(row.submissions),
-      elevatedRisk: 0,
-      incompleteAssessments: 0,
-      reviewed: n(row.reviewed),
-      wrongNumber: n(row.wrong_number),
-      neverRequested: n(row.never_requested),
-      converted: n(row.converted),
-    }))
+    return rows.map((row) => {
+      const submissions = n(row.submissions)
+      const reviewed = n(row.reviewed)
+      return {
+        partner: row.partner,
+        submissions,
+        elevatedRisk: n(row.elevated_risk),
+        incompleteAssessments: n(row.incomplete_assessments),
+        reviewed,
+        unresolved: n(row.unresolved),
+        wrongNumber: n(row.wrong_number),
+        neverRequested: n(row.never_requested),
+        converted: n(row.converted),
+        reviewedRate: submissions > 0 ? reviewed / submissions : 0,
+      }
+    })
   } catch (err) {
     console.error('[warehouse] partner scorecards failed', err)
     return []
+  }
+}
+
+export async function getWarehouseCalibrationSnapshot(): Promise<{
+  sampleSize: number
+  markedInvalid: number
+  wrongNumber: number
+  converted: number
+  findingRates: Array<{ code: string; count: number; withInvalid: number }>
+  note: string
+}> {
+  const ch = getClickHouseClient()
+  const note =
+    'Compare finding rates against reviewed outcomes before changing weights. Partner history is context — not individual guilt.'
+  const empty = {
+    sampleSize: 0,
+    markedInvalid: 0,
+    wrongNumber: 0,
+    converted: 0,
+    findingRates: [] as Array<{
+      code: string
+      count: number
+      withInvalid: number
+    }>,
+    note,
+  }
+  try {
+    const {
+      LEAD_REVIEW_TABLE: reviewTable,
+      LEAD_RISK_TABLE: riskTable,
+    } = await import('./clickhouse.service.js')
+    const summaryRes = await ch.query({
+      format: 'JSON',
+      query: `
+        SELECT
+          count() AS sample_size,
+          countIf(decision = 'marked_invalid') AS marked_invalid,
+          countIf(call_outcome = 'wrong_number') AS wrong_number,
+          countIf(call_outcome = 'converted') AS converted
+        FROM ${reviewTable} FINAL
+        WHERE review_status = 'reviewed'
+      `,
+    })
+    const summary = (
+      (await summaryRes.json()) as CHJson<{
+        sample_size: string
+        marked_invalid: string
+        wrong_number: string
+        converted: string
+      }>
+    ).data?.[0]
+
+    let findingRates: Array<{
+      code: string
+      count: number
+      withInvalid: number
+    }> = []
+    try {
+      const findingsRes = await ch.query({
+        format: 'JSON',
+        query: `
+          SELECT
+            code,
+            count() AS cnt,
+            countIf(decision = 'marked_invalid') AS with_invalid
+          FROM (
+            SELECT
+              r.decision AS decision,
+              JSONExtractString(f, 'code') AS code
+            FROM ${reviewTable} AS r FINAL
+            INNER JOIN ${riskTable} AS risk FINAL
+              ON r.workspace_id = risk.workspace_id
+              AND r.session_id = risk.session_id
+            ARRAY JOIN JSONExtractArrayRaw(ifNull(nullIf(risk.findings_json, ''), '[]')) AS f
+            WHERE r.review_status = 'reviewed'
+          )
+          WHERE code != ''
+          GROUP BY code
+          ORDER BY cnt DESC
+          LIMIT 40
+        `,
+      })
+      findingRates = (
+        (
+          (await findingsRes.json()) as CHJson<{
+            code: string
+            cnt: string
+            with_invalid: string
+          }>
+        ).data ?? []
+      ).map((row) => ({
+        code: row.code,
+        count: n(row.cnt),
+        withInvalid: n(row.with_invalid),
+      }))
+    } catch {
+      findingRates = []
+    }
+
+    return {
+      sampleSize: n(summary?.sample_size),
+      markedInvalid: n(summary?.marked_invalid),
+      wrongNumber: n(summary?.wrong_number),
+      converted: n(summary?.converted),
+      findingRates,
+      note,
+    }
+  } catch (err) {
+    console.error('[warehouse] calibration snapshot failed', err)
+    return empty
   }
 }

@@ -231,6 +231,7 @@ async function ingestOne(
     os: ctx.ua.os,
     device: ctx.ua.device,
     country: ctx.geo.country,
+    countryCode: ctx.geo.countryCode,
     city: ctx.geo.city,
     state: ctx.geo.state,
     zipcode: ctx.geo.zipcode,
@@ -241,6 +242,11 @@ async function ingestOne(
     tenantWorkspaceId: landing.tenantWorkspaceId,
     landingPageId,
     clientIpHash: ctx.ipHash,
+    networkClass: ctx.network.networkClass,
+    networkAsn: ctx.network.asn,
+    networkOrg: ctx.network.org,
+    networkEvidenceSource: ctx.network.evidenceSource,
+    networkEvidenceAsOf: ctx.network.evidenceAsOf,
   })
 
   try {

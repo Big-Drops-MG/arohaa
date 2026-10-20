@@ -6,6 +6,7 @@ import {
   EMAIL_NORM_VERSION,
   PHONE_NORM_VERSION,
 } from './constants.js'
+import { extractAllContactHashesFromProps } from './contact-hash.js'
 import type { LeadSessionSignalRow } from './field-signals.js'
 import { extractRawFieldMap } from './field-signals.js'
 import { normalizeLeadFields, pickLeadEmail, pickLeadZip } from '../lead-fields.js'
@@ -62,20 +63,39 @@ export function contactKeyRowsFromSignal(
     email_masked: maskEmail(email),
     zip: pickLeadZip(fields),
   }
+
+  if (!base.event_id) {
+    base.event_id = `sub:${base.submitted_at}`
+  }
+
+  let props: Record<string, unknown> | undefined
+  try {
+    props = JSON.parse(row.props || '{}') as Record<string, unknown>
+  } catch {
+    props = undefined
+  }
+  const dual = extractAllContactHashesFromProps(props)
+  const phoneHashes = new Set(
+    [row.phoneHash, ...dual.phoneHashes].filter(Boolean) as string[],
+  )
+  const emailHashes = new Set(
+    [row.emailHash, ...dual.emailHashes].filter(Boolean) as string[],
+  )
+
   const out: LeadContactKeyRow[] = []
-  if (row.phoneHash) {
+  for (const hash of phoneHashes) {
     out.push({
       ...base,
       key_type: 'phone',
-      key_hash: row.phoneHash,
+      key_hash: hash,
       norm_version: PHONE_NORM_VERSION,
     })
   }
-  if (row.emailHash) {
+  for (const hash of emailHashes) {
     out.push({
       ...base,
       key_type: 'email',
-      key_hash: row.emailHash,
+      key_hash: hash,
       norm_version: EMAIL_NORM_VERSION,
     })
   }

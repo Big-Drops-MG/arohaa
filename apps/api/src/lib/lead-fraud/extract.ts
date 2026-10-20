@@ -16,7 +16,10 @@ import {
   FP_REUSE_DAY_THRESHOLD,
   VELOCITY_WINDOW_HOURS,
 } from './constants.js'
-import { emailDomain } from './disposable-domains.js'
+import {
+  emailDomain,
+  isCommonConsumerEmailDomain,
+} from './disposable-domains.js'
 import { emptyFeatures, parseFiBehavior } from './features.js'
 import type { FiLogItem, LeadFraudFeatures } from './types.js'
 
@@ -272,6 +275,9 @@ export async function extractLeadFraudFeatures(input: {
     ...behavior,
     fiBehaviorKnown,
     ...velocity,
+    emailDomainIsCommonConsumer: domain
+      ? isCommonConsumerEmailDomain(domain)
+      : false,
     velocityWindowKnown: true,
     fieldCount:
       Object.keys(fields).length +

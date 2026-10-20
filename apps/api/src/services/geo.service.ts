@@ -5,21 +5,20 @@ import { fileURLToPath } from 'node:url'
 
 export interface GeoInfo {
   country: string
+  countryCode: string
   city: string
   state: string
+
   zipcode: string
-  /** USPS state code (e.g. CA, NY). Empty when unknown. */
   stateCode: string
-  /** WGS84 latitude from GeoIP. Null when unknown or private IP. */
   latitude: number | null
-  /** WGS84 longitude from GeoIP. Null when unknown or private IP. */
   longitude: number | null
-  /** GeoIP accuracy radius in km. Null when unknown. */
   accuracyRadius: number | null
 }
 
 const UNKNOWN_GEO: GeoInfo = {
   country: 'Unknown',
+  countryCode: '',
   city: '',
   state: '',
   zipcode: '',
@@ -88,6 +87,7 @@ export function lookupGeoIp(ip: string): GeoInfo {
     if (!result) return { ...UNKNOWN_GEO }
 
     const country = result.country?.names?.en?.trim() || 'Unknown'
+    const countryCode = result.country?.iso_code?.trim().toUpperCase() || ''
     const city = result.city?.names?.en?.trim() || ''
     const stateSubdivision = result.subdivisions?.[0]
     const state =
@@ -113,6 +113,7 @@ export function lookupGeoIp(ip: string): GeoInfo {
 
     return {
       country,
+      countryCode,
       city,
       state,
       zipcode,

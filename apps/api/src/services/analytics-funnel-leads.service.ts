@@ -190,10 +190,10 @@ function isValidLeadTimestamp(value: string | null | undefined): boolean {
 }
 
 export function formatFingerprintAsMacId(fingerprint: string): string {
-  const hex = fingerprint.replace(/[^a-fA-F0-9]/g, '').toLowerCase()
-  if (!hex) return ''
-  const padded = hex.padEnd(12, '0').slice(0, 12)
-  return padded.match(/.{2}/g)?.join(':') ?? ''
+  const raw = fingerprint.trim()
+  if (!raw) return ''
+  if (raw.length <= 16) return raw
+  return `${raw.slice(0, 8)}…${raw.slice(-4)}`
 }
 
 function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {

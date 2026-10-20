@@ -8,9 +8,16 @@ type PartnerCard = {
   elevatedRisk: number
   incompleteAssessments: number
   reviewed: number
+  unresolved: number
   wrongNumber: number
   neverRequested: number
   converted: number
+  reviewedRate: number
+}
+
+function pct(rate: number): string {
+  if (!Number.isFinite(rate) || rate <= 0) return "0%"
+  return `${Math.round(rate * 1000) / 10}%`
 }
 
 export function PartnerScorecardsPanel() {
@@ -45,19 +52,27 @@ export function PartnerScorecardsPanel() {
     return (
       <p className="text-sm text-muted-foreground">
         No partner scorecard rows yet. Contact keys and call outcomes will
-        populate this table.
+        populate this table. Partner history is context — not individual guilt.
       </p>
     )
   }
 
   return (
     <div className="overflow-x-auto">
+      <p className="mb-3 text-xs text-muted-foreground">
+        Denominators and reviewed sample sizes included. Partner history is
+        context — not individual guilt.
+      </p>
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr className="border-b text-left text-xs text-muted-foreground uppercase">
             <th className="py-2 pr-3">Partner</th>
             <th className="py-2 pr-3 text-right">Submissions</th>
+            <th className="py-2 pr-3 text-right">Elevated</th>
+            <th className="py-2 pr-3 text-right">Incomplete</th>
             <th className="py-2 pr-3 text-right">Reviewed</th>
+            <th className="py-2 pr-3 text-right">Unresolved</th>
+            <th className="py-2 pr-3 text-right">Reviewed %</th>
             <th className="py-2 pr-3 text-right">Wrong number</th>
             <th className="py-2 pr-3 text-right">Never requested</th>
             <th className="py-2 pr-3 text-right">Converted</th>
@@ -71,7 +86,19 @@ export function PartnerScorecardsPanel() {
                 {row.submissions}
               </td>
               <td className="py-2 pr-3 text-right tabular-nums">
+                {row.elevatedRisk}
+              </td>
+              <td className="py-2 pr-3 text-right tabular-nums">
+                {row.incompleteAssessments}
+              </td>
+              <td className="py-2 pr-3 text-right tabular-nums">
                 {row.reviewed}
+              </td>
+              <td className="py-2 pr-3 text-right tabular-nums">
+                {row.unresolved}
+              </td>
+              <td className="py-2 pr-3 text-right tabular-nums">
+                {pct(row.reviewedRate)}
               </td>
               <td className="py-2 pr-3 text-right tabular-nums">
                 {row.wrongNumber}

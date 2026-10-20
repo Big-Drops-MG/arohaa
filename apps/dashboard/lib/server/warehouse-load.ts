@@ -57,16 +57,33 @@ export type WarehouseShortcutLead = {
   lpPublicId: string
   sessionId: string
   tenantWorkspaceId: string
+  fingerprintId?: string
   macId: string
   createdAt: string
   submittedAt: string | null
   zip: string
+  geoZip?: string
+  geoCountry?: string
+  geoCountryCode?: string
+  geoState?: string
+  geoCity?: string
+  locationComparison?: string
+  locationComparisonDetail?: string
+  networkClass?: string
+  networkAsn?: number | null
+  networkOrg?: string
+  networkEvidenceSource?: string
+  networkEvidenceAsOf?: string
   email: string
+  emailMasked?: string
   firstName: string
   lastName: string
   utmSource: string
+  firstObservedUtmSource?: string
+  attributionConfidence?: string
   utmId: string
   trustedFormUrl: string
+  trustedFormEvidenceTier?: string
   formSubmitted: boolean
   usedCopy: boolean
   usedPaste: boolean

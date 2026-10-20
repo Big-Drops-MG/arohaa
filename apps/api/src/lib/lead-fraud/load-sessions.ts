@@ -14,6 +14,9 @@ type RawSignalRow = {
   browser: string
   geo_zip: string
   geo_state: string
+  geo_country: string
+  geo_country_code: string
+  geo_city: string
   client_ip_hash: string
   form_submitted: number | boolean | string
   props: string
@@ -24,8 +27,14 @@ type RawSignalRow = {
   email_hash?: string
   event_id?: string
   utm_source?: string
+  first_utm_source?: string
   utm_s1?: string
   utm_campaign?: string
+  network_class?: string
+  network_asn?: string | number
+  network_org?: string
+  network_evidence_source?: string
+  network_evidence_as_of?: string
 }
 
 function parseSubmittedAtMs(raw: string): number {
@@ -49,6 +58,9 @@ function mapRow(row: RawSignalRow): LeadSessionSignalRow | null {
     browser: String(row.browser || ''),
     geoZip: String(row.geo_zip || ''),
     geoState: String(row.geo_state || ''),
+    geoCountry: String(row.geo_country || ''),
+    geoCountryCode: String(row.geo_country_code || ''),
+    geoCity: String(row.geo_city || ''),
     clientIpHash: String(row.client_ip_hash || ''),
     formSubmitted: isTruthyFlag(row.form_submitted),
     props: String(row.props || '{}'),
@@ -59,8 +71,17 @@ function mapRow(row: RawSignalRow): LeadSessionSignalRow | null {
     emailHash: String(row.email_hash || '').trim() || undefined,
     eventId: String(row.event_id || '').trim() || undefined,
     utmSource: String(row.utm_source || '').trim() || undefined,
+    firstObservedUtmSource:
+      String(row.first_utm_source || row.utm_source || '').trim() || undefined,
     utmS1: String(row.utm_s1 || '').trim() || undefined,
     utmCampaign: String(row.utm_campaign || '').trim() || undefined,
+    networkClass: String(row.network_class || '').trim() || undefined,
+    networkAsn: Number(row.network_asn) || undefined,
+    networkOrg: String(row.network_org || '').trim() || undefined,
+    networkEvidenceSource:
+      String(row.network_evidence_source || '').trim() || undefined,
+    networkEvidenceAsOf:
+      String(row.network_evidence_as_of || '').trim() || undefined,
   }
 }
 
@@ -105,19 +126,34 @@ const LEAD_SESSION_SELECT = `
   anyIf(fingerprint, fingerprint != '') AS fingerprint,
   anyIf(browser, browser != '') AS browser,
   max(nullIf(geo_zipcode, '')) AS geo_zip,
-  anyIf(state, state != '') AS geo_state,
+  anyIf(state_code, state_code != '') AS geo_state,
+  anyIf(country, country != '') AS geo_country,
+  anyIf(country_code, country_code != '') AS geo_country_code,
+  anyIf(city, city != '') AS geo_city,
   anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
   max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
   ${LEAD_PROPS_EXPR} AS props,
-  max(nullIf(zipcode, '')) AS zip_val,
+  coalesce(
+    nullIf(max(form_zip_entered), ''),
+    nullIf(max(zipcode), '')
+  ) AS zip_val,
   toString(max(created_at)) AS submitted_at,
   anyIf(tenant_workspace_id, tenant_workspace_id != '') AS tenant_workspace_id,
   anyIf(phone_hash, phone_hash != '') AS phone_hash,
   anyIf(email_hash, email_hash != '') AS email_hash,
   anyIf(event_id, event_id != '') AS event_id,
   anyIf(utm_source, utm_source != '') AS utm_source,
+  nullIf(
+    argMinIf(utm_source, created_at, utm_source != ''),
+    ''
+  ) AS first_utm_source,
   anyIf(utm_s1, utm_s1 != '') AS utm_s1,
-  anyIf(utm_campaign, utm_campaign != '') AS utm_campaign
+  anyIf(utm_campaign, utm_campaign != '') AS utm_campaign,
+  anyIf(network_class, network_class != '') AS network_class,
+  anyIf(network_asn, network_asn > 0) AS network_asn,
+  anyIf(network_org, network_org != '') AS network_org,
+  anyIf(network_evidence_source, network_evidence_source != '') AS network_evidence_source,
+  anyIf(network_evidence_as_of, network_evidence_as_of != '') AS network_evidence_as_of
 `
 
 const LEAD_SESSION_SELECT_BASE = `
@@ -126,7 +162,10 @@ const LEAD_SESSION_SELECT_BASE = `
   anyIf(fingerprint, fingerprint != '') AS fingerprint,
   anyIf(browser, browser != '') AS browser,
   max(nullIf(geo_zipcode, '')) AS geo_zip,
-  anyIf(state, state != '') AS geo_state,
+  anyIf(state_code, state_code != '') AS geo_state,
+  anyIf(country, country != '') AS geo_country,
+  '' AS geo_country_code,
+  anyIf(city, city != '') AS geo_city,
   anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
   max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
   ${LEAD_PROPS_EXPR} AS props,
@@ -141,6 +180,9 @@ const LEAD_SESSION_SELECT_MINIMAL = `
   anyIf(browser, browser != '') AS browser,
   '' AS geo_zip,
   anyIf(state, state != '') AS geo_state,
+  anyIf(country, country != '') AS geo_country,
+  '' AS geo_country_code,
+  anyIf(city, city != '') AS geo_city,
   anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
   max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
   ${LEAD_PROPS_EXPR} AS props,

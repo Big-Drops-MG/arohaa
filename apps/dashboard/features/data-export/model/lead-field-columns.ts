@@ -32,7 +32,7 @@ const LABEL_OVERRIDES: Record<string, string> = {
   utm_source: "UTM Source",
   utm_id: "UTM ID",
   utm_s1: "UTM S1",
-  mac_id: "MAC ID",
+  mac_id: "Fingerprint",
   submit: "Submit",
   unnamed: "Unknown Control",
 }
