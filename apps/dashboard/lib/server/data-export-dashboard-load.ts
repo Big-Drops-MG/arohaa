@@ -61,6 +61,7 @@ type LeadsApiResponse = {
     formSubmitted?: boolean
     fields: Record<string, string>
     returnCount?: number
+    fraud?: DataExportDashboardData["leads"][number]["fraud"]
   }>
   total?: number
   limit?: number
@@ -93,7 +94,7 @@ async function fetchLeads(
   })
 
   const controller = new AbortController()
-  const timeoutMs = rangeId === "all_time" ? 60_000 : 12_000
+  const timeoutMs = rangeId === "all_time" ? 90_000 : 45_000
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const url = new URL(`${apiBase}/v1/analytics/funnel/leads`)

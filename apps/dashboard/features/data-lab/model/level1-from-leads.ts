@@ -107,8 +107,16 @@ function mapLeadFraud(raw: unknown): DataExportLeadRow["fraud"] {
     typeof row.scoreAvailable === "boolean"
       ? row.scoreAvailable
       : coverage !== "insufficient"
+  const scoreRaw =
+    typeof row.score === "number"
+      ? row.score
+      : typeof row.score === "string"
+        ? Number(row.score)
+        : NaN
+  const score =
+    scoreAvailable && Number.isFinite(scoreRaw) ? Math.round(scoreRaw) : null
   return {
-    score: scoreAvailable && typeof row.score === "number" ? row.score : null,
+    score,
     scoreAvailable,
     label: rawLabel,
     effectiveLabel: effective,

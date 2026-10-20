@@ -47,10 +47,12 @@ export function LeadRiskBadge({
       : fraud.coverage === "partial"
         ? "Coverage partial"
         : "Coverage insufficient"
+  const score =
+    fraud.scoreAvailable && fraud.score != null && Number.isFinite(fraud.score)
+      ? Math.round(fraud.score)
+      : null
   const title = [
-    fraud.scoreAvailable && fraud.score != null
-      ? `Trust ${fraud.score}/100`
-      : "Trust unavailable",
+    score != null ? `Trust score ${score}/100` : "Trust score unavailable",
     coverage,
     labelCopy,
     ...(fraud.findings.length > 0
@@ -64,16 +66,27 @@ export function LeadRiskBadge({
     <span
       title={title}
       className={cn(
-        "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium",
+        "inline-flex max-w-[11rem] flex-col gap-0.5 rounded-md px-2 py-1 text-xs font-medium",
         badgeClass(fraud),
         className
       )}
     >
-      {labelCopy}
-      {fraud.scoreAvailable && fraud.score != null ? (
-        <span className="tabular-nums opacity-80">{fraud.score}</span>
-      ) : null}
-      <span className="opacity-70">· {fraud.coverage}</span>
+      <span className="tabular-nums">
+        {score != null ? (
+          <>
+            <span className="text-sm font-semibold tracking-tight">
+              {score}
+            </span>
+            <span className="opacity-70">/100</span>
+          </>
+        ) : (
+          <span className="font-semibold">n/a</span>
+        )}
+      </span>
+      <span className="leading-tight opacity-90">
+        {labelCopy}
+        <span className="opacity-70"> · {fraud.coverage}</span>
+      </span>
     </span>
   )
 }

@@ -134,7 +134,7 @@ export function ShortcutLeadsTable({
             <th className={leadThClassName}>Project</th>
             <th className={leadThClassName}>Shortcut</th>
             <th className={leadThClassName}>Event Log</th>
-            <th className={leadThClassName}>Trust</th>
+            <th className={leadThClassName}>Trust score</th>
             <th className={leadThClassName}>Related</th>
             <th className={leadThClassName}>First Name</th>
             <th className={leadThClassName}>Last Name</th>
