@@ -430,7 +430,7 @@ export function DataExportDashboard({
                 <tr className="border-b border-border">
                   <th className={thClassName}>#</th>
                   <th className={thClassName}>When</th>
-                  <th className={thClassName}>Trust</th>
+                  <th className={thClassName}>Trust score</th>
                   <th className={thClassName}>First Name</th>
                   <th className={thClassName}>Last Name</th>
                   <th className={thClassName}>Email</th>
