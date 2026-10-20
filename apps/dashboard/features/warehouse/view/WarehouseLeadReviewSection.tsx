@@ -137,21 +137,34 @@ function matchesFilter(
 }
 
 export function WarehouseLeadReviewSection({
-  submissions,
-  elevatedRisk,
-  incompleteAssessments,
-  relatedContactGroups,
   pendingReviews,
   shortcutLeads,
 }: {
-  submissions: number
-  elevatedRisk: number
-  incompleteAssessments: number
-  relatedContactGroups: number
+  submissions?: number
+  elevatedRisk?: number
+  incompleteAssessments?: number
+  relatedContactGroups?: number
   pendingReviews: number
   shortcutLeads: WarehouseShortcutLead[]
 }) {
   const [filter, setFilter] = useState<LeadReviewFilter>("all")
+
+  const loadedStats = useMemo(() => {
+    let elevated = 0
+    let incomplete = 0
+    let related = 0
+    for (const lead of shortcutLeads) {
+      if (matchesFilter(lead, "elevated")) elevated += 1
+      if (matchesFilter(lead, "incomplete")) incomplete += 1
+      if (matchesFilter(lead, "related")) related += 1
+    }
+    return {
+      submissions: shortcutLeads.length,
+      elevated,
+      incomplete,
+      related,
+    }
+  }, [shortcutLeads])
 
   const filtered = useMemo(() => {
     if (filter === "pending") {
@@ -163,7 +176,9 @@ export function WarehouseLeadReviewSection({
   const filterHint =
     filter === "all"
       ? null
-      : `Showing ${filtered.length} of ${shortcutLeads.length} loaded review rows`
+      : filter === "pending"
+        ? `Pending reviews are org-wide (${formatCount(pendingReviews)}); showing all ${formatCount(shortcutLeads.length)} loaded review rows`
+        : `Showing ${filtered.length} of ${shortcutLeads.length} loaded review rows`
 
   return (
     <div className="space-y-6">
@@ -185,14 +200,14 @@ export function WarehouseLeadReviewSection({
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <FilterStat
             label="Submissions"
-            value={formatCount(submissions)}
+            value={formatCount(loadedStats.submissions)}
             hint="Click to show all loaded leads"
             active={filter === "all"}
             onClick={() => setFilter("all")}
           />
           <FilterStat
             label="Elevated risk"
-            value={formatCount(elevatedRisk)}
+            value={formatCount(loadedStats.elevated)}
             hint="Trust below threshold — informational"
             tone="fraud"
             active={filter === "elevated"}
@@ -200,15 +215,15 @@ export function WarehouseLeadReviewSection({
           />
           <FilterStat
             label="Incomplete data"
-            value={formatCount(incompleteAssessments)}
+            value={formatCount(loadedStats.incomplete)}
             hint="Insufficient signal coverage"
             active={filter === "incomplete"}
             onClick={() => setFilter("incomplete")}
           />
           <FilterStat
             label="Related groups"
-            value={formatCount(relatedContactGroups)}
-            hint="Leads with related contact matches"
+            value={formatCount(loadedStats.related)}
+            hint="Loaded leads with related contact matches"
             active={filter === "related"}
             onClick={() => setFilter("related")}
           />
