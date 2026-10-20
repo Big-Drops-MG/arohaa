@@ -33,10 +33,14 @@ import type {
 } from '../types/analytics-insights.js'
 import { resolveVehicleNamesInLeads } from '../lib/vehicle-model-names.js'
 import {
+  emptyFeatures,
   ensureSessionsFraudAssessments,
+  isCommonConsumerEmailDomain,
+  scoreLeadFraud,
   type LeadFraudAssessment,
 } from '../lib/lead-fraud/index.js'
 import { loadClientIpBySessions } from '../lib/lead-fraud/load-sessions.js'
+import { emailDomain } from '../lib/lead-fraud/disposable-domains.js'
 
 type CHJson<T> = { data: T[] }
 
@@ -263,6 +267,41 @@ function unavailableLeadFraud(): LeadFraudAssessment {
     reasons: ['Risk scoring temporarily unavailable'],
     modelVersion: '',
   }
+}
+
+function isScoringUnavailable(fraud: LeadFraudAssessment): boolean {
+  return fraud.findings.some((f) => f.code === 'scoring_unavailable')
+}
+
+/** Score from already-loaded lead fields when session signal load fails. */
+function scoreLeadFromFunnelFields(lead: FunnelLeadRow): LeadFraudAssessment {
+  const email = (lead.email || '').trim()
+  const domain = emailDomain(email)
+  const firstName = (lead.fields.first_name || '').trim()
+  const lastName = (lead.fields.last_name || '').trim()
+  const zip = (lead.zip || lead.fields.zip || '').trim()
+  return scoreLeadFraud(
+    emptyFeatures({
+      formSubmitted: lead.formSubmitted,
+      email,
+      firstName,
+      lastName,
+      formZipEntered: zip,
+      zip,
+      trustedFormUrl: lead.trustedFormUrl,
+      fingerprint: lead.macId || '',
+      fieldCount:
+        Object.keys(lead.fields).length +
+        (email ? 1 : 0) +
+        (zip ? 1 : 0),
+      emailDomainIsCommonConsumer: domain
+        ? isCommonConsumerEmailDomain(domain)
+        : false,
+      fiBehaviorKnown: false,
+      velocityWindowKnown: false,
+      contactMatchStatus: 'unavailable',
+    }),
+  )
 }
 
 function parseLeadWhen(value: string): Date | null {
@@ -1791,16 +1830,29 @@ export async function getFunnelLeads({
       sessionIds: pageLeads.map((lead) => lead.sessionId),
       concurrency: 4,
     })
-    pageLeads = pageLeads.map((lead) => ({
-      ...lead,
-      fraud: fraudMap.get(lead.sessionId) ?? unavailableLeadFraud(),
-    }))
+    pageLeads = pageLeads.map((lead) => {
+      const scored = fraudMap.get(lead.sessionId)
+      if (scored && !isScoringUnavailable(scored)) {
+        return { ...lead, fraud: scored }
+      }
+      try {
+        return { ...lead, fraud: scoreLeadFromFunnelFields(lead) }
+      } catch {
+        return {
+          ...lead,
+          fraud: scored ?? unavailableLeadFraud(),
+        }
+      }
+    })
   } catch (error) {
     console.error('[funnel-leads] fraud scoring failed', error)
-    pageLeads = pageLeads.map((lead) => ({
-      ...lead,
-      fraud: unavailableLeadFraud(),
-    }))
+    pageLeads = pageLeads.map((lead) => {
+      try {
+        return { ...lead, fraud: scoreLeadFromFunnelFields(lead) }
+      } catch {
+        return { ...lead, fraud: unavailableLeadFraud() }
+      }
+    })
   }
 
   return {

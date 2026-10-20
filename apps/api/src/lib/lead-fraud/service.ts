@@ -121,170 +121,197 @@ export async function ensureSessionsFraudAssessments(input: {
   ]
   if (ids.length === 0) return out
 
-  const existing = input.forceRescore
-    ? new Map()
-    : await fetchLeadRiskRows(input.workspaceId, ids)
-
-  const targetRows = await loadLeadSessionSignals({
-    workspaceId: input.workspaceId,
-    sessionIds: ids,
-  })
-  const bySession = new Map(
-    targetRows.map((row) => [row.sessionId, row] as const),
-  )
-
-  let velocityRows = targetRows
-  let velocityWindowKnown = false
   try {
-    const lookedBack = await loadLeadSessionSignals({
-      workspaceId: input.workspaceId,
-      lookbackDays: 7,
-      limit: 3000,
-    })
-    if (lookedBack.length > 0) {
-      velocityRows = lookedBack
-      velocityWindowKnown = true
+    let existing = new Map<string, LeadRiskRow>()
+    if (!input.forceRescore) {
+      try {
+        existing = await fetchLeadRiskRows(input.workspaceId, ids)
+      } catch (err) {
+        console.error('[lead-fraud] fetchLeadRiskRows failed', err)
+      }
     }
-  } catch {
-    velocityRows = targetRows
-    velocityWindowKnown = false
-  }
-  const velocity = computeLeadVelocityMaps(velocityRows)
 
-  const signalRows = ids
-    .map((sid) => bySession.get(sid))
-    .filter((row): row is LeadSessionSignalRow => Boolean(row))
-  const fiMap = await loadFiBehaviorBySessions(
-    signalRows.map((row) => ({
-      workspaceId: row.workspaceId,
-      sessionId: row.sessionId,
-    })),
-  )
-
-  const needScore: string[] = []
-  const contactBySid = new Map<
-    string,
-    Awaited<ReturnType<typeof loadContactRiskSignals>>
-  >()
-  const REUSE_CONCURRENCY = 8
-  for (let i = 0; i < ids.length; i += REUSE_CONCURRENCY) {
-    const chunk = ids.slice(i, i + REUSE_CONCURRENCY)
-    const chunkNeed: string[] = []
-    await Promise.all(
-      chunk.map(async (sid) => {
-        const row = existing.get(sid)
-        const signal = bySession.get(sid)
-        if (!signal) {
-          chunkNeed.push(sid)
-          return
-        }
-        const contact = await loadContactRiskSignals({
-          tenantWorkspaceId: signal.tenantWorkspaceId,
-          landingPageId: signal.workspaceId,
-          sessionId: sid,
-          matchLimit: 100,
-        })
-        contactBySid.set(sid, contact)
-        const fi =
-          fiMap.get(sessionKey(signal.workspaceId, sid)) ?? null
-        const evidenceToken = composeEvidenceToken(
-          contact.evidenceToken,
-          behaviorEvidenceToken(fi),
-        )
-        if (
-          !input.forceRescore &&
-          row &&
-          canReuseAssessment(row, evidenceToken)
-        ) {
-          const assessment = assessmentFromRiskRow(row)
-          if (assessment) {
-            out.set(sid, assessment)
-            return
-          }
-        }
-        chunkNeed.push(sid)
-      }),
+    let targetRows: LeadSessionSignalRow[] = []
+    try {
+      targetRows = await loadLeadSessionSignals({
+        workspaceId: input.workspaceId,
+        sessionIds: ids,
+      })
+    } catch (err) {
+      console.error('[lead-fraud] loadLeadSessionSignals failed', err)
+      targetRows = []
+    }
+    const bySession = new Map(
+      targetRows.map((row) => [row.sessionId, row] as const),
     )
-    needScore.push(...chunkNeed)
-  }
 
-  if (needScore.length === 0) return out
+    let velocityRows = targetRows
+    let velocityWindowKnown = false
+    try {
+      const lookedBack = await loadLeadSessionSignals({
+        workspaceId: input.workspaceId,
+        lookbackDays: 7,
+        limit: 3000,
+      })
+      if (lookedBack.length > 0) {
+        velocityRows = lookedBack
+        velocityWindowKnown = true
+      }
+    } catch {
+      velocityRows = targetRows
+      velocityWindowKnown = false
+    }
+    const velocity = computeLeadVelocityMaps(velocityRows)
 
-  const scoreRows = needScore
-    .map((sid) => bySession.get(sid))
-    .filter((row): row is LeadSessionSignalRow => Boolean(row))
+    const signalRows = ids
+      .map((sid) => bySession.get(sid))
+      .filter((row): row is LeadSessionSignalRow => Boolean(row))
+    const fiMap = await loadFiBehaviorBySessions(
+      signalRows.map((row) => ({
+        workspaceId: row.workspaceId,
+        sessionId: row.sessionId,
+      })),
+    )
 
-  const toPersist: Array<{
-    workspaceId: string
-    sessionId: string
-    assessment: LeadFraudAssessment
-    features: LeadFraudFeatures
-    tenantWorkspaceId?: string
-    phoneHash?: string
-    emailHash?: string
-  }> = []
-
-  const SCORE_CONCURRENCY = 8
-  for (let i = 0; i < needScore.length; i += SCORE_CONCURRENCY) {
-    const chunk = needScore.slice(i, i + SCORE_CONCURRENCY)
-    await Promise.all(
-      chunk.map(async (sid) => {
-        const row = bySession.get(sid)
-        if (!row) {
-          out.set(sid, unavailableAssessment())
-          return
-        }
-        try {
-          const fi =
-            fiMap.get(sessionKey(row.workspaceId, row.sessionId)) ?? null
-          const features = buildFeaturesFromLeadSessionSignal(row, velocity, fi)
-          features.velocityWindowKnown = velocityWindowKnown
-          const contact =
-            contactBySid.get(sid) ??
-            (await loadContactRiskSignals({
-              tenantWorkspaceId: row.tenantWorkspaceId,
-              landingPageId: row.workspaceId,
+    const needScore: string[] = []
+    const contactBySid = new Map<
+      string,
+      Awaited<ReturnType<typeof loadContactRiskSignals>>
+    >()
+    const REUSE_CONCURRENCY = 8
+    for (let i = 0; i < ids.length; i += REUSE_CONCURRENCY) {
+      const chunk = ids.slice(i, i + REUSE_CONCURRENCY)
+      const chunkNeed: string[] = []
+      await Promise.all(
+        chunk.map(async (sid) => {
+          try {
+            const row = existing.get(sid)
+            const signal = bySession.get(sid)
+            if (!signal) {
+              chunkNeed.push(sid)
+              return
+            }
+            const contact = await loadContactRiskSignals({
+              tenantWorkspaceId: signal.tenantWorkspaceId,
+              landingPageId: signal.workspaceId,
               sessionId: sid,
               matchLimit: 100,
-            }))
-          Object.assign(features, contact)
-          features.evidenceToken = composeEvidenceToken(
-            contact.evidenceToken,
-            behaviorEvidenceToken(fi),
-          )
-          const assessment = scoreLeadFraud(features)
-          out.set(sid, assessment)
-          toPersist.push({
-            workspaceId: input.workspaceId,
-            sessionId: sid,
-            assessment,
-            features,
-            tenantWorkspaceId: row.tenantWorkspaceId,
-            phoneHash: row.phoneHash,
-            emailHash: row.emailHash,
-          })
-        } catch {
-          out.set(sid, unavailableAssessment())
-        }
-      }),
-    )
-  }
-
-  if (toPersist.length > 0) {
-    try {
-      await upsertLeadRiskBatch(toPersist)
-    } catch {
-      /* assessments still returned in-memory */
+            })
+            contactBySid.set(sid, contact)
+            const fi =
+              fiMap.get(sessionKey(signal.workspaceId, sid)) ?? null
+            const evidenceToken = composeEvidenceToken(
+              contact.evidenceToken,
+              behaviorEvidenceToken(fi),
+            )
+            if (
+              !input.forceRescore &&
+              row &&
+              canReuseAssessment(row, evidenceToken)
+            ) {
+              const assessment = assessmentFromRiskRow(row)
+              if (assessment) {
+                out.set(sid, assessment)
+                return
+              }
+            }
+            chunkNeed.push(sid)
+          } catch {
+            chunkNeed.push(sid)
+          }
+        }),
+      )
+      needScore.push(...chunkNeed)
     }
-  }
 
-  try {
-    await persistContactKeysFromSignals(scoreRows)
-  } catch {
-    /* contact keys are best-effort */
-  }
+    if (needScore.length === 0) return out
 
-  return out
+    const scoreRows = needScore
+      .map((sid) => bySession.get(sid))
+      .filter((row): row is LeadSessionSignalRow => Boolean(row))
+
+    const toPersist: Array<{
+      workspaceId: string
+      sessionId: string
+      assessment: LeadFraudAssessment
+      features: LeadFraudFeatures
+      tenantWorkspaceId?: string
+      phoneHash?: string
+      emailHash?: string
+    }> = []
+
+    const SCORE_CONCURRENCY = 8
+    for (let i = 0; i < needScore.length; i += SCORE_CONCURRENCY) {
+      const chunk = needScore.slice(i, i + SCORE_CONCURRENCY)
+      await Promise.all(
+        chunk.map(async (sid) => {
+          const row = bySession.get(sid)
+          if (!row) {
+            out.set(sid, unavailableAssessment())
+            return
+          }
+          try {
+            const fi =
+              fiMap.get(sessionKey(row.workspaceId, row.sessionId)) ?? null
+            const features = buildFeaturesFromLeadSessionSignal(
+              row,
+              velocity,
+              fi,
+            )
+            features.velocityWindowKnown = velocityWindowKnown
+            const contact =
+              contactBySid.get(sid) ??
+              (await loadContactRiskSignals({
+                tenantWorkspaceId: row.tenantWorkspaceId,
+                landingPageId: row.workspaceId,
+                sessionId: sid,
+                matchLimit: 100,
+              }))
+            Object.assign(features, contact)
+            features.evidenceToken = composeEvidenceToken(
+              contact.evidenceToken,
+              behaviorEvidenceToken(fi),
+            )
+            const assessment = scoreLeadFraud(features)
+            out.set(sid, assessment)
+            toPersist.push({
+              workspaceId: input.workspaceId,
+              sessionId: sid,
+              assessment,
+              features,
+              tenantWorkspaceId: row.tenantWorkspaceId,
+              phoneHash: row.phoneHash,
+              emailHash: row.emailHash,
+            })
+          } catch {
+            out.set(sid, unavailableAssessment())
+          }
+        }),
+      )
+    }
+
+    if (toPersist.length > 0) {
+      try {
+        await upsertLeadRiskBatch(toPersist)
+      } catch {
+        /* assessments still returned in-memory */
+      }
+    }
+
+    try {
+      await persistContactKeysFromSignals(scoreRows)
+    } catch {
+      /* contact keys are best-effort */
+    }
+
+    return out
+  } catch (err) {
+    console.error('[lead-fraud] ensureSessionsFraudAssessments failed', err)
+    for (const sid of ids) {
+      if (!out.has(sid)) out.set(sid, unavailableAssessment())
+    }
+    return out
+  }
 }
 
 export async function classifyLeadSessionRows(
