@@ -1,3 +1,5 @@
+import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { db, landingPages, workspaces } from '@workspace/database'
 import {
   getClickHouseClient,
   LEAD_REVIEW_TABLE,
@@ -15,6 +17,8 @@ export type { RelatedMatchBasis }
 export type RelatedSubmissionRow = {
   tenantWorkspaceId: string
   landingPageId: string
+  landingPageName: string
+  lpPublicId: string
   sessionId: string
   eventId: string
   submittedAt: string
@@ -35,6 +39,40 @@ export type RelatedSubmissionRow = {
   reviewStatus: string
   decision: string
   callOutcome: string
+}
+
+async function loadLandingPageLabels(
+  landingPageIds: string[],
+): Promise<Map<string, { name: string; publicId: string }>> {
+  const out = new Map<string, { name: string; publicId: string }>()
+  const ids = [
+    ...new Set(landingPageIds.map((id) => id.trim()).filter(Boolean)),
+  ]
+  if (ids.length === 0) return out
+  try {
+    const rows = await db
+      .select({
+        landingPageId: landingPages.id,
+        publicId: landingPages.publicId,
+        brandName: landingPages.brandName,
+        workspaceName: workspaces.name,
+      })
+      .from(landingPages)
+      .innerJoin(workspaces, eq(landingPages.workspaceId, workspaces.id))
+      .where(
+        and(inArray(landingPages.id, ids), isNull(landingPages.deletedAt)),
+      )
+    for (const row of rows) {
+      const name = (row.brandName || row.workspaceName || '').trim()
+      out.set(row.landingPageId, {
+        name,
+        publicId: (row.publicId || '').trim(),
+      })
+    }
+  } catch (err) {
+    console.error('[related-submissions] landing page label load failed', err)
+  }
+  return out
 }
 
 export type RelatedSubmissionsResult = {
@@ -127,6 +165,10 @@ export async function getRelatedSubmissions(input: {
     }
   }
 
+  const pageLabels = await loadLandingPageLabels(
+    match.rows.map((r) => r.landingPageId),
+  )
+
   return {
     status: match.status,
     tenantWorkspaceId: match.tenantWorkspaceId,
@@ -140,9 +182,12 @@ export async function getRelatedSubmissions(input: {
     rows: match.rows.map((r) => {
       const risk = riskBySession.get(r.sessionId)
       const review = reviewBySession.get(r.sessionId)
+      const page = pageLabels.get(r.landingPageId)
       return {
         tenantWorkspaceId: match.tenantWorkspaceId,
         landingPageId: r.landingPageId,
+        landingPageName: page?.name || '',
+        lpPublicId: page?.publicId || '',
         sessionId: r.sessionId,
         eventId: r.eventId,
         submittedAt: r.submittedAt,
