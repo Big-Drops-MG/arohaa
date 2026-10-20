@@ -12,6 +12,7 @@ import {
 } from '../lead-fields.js'
 import { CLICKHOUSE_EVENTS_TABLE } from '../clickhouse-events-table.js'
 import { getClickHouseClient } from '../../services/clickhouse.service.js'
+import { usStateCodeFromNameOrCode } from '../us-states.js'
 import {
   FP_REUSE_DAY_THRESHOLD,
   VELOCITY_WINDOW_HOURS,
@@ -270,7 +271,7 @@ export async function extractLeadFraudFeatures(input: {
     zip: formZipEntered,
     geoZip: (agg?.geo_zip || '').trim(),
     stateField: (fields.state || '').trim(),
-    geoState: (agg?.geo_state || '').trim(),
+    geoState: usStateCodeFromNameOrCode(agg?.geo_state || ''),
     trustedFormUrl: pickTrustedFormUrl(rawFields),
     clientIpHash: ipHash,
     ...behavior,

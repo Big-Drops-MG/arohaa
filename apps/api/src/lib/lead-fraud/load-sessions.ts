@@ -1,5 +1,6 @@
 import { CLICKHOUSE_EVENTS_TABLE } from '../clickhouse-events-table.js'
 import { getClickHouseClient } from '../../services/clickhouse.service.js'
+import { usStateCodeFromNameOrCode } from '../us-states.js'
 import {
   isTruthyFlag,
   type LeadSessionSignalRow,
@@ -14,6 +15,7 @@ type RawSignalRow = {
   browser: string
   geo_zip: string
   geo_state: string
+  geo_state_name?: string
   geo_country: string
   geo_country_code: string
   geo_city: string
@@ -58,7 +60,9 @@ function mapRow(row: RawSignalRow): LeadSessionSignalRow | null {
     fingerprint: String(row.fingerprint || ''),
     browser: String(row.browser || ''),
     geoZip: String(row.geo_zip || ''),
-    geoState: String(row.geo_state || ''),
+    geoState:
+      String(row.geo_state || '').trim().toUpperCase() ||
+      usStateCodeFromNameOrCode(String(row.geo_state_name || '')),
     geoCountry: String(row.geo_country || ''),
     geoCountryCode: String(row.geo_country_code || ''),
     geoCity: String(row.geo_city || ''),
@@ -88,11 +92,11 @@ function mapRow(row: RawSignalRow): LeadSessionSignalRow | null {
 }
 
 const LEAD_SESSION_WHERE = `
-  session_id != ''
+  e.session_id != ''
   AND (
-    event_name IN ('form_submit', 'form_success')
-    OR positionCaseInsensitive(properties, '"_k"') > 0
-    OR positionCaseInsensitive(properties, '"fields"') > 0
+    e.event_name IN ('form_submit', 'form_success')
+    OR positionCaseInsensitive(e.properties, '"_k"') > 0
+    OR positionCaseInsensitive(e.properties, '"fields"') > 0
   )
 `
 
@@ -100,20 +104,20 @@ const LEAD_PROPS_EXPR = `
   coalesce(
     nullIf(
       argMaxIf(
-        properties,
-        (length(properties), created_at),
-        event_name IN ('form_submit', 'form_success', 'form_step_complete')
+        e.properties,
+        (length(e.properties), e.created_at),
+        e.event_name IN ('form_submit', 'form_success', 'form_step_complete')
       ),
       ''
     ),
     nullIf(
       argMaxIf(
-        properties,
-        (length(properties), created_at),
-        event_name != '_fi'
+        e.properties,
+        (length(e.properties), e.created_at),
+        e.event_name != '_fi'
           AND (
-            positionCaseInsensitive(properties, '"_k"') > 0
-            OR positionCaseInsensitive(properties, '"fields"') > 0
+            positionCaseInsensitive(e.properties, '"_k"') > 0
+            OR positionCaseInsensitive(e.properties, '"fields"') > 0
           )
       ),
       ''
@@ -122,78 +126,102 @@ const LEAD_PROPS_EXPR = `
   )
 `
 
-const LEAD_SESSION_SELECT = `
-  toString(workspace_id) AS workspace_id,
-  session_id,
-  anyIf(fingerprint, fingerprint != '') AS fingerprint,
-  anyIf(browser, browser != '') AS browser,
-  max(nullIf(geo_zipcode, '')) AS geo_zip,
-  anyIf(state_code, state_code != '') AS geo_state,
-  anyIf(country, country != '') AS geo_country,
-  anyIf(country_code, country_code != '') AS geo_country_code,
-  anyIf(city, city != '') AS geo_city,
-  '' AS client_ip,
-  anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
-  max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
-  ${LEAD_PROPS_EXPR} AS props,
+const ANY_PROPS_EXPR = `argMax(e.properties, (length(e.properties), e.created_at))`
+
+const LEAD_SESSION_SELECT_CORE = `
+  toString(e.workspace_id) AS workspace_id,
+  e.session_id AS session_id,
+  anyIf(e.fingerprint, e.fingerprint != '') AS fingerprint,
+  anyIf(e.browser, e.browser != '') AS browser,
+  anyIf(e.country, e.country != '') AS geo_country,
+  anyIf(e.state, e.state != '') AS geo_state_name,
+  anyIf(e.city, e.city != '') AS geo_city,
+  anyIf(e.client_ip_hash, e.client_ip_hash != '') AS client_ip_hash,
+  max(e.event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
+  toString(max(e.created_at)) AS submitted_at
+`
+
+const LEAD_SESSION_SELECT_FULL_EXTRAS = `
+  max(nullIf(e.geo_zipcode, '')) AS geo_zip,
+  anyIf(e.state_code, e.state_code != '') AS geo_state,
+  anyIf(e.country_code, e.country_code != '') AS geo_country_code,
+  anyIf(e.client_ip, e.client_ip != '') AS client_ip,
   coalesce(
-    nullIf(max(form_zip_entered), ''),
-    nullIf(max(zipcode), '')
+    nullIf(max(e.form_zip_entered), ''),
+    nullIf(max(e.zipcode), '')
   ) AS zip_val,
-  toString(max(created_at)) AS submitted_at,
-  anyIf(tenant_workspace_id, tenant_workspace_id != '') AS tenant_workspace_id,
-  anyIf(phone_hash, phone_hash != '') AS phone_hash,
-  anyIf(email_hash, email_hash != '') AS email_hash,
-  anyIf(event_id, event_id != '') AS event_id,
-  anyIf(utm_source, utm_source != '') AS utm_source,
+  anyIf(e.tenant_workspace_id, e.tenant_workspace_id != '') AS tenant_workspace_id,
+  anyIf(e.phone_hash, e.phone_hash != '') AS phone_hash,
+  anyIf(e.email_hash, e.email_hash != '') AS email_hash,
+  anyIf(e.event_id, e.event_id != '') AS event_id,
+  anyIf(e.utm_source, e.utm_source != '') AS utm_source,
   nullIf(
-    argMinIf(utm_source, created_at, utm_source != ''),
+    argMinIf(e.utm_source, e.created_at, e.utm_source != ''),
     ''
   ) AS first_utm_source,
-  anyIf(utm_s1, utm_s1 != '') AS utm_s1,
-  anyIf(utm_campaign, utm_campaign != '') AS utm_campaign,
-  anyIf(network_class, network_class != '') AS network_class,
-  anyIf(network_asn, network_asn > 0) AS network_asn,
-  anyIf(network_org, network_org != '') AS network_org,
-  anyIf(network_evidence_source, network_evidence_source != '') AS network_evidence_source,
-  anyIf(network_evidence_as_of, network_evidence_as_of != '') AS network_evidence_as_of
+  anyIf(e.utm_s1, e.utm_s1 != '') AS utm_s1,
+  anyIf(e.utm_campaign, e.utm_campaign != '') AS utm_campaign,
+  anyIf(e.network_class, e.network_class != '') AS network_class,
+  anyIf(e.network_asn, e.network_asn > 0) AS network_asn,
+  anyIf(e.network_org, e.network_org != '') AS network_org,
+  anyIf(e.network_evidence_source, e.network_evidence_source != '') AS network_evidence_source,
+  anyIf(e.network_evidence_as_of, e.network_evidence_as_of != '') AS network_evidence_as_of
+`
+
+const LEAD_SESSION_SELECT_BASE_EXTRAS = `
+  max(nullIf(e.geo_zipcode, '')) AS geo_zip,
+  anyIf(e.state_code, e.state_code != '') AS geo_state,
+  '' AS geo_country_code,
+  '' AS client_ip,
+  max(nullIf(e.zipcode, '')) AS zip_val,
+  anyIf(e.tenant_workspace_id, e.tenant_workspace_id != '') AS tenant_workspace_id,
+  anyIf(e.phone_hash, e.phone_hash != '') AS phone_hash,
+  anyIf(e.email_hash, e.email_hash != '') AS email_hash
+`
+
+const LEAD_SESSION_SELECT_MINIMAL_EXTRAS = `
+  '' AS geo_zip,
+  '' AS geo_state,
+  '' AS geo_country_code,
+  '' AS client_ip,
+  max(nullIf(e.zipcode, '')) AS zip_val
+`
+
+const LEAD_SESSION_SELECT = `
+  ${LEAD_SESSION_SELECT_CORE},
+  ${LEAD_PROPS_EXPR} AS props,
+  ${LEAD_SESSION_SELECT_FULL_EXTRAS}
 `
 
 const LEAD_SESSION_SELECT_BASE = `
-  toString(workspace_id) AS workspace_id,
-  session_id,
-  anyIf(fingerprint, fingerprint != '') AS fingerprint,
-  anyIf(browser, browser != '') AS browser,
-  max(nullIf(geo_zipcode, '')) AS geo_zip,
-  anyIf(state_code, state_code != '') AS geo_state,
-  anyIf(country, country != '') AS geo_country,
-  '' AS geo_country_code,
-  anyIf(city, city != '') AS geo_city,
-  '' AS client_ip,
-  anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
-  max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
+  ${LEAD_SESSION_SELECT_CORE},
   ${LEAD_PROPS_EXPR} AS props,
-  max(nullIf(zipcode, '')) AS zip_val,
-  toString(max(created_at)) AS submitted_at
+  ${LEAD_SESSION_SELECT_BASE_EXTRAS}
 `
 
 const LEAD_SESSION_SELECT_MINIMAL = `
-  toString(workspace_id) AS workspace_id,
-  session_id,
-  anyIf(fingerprint, fingerprint != '') AS fingerprint,
-  anyIf(browser, browser != '') AS browser,
-  '' AS geo_zip,
-  anyIf(state, state != '') AS geo_state,
-  anyIf(country, country != '') AS geo_country,
-  '' AS geo_country_code,
-  anyIf(city, city != '') AS geo_city,
-  '' AS client_ip,
-  anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
-  max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
+  ${LEAD_SESSION_SELECT_CORE},
   ${LEAD_PROPS_EXPR} AS props,
-  max(nullIf(zipcode, '')) AS zip_val,
-  toString(max(created_at)) AS submitted_at
+  ${LEAD_SESSION_SELECT_MINIMAL_EXTRAS}
 `
+
+const SESSION_CONTEXT_SELECTS = [
+  `
+  ${LEAD_SESSION_SELECT_CORE},
+  ${ANY_PROPS_EXPR} AS props,
+  ${LEAD_SESSION_SELECT_FULL_EXTRAS}
+`,
+  `
+  ${LEAD_SESSION_SELECT_CORE},
+  ${ANY_PROPS_EXPR} AS props,
+  ${LEAD_SESSION_SELECT_BASE_EXTRAS}
+`,
+  `
+  ${LEAD_SESSION_SELECT_CORE},
+  ${ANY_PROPS_EXPR} AS props,
+  ${LEAD_SESSION_SELECT_MINIMAL_EXTRAS}
+`,
+]
 
 async function queryLeadSessions(
   selectSql: string,
@@ -201,6 +229,7 @@ async function queryLeadSessions(
   whereExtra: string,
   query_params: Record<string, unknown>,
   limit = 100_000,
+  orderBySql = '',
 ): Promise<LeadSessionSignalRow[]> {
   const safeLimit = Math.max(1, Math.min(100_000, Math.floor(limit)))
   const ch = getClickHouseClient()
@@ -210,10 +239,11 @@ async function queryLeadSessions(
     query: `
       SELECT
         ${selectSql}
-      FROM ${CLICKHOUSE_EVENTS_TABLE}
+      FROM ${CLICKHOUSE_EVENTS_TABLE} AS e
       WHERE ${whereClause}
         ${whereExtra}
-      GROUP BY workspace_id, session_id
+      GROUP BY e.workspace_id, e.session_id
+      ${orderBySql}
       LIMIT ${safeLimit}
     `,
   })
@@ -256,13 +286,13 @@ export async function loadClientIpBySessions(
           query_params: { wid, sids: chunk },
           query: `
             SELECT
-              toString(workspace_id) AS workspace_id,
-              session_id,
-              anyIf(client_ip, client_ip != '') AS client_ip
-            FROM ${CLICKHOUSE_EVENTS_TABLE}
-            WHERE workspace_id = {wid:UUID}
-              AND session_id IN {sids:Array(String)}
-            GROUP BY workspace_id, session_id
+              toString(e.workspace_id) AS workspace_id,
+              e.session_id AS session_id,
+              anyIf(e.client_ip, e.client_ip != '') AS client_ip
+            FROM ${CLICKHOUSE_EVENTS_TABLE} AS e
+            WHERE e.workspace_id = {wid:UUID}
+              AND e.session_id IN {sids:Array(String)}
+            GROUP BY e.workspace_id, e.session_id
           `,
         })
         const rows =
@@ -278,8 +308,8 @@ export async function loadClientIpBySessions(
           if (!ip) continue
           out.set(`${row.workspace_id}:${row.session_id}`, ip)
         }
-      } catch {
-        /* column may be missing until migrate; leave empty */
+      } catch (err) {
+        console.error('[lead-fraud] loadClientIpBySessions failed', err)
       }
     }
   }
@@ -321,83 +351,19 @@ export async function loadSessionContextByIds(
   ]
   if (!wid || sids.length === 0) return out
 
-  const selects = [
-    `
-      toString(workspace_id) AS workspace_id,
-      session_id,
-      anyIf(fingerprint, fingerprint != '') AS fingerprint,
-      anyIf(browser, browser != '') AS browser,
-      max(nullIf(geo_zipcode, '')) AS geo_zip,
-      anyIf(state_code, state_code != '') AS geo_state,
-      anyIf(country, country != '') AS geo_country,
-      anyIf(country_code, country_code != '') AS geo_country_code,
-      anyIf(city, city != '') AS geo_city,
-      '' AS client_ip,
-      anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
-      max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
-      argMax(properties, (length(properties), created_at)) AS props,
-      coalesce(nullIf(max(form_zip_entered), ''), nullIf(max(zipcode), '')) AS zip_val,
-      toString(max(created_at)) AS submitted_at,
-      anyIf(tenant_workspace_id, tenant_workspace_id != '') AS tenant_workspace_id,
-      anyIf(phone_hash, phone_hash != '') AS phone_hash,
-      anyIf(email_hash, email_hash != '') AS email_hash,
-      anyIf(network_class, network_class != '') AS network_class,
-      anyIf(network_asn, network_asn > 0) AS network_asn,
-      anyIf(network_org, network_org != '') AS network_org,
-      anyIf(network_evidence_source, network_evidence_source != '') AS network_evidence_source,
-      anyIf(network_evidence_as_of, network_evidence_as_of != '') AS network_evidence_as_of
-    `,
-    `
-      toString(workspace_id) AS workspace_id,
-      session_id,
-      anyIf(fingerprint, fingerprint != '') AS fingerprint,
-      anyIf(browser, browser != '') AS browser,
-      max(nullIf(geo_zipcode, '')) AS geo_zip,
-      anyIf(state_code, state_code != '') AS geo_state,
-      anyIf(country, country != '') AS geo_country,
-      '' AS geo_country_code,
-      anyIf(city, city != '') AS geo_city,
-      '' AS client_ip,
-      anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
-      max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
-      argMax(properties, (length(properties), created_at)) AS props,
-      max(nullIf(zipcode, '')) AS zip_val,
-      toString(max(created_at)) AS submitted_at,
-      anyIf(tenant_workspace_id, tenant_workspace_id != '') AS tenant_workspace_id,
-      anyIf(phone_hash, phone_hash != '') AS phone_hash,
-      anyIf(email_hash, email_hash != '') AS email_hash
-    `,
-    `
-      toString(workspace_id) AS workspace_id,
-      session_id,
-      anyIf(fingerprint, fingerprint != '') AS fingerprint,
-      anyIf(browser, browser != '') AS browser,
-      '' AS geo_zip,
-      anyIf(state, state != '') AS geo_state,
-      anyIf(country, country != '') AS geo_country,
-      '' AS geo_country_code,
-      anyIf(city, city != '') AS geo_city,
-      '' AS client_ip,
-      anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
-      max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
-      argMax(properties, (length(properties), created_at)) AS props,
-      max(nullIf(zipcode, '')) AS zip_val,
-      toString(max(created_at)) AS submitted_at
-    `,
-  ]
-
   const ch = getClickHouseClient()
-  for (const selectSql of selects) {
+  let lastError: unknown = null
+  for (const selectSql of SESSION_CONTEXT_SELECTS) {
     try {
       const res = await ch.query({
         format: 'JSON',
         query_params: { wid, sids },
         query: `
           SELECT ${selectSql}
-          FROM ${CLICKHOUSE_EVENTS_TABLE}
-          WHERE workspace_id = {wid:UUID}
-            AND session_id IN {sids:Array(String)}
-          GROUP BY workspace_id, session_id
+          FROM ${CLICKHOUSE_EVENTS_TABLE} AS e
+          WHERE e.workspace_id = {wid:UUID}
+            AND e.session_id IN {sids:Array(String)}
+          GROUP BY e.workspace_id, e.session_id
         `,
       })
       const rows = ((await res.json()) as CHJson<RawSignalRow>).data ?? []
@@ -405,21 +371,94 @@ export async function loadSessionContextByIds(
         const mapped = mapRow(row)
         if (mapped) out.set(mapped.sessionId, mapped)
       }
-      if (out.size > 0) break
-    } catch {
-      /* try next select shape */
+      lastError = null
+      break
+    } catch (err) {
+      lastError = err
     }
+  }
+  if (lastError) {
+    console.error('[lead-fraud] loadSessionContextByIds failed', lastError)
   }
 
   const withIp = await attachSessionClientIps([...out.values()])
   return new Map(withIp.map((row) => [row.sessionId, row] as const))
 }
 
+const VELOCITY_NEIGHBOR_SELECT = `
+  ${LEAD_SESSION_SELECT_CORE},
+  '{}' AS props,
+  ${LEAD_SESSION_SELECT_MINIMAL_EXTRAS}
+`
+
+function timeWindowWhere(
+  createdFromMs: number | undefined,
+  createdToMs: number | undefined,
+  query_params: Record<string, unknown>,
+): string {
+  let sql = ''
+  if (
+    typeof createdFromMs === 'number' &&
+    Number.isFinite(createdFromMs) &&
+    createdFromMs > 0
+  ) {
+    sql += ' AND e.created_at >= fromUnixTimestamp64Milli({from_ms:Int64})'
+    query_params.from_ms = Math.floor(createdFromMs)
+  }
+  if (
+    typeof createdToMs === 'number' &&
+    Number.isFinite(createdToMs) &&
+    createdToMs > 0
+  ) {
+    sql += ' AND e.created_at <= fromUnixTimestamp64Milli({to_ms:Int64})'
+    query_params.to_ms = Math.floor(createdToMs)
+  }
+  return sql
+}
+
+
+export async function loadVelocityNeighborRows(input: {
+  workspaceId: string
+  fingerprints: string[]
+  ipHashes: string[]
+  createdFromMs?: number
+  createdToMs?: number
+  limit?: number
+}): Promise<LeadSessionSignalRow[]> {
+  const wid = input.workspaceId.trim()
+  const fps = [...new Set(input.fingerprints.map((s) => s.trim()).filter(Boolean))]
+  const iphs = [...new Set(input.ipHashes.map((s) => s.trim()).filter(Boolean))]
+  if (!wid || (fps.length === 0 && iphs.length === 0)) return []
+
+  const query_params: Record<string, unknown> = { wid, fps, iphs }
+  let whereExtra = ' AND e.workspace_id = {wid:UUID}'
+  whereExtra +=
+    ' AND (e.fingerprint IN {fps:Array(String)} OR e.client_ip_hash IN {iphs:Array(String)})'
+  whereExtra += timeWindowWhere(input.createdFromMs, input.createdToMs, query_params)
+
+  try {
+    return await queryLeadSessions(
+      VELOCITY_NEIGHBOR_SELECT,
+      LEAD_SESSION_WHERE,
+      whereExtra,
+      query_params,
+      input.limit ?? 20_000,
+    )
+  } catch (err) {
+    console.error('[lead-fraud] loadVelocityNeighborRows failed', err)
+    throw err
+  }
+}
+
 export async function loadLeadSessionSignals(input?: {
   workspaceId?: string
   sessionIds?: string[]
   lookbackDays?: number
+  createdFromMs?: number
+  createdToMs?: number
   limit?: number
+  newestFirst?: boolean
+  withIpBackfill?: boolean
 }): Promise<LeadSessionSignalRow[]> {
   const workspaceId = input?.workspaceId?.trim() || ''
   const sessionIds = [
@@ -441,55 +480,60 @@ export async function loadLeadSessionSignals(input?: {
   let whereExtra = ''
   const query_params: Record<string, unknown> = {}
   if (workspaceId) {
-    whereExtra += ' AND workspace_id = {wid:UUID}'
+    whereExtra += ' AND e.workspace_id = {wid:UUID}'
     query_params.wid = workspaceId
   }
   if (sessionIds.length > 0) {
-    whereExtra += ' AND session_id IN {sids:Array(String)}'
+    whereExtra += ' AND e.session_id IN {sids:Array(String)}'
     query_params.sids = sessionIds
   }
   if (lookbackDays > 0) {
     whereExtra +=
-      ' AND created_at >= now64(3, \'UTC\') - toIntervalDay({lookback:UInt32})'
+      " AND e.created_at >= now64(3, 'UTC') - toIntervalDay({lookback:UInt32})"
     query_params.lookback = lookbackDays
   }
+  whereExtra += timeWindowWhere(
+    input?.createdFromMs,
+    input?.createdToMs,
+    query_params,
+  )
+  const orderBySql = input?.newestFirst ? 'ORDER BY max(e.created_at) DESC' : ''
 
-  // Explicit session ids are already lead sessions from the funnel — do not
-  // re-filter by lead event shapes or we can miss rows and return n/a scores.
+ 
   const whereClause =
-    sessionIds.length > 0 ? `session_id != ''` : LEAD_SESSION_WHERE
+    sessionIds.length > 0 ? `e.session_id != ''` : LEAD_SESSION_WHERE
 
   let rows: LeadSessionSignalRow[] = []
-  try {
-    rows = await queryLeadSessions(
-      LEAD_SESSION_SELECT,
-      whereClause,
-      whereExtra,
-      query_params,
-      limit,
-    )
-  } catch {
+  let lastError: unknown = null
+  for (const [shape, selectSql] of [
+    ['full', LEAD_SESSION_SELECT],
+    ['base', LEAD_SESSION_SELECT_BASE],
+    ['minimal', LEAD_SESSION_SELECT_MINIMAL],
+  ] as const) {
     try {
       rows = await queryLeadSessions(
-        LEAD_SESSION_SELECT_BASE,
+        selectSql,
         whereClause,
         whereExtra,
         query_params,
         limit,
+        orderBySql,
       )
-    } catch {
-      try {
-        rows = await queryLeadSessions(
-          LEAD_SESSION_SELECT_MINIMAL,
-          whereClause,
-          whereExtra,
-          query_params,
-          limit,
+      if (shape !== 'full') {
+        console.warn(
+          `[lead-fraud] loadLeadSessionSignals used ${shape} select shape`,
+          lastError,
         )
-      } catch {
-        rows = []
       }
+      lastError = null
+      break
+    } catch (err) {
+      lastError = err
     }
+  }
+  if (lastError) {
+    console.error('[lead-fraud] loadLeadSessionSignals failed', lastError)
+    rows = []
   }
 
   if (
@@ -542,5 +586,6 @@ export async function loadLeadSessionSignals(input?: {
     }
   }
 
+  if (input?.withIpBackfill === false) return rows
   return attachSessionClientIps(rows)
 }

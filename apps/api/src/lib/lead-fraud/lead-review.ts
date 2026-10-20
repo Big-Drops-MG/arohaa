@@ -108,25 +108,25 @@ export async function fetchLeadReview(input: {
     },
     query: `
       SELECT
-        tenant_workspace_id,
-        toString(workspace_id) AS workspace_id,
-        session_id,
-        review_status,
-        decision,
-        decision_note,
-        decision_by,
-        toString(decision_at) AS decision_at,
-        call_outcome,
-        call_outcome_by,
-        toString(call_outcome_at) AS call_outcome_at,
-        assessment_snapshot,
-        history_json,
-        revision,
-        toString(updated_at) AS updated_at
-      FROM ${LEAD_REVIEW_TABLE} FINAL
-      WHERE tenant_workspace_id = {tenant:String}
-        AND workspace_id = {wid:UUID}
-        AND session_id = {sid:String}
+        r.tenant_workspace_id AS tenant_workspace_id,
+        toString(r.workspace_id) AS workspace_id,
+        r.session_id AS session_id,
+        r.review_status AS review_status,
+        r.decision AS decision,
+        r.decision_note AS decision_note,
+        r.decision_by AS decision_by,
+        toString(r.decision_at) AS decision_at,
+        r.call_outcome AS call_outcome,
+        r.call_outcome_by AS call_outcome_by,
+        toString(r.call_outcome_at) AS call_outcome_at,
+        r.assessment_snapshot AS assessment_snapshot,
+        r.history_json AS history_json,
+        r.revision AS revision,
+        toString(r.updated_at) AS updated_at
+      FROM ${LEAD_REVIEW_TABLE} AS r FINAL
+      WHERE r.tenant_workspace_id = {tenant:String}
+        AND r.workspace_id = {wid:UUID}
+        AND r.session_id = {sid:String}
       LIMIT 1
     `,
   })
