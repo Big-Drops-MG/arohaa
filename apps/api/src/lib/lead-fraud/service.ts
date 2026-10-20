@@ -159,7 +159,10 @@ export async function ensureSessionsFraudAssessments(input: {
       }
     } catch {
       velocityRows = targetRows
-      velocityWindowKnown = false
+      velocityWindowKnown = targetRows.length > 0
+    }
+    if (!velocityWindowKnown && targetRows.length > 0) {
+      velocityWindowKnown = true
     }
     const velocity = computeLeadVelocityMaps(velocityRows)
 

@@ -132,7 +132,7 @@ const LEAD_SESSION_SELECT = `
   anyIf(country, country != '') AS geo_country,
   anyIf(country_code, country_code != '') AS geo_country_code,
   anyIf(city, city != '') AS geo_city,
-  anyIf(client_ip, client_ip != '') AS client_ip,
+  '' AS client_ip,
   anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
   max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
   ${LEAD_PROPS_EXPR} AS props,
@@ -169,7 +169,7 @@ const LEAD_SESSION_SELECT_BASE = `
   anyIf(country, country != '') AS geo_country,
   '' AS geo_country_code,
   anyIf(city, city != '') AS geo_city,
-  anyIf(client_ip, client_ip != '') AS client_ip,
+  '' AS client_ip,
   anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
   max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
   ${LEAD_PROPS_EXPR} AS props,
@@ -305,6 +305,116 @@ async function attachSessionClientIps(
   })
 }
 
+/**
+ * Lightweight per-session context (geo/network/tenant/ip) that does not depend
+ * on lead-shaped event filters. Used to enrich scoring when the heavy signal
+ * query is thin or fails.
+ */
+export async function loadSessionContextByIds(
+  workspaceId: string,
+  sessionIds: string[],
+): Promise<Map<string, LeadSessionSignalRow>> {
+  const out = new Map<string, LeadSessionSignalRow>()
+  const wid = workspaceId.trim()
+  const sids = [
+    ...new Set(sessionIds.map((s) => s.trim()).filter(Boolean)),
+  ]
+  if (!wid || sids.length === 0) return out
+
+  const selects = [
+    `
+      toString(workspace_id) AS workspace_id,
+      session_id,
+      anyIf(fingerprint, fingerprint != '') AS fingerprint,
+      anyIf(browser, browser != '') AS browser,
+      max(nullIf(geo_zipcode, '')) AS geo_zip,
+      anyIf(state_code, state_code != '') AS geo_state,
+      anyIf(country, country != '') AS geo_country,
+      anyIf(country_code, country_code != '') AS geo_country_code,
+      anyIf(city, city != '') AS geo_city,
+      '' AS client_ip,
+      anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
+      max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
+      argMax(properties, (length(properties), created_at)) AS props,
+      coalesce(nullIf(max(form_zip_entered), ''), nullIf(max(zipcode), '')) AS zip_val,
+      toString(max(created_at)) AS submitted_at,
+      anyIf(tenant_workspace_id, tenant_workspace_id != '') AS tenant_workspace_id,
+      anyIf(phone_hash, phone_hash != '') AS phone_hash,
+      anyIf(email_hash, email_hash != '') AS email_hash,
+      anyIf(network_class, network_class != '') AS network_class,
+      anyIf(network_asn, network_asn > 0) AS network_asn,
+      anyIf(network_org, network_org != '') AS network_org,
+      anyIf(network_evidence_source, network_evidence_source != '') AS network_evidence_source,
+      anyIf(network_evidence_as_of, network_evidence_as_of != '') AS network_evidence_as_of
+    `,
+    `
+      toString(workspace_id) AS workspace_id,
+      session_id,
+      anyIf(fingerprint, fingerprint != '') AS fingerprint,
+      anyIf(browser, browser != '') AS browser,
+      max(nullIf(geo_zipcode, '')) AS geo_zip,
+      anyIf(state_code, state_code != '') AS geo_state,
+      anyIf(country, country != '') AS geo_country,
+      '' AS geo_country_code,
+      anyIf(city, city != '') AS geo_city,
+      '' AS client_ip,
+      anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
+      max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
+      argMax(properties, (length(properties), created_at)) AS props,
+      max(nullIf(zipcode, '')) AS zip_val,
+      toString(max(created_at)) AS submitted_at,
+      anyIf(tenant_workspace_id, tenant_workspace_id != '') AS tenant_workspace_id,
+      anyIf(phone_hash, phone_hash != '') AS phone_hash,
+      anyIf(email_hash, email_hash != '') AS email_hash
+    `,
+    `
+      toString(workspace_id) AS workspace_id,
+      session_id,
+      anyIf(fingerprint, fingerprint != '') AS fingerprint,
+      anyIf(browser, browser != '') AS browser,
+      '' AS geo_zip,
+      anyIf(state, state != '') AS geo_state,
+      anyIf(country, country != '') AS geo_country,
+      '' AS geo_country_code,
+      anyIf(city, city != '') AS geo_city,
+      '' AS client_ip,
+      anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
+      max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
+      argMax(properties, (length(properties), created_at)) AS props,
+      max(nullIf(zipcode, '')) AS zip_val,
+      toString(max(created_at)) AS submitted_at
+    `,
+  ]
+
+  const ch = getClickHouseClient()
+  for (const selectSql of selects) {
+    try {
+      const res = await ch.query({
+        format: 'JSON',
+        query_params: { wid, sids },
+        query: `
+          SELECT ${selectSql}
+          FROM ${CLICKHOUSE_EVENTS_TABLE}
+          WHERE workspace_id = {wid:UUID}
+            AND session_id IN {sids:Array(String)}
+          GROUP BY workspace_id, session_id
+        `,
+      })
+      const rows = ((await res.json()) as CHJson<RawSignalRow>).data ?? []
+      for (const row of rows) {
+        const mapped = mapRow(row)
+        if (mapped) out.set(mapped.sessionId, mapped)
+      }
+      if (out.size > 0) break
+    } catch {
+      /* try next select shape */
+    }
+  }
+
+  const withIp = await attachSessionClientIps([...out.values()])
+  return new Map(withIp.map((row) => [row.sessionId, row] as const))
+}
+
 export async function loadLeadSessionSignals(input?: {
   workspaceId?: string
   sessionIds?: string[]
@@ -349,7 +459,7 @@ export async function loadLeadSessionSignals(input?: {
   const whereClause =
     sessionIds.length > 0 ? `session_id != ''` : LEAD_SESSION_WHERE
 
-  let rows: LeadSessionSignalRow[]
+  let rows: LeadSessionSignalRow[] = []
   try {
     rows = await queryLeadSessions(
       LEAD_SESSION_SELECT,
@@ -368,14 +478,69 @@ export async function loadLeadSessionSignals(input?: {
         limit,
       )
     } catch {
-      rows = await queryLeadSessions(
-        LEAD_SESSION_SELECT_MINIMAL,
-        whereClause,
-        whereExtra,
-        query_params,
-        limit,
-      )
+      try {
+        rows = await queryLeadSessions(
+          LEAD_SESSION_SELECT_MINIMAL,
+          whereClause,
+          whereExtra,
+          query_params,
+          limit,
+        )
+      } catch {
+        rows = []
+      }
     }
   }
+
+  if (
+    sessionIds.length > 0 &&
+    workspaceId &&
+    rows.length < sessionIds.length
+  ) {
+    try {
+      const ctx = await loadSessionContextByIds(workspaceId, sessionIds)
+      const bySid = new Map(rows.map((row) => [row.sessionId, row] as const))
+      for (const sid of sessionIds) {
+        const existing = bySid.get(sid)
+        const fallback = ctx.get(sid)
+        if (!existing && fallback) {
+          bySid.set(sid, fallback)
+          continue
+        }
+        if (existing && fallback) {
+          bySid.set(sid, {
+            ...existing,
+            tenantWorkspaceId:
+              existing.tenantWorkspaceId || fallback.tenantWorkspaceId,
+            geoZip: existing.geoZip || fallback.geoZip,
+            geoState: existing.geoState || fallback.geoState,
+            geoCountry: existing.geoCountry || fallback.geoCountry,
+            geoCountryCode: existing.geoCountryCode || fallback.geoCountryCode,
+            geoCity: existing.geoCity || fallback.geoCity,
+            clientIp: existing.clientIp || fallback.clientIp,
+            clientIpHash: existing.clientIpHash || fallback.clientIpHash,
+            networkClass: existing.networkClass || fallback.networkClass,
+            networkAsn: existing.networkAsn || fallback.networkAsn,
+            networkOrg: existing.networkOrg || fallback.networkOrg,
+            networkEvidenceSource:
+              existing.networkEvidenceSource || fallback.networkEvidenceSource,
+            networkEvidenceAsOf:
+              existing.networkEvidenceAsOf || fallback.networkEvidenceAsOf,
+            props:
+              existing.props && existing.props !== '{}'
+                ? existing.props
+                : fallback.props,
+            fingerprint: existing.fingerprint || fallback.fingerprint,
+            phoneHash: existing.phoneHash || fallback.phoneHash,
+            emailHash: existing.emailHash || fallback.emailHash,
+          })
+        }
+      }
+      rows = [...bySid.values()]
+    } catch {
+      /* keep rows as-is */
+    }
+  }
+
   return attachSessionClientIps(rows)
 }
