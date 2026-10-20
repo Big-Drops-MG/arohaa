@@ -29,7 +29,10 @@ import {
 import { loadLeadSessionSignals } from '../lib/lead-fraud/load-sessions.js'
 import { compareEnteredZipToIpGeo } from '../lib/lead-fraud/location-compare.js'
 import { upsertLeadRiskBatch } from '../lib/lead-fraud/persist.js'
-import { classifyLeadSessionRows } from '../lib/lead-fraud/service.js'
+import {
+  classifyLeadSessionRows,
+  ensureSessionsFraudAssessments,
+} from '../lib/lead-fraud/service.js'
 import type { LeadFraudAssessment } from '../lib/lead-fraud/types.js'
 import {
   getClickHouseClient,
@@ -102,6 +105,7 @@ export type WarehouseShortcutLead = {
   createdAt: string
   submittedAt: string | null
   zip: string
+  clientIp: string
   geoZip: string
   geoCountry: string
   geoCountryCode: string
@@ -729,6 +733,7 @@ function leadRowFromSignal(
     createdAt: meta?.createdAt || '',
     submittedAt: meta?.submittedAt ?? null,
     zip: formZip,
+    clientIp: (row.clientIp || '').trim(),
     geoZip,
     geoCountry: row.geoCountry || '',
     geoCountryCode: row.geoCountryCode || '',
@@ -835,6 +840,7 @@ async function buildShortcutLeads(
         createdAt: meta?.createdAt || '',
         submittedAt: meta?.submittedAt ?? null,
         zip: pickLeadZip(fields),
+        clientIp: '',
         geoZip: '',
         geoCountry: '',
         geoCountryCode: '',
@@ -1108,6 +1114,39 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
     .slice(0, 25)
 
   const shortcutDiscovery = await buildShortcutLeads(assessmentByKey)
+  const missingByWorkspace = new Map<string, string[]>()
+  for (const lead of shortcutDiscovery.leads) {
+    if (lead.fraud) continue
+    const list = missingByWorkspace.get(lead.workspaceId) ?? []
+    list.push(lead.sessionId)
+    missingByWorkspace.set(lead.workspaceId, list)
+  }
+  for (const [workspaceId, sessionIds] of missingByWorkspace) {
+    try {
+      const scored = await ensureSessionsFraudAssessments({
+        workspaceId,
+        sessionIds,
+        concurrency: 4,
+      })
+      for (const lead of shortcutDiscovery.leads) {
+        if (lead.workspaceId !== workspaceId || lead.fraud) continue
+        const assessment = scored.get(lead.sessionId)
+        if (assessment) {
+          lead.fraud = assessment
+          assessmentByKey.set(
+            `${lead.workspaceId}:${lead.sessionId}`,
+            assessment,
+          )
+        }
+      }
+    } catch (err) {
+      console.error(
+        '[warehouse] shortcut lead scoring failed',
+        workspaceId,
+        err,
+      )
+    }
+  }
   let pendingReviews = 0
   let relatedContactGroups = 0
   try {

@@ -36,6 +36,7 @@ import {
   ensureSessionsFraudAssessments,
   type LeadFraudAssessment,
 } from '../lib/lead-fraud/index.js'
+import { loadClientIpBySessions } from '../lib/lead-fraud/load-sessions.js'
 
 type CHJson<T> = { data: T[] }
 
@@ -47,6 +48,7 @@ export type FunnelLeadRow = {
   createdAt: string
   submittedAt: string | null
   zip: string
+  clientIp: string
   email: string
   utmSource: string
   utmId: string
@@ -80,6 +82,7 @@ type RawLeadSessionRow = {
   form_submitted: number | boolean | string
   sample_url: string
   zip_val: string
+  client_ip: string
   utm_source: string
   utm_id: string
   utm_s1: string
@@ -222,6 +225,7 @@ function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
     createdAt: row.last_at,
     submittedAt,
     zip,
+    clientIp: String(row.client_ip || '').trim().slice(0, 45),
     email,
     utmSource: utm.utmSource,
     utmId: utm.utmId,
@@ -231,15 +235,33 @@ function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
     returnCount,
     fields: fieldsWithoutReserved(fields),
     fraud: {
-      score: 100,
-      scoreAvailable: true,
-      label: 'legit',
-      effectiveLabel: 'legit',
-      coverage: 'partial',
+      score: null,
+      scoreAvailable: false,
+      label: 'fraud',
+      effectiveLabel: 'fraud',
+      coverage: 'insufficient',
       findings: [],
       reasons: [],
       modelVersion: '',
     },
+  }
+}
+
+function unavailableLeadFraud(): LeadFraudAssessment {
+  return {
+    score: null,
+    scoreAvailable: false,
+    label: 'fraud',
+    effectiveLabel: 'fraud',
+    coverage: 'insufficient',
+    findings: [
+      {
+        code: 'scoring_unavailable',
+        detail: 'Risk scoring temporarily unavailable',
+      },
+    ],
+    reasons: ['Risk scoring temporarily unavailable'],
+    modelVersion: '',
   }
 }
 
@@ -1619,10 +1641,7 @@ export async function getFunnelLeads({
     off: 0,
   }
 
-  const rowsRes = await ch.query({
-    format: 'JSON',
-    query_params: p,
-    query: `
+  const leadSelectBase = `
       SELECT
         l.session_id AS session_id,
         f.fingerprint AS fingerprint,
@@ -1632,6 +1651,7 @@ export async function getFunnelLeads({
         l.form_submitted AS form_submitted,
         l.sample_url AS sample_url,
         z.zip_val AS zip_val,
+        __CLIENT_IP_SELECT__
         u.utm_source AS utm_source,
         u.utm_id AS utm_id,
         u.utm_s1 AS utm_s1,
@@ -1666,6 +1686,7 @@ export async function getFunnelLeads({
           AND zipcode != ''
         GROUP BY session_id
       ) AS z ON z.session_id = l.session_id
+      __CLIENT_IP_JOIN__
       LEFT JOIN (
         SELECT
           session_id,
@@ -1678,16 +1699,78 @@ export async function getFunnelLeads({
       ) AS u ON u.session_id = l.session_id
       ORDER BY last_at DESC
       LIMIT {lim:UInt32} OFFSET {off:UInt32}
-    `,
-  })
+    `
 
-  const rows =
-    ((await rowsRes.json()) as CHJson<RawLeadSessionRow>).data ?? []
+  const clientIpJoin = `
+      LEFT JOIN (
+        SELECT
+          session_id,
+          anyIf(client_ip, client_ip != '') AS client_ip
+        FROM events_raw
+        WHERE workspace_id = {wid:UUID}
+          AND session_id IN (
+            SELECT session_id
+            FROM events_raw
+            WHERE ${where}
+            GROUP BY session_id
+          )
+        GROUP BY session_id
+      ) AS ip ON ip.session_id = l.session_id`
 
-  const normalizedLeads = rows
+  const queryWithIp = leadSelectBase
+    .replace('__CLIENT_IP_SELECT__', 'ip.client_ip AS client_ip,')
+    .replace('__CLIENT_IP_JOIN__', clientIpJoin)
+  const queryWithoutIp = leadSelectBase
+    .replace('__CLIENT_IP_SELECT__', `'' AS client_ip,`)
+    .replace('__CLIENT_IP_JOIN__', '')
+
+  let rows: RawLeadSessionRow[] = []
+  try {
+    const rowsRes = await ch.query({
+      format: 'JSON',
+      query_params: p,
+      query: queryWithIp,
+    })
+    rows = ((await rowsRes.json()) as CHJson<RawLeadSessionRow>).data ?? []
+  } catch (error) {
+    console.error(
+      '[funnel-leads] lead query with client_ip failed; retrying without column',
+      error,
+    )
+    const rowsRes = await ch.query({
+      format: 'JSON',
+      query_params: p,
+      query: queryWithoutIp,
+    })
+    rows = ((await rowsRes.json()) as CHJson<RawLeadSessionRow>).data ?? []
+  }
+
+  let normalizedLeads = rows
     .map((row) => toFunnelLead(row))
     .filter((lead) => isDisplayableLead(lead))
     .filter((lead) => leadMatchesUtmFilter(lead, utmFilter))
+
+  try {
+    const missingIp = normalizedLeads.filter((lead) => !lead.clientIp.trim())
+    if (missingIp.length > 0) {
+      const ipByKey = await loadClientIpBySessions(
+        missingIp.map((lead) => ({
+          workspaceId,
+          sessionId: lead.sessionId,
+        })),
+      )
+      if (ipByKey.size > 0) {
+        normalizedLeads = normalizedLeads.map((lead) => {
+          if (lead.clientIp.trim()) return lead
+          const ip = ipByKey.get(`${workspaceId}:${lead.sessionId}`)
+          return ip ? { ...lead, clientIp: ip } : lead
+        })
+      }
+    }
+  } catch (error) {
+    console.error('[funnel-leads] session IP backfill failed', error)
+  }
+
   let displayable = normalizedLeads
   try {
     displayable = await resolveVehicleNamesInLeads(normalizedLeads)
@@ -1703,21 +1786,14 @@ export async function getFunnelLeads({
     })
     displayable = displayable.map((lead) => ({
       ...lead,
-        fraud:
-        fraudMap.get(lead.sessionId) ??
-        lead.fraud ?? {
-          score: null,
-          scoreAvailable: false,
-          label: 'fraud' as const,
-          effectiveLabel: 'fraud' as const,
-          coverage: 'insufficient' as const,
-          findings: [],
-          reasons: [],
-          modelVersion: '',
-        },
+      fraud: fraudMap.get(lead.sessionId) ?? unavailableLeadFraud(),
     }))
   } catch (error) {
     console.error('[funnel-leads] fraud scoring failed', error)
+    displayable = displayable.map((lead) => ({
+      ...lead,
+      fraud: unavailableLeadFraud(),
+    }))
   }
 
   const level1Stats = computeLevel1StatsFromLeads(displayable)

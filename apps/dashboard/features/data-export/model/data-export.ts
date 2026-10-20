@@ -15,6 +15,7 @@ export type DataExportLeadRow = {
   createdAt: string
   submittedAt: string | null
   zip: string
+  clientIp: string
   email: string
   utmSource: string
   utmId: string

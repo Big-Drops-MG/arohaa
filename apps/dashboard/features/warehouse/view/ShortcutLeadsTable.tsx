@@ -140,6 +140,7 @@ export function ShortcutLeadsTable({
             <th className={leadThClassName}>Last Name</th>
             <th className={leadThClassName}>Email</th>
             <th className={leadThClassName}>Entered ZIP</th>
+            <th className={leadThClassName}>IP</th>
             <th className={leadThClassName}>IP location</th>
             <th className={leadThClassName}>Location check</th>
             <th className={leadThClassName}>Network</th>
@@ -219,6 +220,14 @@ export function ShortcutLeadsTable({
                 )}
               </td>
               <td className={leadTdClassName}>{cellValue(lead.zip)}</td>
+              <td
+                className={cn(
+                  leadTdClassName,
+                  "font-mono text-xs text-muted-foreground"
+                )}
+              >
+                {cellValue(lead.clientIp)}
+              </td>
               <td
                 className={cn(
                   leadTdClassName,

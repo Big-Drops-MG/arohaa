@@ -16,6 +16,7 @@ function lead(sessionId: string): DataExportLeadRow {
     createdAt: "2026-09-01T12:00:00.000Z",
     submittedAt: "2026-09-01T12:00:01.000Z",
     zip: "10001",
+    clientIp: "",
     email: "",
     utmSource: "",
     utmId: "",

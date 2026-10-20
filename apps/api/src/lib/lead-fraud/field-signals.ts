@@ -32,6 +32,7 @@ export type LeadSessionSignalRow = {
   geoCountry: string
   geoCountryCode: string
   geoCity: string
+  clientIp: string
   clientIpHash: string
   formSubmitted: boolean
   props: string

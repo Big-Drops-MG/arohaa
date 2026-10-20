@@ -241,6 +241,7 @@ async function ingestOne(
     accuracyRadius: ctx.geo.accuracyRadius,
     tenantWorkspaceId: landing.tenantWorkspaceId,
     landingPageId,
+    clientIp: ctx.ip,
     clientIpHash: ctx.ipHash,
     networkClass: ctx.network.networkClass,
     networkAsn: ctx.network.asn,

@@ -221,6 +221,7 @@ export async function extractLeadFraudFeatures(input: {
         anyIf(browser, browser != '') AS browser,
         max(nullIf(geo_zipcode, '')) AS geo_zip,
         anyIf(state, state != '') AS geo_state,
+        anyIf(client_ip, client_ip != '') AS client_ip,
         anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
         max(event_name IN ('form_submit','form_success','service_click')) AS form_submitted,
         argMax(properties, (length(properties), created_at)) AS props,
