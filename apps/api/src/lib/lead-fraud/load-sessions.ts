@@ -199,11 +199,15 @@ async function queryLeadSessions(
   selectSql: string,
   whereExtra: string,
   query_params: Record<string, unknown>,
+  limit = 100_000,
 ): Promise<LeadSessionSignalRow[]> {
   const ch = getClickHouseClient()
   const res = await ch.query({
     format: 'JSON',
-    query_params,
+    query_params: {
+      ...query_params,
+      session_lim: Math.max(1, Math.min(100_000, Math.floor(limit))),
+    },
     query: `
       SELECT
         ${selectSql}
@@ -211,7 +215,7 @@ async function queryLeadSessions(
       WHERE ${LEAD_SESSION_WHERE}
         ${whereExtra}
       GROUP BY workspace_id, session_id
-      LIMIT 100000
+      LIMIT {session_lim:UInt32}
     `,
   })
   const rows = ((await res.json()) as CHJson<RawSignalRow>).data ?? []
@@ -306,6 +310,7 @@ export async function loadLeadSessionSignals(input?: {
   workspaceId?: string
   sessionIds?: string[]
   lookbackDays?: number
+  limit?: number
 }): Promise<LeadSessionSignalRow[]> {
   const workspaceId = input?.workspaceId?.trim() || ''
   const sessionIds = [
@@ -317,6 +322,12 @@ export async function loadLeadSessionSignals(input?: {
     input.lookbackDays > 0
       ? Math.min(90, Math.floor(input.lookbackDays))
       : 0
+  const limit =
+    typeof input?.limit === 'number' &&
+    Number.isFinite(input.limit) &&
+    input.limit > 0
+      ? Math.min(100_000, Math.floor(input.limit))
+      : 100_000
 
   let whereExtra = ''
   const query_params: Record<string, unknown> = {}
@@ -340,6 +351,7 @@ export async function loadLeadSessionSignals(input?: {
       LEAD_SESSION_SELECT,
       whereExtra,
       query_params,
+      limit,
     )
   } catch {
     try {
@@ -347,12 +359,14 @@ export async function loadLeadSessionSignals(input?: {
         LEAD_SESSION_SELECT_BASE,
         whereExtra,
         query_params,
+        limit,
       )
     } catch {
       rows = await queryLeadSessions(
         LEAD_SESSION_SELECT_MINIMAL,
         whereExtra,
         query_params,
+        limit,
       )
     }
   }

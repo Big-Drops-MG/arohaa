@@ -1745,13 +1745,27 @@ export async function getFunnelLeads({
     rows = ((await rowsRes.json()) as CHJson<RawLeadSessionRow>).data ?? []
   }
 
-  let normalizedLeads = rows
+  const normalizedLeads = rows
     .map((row) => toFunnelLead(row))
     .filter((lead) => isDisplayableLead(lead))
     .filter((lead) => leadMatchesUtmFilter(lead, utmFilter))
 
+  let displayable = normalizedLeads
   try {
-    const missingIp = normalizedLeads.filter((lead) => !lead.clientIp.trim())
+    displayable = await resolveVehicleNamesInLeads(normalizedLeads)
+  } catch (error) {
+    console.error('[funnel-leads] vehicle model lookup failed', error)
+  }
+
+  const level1Stats = computeLevel1StatsFromLeads(displayable)
+  const level2Stats = computeLevel2StatsFromLeads(displayable)
+  const visibleLeadFieldKeys = discoverVisibleLeadFieldKeys(displayable)
+  const level3 = computeLevel3FromLeads(displayable, visibleLeadFieldKeys)
+  const page = paginateDisplayableLeads(displayable, limit, offset)
+
+  let pageLeads = page.leads
+  try {
+    const missingIp = pageLeads.filter((lead) => !lead.clientIp.trim())
     if (missingIp.length > 0) {
       const ipByKey = await loadClientIpBySessions(
         missingIp.map((lead) => ({
@@ -1760,7 +1774,7 @@ export async function getFunnelLeads({
         })),
       )
       if (ipByKey.size > 0) {
-        normalizedLeads = normalizedLeads.map((lead) => {
+        pageLeads = pageLeads.map((lead) => {
           if (lead.clientIp.trim()) return lead
           const ip = ipByKey.get(`${workspaceId}:${lead.sessionId}`)
           return ip ? { ...lead, clientIp: ip } : lead
@@ -1771,36 +1785,23 @@ export async function getFunnelLeads({
     console.error('[funnel-leads] session IP backfill failed', error)
   }
 
-  let displayable = normalizedLeads
-  try {
-    displayable = await resolveVehicleNamesInLeads(normalizedLeads)
-  } catch (error) {
-    console.error('[funnel-leads] vehicle model lookup failed', error)
-  }
-
   try {
     const fraudMap = await ensureSessionsFraudAssessments({
       workspaceId,
-      sessionIds: displayable.map((lead) => lead.sessionId),
+      sessionIds: pageLeads.map((lead) => lead.sessionId),
       concurrency: 4,
     })
-    displayable = displayable.map((lead) => ({
+    pageLeads = pageLeads.map((lead) => ({
       ...lead,
       fraud: fraudMap.get(lead.sessionId) ?? unavailableLeadFraud(),
     }))
   } catch (error) {
     console.error('[funnel-leads] fraud scoring failed', error)
-    displayable = displayable.map((lead) => ({
+    pageLeads = pageLeads.map((lead) => ({
       ...lead,
       fraud: unavailableLeadFraud(),
     }))
   }
-
-  const level1Stats = computeLevel1StatsFromLeads(displayable)
-  const level2Stats = computeLevel2StatsFromLeads(displayable)
-  const visibleLeadFieldKeys = discoverVisibleLeadFieldKeys(displayable)
-  const level3 = computeLevel3FromLeads(displayable, visibleLeadFieldKeys)
-  const page = paginateDisplayableLeads(displayable, limit, offset)
 
   return {
     rangeId: window.rangeId,
@@ -1808,7 +1809,11 @@ export async function getFunnelLeads({
     level1Stats,
     level2Stats,
     level3,
-    ...page,
+    leads: pageLeads,
+    total: page.total,
+    limit: page.limit,
+    offset: page.offset,
+    hasMore: page.hasMore,
   }
 }
 
