@@ -1,12 +1,10 @@
 /**
- * Collection-card traffic metrics share one lookback so Active Now (5m) is the
- * only live exception. Visitors, form submits, and bounce all use this window.
+ * Collection-card traffic metrics: Active Now is live (5m).
+ * Visitors and form/zip submits are all-time totals.
  */
-export const CARD_METRICS_LOOKBACK = '7 DAY'
-
 export interface LandingPageCardMetrics {
   activeUsers: number
-  visitors7d: number
+  visitors: number
   formSubmissions: number
   bounceRate: number
 }
@@ -14,7 +12,7 @@ export interface LandingPageCardMetrics {
 export function emptyLandingPageCardMetrics(): LandingPageCardMetrics {
   return {
     activeUsers: 0,
-    visitors7d: 0,
+    visitors: 0,
     formSubmissions: 0,
     bounceRate: 0,
   }

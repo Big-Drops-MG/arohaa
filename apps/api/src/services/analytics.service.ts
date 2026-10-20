@@ -46,13 +46,11 @@ import { resolveUsCityCoordinates } from './us-gazetteer.service.js'
 import { resolveCountyFipsForZips } from './us-zip-county.service.js'
 import { US_STATE_NAME_TO_CODE } from '../lib/us-states.js'
 import {
-  CARD_METRICS_LOOKBACK,
   emptyLandingPageCardMetrics,
   type LandingPageCardMetrics,
 } from './analytics-landing-card-metrics.js'
 
 export {
-  CARD_METRICS_LOOKBACK,
   emptyLandingPageCardMetrics,
   type LandingPageCardMetrics,
 } from './analytics-landing-card-metrics.js'
@@ -1211,7 +1209,7 @@ function landingSummaryCacheKey(
   workspaceId: string,
   formType: LandingFormType,
 ): string {
-  return `analytics:landing-summary:v7:${workspaceId}:${formType}`
+  return `analytics:landing-summary:v8:${workspaceId}:${formType}`
 }
 
 export async function getLandingPageCardMetrics(
@@ -1320,16 +1318,8 @@ async function queryLandingPageCardMetrics(
               created_at >= now() - INTERVAL 5 MINUTE
                 AND event_name IN ('heartbeat', 'page_view')
             ) AS active_users,
-            uniqExactIf(
-              user_id,
-              created_at >= now() - INTERVAL ${CARD_METRICS_LOOKBACK}
-                AND event_name = 'page_view'
-            ) AS visitors_7d,
-            uniqExactIf(
-              session_id,
-              created_at >= now() - INTERVAL ${CARD_METRICS_LOOKBACK}
-                AND (${submissionPred})
-            ) AS form_submissions
+            uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+            uniqExactIf(session_id, (${submissionPred})) AS form_submissions
           FROM events_raw
           WHERE workspace_id IN ({wids:Array(UUID)})
           GROUP BY workspace_id
@@ -1346,7 +1336,6 @@ async function queryLandingPageCardMetrics(
               toUInt8(count() = 1) AS is_bounce
             FROM events_raw
             WHERE workspace_id IN ({wids:Array(UUID)})
-              AND created_at >= now() - INTERVAL ${CARD_METRICS_LOOKBACK}
             GROUP BY workspace_id, session_id
           )
           GROUP BY workspace_id
@@ -1354,7 +1343,7 @@ async function queryLandingPageCardMetrics(
       SELECT
         m.workspace_id AS workspace_id,
         m.active_users AS active_users,
-        m.visitors_7d AS visitors_7d,
+        m.visitors AS visitors,
         m.form_submissions AS form_submissions,
         b.bounces AS bounces,
         b.sessions AS sessions
@@ -1369,7 +1358,7 @@ async function queryLandingPageCardMetrics(
     (await res.json()) as CHJson<{
       workspace_id: string
       active_users: string
-      visitors_7d: string
+      visitors: string
       form_submissions: string
       bounces: string
       sessions: string
@@ -1383,7 +1372,7 @@ async function queryLandingPageCardMetrics(
   for (const row of rows ?? []) {
     byId[row.workspace_id] = {
       activeUsers: n(row.active_users),
-      visitors7d: n(row.visitors_7d),
+      visitors: n(row.visitors),
       formSubmissions: n(row.form_submissions),
       bounceRate: bouncePct(n(row.bounces), n(row.sessions)),
     }

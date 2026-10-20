@@ -17,7 +17,7 @@ function fmtCount(v: number): string {
 }
 
 /**
- * Collection cards: Active Now (5m) + Visitors/Submits over the shared 7d window.
+ * Collection cards: Active Now (5m) + all-time Visitors / Form or Zip submits.
  * Bounce stays on the API payload for other consumers but is not mixed into
  * unlabeled card slots.
  */
@@ -27,7 +27,7 @@ export function buildLandingPageMetrics(
 ): LandingPageMetric[] {
   return [
     { label: "Active Now", value: fmtCount(data.activeUsers) },
-    { label: "Visitors 7d", value: fmtCount(data.visitors7d) },
+    { label: "Visitors", value: fmtCount(data.visitors) },
     {
       label: submissionCardMetricLabel(formType),
       value: fmtCount(data.formSubmissions),

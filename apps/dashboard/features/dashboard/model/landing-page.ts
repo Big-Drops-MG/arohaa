@@ -8,10 +8,9 @@ export function submissionMetricLabel(formType: string): string {
   return formType === "zip" ? "Zip Submits" : "Form Submits"
 }
 
-/** Period-aware labels for collection cards (Active Now is live; others are 7d). */
+/** Card labels: Active Now is live; Visitors / Submits are all-time. */
 export function submissionCardMetricLabel(formType: string): string {
-  if (formType === "none") return "Clicks 7d"
-  return formType === "zip" ? "Zip 7d" : "Submits 7d"
+  return submissionMetricLabel(formType)
 }
 
 /** Drops the scheme and trailing slash so cards read as a hostname, not a URL. */
@@ -24,7 +23,7 @@ export function emptyLandingPageMetrics(
 ): LandingPageMetric[] {
   return [
     { label: "Active Now", value: "0" },
-    { label: "Visitors 7d", value: "0" },
+    { label: "Visitors", value: "0" },
     { label: submissionCardMetricLabel(formType), value: "0" },
   ]
 }
