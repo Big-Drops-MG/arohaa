@@ -15,8 +15,16 @@ export {
   ensureSessionsFraudAssessments,
   classifyLeadSessionRows,
 } from './service.js'
+export { getRelatedSubmissions } from './related-submissions.js'
+export {
+  fetchLeadReview,
+  upsertLeadReview,
+  countPendingReviews,
+} from './lead-review.js'
 export type {
   LeadFraudAssessment,
   LeadFraudFeatures,
   LeadFraudLabel,
+  LeadFraudFinding,
+  LeadSignalCoverage,
 } from './types.js'

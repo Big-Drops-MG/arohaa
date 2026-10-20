@@ -157,8 +157,8 @@ async function loadVelocity(
     query: `
       SELECT
         if({fp:String} = '', 0, uniqExactIf(session_id, fingerprint = {fp:String} AND created_at >= now64(3) - INTERVAL 1 DAY)) AS fp_sessions_day,
-        if({fp:String} = '', 0, uniqExactIf(session_id, fingerprint = {fp:String} AND event_name IN ('form_success','service_click') AND created_at >= now64(3) - INTERVAL {hours:UInt32} HOUR)) AS fp_submits,
-        if({iph:String} = '', 0, uniqExactIf(session_id, client_ip_hash = {iph:String} AND event_name IN ('form_success','service_click') AND created_at >= now64(3) - INTERVAL {hours:UInt32} HOUR)) AS ip_submits
+        if({fp:String} = '', 0, uniqExactIf(session_id, fingerprint = {fp:String} AND event_name IN ('form_submit','form_success','service_click') AND created_at >= now64(3) - INTERVAL {hours:UInt32} HOUR)) AS fp_submits,
+        if({iph:String} = '', 0, uniqExactIf(session_id, client_ip_hash = {iph:String} AND event_name IN ('form_submit','form_success','service_click') AND created_at >= now64(3) - INTERVAL {hours:UInt32} HOUR)) AS ip_submits
       FROM ${CLICKHOUSE_EVENTS_TABLE}
       WHERE workspace_id = {wid:UUID}
     `,
@@ -182,7 +182,7 @@ async function loadVelocity(
           SELECT uniqExact(session_id) AS n
           FROM ${CLICKHOUSE_EVENTS_TABLE}
           WHERE workspace_id = {wid:UUID}
-            AND event_name IN ('form_success','service_click')
+            AND event_name IN ('form_submit','form_success','service_click')
             AND created_at >= now64(3) - INTERVAL {hours:UInt32} HOUR
             AND positionCaseInsensitive(properties, {dom:String}) > 0
         `,
@@ -236,6 +236,7 @@ export async function extractLeadFraudFeatures(input: {
   const zip = (agg?.zip_val || pickLeadZip(fields) || '').trim()
   const fiItems = await loadFiItems(input.workspaceId, input.sessionId)
   const behavior = parseFiBehavior(fiItems)
+  const fiBehaviorKnown = fiItems.length > 0
   const fingerprint = (agg?.fingerprint || '').trim()
   const ipHash = (agg?.client_ip_hash || '').trim()
   const domain = emailDomain(email)
@@ -245,8 +246,10 @@ export async function extractLeadFraudFeatures(input: {
     ipHash,
     domain,
   )
+  const formZipEntered = pickLeadZip(fields).trim()
 
   void FP_REUSE_DAY_THRESHOLD
+  void zip
 
   return emptyFeatures({
     fingerprint,
@@ -259,14 +262,20 @@ export async function extractLeadFraudFeatures(input: {
     email,
     firstName: (fields.first_name || '').trim(),
     lastName: (fields.last_name || '').trim(),
-    zip,
+    formZipEntered,
+    zip: formZipEntered,
     geoZip: (agg?.geo_zip || '').trim(),
     stateField: (fields.state || '').trim(),
     geoState: (agg?.geo_state || '').trim(),
     trustedFormUrl: pickTrustedFormUrl(rawFields),
     clientIpHash: ipHash,
     ...behavior,
+    fiBehaviorKnown,
     ...velocity,
-    fieldCount: Object.keys(fields).length + (email ? 1 : 0) + (zip ? 1 : 0),
+    velocityWindowKnown: true,
+    fieldCount:
+      Object.keys(fields).length +
+      (email ? 1 : 0) +
+      (formZipEntered ? 1 : 0),
   })
 }

@@ -18,6 +18,24 @@ type RawSignalRow = {
   form_submitted: number | boolean | string
   props: string
   zip_val: string
+  submitted_at: string
+  tenant_workspace_id?: string
+  phone_hash?: string
+  email_hash?: string
+  event_id?: string
+  utm_source?: string
+  utm_s1?: string
+  utm_campaign?: string
+}
+
+function parseSubmittedAtMs(raw: string): number {
+  const trimmed = String(raw || '').trim()
+  if (!trimmed) return 0
+  const normalized = trimmed.includes('T')
+    ? trimmed
+    : trimmed.replace(' ', 'T') + (trimmed.includes('Z') ? '' : 'Z')
+  const ms = Date.parse(normalized)
+  return Number.isFinite(ms) ? ms : 0
 }
 
 function mapRow(row: RawSignalRow): LeadSessionSignalRow | null {
@@ -35,6 +53,14 @@ function mapRow(row: RawSignalRow): LeadSessionSignalRow | null {
     formSubmitted: isTruthyFlag(row.form_submitted),
     props: String(row.props || '{}'),
     zipVal: String(row.zip_val || ''),
+    submittedAtMs: parseSubmittedAtMs(row.submitted_at),
+    tenantWorkspaceId: String(row.tenant_workspace_id || '').trim() || undefined,
+    phoneHash: String(row.phone_hash || '').trim() || undefined,
+    emailHash: String(row.email_hash || '').trim() || undefined,
+    eventId: String(row.event_id || '').trim() || undefined,
+    utmSource: String(row.utm_source || '').trim() || undefined,
+    utmS1: String(row.utm_s1 || '').trim() || undefined,
+    utmCampaign: String(row.utm_campaign || '').trim() || undefined,
   }
 }
 
@@ -46,7 +72,6 @@ const LEAD_SESSION_WHERE = `
     OR positionCaseInsensitive(properties, '"fields"') > 0
   )
 `
-
 
 const LEAD_PROPS_EXPR = `
   coalesce(
@@ -84,10 +109,32 @@ const LEAD_SESSION_SELECT = `
   anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
   max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
   ${LEAD_PROPS_EXPR} AS props,
-  max(nullIf(zipcode, '')) AS zip_val
+  max(nullIf(zipcode, '')) AS zip_val,
+  toString(max(created_at)) AS submitted_at,
+  anyIf(tenant_workspace_id, tenant_workspace_id != '') AS tenant_workspace_id,
+  anyIf(phone_hash, phone_hash != '') AS phone_hash,
+  anyIf(email_hash, email_hash != '') AS email_hash,
+  anyIf(event_id, event_id != '') AS event_id,
+  anyIf(utm_source, utm_source != '') AS utm_source,
+  anyIf(utm_s1, utm_s1 != '') AS utm_s1,
+  anyIf(utm_campaign, utm_campaign != '') AS utm_campaign
 `
 
-const LEAD_SESSION_SELECT_NO_GEO_ZIP = `
+const LEAD_SESSION_SELECT_BASE = `
+  toString(workspace_id) AS workspace_id,
+  session_id,
+  anyIf(fingerprint, fingerprint != '') AS fingerprint,
+  anyIf(browser, browser != '') AS browser,
+  max(nullIf(geo_zipcode, '')) AS geo_zip,
+  anyIf(state, state != '') AS geo_state,
+  anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
+  max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
+  ${LEAD_PROPS_EXPR} AS props,
+  max(nullIf(zipcode, '')) AS zip_val,
+  toString(max(created_at)) AS submitted_at
+`
+
+const LEAD_SESSION_SELECT_MINIMAL = `
   toString(workspace_id) AS workspace_id,
   session_id,
   anyIf(fingerprint, fingerprint != '') AS fingerprint,
@@ -97,7 +144,8 @@ const LEAD_SESSION_SELECT_NO_GEO_ZIP = `
   anyIf(client_ip_hash, client_ip_hash != '') AS client_ip_hash,
   max(event_name IN ('form_submit', 'form_success', 'service_click')) AS form_submitted,
   ${LEAD_PROPS_EXPR} AS props,
-  max(nullIf(zipcode, '')) AS zip_val
+  max(nullIf(zipcode, '')) AS zip_val,
+  toString(max(created_at)) AS submitted_at
 `
 
 async function queryLeadSessions(
@@ -128,7 +176,6 @@ async function queryLeadSessions(
   return out
 }
 
-
 export async function loadLeadSessionSignals(input?: {
   workspaceId?: string
   sessionIds?: string[]
@@ -156,10 +203,18 @@ export async function loadLeadSessionSignals(input?: {
       query_params,
     )
   } catch {
-    return await queryLeadSessions(
-      LEAD_SESSION_SELECT_NO_GEO_ZIP,
-      whereExtra,
-      query_params,
-    )
+    try {
+      return await queryLeadSessions(
+        LEAD_SESSION_SELECT_BASE,
+        whereExtra,
+        query_params,
+      )
+    } catch {
+      return await queryLeadSessions(
+        LEAD_SESSION_SELECT_MINIMAL,
+        whereExtra,
+        query_params,
+      )
+    }
   }
 }

@@ -1,10 +1,19 @@
 export type LeadFraudLabel = "legit" | "fraud"
 
+export type LeadSignalCoverage = "sufficient" | "partial" | "insufficient"
+
+export type LeadFraudFinding = {
+  code: string
+  detail: string
+}
+
 export type LeadFraudAssessment = {
-  /** Trust score 0–100 (higher = more legitimate). */
-  score: number
+  score: number | null
+  scoreAvailable: boolean
   label: LeadFraudLabel
   effectiveLabel: LeadFraudLabel
+  coverage: LeadSignalCoverage
+  findings: LeadFraudFinding[]
   reasons: string[]
   modelVersion: string
 }

@@ -22,8 +22,11 @@ function lead(sessionId: string): FunnelLeadRow {
     fields: {},
     fraud: {
       score: 100,
+      scoreAvailable: true,
       label: 'legit',
       effectiveLabel: 'legit',
+      coverage: 'sufficient',
+      findings: [],
       reasons: [],
       modelVersion: 'v2',
     },

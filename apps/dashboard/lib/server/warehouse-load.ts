@@ -23,9 +23,12 @@ export type WarehouseDomainCount = {
 }
 
 export type WarehouseFraudAssessment = {
-  score: number
+  score: number | null
+  scoreAvailable: boolean
   label: "legit" | "fraud"
   effectiveLabel: "legit" | "fraud"
+  coverage: "sufficient" | "partial" | "insufficient"
+  findings: Array<{ code: string; detail: string }>
   reasons: string[]
   modelVersion: string
 }
@@ -53,6 +56,7 @@ export type WarehouseShortcutLead = {
   workspaceName: string
   lpPublicId: string
   sessionId: string
+  tenantWorkspaceId: string
   macId: string
   createdAt: string
   submittedAt: string | null
@@ -68,6 +72,7 @@ export type WarehouseShortcutLead = {
   usedPaste: boolean
   fields: Record<string, string>
   fraud: WarehouseFraudAssessment | null
+  relatedCount: number
 }
 
 export type WarehouseSummary = {
@@ -93,6 +98,16 @@ export type WarehouseSummary = {
     legit: number
     fraud: number
     unscoredFormSubmits: number
+    elevatedRisk: number
+    lowerRisk: number
+    insufficientData: number
+  }
+  quality: {
+    submissions: number
+    flagged: number
+    incompleteAssessments: number
+    pendingReviews: number
+    relatedContactGroups: number
   }
   clicks: {
     total: number
@@ -133,7 +148,21 @@ function emptySummary(generatedAt: string): WarehouseSummary {
       users: 0,
     },
     volume: { lastHour: 0, last24h: 0, last7d: 0 },
-    risk: { legit: 0, fraud: 0, unscoredFormSubmits: 0 },
+    risk: {
+      legit: 0,
+      fraud: 0,
+      unscoredFormSubmits: 0,
+      elevatedRisk: 0,
+      lowerRisk: 0,
+      insufficientData: 0,
+    },
+    quality: {
+      submissions: 0,
+      flagged: 0,
+      incompleteAssessments: 0,
+      pendingReviews: 0,
+      relatedContactGroups: 0,
+    },
     clicks: { total: 0, byName: [] },
     shortcuts: {
       formSessions: 0,
@@ -204,6 +233,10 @@ export async function loadWarehouseDashboardData(): Promise<WarehouseDashboardDa
         risk: {
           ...emptySummary(fetchedAt).risk,
           ...summary.risk,
+        },
+        quality: {
+          ...emptySummary(fetchedAt).quality,
+          ...summary.quality,
         },
         clicks: {
           total: Number(summary.clicks?.total ?? 0),

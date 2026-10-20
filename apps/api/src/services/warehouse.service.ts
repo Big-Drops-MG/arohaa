@@ -89,6 +89,7 @@ export type WarehouseShortcutLead = {
   workspaceName: string
   lpPublicId: string
   sessionId: string
+  tenantWorkspaceId: string
   macId: string
   createdAt: string
   submittedAt: string | null
@@ -104,6 +105,7 @@ export type WarehouseShortcutLead = {
   usedPaste: boolean
   fields: Record<string, string>
   fraud: LeadFraudAssessment | null
+  relatedCount: number
 }
 
 export type WarehouseSummary = {
@@ -129,6 +131,16 @@ export type WarehouseSummary = {
     legit: number
     fraud: number
     unscoredFormSubmits: number
+    elevatedRisk: number
+    lowerRisk: number
+    insufficientData: number
+  }
+  quality: {
+    submissions: number
+    flagged: number
+    incompleteAssessments: number
+    pendingReviews: number
+    relatedContactGroups: number
   }
   clicks: {
     total: number
@@ -146,10 +158,21 @@ export type WarehouseSummary = {
   generatedAt: string
 }
 
+export type WarehousePartnerScorecard = {
+  partner: string
+  submissions: number
+  elevatedRisk: number
+  incompleteAssessments: number
+  reviewed: number
+  wrongNumber: number
+  neverRequested: number
+  converted: number
+}
+
 const SHORTCUT_LEADS_LIMIT = 100
 const FI_CLIPBOARD_SESSION_LIMIT = 4_000
 const FI_CLIPBOARD_SCAN_LIMIT = 40_000
-const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v7'
+const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v8'
 const WAREHOUSE_SUMMARY_CACHE_TTL_SEC = 90
 
 type ShortcutSessionFlag = {
@@ -230,6 +253,16 @@ type WarehouseLeadInsights = {
     legit: number
     fraud: number
     unscoredFormSubmits: number
+    elevatedRisk: number
+    lowerRisk: number
+    insufficientData: number
+  }
+  quality: {
+    submissions: number
+    flagged: number
+    incompleteAssessments: number
+    pendingReviews: number
+    relatedContactGroups: number
   }
   scoredLeads: number
   emailDomains: WarehouseDomainCount[]
@@ -623,19 +656,21 @@ function leadRowFromSignal(
     workspaceName: lpMeta?.projectName || '',
     lpPublicId: lpMeta?.publicId || '',
     sessionId: row.sessionId,
+    tenantWorkspaceId: row.tenantWorkspaceId || '',
     macId: formatFingerprintAsMacId(row.fingerprint || ''),
     createdAt: meta?.createdAt || '',
     submittedAt: meta?.submittedAt ?? null,
-    zip: (row.zipVal || pickLeadZip(fields) || '').trim(),
+    zip: (pickLeadZip(fields) || '').trim(),
     email,
     firstName: (fields.first_name || '').trim(),
     lastName: (fields.last_name || '').trim(),
-    utmSource: meta?.utmSource || '',
+    utmSource: meta?.utmSource || row.utmSource || '',
     utmId: meta?.utmId || '',
     trustedFormUrl: pickTrustedFormUrl(rawFields),
     formSubmitted: row.formSubmitted,
     fields: fieldsWithoutReserved(fields),
     fraud,
+    relatedCount: 0,
   }
 }
 
@@ -708,6 +743,7 @@ async function buildShortcutLeads(
         workspaceName: lpMeta?.projectName || '',
         lpPublicId: lpMeta?.publicId || '',
         sessionId: flag.sessionId,
+        tenantWorkspaceId: '',
         macId: '',
         createdAt: meta?.createdAt || '',
         submittedAt: meta?.submittedAt ?? null,
@@ -723,6 +759,7 @@ async function buildShortcutLeads(
         usedPaste: flag.usedPaste,
         fields: fieldsWithoutReserved(fields),
         fraud: assessmentByKey.get(key) ?? null,
+        relatedCount: 0,
       })
     }
     if (leads.length >= SHORTCUT_LEADS_LIMIT) break
@@ -754,7 +791,7 @@ function scheduleWarehouseLeadRescore(
         return !(existing && existing.modelVersion === LEAD_FRAUD_MODEL_VERSION)
       })
       if (needsScore.length === 0) return
-      const classified = classifyLeadSessionRows(leadRows)
+      const classified = await classifyLeadSessionRows(leadRows)
       const needKeys = new Set(
         needsScore.map((row) => `${row.workspaceId}:${row.sessionId}`),
       )
@@ -849,14 +886,46 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
     const label: 'legit' | 'fraud' =
       row.label === 'legit' ? 'legit' : 'fraud'
     const reasons = parseReasonsJson(row.reasons)
+    let coverage: LeadFraudAssessment['coverage'] = 'partial'
+    let findings: LeadFraudAssessment['findings'] = []
+    try {
+      const parsed = JSON.parse(row.features_json || '{}') as {
+        coverage?: unknown
+        findings?: unknown
+      }
+      if (
+        parsed.coverage === 'sufficient' ||
+        parsed.coverage === 'partial' ||
+        parsed.coverage === 'insufficient'
+      ) {
+        coverage = parsed.coverage
+      }
+      if (Array.isArray(parsed.findings)) {
+        findings = parsed.findings.filter(
+          (f): f is { code: string; detail: string } =>
+            Boolean(
+              f &&
+                typeof f === 'object' &&
+                typeof (f as { code?: unknown }).code === 'string' &&
+                typeof (f as { detail?: unknown }).detail === 'string',
+            ),
+        )
+      }
+    } catch {
+      /* ignore */
+    }
+    const scoreAvailable = coverage !== 'insufficient'
     existingRisk.set(`${wid}:${sid}`, {
       label,
       modelVersion: String(row.model_version || ''),
       email,
       assessment: {
-        score: n(row.score),
+        score: scoreAvailable ? n(row.score) : null,
+        scoreAvailable,
         label,
         effectiveLabel: label,
+        coverage,
+        findings,
         reasons,
         modelVersion: String(row.model_version || ''),
       },
@@ -889,9 +958,20 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
 
   let legit = 0
   let fraud = 0
-  for (const label of labelByKey.values()) {
-    if (label === 'legit') legit += 1
-    else fraud += 1
+  let elevatedRisk = 0
+  let lowerRisk = 0
+  let insufficientData = 0
+  for (const [key, label] of labelByKey) {
+    const assessment = assessmentByKey.get(key)
+    if (assessment && !assessment.scoreAvailable) {
+      insufficientData += 1
+    } else if (label === 'legit') {
+      legit += 1
+      lowerRisk += 1
+    } else {
+      fraud += 1
+      elevatedRisk += 1
+    }
   }
 
   const domainAcc = new Map<
@@ -925,13 +1005,54 @@ async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
     .slice(0, 25)
 
   const shortcutDiscovery = await buildShortcutLeads(assessmentByKey)
+  let pendingReviews = 0
+  let relatedContactGroups = 0
+  try {
+    const { countPendingReviews } = await import(
+      '../lib/lead-fraud/lead-review.js'
+    )
+    pendingReviews = (await countPendingReviews()).pending
+  } catch {
+    pendingReviews = 0
+  }
+  try {
+    const { LEAD_CONTACT_KEYS_TABLE: keysTable } = await import(
+      './clickhouse.service.js'
+    )
+    const groupRes = await ch.query({
+      format: 'JSON',
+      query: `
+        SELECT uniqExact((tenant_workspace_id, key_type, key_hash)) AS groups
+        FROM ${keysTable} FINAL
+        WHERE tenant_workspace_id != ''
+      `,
+    })
+    relatedContactGroups =
+      Number(
+        ((await groupRes.json()) as CHJson<{ groups: string }>).data?.[0]
+          ?.groups ?? 0,
+      ) || 0
+  } catch {
+    relatedContactGroups = 0
+  }
+
   return {
     risk: {
       legit,
       fraud,
       unscoredFormSubmits: 0,
+      elevatedRisk,
+      lowerRisk,
+      insufficientData,
     },
-    scoredLeads: legit + fraud,
+    quality: {
+      submissions: legit + fraud + insufficientData,
+      flagged: elevatedRisk,
+      incompleteAssessments: insufficientData,
+      pendingReviews,
+      relatedContactGroups,
+    },
+    scoredLeads: legit + fraud + insufficientData,
     emailDomains,
     fraudReasons,
     fraudLeads: [],
@@ -957,7 +1078,21 @@ function emptySummary(generatedAt: string): WarehouseSummary {
       users: 0,
     },
     volume: { lastHour: 0, last24h: 0, last7d: 0 },
-    risk: { legit: 0, fraud: 0, unscoredFormSubmits: 0 },
+    risk: {
+      legit: 0,
+      fraud: 0,
+      unscoredFormSubmits: 0,
+      elevatedRisk: 0,
+      lowerRisk: 0,
+      insufficientData: 0,
+    },
+    quality: {
+      submissions: 0,
+      flagged: 0,
+      incompleteAssessments: 0,
+      pendingReviews: 0,
+      relatedContactGroups: 0,
+    },
     clicks: { total: 0, byName: [] },
     shortcuts: {
       formSessions: 0,
@@ -979,7 +1114,21 @@ function emptySummary(generatedAt: string): WarehouseSummary {
 
 function emptyLeadInsights(): WarehouseLeadInsights {
   return {
-    risk: { legit: 0, fraud: 0, unscoredFormSubmits: 0 },
+    risk: {
+      legit: 0,
+      fraud: 0,
+      unscoredFormSubmits: 0,
+      elevatedRisk: 0,
+      lowerRisk: 0,
+      insufficientData: 0,
+    },
+    quality: {
+      submissions: 0,
+      flagged: 0,
+      incompleteAssessments: 0,
+      pendingReviews: 0,
+      relatedContactGroups: 0,
+    },
     scoredLeads: 0,
     emailDomains: [],
     fraudReasons: [],
@@ -1105,6 +1254,7 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
       last7d: n(inventory?.last_7d),
     },
     risk: leadInsights.risk,
+    quality: leadInsights.quality,
     clicks: {
       total: n(inventory?.click_events),
       byName: clicksByName,
@@ -1135,4 +1285,58 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
     WAREHOUSE_SUMMARY_CACHE_TTL_SEC,
   )
   return summary
+}
+
+export async function getWarehousePartnerScorecards(): Promise<
+  WarehousePartnerScorecard[]
+> {
+  const ch = getClickHouseClient()
+  try {
+    const { LEAD_CONTACT_KEYS_TABLE: keysTable, LEAD_REVIEW_TABLE: reviewTable } =
+      await import('./clickhouse.service.js')
+    const res = await ch.query({
+      format: 'JSON',
+      query: `
+        SELECT
+          if(k.utm_source = '', '(none)', k.utm_source) AS partner,
+          uniqExact((k.landing_page_id, k.session_id)) AS submissions,
+          countIf(r.review_status = 'reviewed') AS reviewed,
+          countIf(r.call_outcome = 'wrong_number') AS wrong_number,
+          countIf(r.call_outcome = 'never_requested') AS never_requested,
+          countIf(r.call_outcome = 'converted') AS converted
+        FROM ${keysTable} AS k FINAL
+        LEFT JOIN ${reviewTable} AS r FINAL
+          ON k.tenant_workspace_id = r.tenant_workspace_id
+          AND k.session_id = r.session_id
+        WHERE k.tenant_workspace_id != ''
+        GROUP BY partner
+        ORDER BY submissions DESC
+        LIMIT 100
+      `,
+    })
+    const rows =
+      (
+        (await res.json()) as CHJson<{
+          partner: string
+          submissions: string
+          reviewed: string
+          wrong_number: string
+          never_requested: string
+          converted: string
+        }>
+      ).data ?? []
+    return rows.map((row) => ({
+      partner: row.partner,
+      submissions: n(row.submissions),
+      elevatedRisk: 0,
+      incompleteAssessments: 0,
+      reviewed: n(row.reviewed),
+      wrongNumber: n(row.wrong_number),
+      neverRequested: n(row.never_requested),
+      converted: n(row.converted),
+    }))
+  } catch (err) {
+    console.error('[warehouse] partner scorecards failed', err)
+    return []
+  }
 }

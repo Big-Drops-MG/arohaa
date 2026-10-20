@@ -81,6 +81,18 @@ export function looksLikeNonsenseName(value: string): boolean {
 export function emptyFeatures(
   partial: Partial<LeadFraudFeatures> = {},
 ): LeadFraudFeatures {
+  const formZipEntered = (
+    partial.formZipEntered ??
+    partial.zip ??
+    ''
+  ).trim()
+  const {
+    formZipEntered: _formZip,
+    zip: _zip,
+    ...rest
+  } = partial
+  void _formZip
+  void _zip
   return {
     fingerprint: '',
     browser: '',
@@ -88,7 +100,6 @@ export function emptyFeatures(
     email: '',
     firstName: '',
     lastName: '',
-    zip: '',
     geoZip: '',
     stateField: '',
     geoState: '',
@@ -102,11 +113,15 @@ export function emptyFeatures(
     pastedPhone: false,
     hasFormStarted: false,
     hasFieldInteraction: false,
+    fiBehaviorKnown: false,
     fingerprintSessionsSameDay: 0,
     fingerprintSubmits24h: 0,
     ipHashSubmits24h: 0,
     emailDomainSubmits24h: 0,
     fieldCount: 0,
-    ...partial,
+    velocityWindowKnown: false,
+    ...rest,
+    formZipEntered,
+    zip: formZipEntered,
   }
 }

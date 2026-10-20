@@ -232,8 +232,11 @@ function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
     fields: fieldsWithoutReserved(fields),
     fraud: {
       score: 100,
+      scoreAvailable: true,
       label: 'legit',
       effectiveLabel: 'legit',
+      coverage: 'partial',
+      findings: [],
       reasons: [],
       modelVersion: '',
     },
@@ -1703,9 +1706,12 @@ export async function getFunnelLeads({
         fraud:
         fraudMap.get(lead.sessionId) ??
         lead.fraud ?? {
-          score: 50,
+          score: null,
+          scoreAvailable: false,
           label: 'fraud' as const,
           effectiveLabel: 'fraud' as const,
+          coverage: 'insufficient' as const,
+          findings: [],
           reasons: [],
           modelVersion: '',
         },

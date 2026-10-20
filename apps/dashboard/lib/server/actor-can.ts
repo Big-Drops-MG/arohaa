@@ -83,17 +83,45 @@ export async function isSuperadmin(actor: Actor): Promise<boolean> {
   return role?.key === SUPERADMIN_ROLE_KEY
 }
 
+export async function isCeo(actor: Actor): Promise<boolean> {
+  if (!actor.roleId) return false
+  const role = await getRoleById(actor.roleId)
+  return role?.key === CEO_ROLE_KEY
+}
+
+export async function isPrivilegedInternalAdmin(
+  actor: Actor & {
+    accessStatus?: string | null
+    teamKind?: string | null
+  }
+): Promise<boolean> {
+  if (actor.accessStatus != null && !isApprovedAccess(actor.accessStatus)) {
+    return false
+  }
+  if (actor.teamKind != null && isExternalTeamKind(actor.teamKind)) {
+    return false
+  }
+  if (!actor.roleId) return false
+  const role = await getRoleById(actor.roleId)
+  return role?.key === SUPERADMIN_ROLE_KEY || role?.key === CEO_ROLE_KEY
+}
+
 export async function canRemoveInternalTeamMembers(
   actor: Actor & {
     accessStatus: string | null
     teamKind: string | null
   }
 ): Promise<boolean> {
-  if (!isApprovedAccess(actor.accessStatus)) return false
-  if (isExternalTeamKind(actor.teamKind)) return false
-  if (!actor.roleId) return false
-  const role = await getRoleById(actor.roleId)
-  return role?.key === SUPERADMIN_ROLE_KEY || role?.key === CEO_ROLE_KEY
+  return isPrivilegedInternalAdmin(actor)
+}
+
+export async function canReviewWarehouseLeads(
+  actor: Actor & {
+    accessStatus: string | null
+    teamKind: string | null
+  }
+): Promise<boolean> {
+  return isPrivilegedInternalAdmin(actor)
 }
 
 export async function canManageExternalTeam(

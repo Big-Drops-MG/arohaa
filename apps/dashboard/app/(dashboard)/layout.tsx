@@ -5,6 +5,7 @@ import { DashboardNavigationShell } from "@/features/dashboard/view/DashboardNav
 import { getLandingPageNavItems } from "@/features/dashboard/controller/landing-pages"
 import { isApprovedAccess } from "@/lib/server/access-status"
 import { isExternalTeamKind } from "@/features/team/model/external-privileges"
+import { canReviewWarehouseLeads } from "@/lib/server/actor-can"
 import { db, normalizeUserEmail, whereUserEmail } from "@workspace/database"
 import { redirect } from "next/navigation"
 import { Suspense } from "react"
@@ -60,6 +61,7 @@ export default async function DashboardGroupLayout({
   const role = user.role?.trim() || "Profile"
   const imageUrl = user.image?.trim() || null
   const showTeamAndOps = !isExternalTeamKind(user.teamKind)
+  const showWarehouse = await canReviewWarehouseLeads(user)
 
   void touchUserLastSeen(user.id)
 
@@ -76,6 +78,7 @@ export default async function DashboardGroupLayout({
         userId={user.id}
         landingPageNavItems={landingPageNavItems}
         showTeamAndOps={showTeamAndOps}
+        showWarehouse={showWarehouse}
       />
       <main className="flex flex-1 flex-col">
         <Suspense fallback={null}>

@@ -4,6 +4,7 @@ import { useState } from "react"
 import { cn } from "@workspace/ui/lib/utils"
 import { LeadRiskBadge } from "@/features/data-export/view/LeadRiskBadge"
 import { LeadInteractionLogDialog } from "@/features/data-export/view/LeadInteractionLogDialog"
+import { RelatedSubmissionsDialog } from "@/features/warehouse/view/RelatedSubmissionsDialog"
 import {
   discoverVisibleLeadFieldKeys,
   humanizeLeadFieldLabel,
@@ -62,6 +63,9 @@ export function ShortcutLeadsTable({
   rows: WarehouseShortcutLead[]
 }) {
   const [logLead, setLogLead] = useState<WarehouseShortcutLead | null>(null)
+  const [relatedLead, setRelatedLead] = useState<WarehouseShortcutLead | null>(
+    null
+  )
 
   if (rows.length === 0) {
     return (
@@ -84,6 +88,7 @@ export function ShortcutLeadsTable({
             <th className={leadThClassName}>Shortcut</th>
             <th className={leadThClassName}>Event Log</th>
             <th className={leadThClassName}>Trust</th>
+            <th className={leadThClassName}>Related</th>
             <th className={leadThClassName}>First Name</th>
             <th className={leadThClassName}>Last Name</th>
             <th className={leadThClassName}>Email</th>
@@ -141,6 +146,16 @@ export function ShortcutLeadsTable({
               </td>
               <td className={leadTdClassName}>
                 <LeadRiskBadge fraud={lead.fraud} />
+              </td>
+              <td className={leadTdClassName}>
+                <button
+                  type="button"
+                  className="text-sm font-medium text-sky-700 underline-offset-2 hover:underline"
+                  onClick={() => setRelatedLead(lead)}
+                >
+                  Related
+                  {lead.relatedCount > 0 ? `: ${lead.relatedCount}` : ""}
+                </button>
               </td>
               <td className={leadTdClassName}>
                 {cellValue(lead.firstName || lead.fields.first_name)}
@@ -227,6 +242,15 @@ export function ShortcutLeadsTable({
         lastName={logLead?.lastName}
         email={logLead?.email}
         fraud={logLead?.fraud}
+      />
+      <RelatedSubmissionsDialog
+        open={relatedLead != null}
+        onOpenChange={(open) => {
+          if (!open) setRelatedLead(null)
+        }}
+        workspaceId={relatedLead?.workspaceId ?? ""}
+        sessionId={relatedLead?.sessionId ?? ""}
+        tenantWorkspaceId={relatedLead?.tenantWorkspaceId}
       />
     </>
   )

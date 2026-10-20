@@ -36,6 +36,7 @@ type NavbarProps = {
   userId?: string | null
   landingPageNavItems: LandingPageNavItem[]
   showTeamAndOps?: boolean
+  showWarehouse?: boolean
 }
 
 function buildInitials(firstName: string, lastName: string): string {
@@ -52,6 +53,7 @@ export function Navbar({
   userId = null,
   landingPageNavItems,
   showTeamAndOps = true,
+  showWarehouse = false,
 }: NavbarProps) {
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -157,7 +159,7 @@ export function Navbar({
                     Profile
                   </Link>
                 </Button>
-                {showTeamAndOps ? (
+                {showWarehouse ? (
                   <Button
                     asChild
                     variant="ghost"
