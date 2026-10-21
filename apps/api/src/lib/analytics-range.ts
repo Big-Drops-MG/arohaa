@@ -7,6 +7,7 @@ import {
   analyticsDayKey,
   analyticsEtToUtcMs,
   analyticsMondayKey,
+  chToDate,
   getAnalyticsEtParts,
   parseAnalyticsEtDayKey,
   startOfAnalyticsEtDay,
@@ -317,8 +318,20 @@ export function previousRangeQueryParams(window: AnalyticsWindow): {
   }
 }
 
+
+function eventsRawWindowSql(fromParam: string, toParam: string): string {
+  const from = `toDateTime64({${fromParam}:String}, 3, 'UTC')`
+  const to = `toDateTime64({${toParam}:String}, 3, 'UTC')`
+  return (
+    `workspace_id = {wid:UUID}` +
+    ` AND event_date_et >= ${chToDate(from)} - 1` +
+    ` AND event_date_et <= ${chToDate(to)} + 1` +
+    ` AND created_at >= ${from} AND created_at < ${to}`
+  )
+}
+
 export function rangeFilter(utmFilter?: AnalyticsUtmFilter): string {
-  return `workspace_id = {wid:UUID} AND created_at >= toDateTime64({range_from:String}, 3, 'UTC') AND created_at < toDateTime64({range_to:String}, 3, 'UTC')${utmFilterSql(utmFilter)}`
+  return `${eventsRawWindowSql('range_from', 'range_to')}${utmFilterSql(utmFilter)}`
 }
 
 export function rangeLookbackFilter(utmFilter?: AnalyticsUtmFilter): string {
@@ -326,7 +339,7 @@ export function rangeLookbackFilter(utmFilter?: AnalyticsUtmFilter): string {
 }
 
 export function previousRangeFilter(utmFilter?: AnalyticsUtmFilter): string {
-  return `workspace_id = {wid:UUID} AND created_at >= toDateTime64({prev_from:String}, 3, 'UTC') AND created_at < toDateTime64({prev_to:String}, 3, 'UTC')${utmFilterSql(utmFilter)}`
+  return `${eventsRawWindowSql('prev_from', 'prev_to')}${utmFilterSql(utmFilter)}`
 }
 
 /**
