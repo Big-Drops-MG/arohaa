@@ -22,6 +22,7 @@ import {
 } from "@/features/data-export/model/lead-field-columns"
 import { LeadInteractionLogDialog } from "@/features/data-export/view/LeadInteractionLogDialog"
 import { LeadRiskBadge } from "@/features/data-export/view/LeadRiskBadge"
+import { LeadBehaviorBadge } from "@/features/data-export/view/LeadBehaviorBadge"
 import type { LeadFraudAssessment } from "@/features/data-export/model/interaction-log"
 import {
   overviewAnalyticCardHeaderClassName,
@@ -386,7 +387,7 @@ export function DataExportDashboard({
     )
   }
 
-  const colCount = (returningOnly ? 16 : 15) + fieldColumns.length
+  const colCount = (returningOnly ? 17 : 16) + fieldColumns.length
   const projectLabel = dashboardData.brandName.trim() || "Project"
 
   return (
@@ -431,6 +432,7 @@ export function DataExportDashboard({
                   <th className={thClassName}>#</th>
                   <th className={thClassName}>When</th>
                   <th className={thClassName}>Trust score</th>
+                  <th className={thClassName}>Behavior</th>
                   <th className={thClassName}>First Name</th>
                   <th className={thClassName}>Last Name</th>
                   <th className={thClassName}>Email</th>
@@ -489,6 +491,9 @@ export function DataExportDashboard({
                       </td>
                       <td className={tdClassName}>
                         <LeadRiskBadge fraud={lead.fraud} />
+                      </td>
+                      <td className={tdClassName}>
+                        <LeadBehaviorBadge behavior={lead.behavior} />
                       </td>
                       <td className={tdClassName}>
                         {cellValue(lead.fields.first_name)}

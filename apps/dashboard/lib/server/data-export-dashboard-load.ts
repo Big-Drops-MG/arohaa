@@ -62,6 +62,7 @@ type LeadsApiResponse = {
     fields: Record<string, string>
     returnCount?: number
     fraud?: DataExportDashboardData["leads"][number]["fraud"]
+    behavior?: DataExportDashboardData["leads"][number]["behavior"]
   }>
   total?: number
   limit?: number

@@ -9,6 +9,26 @@ import type { LeadFraudAssessment } from "@/features/data-export/model/interacti
 
 export type { LeadFraudAssessment }
 
+export type LeadBehaviorSummary = {
+  reason: string
+  observedAt: string
+  visibleMs: number
+  activeMs: number
+  focusCount: number
+  inputCount: number
+  changeCount: number
+  pasteCount: number
+  autofillHints: number
+  pointerCount: number
+  touchCount: number
+  keyboardCount: number
+  trustedEventCount: number
+  untrustedEventCount: number
+  formStartAt: number | null
+  formSubmitAt: number | null
+  sdkInitMs: number | null
+}
+
 export type DataExportLeadRow = {
   sessionId: string
   macId: string
@@ -24,6 +44,7 @@ export type DataExportLeadRow = {
   returnCount: number
   fields: Record<string, string>
   fraud: LeadFraudAssessment | null
+  behavior: LeadBehaviorSummary | null
 }
 
 export type DataExportDashboardData = {

@@ -44,6 +44,10 @@ import {
 } from '../lib/lead-fraud/index.js'
 import { loadFiBehaviorBySessions } from '../lib/lead-fraud/fi-batch.js'
 import {
+  loadBehaviorSummaryBySessions,
+  type LeadBehaviorSummary,
+} from '../lib/lead-fraud/behavior-summary-batch.js'
+import {
   loadClientIpBySessions,
   loadSessionContextByIds,
 } from '../lib/lead-fraud/load-sessions.js'
@@ -73,6 +77,7 @@ export type FunnelLeadRow = {
   returnCount: number
   fields: Record<string, string>
   fraud: LeadFraudAssessment
+  behavior: LeadBehaviorSummary | null
 }
 
 export type FunnelLeadsResponse = {
@@ -259,6 +264,7 @@ function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
       reasons: [],
       modelVersion: '',
     },
+    behavior: null,
   }
 }
 
@@ -1636,7 +1642,7 @@ export async function getFunnelLeads({
   returningOnly?: boolean
 }): Promise<FunnelLeadsResponse> {
   const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, new Date(), custom)
-  const cacheKey = `analytics:funnel-leads:v1:${workspaceId}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}:${limit}:${offset}:${returningOnly ? 'r1' : 'r0'}`
+  const cacheKey = `analytics:funnel-leads:v2:${workspaceId}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}:${limit}:${offset}:${returningOnly ? 'r1' : 'r0'}`
   const cached = await readAnalyticsCache<FunnelLeadsResponse>(cacheKey)
   if (cached) return cached
 
@@ -1841,7 +1847,8 @@ export async function getFunnelLeads({
 
   try {
     const sessionIds = pageLeads.map((lead) => lead.sessionId)
-    const [fraudMap, ctxBySid, fiMap] = await Promise.all([
+    const rangeParams = rangeQueryParams(window)
+    const [fraudMap, ctxBySid, fiMap, behaviorMap] = await Promise.all([
       ensureSessionsFraudAssessments({
         workspaceId,
         sessionIds,
@@ -1851,7 +1858,19 @@ export async function getFunnelLeads({
       loadFiBehaviorBySessions(
         sessionIds.map((sessionId) => ({ workspaceId, sessionId })),
       ).catch(() => new Map()),
+      loadBehaviorSummaryBySessions({
+        workspaceId,
+        sessionIds,
+        window: { rangeFrom: rangeParams.range_from, rangeTo: rangeParams.range_to },
+      }).catch((error: unknown) => {
+        console.error('[funnel-leads] behavior summary load failed', error)
+        return new Map<string, LeadBehaviorSummary>()
+      }),
     ])
+    pageLeads = pageLeads.map((lead) => ({
+      ...lead,
+      behavior: behaviorMap.get(lead.sessionId) ?? null,
+    }))
 
     const velocity = computeLeadVelocityMaps([...ctxBySid.values()])
     const key = (sid: string) => `${workspaceId}:${sid}`

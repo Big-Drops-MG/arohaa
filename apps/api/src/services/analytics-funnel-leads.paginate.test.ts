@@ -31,6 +31,7 @@ function lead(sessionId: string): FunnelLeadRow {
       reasons: [],
       modelVersion: 'v2',
     },
+    behavior: null,
   }
 }
 

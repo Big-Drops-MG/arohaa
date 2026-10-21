@@ -44,6 +44,7 @@ function lead({
       reasons: [],
       modelVersion: 'v2',
     },
+    behavior: null,
   }
 }
 

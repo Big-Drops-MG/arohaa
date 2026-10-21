@@ -84,6 +84,42 @@ export function mapDataExportLeadRow(
     })(),
     fields,
     fraud: mapLeadFraud(raw.fraud),
+    behavior: mapLeadBehavior(raw.behavior),
+  }
+}
+
+function nonNegativeInt(value: unknown): number {
+  const n = Number(value ?? 0)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
+}
+
+function nullableNumber(value: unknown): number | null {
+  if (value == null || value === "") return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function mapLeadBehavior(raw: unknown): DataExportLeadRow["behavior"] {
+  if (!raw || typeof raw !== "object") return null
+  const row = raw as Record<string, unknown>
+  return {
+    reason: String(row.reason ?? ""),
+    observedAt: String(row.observedAt ?? ""),
+    visibleMs: nonNegativeInt(row.visibleMs),
+    activeMs: nonNegativeInt(row.activeMs),
+    focusCount: nonNegativeInt(row.focusCount),
+    inputCount: nonNegativeInt(row.inputCount),
+    changeCount: nonNegativeInt(row.changeCount),
+    pasteCount: nonNegativeInt(row.pasteCount),
+    autofillHints: nonNegativeInt(row.autofillHints),
+    pointerCount: nonNegativeInt(row.pointerCount),
+    touchCount: nonNegativeInt(row.touchCount),
+    keyboardCount: nonNegativeInt(row.keyboardCount),
+    trustedEventCount: nonNegativeInt(row.trustedEventCount),
+    untrustedEventCount: nonNegativeInt(row.untrustedEventCount),
+    formStartAt: nullableNumber(row.formStartAt),
+    formSubmitAt: nullableNumber(row.formSubmitAt),
+    sdkInitMs: nullableNumber(row.sdkInitMs),
   }
 }
 
