@@ -10,6 +10,7 @@ import { redis } from '../services/redis.service.js'
 import { sendAlertWebhook } from '../lib/alert-webhook.js'
 import { verifyInternalApiRequest } from '../lib/internal-api-secret.js'
 import { resolveApiVersion } from '../lib/api-version.js'
+import { getWorkloadSnapshot } from '../services/workload.service.js'
 import { db, sql } from '@workspace/database'
 
 const PING_TIMEOUT_MS = 3000
@@ -291,6 +292,27 @@ export async function healthRoutes(server: FastifyInstance) {
         },
         timestamp: new Date().toISOString(),
         trace_id: request.id,
+      }
+    },
+  )
+
+  server.get<{ Querystring: { minutes?: string; limit?: string } }>(
+    '/health/workload',
+    { config: HEALTH_RATE_LIMIT_OPT_OUT },
+    async (request, reply) => {
+      if (!verifyInternalApiRequest(request.headers['x-arohaa-internal'])) {
+        return reply.code(401).send({ error: 'Unauthorized' })
+      }
+      try {
+        return await getWorkloadSnapshot({
+          minutes: Number(request.query.minutes) || undefined,
+          limit: Number(request.query.limit) || undefined,
+        })
+      } catch (err) {
+        request.log.error({ err }, 'workload snapshot failed')
+        return reply
+          .status(503)
+          .send({ status: 'error', reason: 'workload_unavailable' })
       }
     },
   )
