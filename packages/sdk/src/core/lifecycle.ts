@@ -4,6 +4,7 @@ import { setupScrollTracking } from "../events/scroll.events"
 import { setupClickTracking } from "../events/click.events"
 import { setupAttentionTracking } from "../events/attention.events"
 import { setupFormTracking } from "../events/form-tracking"
+import { installFormSemantics } from "../events/form.events"
 import { setupServiceClickTracking } from "../events/service-click.events"
 import { setupOpaqueFieldCapture } from "../events/opaque-field-capture"
 import { setupFiCapture } from "../events/fi-capture"
@@ -22,6 +23,7 @@ import { collectBrowserObservations } from "../utils/browser-obs"
 import { getSdkInitStartedAt } from "./init-timing"
 
 export function setupLifecycle(): void {
+  installFormSemantics()
   setupOutboxDrainTriggers(attemptSend)
   void drainOutbox(attemptSend)
   setupBatcherUnloadHooks()

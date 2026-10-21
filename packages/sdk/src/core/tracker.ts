@@ -1,5 +1,6 @@
 import { sendEvent } from "./sender"
 import { isAllowedSdkEventName } from "../events/allowed-events"
+import { runSemanticHook } from "./semantic-hooks"
 
 export function track(
   event: string,
@@ -8,6 +9,7 @@ export function track(
   if (typeof event !== "string" || !isAllowedSdkEventName(event)) {
     return
   }
+  runSemanticHook(event, props)
   sendEvent(event, props)
 }
 

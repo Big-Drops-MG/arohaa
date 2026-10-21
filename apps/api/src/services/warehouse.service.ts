@@ -32,6 +32,11 @@ import {
   classifyLeadSessionRows,
   ensureSessionsFraudAssessments,
 } from '../lib/lead-fraud/service.js'
+import {
+  resolveSessionEventWindow,
+  sessionWindowParams,
+  sessionWindowSql,
+} from '../lib/lead-fraud/session-window.js'
 import type { LeadFraudAssessment } from '../lib/lead-fraud/types.js'
 import {
   getClickHouseClient,
@@ -2014,6 +2019,7 @@ export async function getWarehouseSessionEvidence(input: {
   const tenantWorkspaceId = input.tenantWorkspaceId?.trim() ?? ''
   if (!workspaceId || !sessionId) return null
 
+  const window = await resolveSessionEventWindow({ workspaceId, sessionId })
   const events = await queryJson<{
     event_name: string
     created_at: string
@@ -2059,7 +2065,7 @@ export async function getWarehouseSessionEvidence(input: {
       tenant_workspace_id
     FROM ${CLICKHOUSE_EVENTS_TABLE}
     WHERE workspace_id = {workspaceId:UUID}
-      AND session_id = {sessionId:String}
+      AND session_id = {sessionId:String}${sessionWindowSql(window)}
       AND (
         {tenantWorkspaceId:String} = ''
         OR tenant_workspace_id = {tenantWorkspaceId:String}
@@ -2067,7 +2073,7 @@ export async function getWarehouseSessionEvidence(input: {
       )
     ORDER BY created_at ASC, event_seq ASC
     LIMIT 500
-  `, { workspaceId, sessionId, tenantWorkspaceId })
+  `, { workspaceId, sessionId, tenantWorkspaceId, ...sessionWindowParams(window) })
 
   if (events.length === 0) return null
 
@@ -2117,6 +2123,10 @@ export async function getWarehouseSessionEvidence(input: {
   }
 
   const last = events[events.length - 1]!
+  const allSequenced = events.every((e) => n(e.event_seq) > 0)
+  const ordered = allSequenced
+    ? [...events].sort((a, b) => n(a.event_seq) - n(b.event_seq))
+    : events
   const uniqueIntegrityFindings: unknown[] = []
   const seenFindingCodes = new Set<string>()
   for (const finding of integrityFindings) {
@@ -2141,7 +2151,7 @@ export async function getWarehouseSessionEvidence(input: {
       last.sdk_capabilities ||
       events.find((e) => e.sdk_capabilities)?.sdk_capabilities ||
       '',
-    timeline: events.map((e) => ({
+    timeline: ordered.map((e) => ({
       eventName: e.event_name,
       createdAt: e.created_at,
       seq: n(e.event_seq),

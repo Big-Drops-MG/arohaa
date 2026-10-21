@@ -2,9 +2,15 @@ import { track } from "../core/tracker"
 import { enableSdkCapability, SDK_CAPABILITY } from "../model/capabilities"
 
 const OBS_VERSION = 1
+const MUTATION_DEBOUNCE_MS = 1_000
+const MAX_MUTATION_SNAPSHOTS = 8
 let installed = false
 let baselineFormActions: string[] = []
 let reported = false
+let lastSnapshotKey = ""
+let mutationSnapshots = 0
+let pendingReasons = new Set<string>()
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 function scriptOrigins(): string[] {
   if (typeof document === "undefined") return []
@@ -54,15 +60,36 @@ function iframeOrigins(): string[] {
 function emitSnapshot(reason: string): void {
   if (reported && reason === "init") return
   if (reason === "init") reported = true
-  track("page_integrity", {
-    v: OBS_VERSION,
-    reason,
+  const snapshot = {
     script_origins: scriptOrigins(),
     form_actions: formActions(),
     iframe_origins: iframeOrigins(),
+  }
+  const key = JSON.stringify(snapshot)
+  if (reason !== "init") {
+    if (key === lastSnapshotKey) return
+    if (mutationSnapshots >= MAX_MUTATION_SNAPSHOTS) return
+    mutationSnapshots += 1
+  }
+  lastSnapshotKey = key
+  track("page_integrity", {
+    v: OBS_VERSION,
+    reason,
+    ...snapshot,
     baseline_form_actions: baselineFormActions,
     context_accessible: typeof document !== "undefined",
   })
+}
+
+function scheduleSnapshot(reason: string): void {
+  pendingReasons.add(reason)
+  if (debounceTimer) return
+  debounceTimer = setTimeout(() => {
+    debounceTimer = null
+    const reasons = [...pendingReasons]
+    pendingReasons = new Set()
+    emitSnapshot(reasons.sort().join("+"))
+  }, MUTATION_DEBOUNCE_MS)
 }
 
 export function setupPageIntegrityObservations(): void {
@@ -93,9 +120,9 @@ export function setupPageIntegrityObservations(): void {
         forms = true
       }
     }
-    if (scripts) emitSnapshot("script_added")
-    if (frames) emitSnapshot("iframe_added")
-    if (forms) emitSnapshot("form_changed")
+    if (scripts) scheduleSnapshot("script_added")
+    if (frames) scheduleSnapshot("iframe_added")
+    if (forms) scheduleSnapshot("form_changed")
   })
 
   try {

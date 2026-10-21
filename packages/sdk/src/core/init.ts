@@ -48,7 +48,7 @@ export async function initSDK(): Promise<void> {
   await loadSdkRemoteConfig()
 
   initIdentity()
-  setupLifecycle()
   startSessionTokenRefresh()
+  setupLifecycle()
   isSDKInitialized = true
 }

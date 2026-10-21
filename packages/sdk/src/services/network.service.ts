@@ -1,6 +1,7 @@
 import type { EventPayload } from "../types"
 import { getConfig } from "../model/config"
 import { saveToOutbox, type SendOutcome } from "../network/retry"
+import { stampSessionToken } from "../model/session-token"
 
 function getIngestUrl(): string | null {
   const { apiBase } = getConfig()
@@ -17,9 +18,6 @@ function isPageHidden(): boolean {
   )
 }
 
-// Beacon only for unload/hidden. On a visible page, an application/json
-// sendBeacon triggers a CORS preflight that the browser cancels on redirect,
-// dropping conversions; the keepalive fetch below survives navigation instead.
 function preferBeacon(_payload: EventPayload): boolean {
   return isPageHidden()
 }
@@ -28,6 +26,7 @@ export async function attemptSend(payload: EventPayload): Promise<SendOutcome> {
   const url = getIngestUrl()
   if (!url) return "permanent"
 
+  await stampSessionToken(payload)
   const body = JSON.stringify(payload)
 
   if (

@@ -60,22 +60,39 @@ function parseMs(raw: string): number {
   return Number.isFinite(ms) ? ms : 0
 }
 
+const MAX_EVIDENCE_REFS = 20
+
+/**
+ * One fact, one finding: the same code/detail observed on many events of a
+ * session collapses into a single finding that keeps the earliest observation
+ * and a bounded list of evidence refs.
+ */
 function dedupeFindings(findings: AssessmentFinding[]): AssessmentFinding[] {
-  const seen = new Set<string>()
-  const out: AssessmentFinding[] = []
+  const byKey = new Map<string, AssessmentFinding>()
   for (const f of findings) {
     const key = [
       f.code,
       f.detail,
-      (f.evidenceRefs ?? []).join(','),
       f.availability,
       String(f.proposedScoreDelta ?? ''),
+      f.featureVersion ?? '',
     ].join('|')
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push(f)
+    const existing = byKey.get(key)
+    if (!existing) {
+      byKey.set(key, { ...f, evidenceRefs: [...(f.evidenceRefs ?? [])] })
+      continue
+    }
+    const refs = existing.evidenceRefs ?? []
+    for (const ref of f.evidenceRefs ?? []) {
+      if (refs.length >= MAX_EVIDENCE_REFS) break
+      if (!refs.includes(ref)) refs.push(ref)
+    }
+    existing.evidenceRefs = refs
+    if (f.observedAt && (!existing.observedAt || f.observedAt < existing.observedAt)) {
+      existing.observedAt = f.observedAt
+    }
   }
-  return out
+  return [...byKey.values()]
 }
 
 function behaviorHasEngagement(props: Record<string, unknown>): boolean {
@@ -194,7 +211,7 @@ export async function loadSessionShadowEvidence(input: {
   let departedAtMs: number | null = null
   let evidenceCutoffMs = 0
   let baselineVersion: number | null = null
-  const stableParts: string[] = []
+  const stableParts = new Set<string>()
 
   const baseline = await loadApprovedPageIntegrityBaseline(workspaceId)
   if (baseline.status === 'approved') {
@@ -221,7 +238,7 @@ export async function loadSessionShadowEvidence(input: {
         )
         integrityFindings.push(...parsed)
         for (const f of parsed) {
-          stableParts.push(`int:${f.code}:${row.event_id}`)
+          stableParts.add(`int:${f.code}:${row.event_id}`)
         }
       } catch {
         /* ignore */
@@ -240,7 +257,7 @@ export async function loadSessionShadowEvidence(input: {
         observedAt: row.created_at,
         evidenceRefs: [row.event_id || eventKey],
       }))
-      stableParts.push(`browser:${row.event_id}:${row.created_at}`)
+      stableParts.add(`browser:${row.event_id}:${row.created_at}`)
     }
     if (row.event_name === 'page_integrity') {
       pageIntegritySeen = true
@@ -259,7 +276,7 @@ export async function loadSessionShadowEvidence(input: {
             evidenceRefs: [row.event_id || eventKey],
           }),
         )
-        stableParts.push(`pi:not_assessed:${baseline.reason}`)
+        stableParts.add(`pi:not_assessed:${baseline.reason}`)
       } else {
         const next = findingsFromPageIntegrity({
           props,
@@ -275,7 +292,7 @@ export async function loadSessionShadowEvidence(input: {
         }))
         pageIntegrityFindings.push(...next)
         for (const f of next) {
-          stableParts.push(
+          stableParts.add(
             `pi:${f.code}:${row.event_id}:v${baseline.baseline.version}`,
           )
         }
@@ -286,7 +303,7 @@ export async function loadSessionShadowEvidence(input: {
       if (typeof props.active_ms === 'number') activeMs = props.active_ms
       if (behaviorHasEngagement(props)) hasMeaningfulInteraction = true
       if (props.form_start_at || props.form_submit_at) hasFormEngagement = true
-      stableParts.push(`behavior:${row.event_id}:${row.created_at}`)
+      stableParts.add(`behavior:${row.event_id}:${row.created_at}`)
     }
     if (
       row.event_name === 'form_start' ||
@@ -318,7 +335,7 @@ export async function loadSessionShadowEvidence(input: {
       observedAt: 'browser:missing',
       evidenceRefs: ['browser:missing'],
     }))
-    stableParts.push('browser:missing')
+    stableParts.add('browser:missing')
   }
   if (!pageIntegritySeen && sdkCapabilities.includes('page_integrity')) {
     pageIntegrityFindings.push(
@@ -335,11 +352,11 @@ export async function loadSessionShadowEvidence(input: {
         evidenceRefs: ['pi:missing'],
       }),
     )
-    stableParts.push('pi:missing')
+    stableParts.add('pi:missing')
   }
 
   if (evidenceTruncated) {
-    stableParts.push(`truncated:${totalEvents}`)
+    stableParts.add(`truncated:${totalEvents}`)
   }
 
   return {
@@ -359,6 +376,6 @@ export async function loadSessionShadowEvidence(input: {
     evidenceTruncated,
     eventCount: totalEvents,
     baselineVersion,
-    stableEvidenceKey: stableParts.sort().join('|') || 'none',
+    stableEvidenceKey: [...stableParts].sort().join('|') || 'none',
   }
 }

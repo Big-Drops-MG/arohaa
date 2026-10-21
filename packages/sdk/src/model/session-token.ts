@@ -192,3 +192,17 @@ export function startSessionTokenRefresh(): void {
 export async function ensureSessionToken(): Promise<string | null> {
   return fetchSessionToken()
 }
+
+export async function stampSessionToken<
+  T extends { sid: string; session_token?: string },
+>(payload: T): Promise<T> {
+  if (payload.session_token) return payload
+  if (payload.sid !== getIdentity().sid) return payload
+  const hidden =
+    typeof document !== "undefined" && document.visibilityState === "hidden"
+  const token = hidden
+    ? getSessionTokenSync()
+    : (await fetchSessionToken()) ?? getSessionTokenSync()
+  if (token) payload.session_token = token
+  return payload
+}

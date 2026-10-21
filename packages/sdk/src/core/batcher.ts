@@ -1,5 +1,6 @@
 import type { EventPayload } from "../types"
 import { getConfig } from "../model/config"
+import { stampSessionToken } from "../model/session-token"
 
 const FLUSH_INTERVAL_MS = 2000
 const FLUSH_SIZE = 50
@@ -89,6 +90,7 @@ async function postBatch(events: EventPayload[]): Promise<boolean> {
   const url = getBatchUrl()
   if (!url || events.length === 0) return true
 
+  await Promise.all(events.map((event) => stampSessionToken(event)))
   const body = JSON.stringify({ events })
 
   if (
