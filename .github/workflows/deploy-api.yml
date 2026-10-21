@@ -97,14 +97,56 @@ jobs:
           docker push "$ECR_REGISTRY/arohaa-api:$IMAGE_TAG"
           docker push "$ECR_REGISTRY/arohaa-api:${API_VERSION}-${GIT_SHA:0:7}"
 
+      - name: Register task definition with runtime secrets
+        id: register_td
+        env:
+          SESSION_TOKEN_SECRET: ${{ secrets.SESSION_TOKEN_SECRET }}
+        run: |
+          set -euo pipefail
+          CLUSTER=arohaa-production
+          SERVICE=arohaa-api-service-syjf98zg
+          CURRENT_TD="$(aws ecs describe-services \
+            --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].taskDefinition' --output text)"
+          echo "Current task definition: $CURRENT_TD"
+          aws ecs describe-task-definition --task-definition "$CURRENT_TD" \
+            --query taskDefinition > td.json
+          jq '
+            del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+            | .containerDefinitions |= map(
+                if .name == "api" then
+                  .environment |= (
+                    (. // [])
+                    | map(select(.name != "SESSION_TOKEN_SECRET"))
+                    + [{ name: "SESSION_TOKEN_SECRET", value: env.SESSION_TOKEN_SECRET }]
+                  )
+                else . end
+              )
+          ' td.json > td-new.json
+          NEW_TD="$(aws ecs register-task-definition \
+            --cli-input-json file://td-new.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)"
+          rm -f td.json td-new.json
+          echo "Registered: $NEW_TD"
+          echo "task_definition=$NEW_TD" >> "$GITHUB_OUTPUT"
+
       - name: Roll out ECS service
         run: |
           aws ecs update-service \
             --cluster arohaa-production \
             --service arohaa-api-service-syjf98zg \
+            --task-definition "${{ steps.register_td.outputs.task_definition }}" \
             --force-new-deployment \
             --query "service.deployments[0].rolloutState" \
             --output text
+
+      - name: Wait for ECS rollout
+        run: |
+          aws ecs wait services-stable \
+            --cluster arohaa-production \
+            --services arohaa-api-service-syjf98zg
+          echo "Rollout stable."
 
       # Terraform needs S3/DynamoDB admin that the deploy IAM user may not have.
       # Do not fail the API image/ECS rollout when remote-state bootstrap is denied.
