@@ -1,12 +1,14 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@workspace/ui/components/dialog"
+import { mapLeadBehaviorSummary } from "@/features/data-export/model/behavior-summary"
+import { LeadBehaviorDetails } from "@/features/data-export/view/LeadBehaviorBadge"
 
 type Finding = {
   code?: string
@@ -94,35 +96,58 @@ function FindingList({
   )
 }
 
+function buildEvidenceUrl(input: {
+  endpoint?: string
+  workspaceId: string
+  sessionId: string
+  tenantWorkspaceId?: string
+}): string {
+  if (input.endpoint) {
+    const params = new URLSearchParams({ session_id: input.sessionId })
+    return `${input.endpoint}?${params.toString()}`
+  }
+  const params = new URLSearchParams({
+    workspaceId: input.workspaceId,
+    sessionId: input.sessionId,
+  })
+  if (input.tenantWorkspaceId) {
+    params.set("tenantWorkspaceId", input.tenantWorkspaceId)
+  }
+  return `/api/warehouse/session-evidence?${params.toString()}`
+}
+
 export function SessionEvidenceDialog({
   open,
   onOpenChange,
   workspaceId,
   sessionId,
   tenantWorkspaceId,
+  endpoint,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   workspaceId: string
   sessionId: string
   tenantWorkspaceId?: string
+  endpoint?: string
 }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [data, setData] = useState<SessionEvidencePayload | null>(null)
 
   useEffect(() => {
-    if (!open || !workspaceId || !sessionId) return
+    if (!open || !sessionId || (!endpoint && !workspaceId)) return
     let cancelled = false
     setLoading(true)
     setError("")
     setData(null)
-    const params = new URLSearchParams({
+    const url = buildEvidenceUrl({
+      endpoint,
       workspaceId,
       sessionId,
+      tenantWorkspaceId,
     })
-    if (tenantWorkspaceId) params.set("tenantWorkspaceId", tenantWorkspaceId)
-    void fetch(`/api/warehouse/session-evidence?${params.toString()}`, {
+    void fetch(url, {
       cache: "no-store",
     })
       .then(async (res) => {
@@ -147,10 +172,14 @@ export function SessionEvidenceDialog({
     return () => {
       cancelled = true
     }
-  }, [open, workspaceId, sessionId, tenantWorkspaceId])
+  }, [open, workspaceId, sessionId, tenantWorkspaceId, endpoint])
 
   const findings = (data?.integrityFindings ?? []).filter((f): f is Finding =>
     Boolean(f && typeof f === "object")
+  )
+  const behavior = useMemo(
+    () => mapLeadBehaviorSummary(data?.behaviorSummary),
+    [data?.behaviorSummary]
   )
 
   return (
@@ -223,6 +252,11 @@ export function SessionEvidenceDialog({
                   .filter(Boolean)
                   .join(", ") || "—"}
               </p>
+            </section>
+
+            <section className="space-y-1">
+              <h3 className="text-sm font-medium">Behavior</h3>
+              <LeadBehaviorDetails behavior={behavior} />
             </section>
 
             <section className="space-y-1">

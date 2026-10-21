@@ -14,6 +14,7 @@ import {
   getFunnelLeads,
 } from '../services/analytics-funnel-leads.service.js'
 import { getSessionInteractionLog } from '../services/analytics-interaction-log.service.js'
+import { getWarehouseSessionEvidence } from '../services/warehouse.service.js'
 import { landingPageHasRedirect } from '../lib/landing-redirect.js'
 import {
   getAnalyticsTraffic,
@@ -725,6 +726,52 @@ export async function analyticsRoutes(server: FastifyInstance) {
         logLabel: 'analytics funnel interaction log ok',
         logContext: { session_id: session_id.slice(0, 8) },
       })
+    },
+  )
+
+  server.get<{
+    Querystring: {
+      workspace_id: string
+      session_id: string
+    }
+  }>(
+    '/v1/analytics/funnel/leads/session-evidence',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['workspace_id', 'session_id'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            session_id: { type: 'string', minLength: 1, maxLength: 128 },
+          },
+        },
+      },
+      config: ANALYTICS_RATE_LIMIT,
+    },
+    async (request, reply) => {
+      const { workspace_id, session_id } = request.query
+      if (!(await guardFunnelLeadsRequest(request, reply, workspace_id))) return
+      try {
+        const evidence = await getWarehouseSessionEvidence({
+          workspaceId: workspace_id,
+          sessionId: session_id,
+        })
+        if (!evidence) {
+          return reply.code(404).send({ error: 'Session evidence not found' })
+        }
+        request.log.info(
+          { workspace_id, session_id: session_id.slice(0, 8) },
+          'analytics funnel session evidence ok',
+        )
+        return evidence
+      } catch (err) {
+        if (isClickHouseUnavailableError(err)) {
+          return reply.code(503).send({ error: 'analytics_unavailable', code: 'CLICKHOUSE_DOWN' })
+        }
+        request.log.error({ err, workspace_id }, 'analytics funnel session evidence failed')
+        return reply.code(500).send({ error: 'Analytics query failed' })
+      }
     },
   )
 

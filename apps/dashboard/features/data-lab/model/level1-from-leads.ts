@@ -2,6 +2,7 @@ import {
   type DataExportDashboardData,
   type DataExportLeadRow,
 } from "@/features/data-export/model/data-export"
+import { mapLeadBehaviorSummary } from "@/features/data-export/model/behavior-summary"
 import {
   computeLevel1StatsFromLeads,
   emptyLevel1Stats,
@@ -26,7 +27,6 @@ import type { DashboardUtmFilter } from "@/features/dashboard/model/utm-attribut
 import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
 
 const LEVEL1_PAGE_SIZE = 50
-/** Bounded so the fallback cannot exhaust the analytics rate limit. */
 const LEVEL1_MAX_PAGES = 40
 const LEVEL1_FETCH_CONCURRENCY = 4
 
@@ -84,42 +84,7 @@ export function mapDataExportLeadRow(
     })(),
     fields,
     fraud: mapLeadFraud(raw.fraud),
-    behavior: mapLeadBehavior(raw.behavior),
-  }
-}
-
-function nonNegativeInt(value: unknown): number {
-  const n = Number(value ?? 0)
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
-}
-
-function nullableNumber(value: unknown): number | null {
-  if (value == null || value === "") return null
-  const n = Number(value)
-  return Number.isFinite(n) ? n : null
-}
-
-function mapLeadBehavior(raw: unknown): DataExportLeadRow["behavior"] {
-  if (!raw || typeof raw !== "object") return null
-  const row = raw as Record<string, unknown>
-  return {
-    reason: String(row.reason ?? ""),
-    observedAt: String(row.observedAt ?? ""),
-    visibleMs: nonNegativeInt(row.visibleMs),
-    activeMs: nonNegativeInt(row.activeMs),
-    focusCount: nonNegativeInt(row.focusCount),
-    inputCount: nonNegativeInt(row.inputCount),
-    changeCount: nonNegativeInt(row.changeCount),
-    pasteCount: nonNegativeInt(row.pasteCount),
-    autofillHints: nonNegativeInt(row.autofillHints),
-    pointerCount: nonNegativeInt(row.pointerCount),
-    touchCount: nonNegativeInt(row.touchCount),
-    keyboardCount: nonNegativeInt(row.keyboardCount),
-    trustedEventCount: nonNegativeInt(row.trustedEventCount),
-    untrustedEventCount: nonNegativeInt(row.untrustedEventCount),
-    formStartAt: nullableNumber(row.formStartAt),
-    formSubmitAt: nullableNumber(row.formSubmitAt),
-    sdkInitMs: nullableNumber(row.sdkInitMs),
+    behavior: mapLeadBehaviorSummary(raw.behavior),
   }
 }
 

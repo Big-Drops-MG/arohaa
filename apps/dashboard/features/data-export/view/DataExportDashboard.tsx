@@ -22,7 +22,8 @@ import {
 } from "@/features/data-export/model/lead-field-columns"
 import { LeadInteractionLogDialog } from "@/features/data-export/view/LeadInteractionLogDialog"
 import { LeadRiskBadge } from "@/features/data-export/view/LeadRiskBadge"
-import { LeadBehaviorBadge } from "@/features/data-export/view/LeadBehaviorBadge"
+import { buildBehaviorTitle } from "@/features/data-export/view/LeadBehaviorBadge"
+import { SessionEvidenceDialog } from "@/features/warehouse/view/SessionEvidenceDialog"
 import type { LeadFraudAssessment } from "@/features/data-export/model/interaction-log"
 import {
   overviewAnalyticCardHeaderClassName,
@@ -193,6 +194,9 @@ export function DataExportDashboard({
     email: string
     fraud: LeadFraudAssessment | null
   } | null>(null)
+  const [evidenceSessionId, setEvidenceSessionId] = useState<string | null>(
+    null
+  )
   const returningOnly = leadFilter === "returning"
 
   const pageSize = dashboardData.limit || DATA_EXPORT_PAGE_SIZE
@@ -387,7 +391,7 @@ export function DataExportDashboard({
     )
   }
 
-  const colCount = (returningOnly ? 17 : 16) + fieldColumns.length
+  const colCount = (returningOnly ? 16 : 15) + fieldColumns.length
   const projectLabel = dashboardData.brandName.trim() || "Project"
 
   return (
@@ -432,7 +436,7 @@ export function DataExportDashboard({
                   <th className={thClassName}>#</th>
                   <th className={thClassName}>When</th>
                   <th className={thClassName}>Trust score</th>
-                  <th className={thClassName}>Behavior</th>
+                  <th className={thClassName}>Session</th>
                   <th className={thClassName}>First Name</th>
                   <th className={thClassName}>Last Name</th>
                   <th className={thClassName}>Email</th>
@@ -458,7 +462,6 @@ export function DataExportDashboard({
                     )
                   )}
                   <th className={thClassName}>Fingerprint</th>
-                  <th className={thClassName}>Session</th>
                 </tr>
               </thead>
               <tbody>
@@ -493,7 +496,20 @@ export function DataExportDashboard({
                         <LeadRiskBadge fraud={lead.fraud} />
                       </td>
                       <td className={tdClassName}>
-                        <LeadBehaviorBadge behavior={lead.behavior} />
+                        <Button
+                          type="button"
+                          variant="link"
+                          size="sm"
+                          className="h-auto px-0 font-mono text-xs font-medium text-sky-700"
+                          title={
+                            lead.behavior
+                              ? buildBehaviorTitle(lead.behavior)
+                              : "Open session evidence"
+                          }
+                          onClick={() => setEvidenceSessionId(lead.sessionId)}
+                        >
+                          {lead.sessionId.slice(0, 8)}
+                        </Button>
                       </td>
                       <td className={tdClassName}>
                         {cellValue(lead.fields.first_name)}
@@ -610,14 +626,6 @@ export function DataExportDashboard({
                       >
                         {cellValue(lead.macId)}
                       </td>
-                      <td
-                        className={cn(
-                          tdClassName,
-                          "font-mono text-xs text-muted-foreground"
-                        )}
-                      >
-                        {lead.sessionId.slice(0, 8)}
-                      </td>
                     </tr>
                   ))
                 )}
@@ -675,6 +683,15 @@ export function DataExportDashboard({
         lastName={logLead?.lastName}
         email={logLead?.email}
         fraud={logLead?.fraud}
+      />
+      <SessionEvidenceDialog
+        open={evidenceSessionId != null}
+        onOpenChange={(open) => {
+          if (!open) setEvidenceSessionId(null)
+        }}
+        workspaceId=""
+        sessionId={evidenceSessionId ?? ""}
+        endpoint={`/api/landing-pages/${encodeURIComponent(projectId)}/data-export/session-evidence`}
       />
     </div>
   )

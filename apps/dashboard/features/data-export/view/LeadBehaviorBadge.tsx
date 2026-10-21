@@ -40,25 +40,69 @@ function toneClass(b: LeadBehaviorSummary): string {
   return "bg-sky-50 text-sky-800"
 }
 
-export function buildBehaviorTitle(b: LeadBehaviorSummary): string {
+export function behaviorDetailRows(
+  b: LeadBehaviorSummary
+): Array<{ label: string; value: string }> {
   const fill = formToSubmitMs(b)
-  return [
-    `Visible ${formatBehaviorDuration(b.visibleMs)} · Active ${formatBehaviorDuration(b.activeMs)}`,
+  const rows: Array<{ label: string; value: string } | null> = [
+    { label: "Visible time", value: formatBehaviorDuration(b.visibleMs) },
+    { label: "Active time", value: formatBehaviorDuration(b.activeMs) },
     fill != null
-      ? `Form start to submit: ${formatBehaviorDuration(fill)}`
+      ? { label: "Form start to submit", value: formatBehaviorDuration(fill) }
       : null,
-    `Input: ${humanInputMode(b)}`,
-    `Keystrokes ${b.keyboardCount} · Pointer ${b.pointerCount} · Touch ${b.touchCount}`,
-    `Fields focused ${b.focusCount} · Inputs ${b.inputCount} · Changes ${b.changeCount}`,
-    `Paste ${b.pasteCount} · Autofill hints ${b.autofillHints}`,
-    `Trusted events ${b.trustedEventCount} · Untrusted ${b.untrustedEventCount}`,
+    { label: "Input mode", value: humanInputMode(b) },
+    {
+      label: "Keystrokes / pointer / touch",
+      value: `${b.keyboardCount} / ${b.pointerCount} / ${b.touchCount}`,
+    },
+    {
+      label: "Fields focused / inputs / changes",
+      value: `${b.focusCount} / ${b.inputCount} / ${b.changeCount}`,
+    },
+    {
+      label: "Paste / autofill hints",
+      value: `${b.pasteCount} / ${b.autofillHints}`,
+    },
+    {
+      label: "Trusted / untrusted events",
+      value: `${b.trustedEventCount} / ${b.untrustedEventCount}`,
+    },
     b.sdkInitMs != null
-      ? `SDK ready after ${formatBehaviorDuration(b.sdkInitMs)}`
+      ? { label: "SDK ready after", value: formatBehaviorDuration(b.sdkInitMs) }
       : null,
-    b.reason ? `Captured on: ${b.reason}` : null,
+    b.reason ? { label: "Captured on", value: b.reason } : null,
+    b.observedAt ? { label: "Observed at", value: b.observedAt } : null,
   ]
-    .filter((line): line is string => Boolean(line))
+  return rows.filter((r): r is { label: string; value: string } => r != null)
+}
+
+export function buildBehaviorTitle(b: LeadBehaviorSummary): string {
+  return behaviorDetailRows(b)
+    .map((r) => `${r.label}: ${r.value}`)
     .join("\n")
+}
+
+export function LeadBehaviorDetails({
+  behavior,
+}: {
+  behavior: LeadBehaviorSummary | null | undefined
+}) {
+  if (!behavior) {
+    return <p className="text-xs text-muted-foreground">Not received</p>
+  }
+  return (
+    <div className="space-y-2">
+      <LeadBehaviorBadge behavior={behavior} />
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
+        {behaviorDetailRows(behavior).map((row) => (
+          <div key={row.label} className="contents">
+            <dt className="text-muted-foreground">{row.label}</dt>
+            <dd className="text-foreground tabular-nums">{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
 }
 
 export function LeadBehaviorBadge({
