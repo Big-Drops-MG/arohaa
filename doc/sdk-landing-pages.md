@@ -16,6 +16,35 @@ The browser SDK:
 
 The API validates payloads strictly; use sensible event names and JSON-serializable props.
 
+## SDK rollout inventory (fraud-detection upgrade)
+
+Landing pages load Arohaa in one of three modes. An SDK deploy only upgrades pages that actually load the updated bundle; old clients keep working with reduced detection coverage (missing `sdk_version` / capabilities), not elevated suspicion.
+
+| Mode               | How it loads                                                                                      | Upgrade path                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Centrally hosted   | `https://cdn.arohaa.net/sdk.js` (dashboard snippet + CDN rewrite from `packages/sdk`)             | Redeploy CDN / push `main` updates floating `sdk.js` consumers |
+| Version-pinned     | `https://cdn.arohaa.net/sdk.v{major}.js` (documented; uncommon)                                   | Change the pinned URL when ready for a major bump              |
+| Embedded / bundled | Dashboard `public/` copy of `sdk.js`, or monorepo LP beacon via `packages/lp-core` `arohaa-track` | App deploy required; beacon path reports reduced capabilities  |
+
+Every event from SDK **1.1.0+** includes:
+
+- `sdk_version` — semver from the built bundle
+- `sdk_capabilities` — CSV of enabled detectors (`fi`, `session_token`, `seq`, `browser_obs`, `page_integrity` when armed)
+- `seq` — per-session monotonic sequence
+- `session_token` — short-lived server-issued token (when `/v1/session-token` succeeds)
+
+### Event traceability metadata (not fraud evidence)
+
+| Field      | Meaning                                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `event_id` | Stable identity of the logical event. **Never changes** across offline retries. Idempotency and content-conflict checks use this id. |
+| `batch_id` | Identifies the outbound flush that first constructed the payload (single-event sends still get a batch id).                          |
+| `retry_id` | Identifies a delivery attempt. A new value is assigned when the outbox retries; older clients may omit it.                           |
+
+Missing `batch_id` / `retry_id` on older clients **must not** increase risk or create integrity findings. They exist only for operational tracing.
+
+Warehouse **Detection health** surfaces adoption and missing telemetry without affecting visitors or lead delivery.
+
 ## Build artifacts (monorepo)
 
 From the repo root:

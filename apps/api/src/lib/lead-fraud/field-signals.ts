@@ -46,6 +46,9 @@ export type LeadSessionSignalRow = {
   firstObservedUtmSource?: string
   utmS1?: string
   utmCampaign?: string
+  firstObservedUtmCampaign?: string
+  utmId?: string
+  clickIdReuseCount24h?: number | null
   networkClass?: string
   networkAsn?: number
   networkOrg?: string
@@ -307,6 +310,17 @@ export function buildFeaturesFromLeadSessionSignal(
     velocityWindowKnown: true,
     submitUtmSource,
     firstObservedUtmSource,
+    submitUtmCampaign: (row.utmCampaign || '').trim(),
+    firstObservedUtmCampaign: (
+      row.firstObservedUtmCampaign ||
+      row.utmCampaign ||
+      ''
+    ).trim(),
+    clickId: (row.utmId || '').trim(),
+    clickIdReuseCount24h:
+      typeof row.clickIdReuseCount24h === 'number'
+        ? row.clickIdReuseCount24h
+        : null,
     attributionConfidence: resolveAttribution(
       submitUtmSource,
       firstObservedUtmSource,

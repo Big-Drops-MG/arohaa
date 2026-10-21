@@ -53,6 +53,13 @@ CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_EVENTS_TABLE} (
     properties String,
     trace_id String DEFAULT '',
     created_at DateTime64(3, 'UTC') DEFAULT now64(3, 'UTC'),
+    sdk_version LowCardinality(String) DEFAULT '',
+    sdk_capabilities String DEFAULT '',
+    event_seq UInt32 DEFAULT 0,
+    batch_id String DEFAULT '',
+    retry_id String DEFAULT '',
+    client_ts Int64 DEFAULT 0,
+    integrity_json String DEFAULT '',
     event_date_et Date MATERIALIZED ${chToDate('created_at')}
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(event_date_et)
@@ -243,6 +250,34 @@ export async function ensureEventsTable(): Promise<void> {
       `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS event_date_et Date MATERIALIZED ${chToDate('created_at')}`,
   })
   await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS sdk_version LowCardinality(String) DEFAULT ''`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS sdk_capabilities String DEFAULT ''`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS event_seq UInt32 DEFAULT 0`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS batch_id String DEFAULT ''`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS retry_id String DEFAULT ''`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS client_ts Int64 DEFAULT 0`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS integrity_json String DEFAULT ''`,
+  })
+  await ch.command({
     query: `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} MODIFY TTL toDateTime(created_at) + toIntervalDay(180)`,
   })
 
@@ -287,10 +322,59 @@ export async function ensureEventsTable(): Promise<void> {
   await ensureLeadContactKeysTable(ch)
   await ensureLeadReviewTable(ch)
   await ensureLeadReviewAuditTable(ch)
+  await ensureVisitRiskTable(ch)
+  await ensurePageIntegrityBaselineTable(ch)
   await rebuildDailyMetricsIfNeeded(ch)
 }
 
 export const LEAD_RISK_TABLE = 'lead_risk'
+export const VISIT_RISK_TABLE = 'visit_risk'
+
+async function ensureVisitRiskTable(ch: ClickHouseClient): Promise<void> {
+  await ch.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS ${VISIT_RISK_TABLE} (
+          workspace_id UUID,
+          session_id String,
+          tenant_workspace_id String DEFAULT '',
+          suspicious UInt8 DEFAULT 0,
+          coverage LowCardinality(String) DEFAULT '',
+          findings_json String DEFAULT '',
+          reasons Array(String),
+          shadow_score Nullable(UInt8),
+          shadow_delta UInt16 DEFAULT 0,
+          model_version LowCardinality(String),
+          scored_at DateTime64(3, 'UTC') DEFAULT now64(3, 'UTC'),
+          sdk_version LowCardinality(String) DEFAULT '',
+          sdk_capabilities String DEFAULT ''
+      ) ENGINE = ReplacingMergeTree(scored_at)
+      ORDER BY (workspace_id, session_id)
+    `,
+  })
+}
+
+export const PAGE_INTEGRITY_BASELINE_TABLE = 'page_integrity_baseline'
+
+async function ensurePageIntegrityBaselineTable(
+  ch: ClickHouseClient,
+): Promise<void> {
+  await ch.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS ${PAGE_INTEGRITY_BASELINE_TABLE} (
+          landing_page_id String,
+          version UInt32,
+          status LowCardinality(String) DEFAULT 'draft',
+          script_origins Array(String),
+          form_actions Array(String),
+          iframe_origins Array(String),
+          approved_at DateTime64(3, 'UTC') DEFAULT toDateTime64(0, 3, 'UTC'),
+          approved_by String DEFAULT '',
+          updated_at DateTime64(3, 'UTC') DEFAULT now64(3, 'UTC')
+      ) ENGINE = ReplacingMergeTree(updated_at)
+      ORDER BY (landing_page_id, version)
+    `,
+  })
+}
 
 async function ensureLeadRiskTable(ch: ClickHouseClient): Promise<void> {
   await ch.command({

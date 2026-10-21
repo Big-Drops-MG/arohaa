@@ -140,6 +140,30 @@ export type WarehouseSummary = {
   fraudReasons: WarehouseNameCount[]
   fraudLeads: WarehouseFraudLead[]
   shortcutLeads: WarehouseShortcutLead[]
+  detectionHealth?: {
+    sdkVersions: WarehouseNameCount[]
+    eventsWithSdkVersion: number
+    eventsMissingSdkVersion: number
+    eventsMissingCapabilities: number
+    integrityFindingEvents: number
+    network: {
+      source: string
+      publicationDate: string
+      expired: boolean
+      parseStatus: string
+      proxyListStatus: string
+      hostingAsnStatus: string
+      asnDbStatus: string
+    }
+    coverageLimits: string[]
+  }
+  trafficQuality?: {
+    visits: number
+    nonSubmitVisits: number
+    suspiciousVisits: number
+    assessedVisits: number
+    assessmentStatus: "ok" | "unavailable" | "not_assessed"
+  }
   generatedAt: string
 }
 
@@ -204,6 +228,30 @@ function emptySummary(generatedAt: string): WarehouseSummary {
     fraudReasons: [],
     fraudLeads: [],
     shortcutLeads: [],
+    detectionHealth: {
+      sdkVersions: [],
+      eventsWithSdkVersion: 0,
+      eventsMissingSdkVersion: 0,
+      eventsMissingCapabilities: 0,
+      integrityFindingEvents: 0,
+      network: {
+        source: "",
+        publicationDate: "",
+        expired: true,
+        parseStatus: "missing",
+        proxyListStatus: "missing",
+        hostingAsnStatus: "missing",
+        asnDbStatus: "missing",
+      },
+      coverageLimits: [],
+    },
+    trafficQuality: {
+      visits: 0,
+      nonSubmitVisits: 0,
+      suspiciousVisits: 0,
+      assessedVisits: 0,
+      assessmentStatus: "not_assessed",
+    },
     generatedAt,
   }
 }

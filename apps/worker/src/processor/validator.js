@@ -2,6 +2,7 @@
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EVENT_NAME_RE = /^[a-z0-9_]+$/;
+// Keep in sync with apps/api/src/lib/allowed-event-names.ts
 const ALLOWED_EVENT_NAMES = new Set([
   'sdk_connected',
   'page_view',
@@ -23,6 +24,8 @@ const ALLOWED_EVENT_NAMES = new Set([
   'form_success',
   'form_field_focus',
   'form_field_abandon',
+  'form_shortcut_copy',
+  'form_shortcut_paste',
   'form_step_view',
   'form_step_complete',
   'zip_start',
@@ -31,6 +34,9 @@ const ALLOWED_EVENT_NAMES = new Set([
   'heartbeat',
   'web_vitals',
   '_fi',
+  'page_integrity',
+  'behavior_summary',
+  'telemetry_integrity',
 ]);
 const MIN_CREATED_AT = Date.parse('2020-01-01T00:00:00.000Z');
 const MAX_FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;

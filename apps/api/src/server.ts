@@ -9,6 +9,7 @@ import rateLimit from '@fastify/rate-limit'
 import fastifyRedis from '@fastify/redis'
 import { redis } from './services/redis.service.js'
 import { ingestRoutes } from './routes/ingest.js'
+import { sessionTokenRoutes } from './routes/session-token.js'
 import { sdkConfigRoutes } from './routes/sdk-config.js'
 import { healthRoutes } from './routes/health.js'
 import { warehouseRoutes } from './routes/warehouse.js'
@@ -41,6 +42,10 @@ import {
   startGscSeoSyncScheduler,
   stopGscSeoSyncScheduler,
 } from './services/gsc-seo-sync-scheduler.js'
+import {
+  startVisitAssessQueueProcessor,
+  stopVisitAssessQueueProcessor,
+} from './lib/lead-fraud/visit-assess-queue.js'
 
 const TRACE_ID_HEADER = 'x-trace-id'
 const TRACE_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/
@@ -248,6 +253,7 @@ server.setErrorHandler((error: FastifyError, request, reply) => {
 })
 
 server.register(ingestRoutes)
+server.register(sessionTokenRoutes)
 server.register(utmRoutes)
 server.register(sdkConfigRoutes)
 server.register(analyticsRoutes)
@@ -279,6 +285,7 @@ const start = async () => {
     startQueueDepthMonitor({ logger: server.log })
     startConnectionWarmer({ logger: server.log })
     startGscSeoSyncScheduler({ logger: server.log })
+    startVisitAssessQueueProcessor()
 
     const port = Number(process.env.PORT) || 3001
     await server.listen({ port, host: '0.0.0.0' })
@@ -297,6 +304,7 @@ const shutdown = async (signal: string) => {
     await stopQueueDepthMonitor()
     stopConnectionWarmer()
     stopGscSeoSyncScheduler()
+    stopVisitAssessQueueProcessor()
     await server.close()
     await closeClickHouseClient()
     await Sentry.flush(2000).catch(() => undefined)

@@ -5,6 +5,31 @@ export {
   labelFromTrustScore,
 } from './constants.js'
 export { scoreLeadFraud } from './score.js'
+export { scoreVisit, VISIT_MODEL_VERSION } from './visit-score.js'
+export { createFinding, parseAssessmentFindings } from './findings.js'
+export { findingsFromBrowserObservations } from './browser-consistency.js'
+export { findingsFromPageIntegrity } from './page-integrity.js'
+export { upsertVisitRisk, ensureVisitRiskTable } from './visit-persist.js'
+export {
+  ensureSessionVisitAssessment,
+  ensureVisitAssessments,
+  isSessionEventPersisted,
+  VisitAssessNotReadyError,
+} from './visit-service.js'
+export {
+  enqueueVisitAssessment,
+  pushAnalyticsEventWithVisitAssess,
+  startVisitAssessQueueProcessor,
+  stopVisitAssessQueueProcessor,
+  VISIT_ASSESS_STREAM,
+  VISIT_ASSESS_DEAD,
+  VISIT_ASSESS_DELAYED,
+} from './visit-assess-queue.js'
+export {
+  loadApprovedPageIntegrityBaseline,
+  upsertPageIntegrityBaseline,
+} from './page-integrity-baseline.js'
+export { loadSessionShadowEvidence } from './session-evidence-load.js'
 export { parseFiBehavior, looksLikeNonsenseName, emptyFeatures } from './features.js'
 export {
   buildFeaturesFromLeadSessionSignal,
@@ -39,7 +64,12 @@ export { compareEnteredZipToIpGeo } from './location-compare.js'
 export {
   behaviorEvidenceToken,
   composeEvidenceToken,
+  networkEvidenceToken,
 } from './evidence-token.js'
+export {
+  isMissingLocationSentinel,
+  resolveStoredGeoPoint,
+} from './geo-sentinel.js'
 export type {
   LeadFraudAssessment,
   LeadFraudFeatures,

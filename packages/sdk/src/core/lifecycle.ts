@@ -7,6 +7,8 @@ import { setupFormTracking } from "../events/form-tracking"
 import { setupServiceClickTracking } from "../events/service-click.events"
 import { setupOpaqueFieldCapture } from "../events/opaque-field-capture"
 import { setupFiCapture } from "../events/fi-capture"
+import { setupBehaviorSummary } from "../events/behavior-summary"
+import { setupPageIntegrityObservations } from "../events/page-integrity"
 import { setupRedirectLinkStamping } from "./redirect-stamp"
 import { startHeartbeat } from "../events/heartbeat"
 import { monitorWebVitals } from "../performance/vitals"
@@ -16,13 +18,19 @@ import { flushBatcher, setupBatcherUnloadHooks } from "./batcher"
 import { getConfig } from "../model/config"
 import { getRemoteRedirectHostname } from "./sdk-config"
 import { setupWebPushLifecycleBridge } from "./web-push-lifecycle"
+import { collectBrowserObservations } from "../utils/browser-obs"
+import { getSdkInitStartedAt } from "./init-timing"
 
 export function setupLifecycle(): void {
   setupOutboxDrainTriggers(attemptSend)
   void drainOutbox(attemptSend)
   setupBatcherUnloadHooks()
 
-  track("sdk_connected", {})
+  const initMs = getSdkInitStartedAt()
+  track("sdk_connected", {
+    browser_obs: collectBrowserObservations(),
+    sdk_init_ms: initMs > 0 ? Date.now() - initMs : null,
+  })
   trackPageView()
   setupSpaPageViews()
   setupPageLeaveTracking()
@@ -42,8 +50,10 @@ export function setupLifecycle(): void {
   if (getConfig().formtype !== "none") {
     setupFiCapture()
   }
+  setupBehaviorSummary()
   setupServiceClickTracking()
   setupRedirectLinkStamping()
+  setupPageIntegrityObservations()
 
   if (onRedirectHost) {
     setupOpaqueFieldCapture()

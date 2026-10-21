@@ -12,6 +12,7 @@ import {
 import {
   claimIngestEventId,
   isValidEventId,
+  markIngestEventQueued,
   releaseIngestEventId,
 } from '../lib/ingest-idempotency.js'
 import { ALLOWED_INGEST_EVENT_NAMES } from '../lib/allowed-event-names.js'
@@ -19,6 +20,15 @@ import { buildShortcutRowsFromFi } from '../lib/fi-shortcut-derive.js'
 import { ingestBodyToEventRow, type IngestEventBody } from '../types/event.js'
 import { buildEnrichmentContext } from '../utils/enrichment.js'
 import { normalizeReferrer } from '../utils/referrer.js'
+import {
+  claimContentFingerprint,
+  evaluateEventIntegrity,
+  markContentQueued,
+  newConflictEventId,
+  releaseContentClaim,
+  serializeIntegrityFindings,
+} from '../lib/event-integrity.js'
+import type { VisitAssessEnqueueInput } from '../lib/lead-fraud/visit-assess-queue.js'
 
 const eventBodyProperties = {
   event_id: {
@@ -66,8 +76,14 @@ const eventBodyProperties = {
   props: {
     type: 'object',
     additionalProperties: true,
-    maxProperties: 20,
+    maxProperties: 30,
   },
+  sdk_version: { type: 'string', maxLength: 32 },
+  sdk_capabilities: { type: 'string', maxLength: 256 },
+  seq: { type: 'integer', minimum: 0, maximum: 1_000_000 },
+  session_token: { type: 'string', maxLength: 2048 },
+  batch_id: { type: 'string', maxLength: 64 },
+  retry_id: { type: 'string', maxLength: 64 },
 } as const
 
 const ingestSchema = {
@@ -148,19 +164,55 @@ async function ingestOne(
   }
 
   const claim = await claimIngestEventId(eventId)
-  if (claim === 'duplicate') {
+  if (claim.status === 'unavailable') {
+    return { status: 'unavailable', error: 'IDEMPOTENCY_UNAVAILABLE' }
+  }
+  const eventOwnerToken =
+    claim.status === 'claimed' ? claim.ownerToken : null
+
+  const integrity = await evaluateEventIntegrity(body, {
+    duplicateClaim: claim.status === 'duplicate',
+  })
+  if (integrity.suppressCanonicalInsert && !integrity.contentConflict) {
+    if (integrity.contentOwnerToken) {
+      await releaseContentClaim(
+        eventId,
+        integrity.contentOwnerToken,
+        integrity.contentFingerprint,
+      )
+    }
     request.log.info(
       {
         trace_id: traceId,
         event: 'ingest_duplicate',
         event_id: eventId,
       },
-      'ingest duplicate event_id dropped',
+      'ingest duplicate event_id dropped (already queued)',
     )
     return { status: 'dropped' }
   }
-  if (claim === 'unavailable') {
-    return { status: 'unavailable', error: 'IDEMPOTENCY_UNAVAILABLE' }
+  if (integrity.contentConflict) {
+    request.log.warn(
+      {
+        trace_id: traceId,
+        event: 'ingest_event_id_conflict',
+        event_id: eventId,
+      },
+      'ingest event_id reused with conflicting content — canonical preserved',
+    )
+  }
+
+  const releaseOwnedClaims = async () => {
+    if (eventOwnerToken) {
+      await releaseIngestEventId(eventId, eventOwnerToken)
+    }
+    if (integrity.contentOwnerToken) {
+      await releaseContentClaim(
+        eventId,
+        integrity.contentOwnerToken,
+        integrity.contentFingerprint,
+      )
+    }
   }
 
   const originHeader = request.headers.origin
@@ -176,7 +228,7 @@ async function ingestOne(
   })
 
   if (landing.outcome === 'reject') {
-    await releaseIngestEventId(eventId)
+    await releaseOwnedClaims()
     request.log.warn(
       {
         trace_id: traceId,
@@ -203,12 +255,14 @@ async function ingestOne(
       wid: body.workspace_id ?? body.wid,
     })
   } else {
+    await releaseOwnedClaims()
     return { status: 'rejected', error: 'UNKNOWN_LANDING_PAGE', code: 400 }
   }
 
   const landingPageId = landing.landingPageId
   const blockedSets = await getBlockedUtmSets(landingPageId)
   if (isUtmBlocked(blockedSets, body.utm_source, body.utm_s1)) {
+    await releaseOwnedClaims()
     request.log.info(
       {
         trace_id: traceId,
@@ -225,7 +279,7 @@ async function ingestOne(
   const ctx = buildEnrichmentContext(request)
   const referrerSource = normalizeReferrer(body.referrer)
 
-  const row = ingestBodyToEventRow(body, traceId, {
+  const enrichment = {
     referrerSource,
     browser: ctx.ua.browser,
     os: ctx.ua.os,
@@ -248,35 +302,147 @@ async function ingestOne(
     networkOrg: ctx.network.org,
     networkEvidenceSource: ctx.network.evidenceSource,
     networkEvidenceAsOf: ctx.network.evidenceAsOf,
-  })
+    integrityJson: serializeIntegrityFindings(integrity.findings),
+  }
+
+  const shouldAssessVisit =
+    ev === 'page_leave' ||
+    ev === 'behavior_summary' ||
+    ev === 'form_success' ||
+    ev === 'form_submit' ||
+    ev === 'sdk_connected' ||
+    ev === 'telemetry_integrity'
+
+  const visitAssessFor = (
+    triggerEventId: string,
+    reason: string,
+  ): VisitAssessEnqueueInput | undefined => {
+    if (!shouldAssessVisit) return undefined
+    return {
+      workspaceId: landingPageId,
+      sessionId: body.sid,
+      tenantWorkspaceId: landing.tenantWorkspaceId,
+      reason,
+      triggerEventId,
+    }
+  }
 
   try {
-    await pushEvent(row)
-    for (const derived of buildShortcutRowsFromFi(row)) {
-      const derivedId = derived.event_id.trim()
-      if (!derivedId || !isValidEventId(derivedId)) continue
-      const derivedClaim = await claimIngestEventId(derivedId)
-      if (derivedClaim !== 'claimed') continue
-      try {
-        await pushEvent(derived)
-      } catch (err) {
-        await releaseIngestEventId(derivedId)
-        request.log.error(
-          {
-            err,
-            trace_id: traceId,
-            event: 'ingest_fi_shortcut_derive_failed',
-            parent_event_id: eventId,
-            derived_event_id: derivedId,
-          },
-          'derived form_shortcut push failed',
+    if (integrity.contentConflict && integrity.conflictRecordProps) {
+      const conflictId = newConflictEventId(eventId)
+      const conflictBody: IngestEventBody = {
+        ...body,
+        event_id: conflictId,
+        ev: 'telemetry_integrity',
+        event_name: 'telemetry_integrity',
+        props: integrity.conflictRecordProps,
+        seq: undefined,
+      }
+      const conflictClaim = await claimIngestEventId(conflictId)
+      if (conflictClaim.status === 'claimed') {
+        const conflictContent = await claimContentFingerprint(
+          conflictId,
+          integrity.contentFingerprint,
         )
+        if (
+          conflictContent.status !== 'new' &&
+          conflictContent.status !== 'reclaimed'
+        ) {
+          await releaseIngestEventId(conflictId, conflictClaim.ownerToken)
+          throw new Error('conflict content claim unavailable')
+        }
+        const conflictRow = ingestBodyToEventRow(
+          conflictBody,
+          traceId,
+          enrichment,
+        )
+        try {
+          await pushEvent(conflictRow, {
+            visitAssess: {
+              workspaceId: landingPageId,
+              sessionId: body.sid,
+              tenantWorkspaceId: landing.tenantWorkspaceId,
+              reason: 'telemetry_integrity',
+              triggerEventId: conflictId,
+            },
+          })
+          await markIngestEventQueued(conflictId, conflictClaim.ownerToken)
+          await markContentQueued(
+            conflictId,
+            integrity.contentFingerprint,
+            conflictContent.ownerToken,
+          )
+        } catch (err) {
+          await releaseIngestEventId(conflictId, conflictClaim.ownerToken)
+          await releaseContentClaim(
+            conflictId,
+            conflictContent.ownerToken,
+            integrity.contentFingerprint,
+          )
+          throw err
+        }
+      }
+    } else if (!integrity.suppressCanonicalInsert) {
+      if (!eventOwnerToken || !integrity.contentOwnerToken) {
+        await releaseOwnedClaims()
+        return { status: 'unavailable', error: 'OWNERSHIP_UNAVAILABLE' }
+      }
+      const row = ingestBodyToEventRow(body, traceId, enrichment)
+      await pushEvent(row, {
+        visitAssess: visitAssessFor(eventId, ev),
+      })
+      await markIngestEventQueued(eventId, eventOwnerToken)
+      await markContentQueued(
+        eventId,
+        integrity.contentFingerprint,
+        integrity.contentOwnerToken,
+      )
+      for (const derived of buildShortcutRowsFromFi(row)) {
+        const derivedId = derived.event_id.trim()
+        if (!derivedId || !isValidEventId(derivedId)) continue
+        const derivedClaim = await claimIngestEventId(derivedId)
+        if (derivedClaim.status !== 'claimed') continue
+        const derivedContent = await claimContentFingerprint(
+          derivedId,
+          integrity.contentFingerprint,
+        )
+        if (
+          derivedContent.status !== 'new' &&
+          derivedContent.status !== 'reclaimed'
+        ) {
+          await releaseIngestEventId(derivedId, derivedClaim.ownerToken)
+          continue
+        }
+        try {
+          await pushEvent(derived)
+          await markIngestEventQueued(derivedId, derivedClaim.ownerToken)
+          await markContentQueued(
+            derivedId,
+            integrity.contentFingerprint,
+            derivedContent.ownerToken,
+          )
+        } catch (err) {
+          await releaseIngestEventId(derivedId, derivedClaim.ownerToken)
+          await releaseContentClaim(
+            derivedId,
+            derivedContent.ownerToken,
+            integrity.contentFingerprint,
+          )
+          request.log.error(
+            {
+              err,
+              trace_id: traceId,
+              event: 'ingest_fi_shortcut_derive_failed',
+              parent_event_id: eventId,
+              derived_event_id: derivedId,
+            },
+            'derived form_shortcut push failed',
+          )
+        }
       }
     }
   } catch (err) {
-    if (eventId) {
-      await releaseIngestEventId(eventId)
-    }
+    await releaseOwnedClaims()
     request.log.error(
       { err, trace_id: traceId, event: 'ingest_redis_unavailable' },
       'ingest durable write failed',

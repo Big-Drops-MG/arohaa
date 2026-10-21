@@ -354,7 +354,7 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
         <>
           <section className="space-y-3">
             <h2 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              Traffic
+              Traffic quality
             </h2>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <StatCard
@@ -368,16 +368,30 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
                 hint={`${formatCount(summary.totals.visitors)} unique visitors`}
               />
               <StatCard
+                label="Visits (7d)"
+                value={formatCount(
+                  summary.trafficQuality?.visits ?? summary.totals.sessions
+                )}
+                hint={
+                  summary.trafficQuality?.assessmentStatus === "unavailable"
+                    ? `${formatCount(summary.trafficQuality?.nonSubmitVisits ?? 0)} non-submit · visit assessment unavailable`
+                    : summary.trafficQuality?.assessmentStatus ===
+                        "not_assessed"
+                      ? `${formatCount(summary.trafficQuality?.nonSubmitVisits ?? 0)} non-submit · visits not assessed yet`
+                      : `${formatCount(summary.trafficQuality?.nonSubmitVisits ?? 0)} non-submit · ${formatCount(summary.trafficQuality?.suspiciousVisits ?? 0)} suspicious of ${formatCount(summary.trafficQuality?.assessedVisits ?? 0)} assessed`
+                }
+              />
+              <StatCard
                 label="Form submits"
                 value={formatCount(summary.totals.formSubmits)}
                 hint={`${formatCount(summary.totals.formStarts)} starts · ${formatCount(summary.totals.formSuccesses)} successes`}
               />
-              <StatCard
-                label="Click events"
-                value={formatCount(summary.clicks.total)}
-                hint={`${formatCount(summary.volume.last7d)} events over 7 days`}
-              />
             </div>
+            <p className="text-xs text-muted-foreground">
+              Suspicious-visit indicators are administrator evidence only.
+              Landing-page arrivals alone do not establish that paid ad clicks
+              were fraudulent.
+            </p>
           </section>
 
           <WarehouseLeadReviewSection
@@ -494,12 +508,79 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
           </Panel>
 
           <Panel
-            title="Partner scorecards"
-            description="Confirmed call outcomes by partner — denominators and unresolved included. Context only."
+            title="Partner quality"
+            description="Confirmed call outcomes by partner — denominators and unresolved included. Context only; partner history does not independently mark a lead suspicious."
             icon={ShieldAlert}
           >
             <PartnerScorecardsPanel />
           </Panel>
+
+          <section className="space-y-3">
+            <h2 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+              Detection health
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <StatCard
+                label="Events with SDK version (7d)"
+                value={formatCount(
+                  summary.detectionHealth?.eventsWithSdkVersion ?? 0
+                )}
+                hint={`${formatCount(summary.detectionHealth?.eventsMissingSdkVersion ?? 0)} missing version (reduced coverage)`}
+              />
+              <StatCard
+                label="Missing capabilities"
+                value={formatCount(
+                  summary.detectionHealth?.eventsMissingCapabilities ?? 0
+                )}
+                hint="Old or reduced clients omit capability flags"
+              />
+              <StatCard
+                label="Integrity findings (7d)"
+                value={formatCount(
+                  summary.detectionHealth?.integrityFindingEvents ?? 0
+                )}
+                hint="Shadow findings only — never gates lead delivery"
+              />
+              <StatCard
+                label="Network lists"
+                value={
+                  summary.detectionHealth?.network.expired
+                    ? "Stale"
+                    : summary.detectionHealth?.network.parseStatus || "—"
+                }
+                hint={`Proxy: ${summary.detectionHealth?.network.proxyListStatus ?? "—"} · ASN: ${summary.detectionHealth?.network.asnDbStatus ?? "—"} · as of ${summary.detectionHealth?.network.publicationDate || "unknown"}`}
+              />
+            </div>
+            {(summary.detectionHealth?.sdkVersions?.length ?? 0) > 0 ? (
+              <Panel
+                title="SDK adoption"
+                description="Event volume by sdk_version (7 days). Missing version means reduced detection coverage, not suspicion."
+                icon={Activity}
+              >
+                <ScrollBody>
+                  <CountTable
+                    rows={summary.detectionHealth?.sdkVersions ?? []}
+                    nameHeader="SDK version"
+                    empty="No SDK version data yet."
+                  />
+                </ScrollBody>
+              </Panel>
+            ) : null}
+            {(summary.detectionHealth?.coverageLimits?.length ?? 0) > 0 ? (
+              <div className="rounded-xl border border-border px-5 py-4 text-sm text-muted-foreground">
+                <p className="font-medium text-foreground">
+                  Explicit coverage limits
+                </p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {(summary.detectionHealth?.coverageLimits ?? []).map(
+                    (limit) => (
+                      <li key={limit}>{limit}</li>
+                    )
+                  )}
+                </ul>
+              </div>
+            ) : null}
+          </section>
 
           <Panel
             title="All events"
