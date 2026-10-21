@@ -3,15 +3,20 @@ import { getAttributionData, safePageUrl } from "../utils/url"
 import { getConfig } from "./config"
 import { getIdentity } from "./identity"
 import { generateUUID } from "../utils/uuid"
+import { getSdkCapabilitiesCsv, SDK_VERSION } from "./capabilities"
+import { nextSessionSeq } from "./session-seq"
+import { getSessionTokenSync } from "./session-token"
 
 export function buildEvent(
   event: string,
   props: Record<string, unknown> = {},
   metric?: MetricExtension,
+  meta?: { batchId?: string; retryId?: string },
 ): EventPayload {
   const config = getConfig()
   const identity = getIdentity()
   const attribution = getAttributionData()
+  const sessionToken = getSessionTokenSync()
 
   return {
     event_id: generateUUID(),
@@ -37,5 +42,11 @@ export function buildEvent(
     metric_name: metric?.metric_name ?? "",
     metric_value: metric?.metric_value ?? 0,
     props,
+    sdk_version: SDK_VERSION,
+    sdk_capabilities: getSdkCapabilitiesCsv(),
+    seq: nextSessionSeq(),
+    ...(sessionToken ? { session_token: sessionToken } : {}),
+    batch_id: meta?.batchId || generateUUID(),
+    ...(meta?.retryId ? { retry_id: meta.retryId } : {}),
   }
 }

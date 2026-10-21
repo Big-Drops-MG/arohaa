@@ -18,6 +18,7 @@ import {
   looksLikeRandomEmailLocal,
 } from './disposable-domains.js'
 import { looksLikeNonsenseName } from './features.js'
+import { createFinding } from './findings.js'
 import type {
   LeadFraudAssessment,
   LeadFraudFeatures,
@@ -44,9 +45,30 @@ function pushFinding(
   findings: LeadFraudFinding[],
   code: string,
   detail: string,
+  opts?: {
+    severity?: 'info' | 'low' | 'medium' | 'high'
+    availability?: 'available' | 'unavailable' | 'unsupported'
+    contributesToScore?: boolean
+    shadow?: boolean
+    evidenceRefs?: string[]
+  },
 ): void {
   if (findings.some((f) => f.code === code && f.detail === detail)) return
-  findings.push({ code, detail })
+  findings.push(
+    createFinding({
+      code,
+      detail,
+      subject: 'submission',
+      severity: opts?.severity ?? 'info',
+      source: 'lead_fraud_score',
+      availability: opts?.availability ?? 'available',
+      contributesToScore: opts?.contributesToScore ?? true,
+      modelVersion: LEAD_FRAUD_MODEL_VERSION,
+      shadow: opts?.shadow,
+      evidenceRefs: opts?.evidenceRefs,
+      observedAt: 'score:lead',
+    }),
+  )
 }
 
 function resolveCoverage(features: LeadFraudFeatures): LeadSignalCoverage {
@@ -76,7 +98,9 @@ function resolveCoverage(features: LeadFraudFeatures): LeadSignalCoverage {
 export function scoreLeadFraud(
   features: LeadFraudFeatures,
 ): LeadFraudAssessment {
-  const findings: LeadFraudFinding[] = []
+  const findings: LeadFraudFinding[] = [
+    ...(features.shadowExtraFindings ?? []),
+  ]
   const coverage = resolveCoverage(features)
 
   if (!features.fiBehaviorKnown) {
@@ -84,6 +108,7 @@ export function scoreLeadFraud(
       findings,
       'session_signals_unknown',
       'Form interaction log was not available for this session',
+      { availability: 'unavailable', contributesToScore: false, severity: 'info' },
     )
   }
   if (!features.velocityWindowKnown) {
@@ -91,6 +116,7 @@ export function scoreLeadFraud(
       findings,
       'velocity_window_unknown',
       'Rolling velocity could not be assessed with a real time window',
+      { availability: 'unavailable', contributesToScore: false, severity: 'info' },
     )
   }
 
@@ -112,6 +138,9 @@ export function scoreLeadFraud(
   }
 
   if (coverage === 'insufficient') {
+    const shadowDelta = findings
+      .filter((f) => f.shadow && typeof f.proposedScoreDelta === 'number')
+      .reduce((sum, f) => sum + (f.proposedScoreDelta ?? 0), 0)
     return {
       score: null,
       scoreAvailable: false,
@@ -121,6 +150,8 @@ export function scoreLeadFraud(
       findings,
       reasons: findings.map((f) => f.detail),
       modelVersion: LEAD_FRAUD_MODEL_VERSION,
+      shadowScore: null,
+      shadowProposedDelta: shadowDelta,
     }
   }
 
@@ -488,13 +519,60 @@ export function scoreLeadFraud(
     )
   }
 
-  if (
-    features.attributionConfidence === 'first_differs_from_submit'
-  ) {
+  if (features.attributionConfidence === 'first_differs_from_submit') {
     pushFinding(
       findings,
       'attribution_first_touch_differs',
-      `First-observed partner (${features.firstObservedUtmSource || 'unknown'}) differs from submit-time (${features.submitUtmSource || 'unknown'}); earlier UTM is not automatically trustworthy`,
+      `First-observed partner (${features.firstObservedUtmSource || 'unknown'}) differs from submit-time (${features.submitUtmSource || 'unknown'}). Shared campaign links and legitimate redirects can change attribution; review signal only, not proof of fraud.`,
+      {
+        severity: 'low',
+        contributesToScore: false,
+        shadow: true,
+        evidenceRefs: [
+          features.firstObservedUtmSource,
+          features.submitUtmSource,
+        ].filter(Boolean),
+      },
+    )
+  }
+
+  if (
+    features.firstObservedUtmCampaign &&
+    features.submitUtmCampaign &&
+    features.firstObservedUtmCampaign.toLowerCase() !==
+      features.submitUtmCampaign.toLowerCase()
+  ) {
+    pushFinding(
+      findings,
+      'attribution_campaign_conflict',
+      `Campaign changed during the session (${features.firstObservedUtmCampaign} → ${features.submitUtmCampaign}). Can be a legitimate mid-funnel change; review signal only.`,
+      {
+        severity: 'low',
+        contributesToScore: false,
+        shadow: true,
+        evidenceRefs: [
+          features.firstObservedUtmCampaign,
+          features.submitUtmCampaign,
+        ],
+      },
+    )
+  }
+
+  if (
+    features.clickId &&
+    features.clickIdReuseCount24h != null &&
+    features.clickIdReuseCount24h >= 5
+  ) {
+    pushFinding(
+      findings,
+      'click_id_reused_across_sessions',
+      `Click/attribution id reused across ${features.clickIdReuseCount24h} sessions in 24h. Shared links can be legitimate; review signal only.`,
+      {
+        severity: 'medium',
+        contributesToScore: false,
+        shadow: true,
+        evidenceRefs: [features.clickId],
+      },
     )
   }
 
@@ -542,6 +620,14 @@ export function scoreLeadFraud(
   ]
   const label = labelFromTrustScore(trustScore)
 
+  const shadowDelta = findings
+    .filter((f) => f.shadow && typeof f.proposedScoreDelta === 'number')
+    .reduce((sum, f) => sum + (f.proposedScoreDelta ?? 0), 0)
+  const shadowScore = Math.max(
+    0,
+    Math.min(100, trustScore - Math.round(shadowDelta)),
+  )
+
   return {
     score: trustScore,
     scoreAvailable: true,
@@ -551,5 +637,7 @@ export function scoreLeadFraud(
     findings,
     reasons,
     modelVersion: LEAD_FRAUD_MODEL_VERSION,
+    shadowScore,
+    shadowProposedDelta: shadowDelta,
   }
 }

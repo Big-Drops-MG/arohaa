@@ -14,6 +14,8 @@ describe("allowed SDK event names", () => {
     expect(isAllowedSdkEventName("form_shortcut_paste")).toBe(true)
     expect(isAllowedSdkEventName("heatmap_click")).toBe(true)
     expect(isAllowedSdkEventName("_fi")).toBe(true)
+    expect(isAllowedSdkEventName("page_integrity")).toBe(true)
+    expect(isAllowedSdkEventName("behavior_summary")).toBe(true)
   })
 
   it("rejects arbitrary custom names", () => {

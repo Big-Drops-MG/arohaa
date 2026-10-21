@@ -32,6 +32,12 @@ export interface IngestEventBody {
   metric_name?: string
   metric_value?: number
   props?: Record<string, unknown>
+  sdk_version?: string
+  sdk_capabilities?: string
+  seq?: number
+  session_token?: string
+  batch_id?: string
+  retry_id?: string
 }
 
 export interface EventRow {
@@ -83,6 +89,13 @@ export interface EventRow {
   properties: string
   trace_id: string
   created_at: string
+  sdk_version: string
+  sdk_capabilities: string
+  event_seq: number
+  batch_id: string
+  retry_id: string
+  client_ts: number
+  integrity_json: string
 }
 
 export interface EnrichmentForRow {
@@ -108,6 +121,7 @@ export interface EnrichmentForRow {
   networkOrg?: string
   networkEvidenceSource?: string
   networkEvidenceAsOf?: string
+  integrityJson?: string
 }
 
 function zipFromValue(raw: unknown): string {
@@ -171,6 +185,16 @@ export function ingestBodyToEventRow(
   const propsWithFormtype = formtype
     ? { ...sealed, formtype }
     : sealed
+  const clientTs =
+    typeof body.ts === 'number' && Number.isFinite(body.ts) ? body.ts : 0
+  const eventSeq =
+    typeof body.seq === 'number' && Number.isFinite(body.seq) && body.seq >= 0
+      ? Math.floor(body.seq)
+      : 0
+  const integrityExtra =
+    enrichment.integrityJson && enrichment.integrityJson !== '{}'
+      ? enrichment.integrityJson
+      : '{}'
 
   return {
     event_id: body.event_id?.trim() ?? '',
@@ -231,6 +255,13 @@ export function ingestBodyToEventRow(
     properties: serializeProps(propsWithFormtype),
     trace_id: traceId,
     created_at: toClickHouseDateTime64(new Date()),
+    sdk_version: (body.sdk_version ?? '').trim().slice(0, 32),
+    sdk_capabilities: (body.sdk_capabilities ?? '').trim().slice(0, 256),
+    event_seq: eventSeq,
+    batch_id: (body.batch_id ?? '').trim().slice(0, 64),
+    retry_id: (body.retry_id ?? '').trim().slice(0, 64),
+    client_ts: clientTs,
+    integrity_json: integrityExtra,
   }
 }
 

@@ -35,6 +35,12 @@ export interface EventPayload {
   metric_name: string
   metric_value: number
   props: Record<string, unknown>
+  sdk_version?: string
+  sdk_capabilities?: string
+  seq?: number
+  session_token?: string
+  batch_id?: string
+  retry_id?: string
 }
 
 export interface MetricExtension {

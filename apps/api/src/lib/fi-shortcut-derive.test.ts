@@ -68,6 +68,13 @@ function baseRow(overrides: Partial<EventRow> = {}): EventRow {
     properties: '{}',
     trace_id: 't1',
     created_at: '2026-01-01 00:00:00.000',
+    sdk_version: '',
+    sdk_capabilities: '',
+    event_seq: 0,
+    batch_id: '',
+    retry_id: '',
+    client_ts: 0,
+    integrity_json: '',
     ...overrides,
   }
 }

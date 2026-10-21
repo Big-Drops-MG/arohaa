@@ -1,5 +1,13 @@
 import type { EventPayload } from "../types"
 import { getItem, setItem } from "../services/storage.service"
+import { generateUUID } from "../utils/uuid"
+
+export function withRetryAttempt(payload: EventPayload): EventPayload {
+  return {
+    ...payload,
+    retry_id: generateUUID(),
+  }
+}
 
 const OUTBOX_KEY = "arohaa_outbox"
 const MAX_OUTBOX_SIZE = 50
@@ -62,7 +70,11 @@ export function saveToOutbox(payload: EventPayload): void {
     ? current.slice(current.length - MAX_OUTBOX_SIZE + 1)
     : current
 
-  next.push({ payload, savedAt: now, attempts: 0 })
+  next.push({
+    payload: withRetryAttempt(payload),
+    savedAt: now,
+    attempts: 0,
+  })
   writeOutbox(next)
 }
 
@@ -102,9 +114,10 @@ export async function drainOutbox(send: SendFunction): Promise<{
 
     for (const entry of batch) {
       attempted++
+      const attemptPayload = withRetryAttempt(entry.payload)
       let outcome: SendOutcome
       try {
-        outcome = await send(entry.payload)
+        outcome = await send(attemptPayload)
       } catch {
         outcome = "transient"
       }
@@ -123,7 +136,15 @@ export async function drainOutbox(send: SendFunction): Promise<{
         dropped++
         continue
       }
-      requeued.push({ ...entry, attempts: nextAttempts })
+      requeued.push({
+        ...entry,
+        payload: {
+          ...entry.payload,
+          event_id: entry.payload.event_id,
+          batch_id: entry.payload.batch_id,
+        },
+        attempts: nextAttempts,
+      })
     }
 
     queue = requeued.concat(tail)

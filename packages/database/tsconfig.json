@@ -1,6 +1,7 @@
 {
   "extends": "@workspace/typescript-config/base.json",
   "compilerOptions": {
+    "rootDir": ".",
     "outDir": "dist",
     "noEmit": true,
     "module": "ESNext",

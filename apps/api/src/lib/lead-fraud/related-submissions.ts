@@ -119,11 +119,18 @@ export async function getRelatedSubmissions(input: {
     try {
       const riskRes = await ch.query({
         format: 'JSON',
-        query_params: { sids: sessionIds },
+        query_params: {
+          tenant: match.tenantWorkspaceId,
+          sids: sessionIds,
+        },
         query: `
           SELECT session_id, score, coverage
           FROM ${LEAD_RISK_TABLE} FINAL
           WHERE session_id IN {sids:Array(String)}
+            AND (
+              tenant_workspace_id = {tenant:String}
+              OR tenant_workspace_id = ''
+            )
         `,
       })
       for (const row of (

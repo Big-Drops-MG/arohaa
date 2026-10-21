@@ -1,7 +1,9 @@
 {
   "asOf": "2026-03-20",
   "source": "arohaa-seed-hosting-asns",
+  "expiresAfterDays": 90,
   "proxyCidrs": [],
+  "proxyCidrsV6": [],
   "hostingAsns": [
     16509, 14618, 15169, 396982, 8075, 13335, 14061, 20473, 16276, 24940, 63949,
     62567, 31898, 45102, 36351, 209242

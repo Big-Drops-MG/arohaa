@@ -5,6 +5,18 @@ export type LeadSignalCoverage = 'sufficient' | 'partial' | 'insufficient'
 export type LeadFraudFinding = {
   code: string
   detail: string
+  subject?: 'visit' | 'submission' | 'related_group' | 'partner'
+  severity?: 'info' | 'low' | 'medium' | 'high'
+  evidenceRefs?: string[]
+  observedAt?: string
+  evidenceCutoff?: string
+  source?: string
+  availability?: 'available' | 'unavailable' | 'unsupported'
+  contributesToScore?: boolean
+  modelVersion?: string
+  featureVersion?: string
+  shadow?: boolean
+  proposedScoreDelta?: number
 }
 
 export type LeadFraudAssessment = {
@@ -16,6 +28,8 @@ export type LeadFraudAssessment = {
   findings: LeadFraudFinding[]
   reasons: string[]
   modelVersion: string
+  shadowScore?: number | null
+  shadowProposedDelta?: number
 }
 
 export type TrustedFormEvidenceTier = 'missing' | 'url_present' | 'verified'
@@ -79,8 +93,15 @@ export type LeadFraudFeatures = {
   evidenceToken: string
   submitUtmSource: string
   firstObservedUtmSource: string
+  submitUtmCampaign: string
+  firstObservedUtmCampaign: string
+  clickId: string
+  clickIdReuseCount24h: number | null
   attributionConfidence: AttributionConfidence
   evidenceCutoffMs: number
+  shadowExtraFindings: LeadFraudFinding[]
+  sdkVersion: string
+  sdkCapabilities: string
 }
 
 export type LeadRiskRow = {

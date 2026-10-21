@@ -3,11 +3,19 @@ import type { FastifyBaseLogger } from 'fastify'
 import { redis } from './redis.service.js'
 import type { EventRow } from '../types/event.js'
 import {
+  pushAnalyticsEventWithVisitAssess,
+  type VisitAssessEnqueueInput,
+} from '../lib/lead-fraud/visit-assess-queue.js'
+import {
   eventRowToHeatmapRow,
   isHeatmapOnlyEvent,
   shouldRouteToHeatmapQueue,
   type HeatmapRow,
 } from './heatmap-route.js'
+
+export type PushEventOptions = {
+  visitAssess?: VisitAssessEnqueueInput
+}
 
 const FLUSH_INTERVAL_MS = 2000
 const FLUSH_SIZE_THRESHOLD = 1000
@@ -51,13 +59,23 @@ async function awaitDlq(entry: Record<string, unknown>): Promise<void> {
   await redis.lpush('failed_events', JSON.stringify(entry))
 }
 
-function pushPriorityEvent(row: EventRow): Promise<void> {
-  return redis.lpush('analytics_queue', JSON.stringify(row)).then(() => {
-    logger?.info(
-      { event_name: row.event_name, traceId: row.trace_id },
-      'priority event pushed to redis',
-    )
-  })
+async function pushPriorityEvent(
+  row: EventRow,
+  visitAssess?: VisitAssessEnqueueInput,
+): Promise<void> {
+  const payload = JSON.stringify(row)
+  if (visitAssess) {
+    await pushAnalyticsEventWithVisitAssess({
+      eventPayload: payload,
+      assess: visitAssess,
+    })
+  } else {
+    await redis.lpush('analytics_queue', payload)
+  }
+  logger?.info(
+    { event_name: row.event_name, traceId: row.trace_id },
+    'priority event pushed to redis',
+  )
 }
 
 async function pushHeatmapDurable(row: EventRow): Promise<void> {
@@ -95,11 +113,25 @@ async function pushHeatmapDurable(row: EventRow): Promise<void> {
   await redis.lpush('heatmap_queue', JSON.stringify(mapped))
 }
 
-async function pushAnalyticsDurable(row: EventRow): Promise<void> {
-  await redis.lpush('analytics_queue', JSON.stringify(row))
+async function pushAnalyticsDurable(
+  row: EventRow,
+  visitAssess?: VisitAssessEnqueueInput,
+): Promise<void> {
+  const payload = JSON.stringify(row)
+  if (visitAssess) {
+    await pushAnalyticsEventWithVisitAssess({
+      eventPayload: payload,
+      assess: visitAssess,
+    })
+    return
+  }
+  await redis.lpush('analytics_queue', payload)
 }
 
-export async function pushEvent(row: EventRow): Promise<void> {
+export async function pushEvent(
+  row: EventRow,
+  options?: PushEventOptions,
+): Promise<void> {
   try {
     if (shouldRouteToHeatmapQueue(row)) {
       await pushHeatmapDurable(row)
@@ -107,11 +139,11 @@ export async function pushEvent(row: EventRow): Promise<void> {
     }
 
     if (PRIORITY_EVENT_NAMES.has(row.event_name)) {
-      await pushPriorityEvent(row)
+      await pushPriorityEvent(row, options?.visitAssess)
       return
     }
 
-    await pushAnalyticsDurable(row)
+    await pushAnalyticsDurable(row, options?.visitAssess)
   } catch (err) {
     logger?.error(
       { err, event_name: row.event_name, traceId: row.trace_id },

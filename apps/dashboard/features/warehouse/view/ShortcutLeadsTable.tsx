@@ -5,6 +5,7 @@ import { cn } from "@workspace/ui/lib/utils"
 import { LeadRiskBadge } from "@/features/data-export/view/LeadRiskBadge"
 import { LeadInteractionLogDialog } from "@/features/data-export/view/LeadInteractionLogDialog"
 import { RelatedSubmissionsDialog } from "@/features/warehouse/view/RelatedSubmissionsDialog"
+import { SessionEvidenceDialog } from "@/features/warehouse/view/SessionEvidenceDialog"
 import {
   discoverVisibleLeadFieldKeys,
   humanizeLeadFieldLabel,
@@ -101,6 +102,8 @@ export function ShortcutLeadsTable({
   const [relatedLead, setRelatedLead] = useState<WarehouseShortcutLead | null>(
     null
   )
+  const [evidenceLead, setEvidenceLead] =
+    useState<WarehouseShortcutLead | null>(null)
   const [showPii, setShowPii] = useState(false)
 
   if (rows.length === 0) {
@@ -136,6 +139,7 @@ export function ShortcutLeadsTable({
             <th className={leadThClassName}>Event Log</th>
             <th className={leadThClassName}>Trust score</th>
             <th className={leadThClassName}>Related</th>
+            <th className={leadThClassName}>Evidence</th>
             <th className={leadThClassName}>First Name</th>
             <th className={leadThClassName}>Last Name</th>
             <th className={leadThClassName}>Email</th>
@@ -206,6 +210,15 @@ export function ShortcutLeadsTable({
                 >
                   Related
                   {lead.relatedCount > 0 ? `: ${lead.relatedCount}` : ""}
+                </button>
+              </td>
+              <td className={leadTdClassName}>
+                <button
+                  type="button"
+                  className="text-sm font-medium text-sky-700 underline-offset-2 hover:underline"
+                  onClick={() => setEvidenceLead(lead)}
+                >
+                  Session
                 </button>
               </td>
               <td className={leadTdClassName}>
@@ -379,6 +392,15 @@ export function ShortcutLeadsTable({
         workspaceId={relatedLead?.workspaceId ?? ""}
         sessionId={relatedLead?.sessionId ?? ""}
         tenantWorkspaceId={relatedLead?.tenantWorkspaceId}
+      />
+      <SessionEvidenceDialog
+        open={evidenceLead != null}
+        onOpenChange={(open) => {
+          if (!open) setEvidenceLead(null)
+        }}
+        workspaceId={evidenceLead?.workspaceId ?? ""}
+        sessionId={evidenceLead?.sessionId ?? ""}
+        tenantWorkspaceId={evidenceLead?.tenantWorkspaceId}
       />
     </>
   )

@@ -39,17 +39,25 @@ function installArohaaStub(): ArohaaApi {
 }
 
 async function bootstrap(): Promise<void> {
-  const existing = window.arohaa as ArohaaQueueStub | undefined
-  const queued = (existing?.q ?? []).map((args) => Array.from(args))
-  const arohaa = installArohaaStub()
+  try {
+    const existing = window.arohaa as ArohaaQueueStub | undefined
+    const queued = (existing?.q ?? []).map((args) => Array.from(args))
+    const arohaa = installArohaaStub()
 
-  await initSDK()
+    await initSDK()
 
-  if (!isSDKInitializedState()) return
+    if (!isSDKInitializedState()) return
 
-  drainQueuedEvents(arohaa, queued)
+    drainQueuedEvents(arohaa, queued)
+  } catch (err) {
+    console.error("[arohaa] bootstrap failed; form flow continues", err)
+  }
 }
 
 if (typeof window !== "undefined") {
-  void bootstrap()
+  void bootstrap().catch((err) => {
+    console.error("[arohaa] bootstrap rejected; form flow continues", err)
+  })
 }
+
+export { bootstrap }

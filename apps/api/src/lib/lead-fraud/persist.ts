@@ -27,11 +27,31 @@ function parseFindings(raw: unknown): LeadFraudFinding[] {
   const out: LeadFraudFinding[] = []
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue
-    const row = item as { code?: unknown; detail?: unknown }
+    const row = item as LeadFraudFinding
     const code = typeof row.code === 'string' ? row.code.trim() : ''
     const detail = typeof row.detail === 'string' ? row.detail.trim() : ''
     if (!code || !detail) continue
-    out.push({ code, detail })
+    out.push({
+      code,
+      detail,
+      ...(typeof row.subject === 'string' ? { subject: row.subject } : {}),
+      ...(typeof row.severity === 'string' ? { severity: row.severity } : {}),
+      ...(typeof row.source === 'string' ? { source: row.source } : {}),
+      ...(typeof row.availability === 'string'
+        ? { availability: row.availability }
+        : {}),
+      ...(typeof row.observedAt === 'string' ? { observedAt: row.observedAt } : {}),
+      ...(typeof row.contributesToScore === 'boolean'
+        ? { contributesToScore: row.contributesToScore }
+        : {}),
+      ...(typeof row.modelVersion === 'string'
+        ? { modelVersion: row.modelVersion }
+        : {}),
+      ...(typeof row.shadow === 'boolean' ? { shadow: row.shadow } : {}),
+      ...(typeof row.proposedScoreDelta === 'number'
+        ? { proposedScoreDelta: row.proposedScoreDelta }
+        : {}),
+    })
   }
   return out
 }

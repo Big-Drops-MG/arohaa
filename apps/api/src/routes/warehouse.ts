@@ -13,8 +13,14 @@ import { getRelatedSubmissions } from '../lib/lead-fraud/related-submissions.js'
 import {
   getWarehouseCalibrationSnapshot,
   getWarehousePartnerScorecards,
+  getWarehouseSessionEvidence,
   getWarehouseSummary,
 } from '../services/warehouse.service.js'
+import {
+  loadApprovedPageIntegrityBaseline,
+  upsertPageIntegrityBaseline,
+} from '../lib/lead-fraud/page-integrity-baseline.js'
+import { ensureSessionVisitAssessment } from '../lib/lead-fraud/visit-service.js'
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -199,6 +205,110 @@ export async function warehouseRoutes(server: FastifyInstance) {
     } catch (err) {
       request.log.error({ err }, 'warehouse calibration failed')
       return reply.code(503).send({ error: 'Calibration unavailable' })
+    }
+  })
+
+  server.get('/v1/warehouse/session-evidence', async (request, reply) => {
+    if (!verifyInternalApiRequest(request.headers['x-arohaa-internal'])) {
+      return reply.code(401).send({ error: 'Unauthorized' })
+    }
+    const q = request.query as Record<string, unknown>
+    const workspaceId = asString(q.workspaceId || q.landingPageId)
+    const sessionId = asString(q.sessionId)
+    const tenantWorkspaceId = asString(q.tenantWorkspaceId)
+    if (!workspaceId || !sessionId) {
+      return reply
+        .code(400)
+        .send({ error: 'workspaceId and sessionId required' })
+    }
+    try {
+      const evidence = await getWarehouseSessionEvidence({
+        workspaceId,
+        sessionId,
+        tenantWorkspaceId: tenantWorkspaceId || undefined,
+      })
+      if (!evidence) {
+        return reply.code(404).send({ error: 'Session evidence not found' })
+      }
+      return evidence
+    } catch (err) {
+      request.log.error({ err }, 'warehouse session evidence failed')
+      return reply.code(503).send({ error: 'Session evidence unavailable' })
+    }
+  })
+
+  server.post('/v1/warehouse/visit-assess', async (request, reply) => {
+    if (!verifyInternalApiRequest(request.headers['x-arohaa-internal'])) {
+      return reply.code(401).send({ error: 'Unauthorized' })
+    }
+    const body = (request.body ?? {}) as Record<string, unknown>
+    const workspaceId = asString(body.workspaceId || body.landingPageId)
+    const sessionId = asString(body.sessionId)
+    const tenantWorkspaceId = asString(body.tenantWorkspaceId)
+    if (!workspaceId || !sessionId) {
+      return reply
+        .code(400)
+        .send({ error: 'workspaceId and sessionId required' })
+    }
+    try {
+      const assessment = await ensureSessionVisitAssessment({
+        workspaceId,
+        sessionId,
+        tenantWorkspaceId: tenantWorkspaceId || undefined,
+      })
+      return { assessment }
+    } catch (err) {
+      request.log.error({ err }, 'warehouse visit assess failed')
+      return reply.code(503).send({ error: 'Visit assessment unavailable' })
+    }
+  })
+
+  server.get('/v1/warehouse/page-integrity-baseline', async (request, reply) => {
+    if (!verifyInternalApiRequest(request.headers['x-arohaa-internal'])) {
+      return reply.code(401).send({ error: 'Unauthorized' })
+    }
+    const q = request.query as Record<string, unknown>
+    const landingPageId = asString(q.landingPageId || q.workspaceId)
+    if (!landingPageId) {
+      return reply.code(400).send({ error: 'landingPageId required' })
+    }
+    try {
+      return await loadApprovedPageIntegrityBaseline(landingPageId)
+    } catch (err) {
+      request.log.error({ err }, 'page integrity baseline fetch failed')
+      return reply.code(503).send({ error: 'Baseline unavailable' })
+    }
+  })
+
+  server.put('/v1/warehouse/page-integrity-baseline', async (request, reply) => {
+    if (!verifyInternalApiRequest(request.headers['x-arohaa-internal'])) {
+      return reply.code(401).send({ error: 'Unauthorized' })
+    }
+    const body = (request.body ?? {}) as Record<string, unknown>
+    const landingPageId = asString(body.landingPageId || body.workspaceId)
+    const statusRaw = asString(body.status) || 'draft'
+    const status =
+      statusRaw === 'approved' || statusRaw === 'retired' ? statusRaw : 'draft'
+    if (!landingPageId) {
+      return reply.code(400).send({ error: 'landingPageId required' })
+    }
+    const asStringArray = (value: unknown): string[] =>
+      Array.isArray(value)
+        ? value.map((v) => String(v).trim()).filter(Boolean)
+        : []
+    try {
+      const baseline = await upsertPageIntegrityBaseline({
+        landingPageId,
+        status,
+        scriptOrigins: asStringArray(body.scriptOrigins),
+        formActions: asStringArray(body.formActions),
+        iframeOrigins: asStringArray(body.iframeOrigins),
+        approvedBy: asString(body.approvedBy) || undefined,
+      })
+      return { baseline }
+    } catch (err) {
+      request.log.error({ err }, 'page integrity baseline upsert failed')
+      return reply.code(503).send({ error: 'Baseline update failed' })
     }
   })
 }

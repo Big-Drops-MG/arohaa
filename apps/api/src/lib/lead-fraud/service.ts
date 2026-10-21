@@ -23,8 +23,13 @@ import {
 import {
   behaviorEvidenceToken,
   composeEvidenceToken,
+  networkEvidenceToken,
+  shadowEvidenceToken,
 } from './evidence-token.js'
+import { getNetworkDatasetFingerprint } from '../../services/network-classify.service.js'
+import { loadSessionShadowEvidence } from './session-evidence-load.js'
 import { scoreLeadFraud } from './score.js'
+import { enqueueVisitAssessment } from './visit-assess-queue.js'
 import type {
   LeadFraudAssessment,
   LeadFraudFeatures,
@@ -234,9 +239,22 @@ export async function ensureSessionsFraudAssessments(input: {
             contactBySid.set(sid, contact)
             const fi =
               fiMap.get(sessionKey(signal.workspaceId, sid)) ?? null
+            const shadowEvidence = await loadSessionShadowEvidence({
+              workspaceId: signal.workspaceId,
+              sessionId: sid,
+            }).catch(() => null)
             const evidenceToken = composeEvidenceToken(
               contact.evidenceToken,
               behaviorEvidenceToken(fi),
+              shadowEvidenceToken(
+                [
+                  ...(shadowEvidence?.integrityFindings ?? []),
+                  ...(shadowEvidence?.browserFindings ?? []),
+                  ...(shadowEvidence?.pageIntegrityFindings ?? []),
+                ],
+                shadowEvidence?.stableEvidenceKey,
+              ),
+              networkEvidenceToken(getNetworkDatasetFingerprint()),
             )
             if (
               !input.forceRescore &&
@@ -302,12 +320,40 @@ export async function ensureSessionsFraudAssessments(input: {
                 matchLimit: 100,
               }))
             Object.assign(features, contact)
+            const shadowEvidence = await loadSessionShadowEvidence({
+              workspaceId: row.workspaceId,
+              sessionId: sid,
+            }).catch(() => null)
+            features.shadowExtraFindings = [
+              ...(shadowEvidence?.integrityFindings ?? []),
+              ...(shadowEvidence?.browserFindings ?? []),
+              ...(shadowEvidence?.pageIntegrityFindings ?? []),
+            ]
+            features.sdkVersion = shadowEvidence?.sdkVersion ?? ''
+            features.sdkCapabilities = shadowEvidence?.sdkCapabilities ?? ''
+            if (
+              shadowEvidence?.evidenceCutoffMs &&
+              shadowEvidence.evidenceCutoffMs > features.evidenceCutoffMs
+            ) {
+              features.evidenceCutoffMs = shadowEvidence.evidenceCutoffMs
+            }
             features.evidenceToken = composeEvidenceToken(
               contact.evidenceToken,
               behaviorEvidenceToken(fi),
+              shadowEvidenceToken(
+                features.shadowExtraFindings,
+                shadowEvidence?.stableEvidenceKey,
+              ),
+              networkEvidenceToken(getNetworkDatasetFingerprint()),
             )
             const assessment = scoreLeadFraud(features)
             out.set(sid, assessment)
+            void enqueueVisitAssessment({
+              workspaceId: row.workspaceId,
+              sessionId: sid,
+              tenantWorkspaceId: row.tenantWorkspaceId,
+              reason: 'lead_score',
+            })
             toPersist.push({
               workspaceId: input.workspaceId,
               sessionId: sid,
@@ -415,6 +461,8 @@ export async function classifyLeadSessionRows(
           features.evidenceToken = composeEvidenceToken(
             contact.evidenceToken,
             behaviorEvidenceToken(fi),
+            '',
+            networkEvidenceToken(getNetworkDatasetFingerprint()),
           )
           if (features.email.includes('@')) emailByKey.set(key, features.email)
           const assessment = scoreLeadFraud(features)

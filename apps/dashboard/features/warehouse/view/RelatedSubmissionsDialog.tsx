@@ -51,7 +51,6 @@ function displayS1(raw: string | undefined): string {
     /* keep raw */
   }
 
-  // Partner s1 values are often base64 of ids like "B_40821".
   if (/^[A-Za-z0-9+/]+={0,2}$/.test(current) && current.length % 4 === 0) {
     try {
       const decoded = atob(current)

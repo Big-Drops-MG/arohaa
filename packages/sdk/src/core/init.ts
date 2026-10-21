@@ -1,5 +1,6 @@
 import { initializeConfig } from "../model/config"
 import { initIdentity } from "../model/identity"
+import { startSessionTokenRefresh } from "../model/session-token"
 import { setupLifecycle } from "./lifecycle"
 import { setupFrameSizeReporter } from "./frame-size"
 import { loadSdkRemoteConfig } from "./sdk-config"
@@ -8,6 +9,7 @@ import {
   clearPreviewSiteState,
   isHeatmapPreview,
 } from "../heatmap/preview-mode"
+import { markSdkInitStarted } from "./init-timing"
 
 let isSDKInitialized = false
 
@@ -17,6 +19,7 @@ export function isSDKInitializedState(): boolean {
 
 export async function initSDK(): Promise<void> {
   if (isSDKInitialized) return
+  markSdkInitStarted()
   const isPreview = isHeatmapPreview()
   if (isPreview) clearPreviewSiteState()
 
@@ -46,5 +49,6 @@ export async function initSDK(): Promise<void> {
 
   initIdentity()
   setupLifecycle()
+  startSessionTokenRefresh()
   isSDKInitialized = true
 }

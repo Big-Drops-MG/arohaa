@@ -29,6 +29,9 @@ export const ALLOWED_SDK_EVENT_NAMES = [
   "heartbeat",
   "web_vitals",
   "_fi",
+  "page_integrity",
+  "behavior_summary",
+  "telemetry_integrity",
 ] as const
 
 export type AllowedSdkEventName = (typeof ALLOWED_SDK_EVENT_NAMES)[number]

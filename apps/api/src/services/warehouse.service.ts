@@ -194,6 +194,14 @@ export type WarehouseSummary = {
   fraudReasons: WarehouseNameCount[]
   fraudLeads: WarehouseFraudLead[]
   shortcutLeads: WarehouseShortcutLead[]
+  detectionHealth?: WarehouseDetectionHealth
+  trafficQuality?: {
+    visits: number
+    nonSubmitVisits: number
+    suspiciousVisits: number
+    assessedVisits: number
+    assessmentStatus: 'ok' | 'unavailable' | 'not_assessed'
+  }
   generatedAt: string
 }
 
@@ -208,13 +216,75 @@ export type WarehousePartnerScorecard = {
   neverRequested: number
   converted: number
   reviewedRate: number
+  suspiciousVisitRate?: number
+  visitCount?: number
+}
+
+export type WarehouseDetectionHealth = {
+  sdkVersions: WarehouseNameCount[]
+  eventsWithSdkVersion: number
+  eventsMissingSdkVersion: number
+  eventsMissingCapabilities: number
+  integrityFindingEvents: number
+  network: {
+    source: string
+    publicationDate: string
+    expired: boolean
+    parseStatus: string
+    proxyListStatus: string
+    hostingAsnStatus: string
+    asnDbStatus: string
+  }
+  coverageLimits: string[]
+}
+
+export type WarehouseTrafficQualityRow = {
+  workspaceId: string
+  sessionId: string
+  partner: string
+  page: string
+  sdkVersion: string
+  formSubmitted: boolean
+  suspicious: boolean
+  coverage: string
+  arrivedAt: string
+}
+
+export type WarehouseSessionEvidence = {
+  sessionId: string
+  workspaceId: string
+  sdkVersion: string
+  sdkCapabilities: string
+  timeline: Array<{ eventName: string; createdAt: string; seq: number }>
+  integrityFindings: unknown[]
+  browserObs: unknown | null
+  behaviorSummary: unknown | null
+  attribution: {
+    firstUtmSource: string
+    submitUtmSource: string
+    referrerOrigin: string
+  }
+  network: {
+    networkClass: string
+    asn: number
+    org: string
+    evidenceSource: string
+    evidenceAsOf: string
+  }
+  location: {
+    formZip: string
+    geoZip: string
+    geoCountry: string
+    geoState: string
+    geoCity: string
+  }
 }
 
 const SHORTCUT_LEADS_LIMIT = 100
 const REVIEW_LEADS_LIMIT = 100
 const FI_CLIPBOARD_SESSION_LIMIT = 4_000
 const FI_CLIPBOARD_SCAN_LIMIT = 40_000
-const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v9'
+const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v10'
 const WAREHOUSE_SUMMARY_CACHE_TTL_SEC = 90
 
 type ShortcutSessionFlag = {
@@ -261,9 +331,16 @@ function formatFingerprintId(fingerprint: string): string {
   return `${raw.slice(0, 8)}…${raw.slice(-4)}`
 }
 
-async function queryJson<T>(query: string): Promise<T[]> {
+async function queryJson<T>(
+  query: string,
+  query_params?: Record<string, unknown>,
+): Promise<T[]> {
   const ch = getClickHouseClient()
-  const res = await ch.query({ query, format: 'JSON' })
+  const res = await ch.query({
+    query,
+    format: 'JSON',
+    query_params,
+  })
   return ((await res.json()) as CHJson<T>).data ?? []
 }
 
@@ -1481,7 +1558,182 @@ function emptySummary(generatedAt: string): WarehouseSummary {
     fraudReasons: [],
     fraudLeads: [],
     shortcutLeads: [],
+    detectionHealth: emptyDetectionHealth(),
+    trafficQuality: {
+      visits: 0,
+      nonSubmitVisits: 0,
+      suspiciousVisits: 0,
+      assessedVisits: 0,
+      assessmentStatus: 'not_assessed',
+    },
     generatedAt,
+  }
+}
+
+function emptyDetectionHealth(): WarehouseDetectionHealth {
+  return {
+    sdkVersions: [],
+    eventsWithSdkVersion: 0,
+    eventsMissingSdkVersion: 0,
+    eventsMissingCapabilities: 0,
+    integrityFindingEvents: 0,
+    network: {
+      source: '',
+      publicationDate: '',
+      expired: true,
+      parseStatus: 'missing',
+      proxyListStatus: 'missing',
+      hostingAsnStatus: 'missing',
+      asnDbStatus: 'missing',
+    },
+    coverageLimits: [
+      'Upstream publisher ads stacking or hidden inventory',
+      'Spoofed publisher inventory in ad auctions',
+      'Complete cross-site cookie manipulation or redirect chains',
+      'Mobile click injection, install farms, or app-store fraud',
+      'Connected-TV impressions',
+      'Phone possession or genuine callback intent',
+    ],
+  }
+}
+
+async function loadDetectionHealth(): Promise<WarehouseDetectionHealth> {
+  const health = emptyDetectionHealth()
+  try {
+    const { getNetworkDatasetHealth } = await import(
+      './network-classify.service.js'
+    )
+    const net = getNetworkDatasetHealth()
+    health.network = {
+      source: net.source,
+      publicationDate: net.publicationDate,
+      expired: net.expired,
+      parseStatus: net.parseStatus,
+      proxyListStatus: net.proxyListStatus,
+      hostingAsnStatus: net.hostingAsnStatus,
+      asnDbStatus: net.asnDbStatus,
+    }
+  } catch {
+    /* keep defaults */
+  }
+  if (shouldSkipClickHouse()) return health
+  try {
+    const [versionRows, counts] = await Promise.all([
+      queryJson<{ sdk_version: string; c: string | number }>(`
+        SELECT if(sdk_version = '', '(missing)', sdk_version) AS sdk_version, count() AS c
+        FROM ${CLICKHOUSE_EVENTS_TABLE}
+        WHERE created_at >= now() - INTERVAL 7 DAY
+        GROUP BY sdk_version
+        ORDER BY c DESC
+        LIMIT 20
+      `),
+      queryJson<{
+        with_sdk: string | number
+        missing_sdk: string | number
+        missing_caps: string | number
+        integrity_events: string | number
+      }>(`
+        SELECT
+          countIf(sdk_version != '') AS with_sdk,
+          countIf(sdk_version = '') AS missing_sdk,
+          countIf(sdk_capabilities = '') AS missing_caps,
+          countIf(integrity_json != '' AND integrity_json != '[]') AS integrity_events
+        FROM ${CLICKHOUSE_EVENTS_TABLE}
+        WHERE created_at >= now() - INTERVAL 7 DAY
+      `),
+    ])
+    health.sdkVersions = versionRows.map((row) => ({
+      name: row.sdk_version,
+      count: n(row.c),
+    }))
+    const c0 = counts[0]
+    health.eventsWithSdkVersion = n(c0?.with_sdk)
+    health.eventsMissingSdkVersion = n(c0?.missing_sdk)
+    health.eventsMissingCapabilities = n(c0?.missing_caps)
+    health.integrityFindingEvents = n(c0?.integrity_events)
+  } catch (err) {
+    console.error('[warehouse] detection health failed', err)
+  }
+  return health
+}
+
+async function loadTrafficQualityTotals(): Promise<{
+  visits: number
+  nonSubmitVisits: number
+  suspiciousVisits: number
+  assessedVisits: number
+  assessmentStatus: 'ok' | 'unavailable' | 'not_assessed'
+}> {
+  if (shouldSkipClickHouse()) {
+    return {
+      visits: 0,
+      nonSubmitVisits: 0,
+      suspiciousVisits: 0,
+      assessedVisits: 0,
+      assessmentStatus: 'unavailable',
+    }
+  }
+  try {
+    const rows = await queryJson<{
+      visits: string | number
+      non_submit: string | number
+    }>(`
+      SELECT
+        uniqExact(session_id) AS visits,
+        uniqExactIf(
+          session_id,
+          session_id NOT IN (
+            SELECT DISTINCT session_id
+            FROM ${CLICKHOUSE_EVENTS_TABLE}
+            WHERE event_name IN ('form_submit', 'form_success', 'zip_submit')
+              AND created_at >= now() - INTERVAL 7 DAY
+          )
+        ) AS non_submit
+      FROM ${CLICKHOUSE_EVENTS_TABLE}
+      WHERE created_at >= now() - INTERVAL 7 DAY
+    `)
+
+    let suspiciousVisits = 0
+    let assessedVisits = 0
+    let assessmentStatus: 'ok' | 'unavailable' | 'not_assessed' = 'not_assessed'
+    try {
+      const { VISIT_RISK_TABLE } = await import('./clickhouse.service.js')
+      const visitRows = await queryJson<{
+        suspicious: string | number
+        assessed: string | number
+      }>(`
+        SELECT
+          countIf(suspicious = 1) AS suspicious,
+          count() AS assessed
+        FROM ${VISIT_RISK_TABLE} FINAL
+        WHERE scored_at >= now() - INTERVAL 7 DAY
+      `)
+      suspiciousVisits = n(visitRows[0]?.suspicious)
+      assessedVisits = n(visitRows[0]?.assessed)
+      assessmentStatus = assessedVisits > 0 ? 'ok' : 'not_assessed'
+    } catch (err) {
+      console.error('[warehouse] visit_risk totals unavailable', err)
+      assessmentStatus = 'unavailable'
+      suspiciousVisits = 0
+      assessedVisits = 0
+    }
+
+    return {
+      visits: n(rows[0]?.visits),
+      nonSubmitVisits: n(rows[0]?.non_submit),
+      suspiciousVisits,
+      assessedVisits,
+      assessmentStatus,
+    }
+  } catch (err) {
+    console.error('[warehouse] traffic quality failed', err)
+    return {
+      visits: 0,
+      nonSubmitVisits: 0,
+      suspiciousVisits: 0,
+      assessedVisits: 0,
+      assessmentStatus: 'unavailable',
+    }
   }
 }
 
@@ -1541,8 +1793,14 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
   const clickList = CLICK_EVENT_NAMES.map((name) => `'${name}'`).join(', ')
   const clickSet = new Set<string>(CLICK_EVENT_NAMES)
 
-  const [leadInsightsResult, inventoryResult, eventNameRows, pg] =
-    await Promise.all([
+  const [
+    leadInsightsResult,
+    inventoryResult,
+    eventNameRows,
+    pg,
+    detectionHealth,
+    trafficQuality,
+  ] = await Promise.all([
       loadWarehouseLeadInsights().catch((err) => {
         console.error('[warehouse] lead insights failed', err)
         return emptyLeadInsights()
@@ -1591,6 +1849,14 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
         landingPages: 0,
         workspaces: 0,
         users: 0,
+      })),
+      loadDetectionHealth().catch(() => emptyDetectionHealth()),
+      loadTrafficQualityTotals().catch(() => ({
+        visits: 0,
+        nonSubmitVisits: 0,
+        suspiciousVisits: 0,
+        assessedVisits: 0,
+        assessmentStatus: 'unavailable' as const,
       })),
     ])
 
@@ -1649,6 +1915,8 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
     fraudReasons: leadInsights.fraudReasons,
     fraudLeads: leadInsights.fraudLeads,
     shortcutLeads: leadInsights.shortcutLeads,
+    detectionHealth,
+    trafficQuality,
     generatedAt,
   }
 
@@ -1658,6 +1926,158 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
     WAREHOUSE_SUMMARY_CACHE_TTL_SEC,
   )
   return summary
+}
+
+export async function getWarehouseSessionEvidence(input: {
+  workspaceId: string
+  sessionId: string
+  tenantWorkspaceId?: string
+}): Promise<WarehouseSessionEvidence | null> {
+  if (shouldSkipClickHouse()) return null
+  const workspaceId = input.workspaceId.trim()
+  const sessionId = input.sessionId.trim()
+  const tenantWorkspaceId = input.tenantWorkspaceId?.trim() ?? ''
+  if (!workspaceId || !sessionId) return null
+
+  const events = await queryJson<{
+    event_name: string
+    created_at: string
+    event_seq: string | number
+    sdk_version: string
+    sdk_capabilities: string
+    integrity_json: string
+    properties: string
+    utm_source: string
+    referrer: string
+    network_class: string
+    network_asn: string | number
+    network_org: string
+    network_evidence_source: string
+    network_evidence_as_of: string
+    form_zip_entered: string
+    geo_zipcode: string
+    country: string
+    state: string
+    city: string
+    tenant_workspace_id: string
+  }>(`
+    SELECT
+      event_name,
+      created_at,
+      event_seq,
+      sdk_version,
+      sdk_capabilities,
+      integrity_json,
+      properties,
+      utm_source,
+      referrer,
+      network_class,
+      network_asn,
+      network_org,
+      network_evidence_source,
+      network_evidence_as_of,
+      form_zip_entered,
+      geo_zipcode,
+      country,
+      state,
+      city,
+      tenant_workspace_id
+    FROM ${CLICKHOUSE_EVENTS_TABLE}
+    WHERE workspace_id = {workspaceId:UUID}
+      AND session_id = {sessionId:String}
+      AND (
+        {tenantWorkspaceId:String} = ''
+        OR tenant_workspace_id = {tenantWorkspaceId:String}
+        OR tenant_workspace_id = ''
+      )
+    ORDER BY created_at ASC, event_seq ASC
+    LIMIT 500
+  `, { workspaceId, sessionId, tenantWorkspaceId })
+
+  if (events.length === 0) return null
+
+  let browserObs: unknown | null = null
+  let behaviorSummary: unknown | null = null
+  const integrityFindings: unknown[] = []
+  let firstUtm = ''
+  let submitUtm = ''
+  let referrerOrigin = ''
+
+  for (const row of events) {
+    if (!firstUtm && row.utm_source) firstUtm = row.utm_source
+    if (
+      (row.event_name === 'form_submit' ||
+        row.event_name === 'form_success' ||
+        row.event_name === 'zip_submit') &&
+      row.utm_source
+    ) {
+      submitUtm = row.utm_source
+    }
+    if (!referrerOrigin && row.referrer) {
+      try {
+        referrerOrigin = new URL(row.referrer).origin
+      } catch {
+        referrerOrigin = row.referrer.split('?')[0] ?? ''
+      }
+    }
+    if (row.integrity_json && row.integrity_json !== '[]') {
+      try {
+        const parsed = JSON.parse(row.integrity_json)
+        if (Array.isArray(parsed)) integrityFindings.push(...parsed)
+      } catch {
+        /* ignore */
+      }
+    }
+    try {
+      const props = JSON.parse(row.properties || '{}') as Record<string, unknown>
+      if (row.event_name === 'sdk_connected' && props.browser_obs) {
+        browserObs = props.browser_obs
+      }
+      if (row.event_name === 'behavior_summary') {
+        behaviorSummary = props
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const last = events[events.length - 1]!
+  return {
+    sessionId,
+    workspaceId,
+    sdkVersion: last.sdk_version || events.find((e) => e.sdk_version)?.sdk_version || '',
+    sdkCapabilities:
+      last.sdk_capabilities ||
+      events.find((e) => e.sdk_capabilities)?.sdk_capabilities ||
+      '',
+    timeline: events.map((e) => ({
+      eventName: e.event_name,
+      createdAt: e.created_at,
+      seq: n(e.event_seq),
+    })),
+    integrityFindings,
+    browserObs,
+    behaviorSummary,
+    attribution: {
+      firstUtmSource: firstUtm,
+      submitUtmSource: submitUtm || firstUtm,
+      referrerOrigin,
+    },
+    network: {
+      networkClass: last.network_class || '',
+      asn: n(last.network_asn),
+      org: last.network_org || '',
+      evidenceSource: last.network_evidence_source || '',
+      evidenceAsOf: last.network_evidence_as_of || '',
+    },
+    location: {
+      formZip: last.form_zip_entered || '',
+      geoZip: last.geo_zipcode || '',
+      geoCountry: last.country || '',
+      geoState: last.state || '',
+      geoCity: last.city || '',
+    },
+  }
 }
 
 export async function getWarehousePartnerScorecards(): Promise<

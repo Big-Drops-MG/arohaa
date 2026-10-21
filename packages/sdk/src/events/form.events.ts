@@ -4,6 +4,10 @@ import {
   markFiFormComplete,
   markFiFormSubmit,
 } from "./fi-capture"
+import {
+  markBehaviorFormStart,
+  markBehaviorFormSubmit,
+} from "./behavior-summary"
 
 type FormEventProps = {
   formId?: string
@@ -20,15 +24,18 @@ function buildFormProps(props?: FormEventProps): Record<string, string> | undefi
 
 export function trackFormStart(formId?: string): void {
   armFiCapture(formId)
+  markBehaviorFormStart()
   track("form_start", formId ? { formId } : {})
 }
 
 export function trackFormSubmit(formId?: string, zip?: string): void {
   markFiFormSubmit(formId)
+  markBehaviorFormSubmit()
   track("form_submit", buildFormProps({ formId, zip }) ?? {})
 }
 
 export function trackFormSuccess(formId?: string, zip?: string): void {
   markFiFormComplete(formId)
+  markBehaviorFormSubmit()
   track("form_success", buildFormProps({ formId, zip }) ?? {})
 }
