@@ -128,12 +128,12 @@ async function loadClickHouseWorkload(
   const params = { minutes, limit }
   const [metricsRows, running, top, byTable, merges, mutations, totals] = await Promise.all([
     chRows<{ metric: string; value: string | number }>(`
-      SELECT metric, value FROM system.asynchronous_metrics
+      SELECT metric, toFloat64(value) AS value FROM system.asynchronous_metrics
       WHERE metric IN ('LoadAverage1', 'LoadAverage15', 'OSUserTimeNormalized', 'OSSystemTimeNormalized', 'MemoryResident', 'OSMemoryAvailable', 'OSMemoryTotal')
       UNION ALL
-      SELECT metric, value FROM system.metrics
+      SELECT metric, toFloat64(value) AS value FROM system.metrics
       WHERE metric IN ('Query', 'Merge', 'PartMutation', 'MemoryTracking', 'HTTPConnection', 'BackgroundMergesAndMutationsPoolTask')
-    `),
+    `).catch(() => [] as { metric: string; value: string | number }[]),
     chRows<{
       query_id: string
       elapsed: string | number
