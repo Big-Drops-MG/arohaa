@@ -128,19 +128,19 @@ jobs:
             --cli-input-json file://td-new.json \
             --query 'taskDefinition.taskDefinitionArn' --output text)"; then
             echo "Registered: $NEW_TD"
+            echo "task_definition_arg=--task-definition $NEW_TD" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::Could not register task definition (deploy IAM user needs ecs:RegisterTaskDefinition + iam:PassRole). Rolling out current revision $CURRENT_TD instead."
-            NEW_TD="$CURRENT_TD"
+            echo "task_definition_arg=" >> "$GITHUB_OUTPUT"
           fi
           rm -f td.json td-new.json
-          echo "task_definition=$NEW_TD" >> "$GITHUB_OUTPUT"
 
       - name: Roll out ECS service
         run: |
           aws ecs update-service \
             --cluster arohaa-production \
             --service arohaa-api-service-syjf98zg \
-            --task-definition "${{ steps.register_td.outputs.task_definition }}" \
+            ${{ steps.register_td.outputs.task_definition_arg }} \
             --force-new-deployment \
             --query "service.deployments[0].rolloutState" \
             --output text
