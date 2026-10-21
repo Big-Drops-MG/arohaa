@@ -11,7 +11,6 @@ import {
   pickTrustedFormUrl,
 } from '../lib/lead-fields.js'
 import { LEAD_FRAUD_MODEL_VERSION } from '../lib/lead-fraud/constants.js'
-import { emailDomain } from '../lib/lead-fraud/disposable-domains.js'
 import {
   decryptJsonBlob,
   FI_EVENT_NAME,
@@ -284,8 +283,11 @@ const SHORTCUT_LEADS_LIMIT = 100
 const REVIEW_LEADS_LIMIT = 100
 const FI_CLIPBOARD_SESSION_LIMIT = 4_000
 const FI_CLIPBOARD_SCAN_LIMIT = 40_000
-const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v10'
-const WAREHOUSE_SUMMARY_CACHE_TTL_SEC = 90
+const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v11'
+const WAREHOUSE_SUMMARY_CACHE_TTL_SEC = 120
+const WAREHOUSE_SUMMARY_CACHE_STALE_SEC = 120
+const WAREHOUSE_RESCORE_LOOKBACK_DAYS = 30
+const WAREHOUSE_RESCORE_MIN_INTERVAL_MS = 10 * 60_000
 
 type ShortcutSessionFlag = {
   workspaceId: string
@@ -877,6 +879,7 @@ async function buildShortcutLeads(
       return new Map<string, SessionMeta>()
     }),
     loadLandingPageMetaByIds(landingPageIds),
+    mergeLeadAssessments(assessmentByKey, discovery.flags),
   ])
 
   const leadByKey = new Map<string, LeadSessionSignalRow>()
@@ -1150,6 +1153,7 @@ async function expandReviewLeads(
         return new Map<string, SessionMeta>()
       }),
       loadLandingPageMetaByIds(landingPageIds),
+      mergeLeadAssessments(assessmentByKey, missing),
     ])
     const signalByKey = new Map<string, LeadSessionSignalRow>()
     for (const row of leadRows) {
@@ -1195,36 +1199,181 @@ async function expandReviewLeads(
   return leads.slice(0, REVIEW_LEADS_LIMIT)
 }
 
-function scheduleWarehouseLeadRescore(
-  existingRisk: Map<string, { modelVersion: string }>,
-): void {
+type LeadRiskParsed = {
+  label: 'legit' | 'fraud'
+  modelVersion: string
+  assessment: LeadFraudAssessment
+}
+
+function parseLeadRiskRow(row: {
+  label: string
+  model_version: string
+  score: string | number
+  features_json: string
+  reasons: unknown
+}): LeadRiskParsed {
+  const label: 'legit' | 'fraud' = row.label === 'legit' ? 'legit' : 'fraud'
+  let coverage: LeadFraudAssessment['coverage'] = 'partial'
+  let findings: LeadFraudAssessment['findings'] = []
+  try {
+    const parsed = JSON.parse(row.features_json || '{}') as {
+      coverage?: unknown
+      findings?: unknown
+    }
+    if (
+      parsed.coverage === 'sufficient' ||
+      parsed.coverage === 'partial' ||
+      parsed.coverage === 'insufficient'
+    ) {
+      coverage = parsed.coverage
+    }
+    if (Array.isArray(parsed.findings)) {
+      findings = parsed.findings.filter(
+        (f): f is { code: string; detail: string } =>
+          Boolean(
+            f &&
+              typeof f === 'object' &&
+              typeof (f as { code?: unknown }).code === 'string' &&
+              typeof (f as { detail?: unknown }).detail === 'string',
+          ),
+      )
+    }
+  } catch {
+    /* ignore */
+  }
+  const scoreAvailable = coverage !== 'insufficient'
+  const modelVersion = String(row.model_version || '')
+  return {
+    label,
+    modelVersion,
+    assessment: {
+      score: scoreAvailable ? n(row.score) : null,
+      scoreAvailable,
+      label,
+      effectiveLabel: label,
+      coverage,
+      findings,
+      reasons: parseReasonsJson(row.reasons),
+      modelVersion,
+    },
+  }
+}
+
+async function mergeLeadAssessments(
+  target: Map<string, LeadFraudAssessment>,
+  refs: Array<{ workspaceId: string; sessionId: string }>,
+): Promise<void> {
+  const wanted = new Set<string>()
+  for (const ref of refs) {
+    const key = `${ref.workspaceId}:${ref.sessionId}`
+    if (!target.has(key)) wanted.add(key)
+  }
+  if (wanted.size === 0) return
+  try {
+    const ch = getClickHouseClient()
+    const res = await ch.query({
+      format: 'JSON',
+      query_params: { ...sessionPairParams(refs), mv: LEAD_FRAUD_MODEL_VERSION },
+      query: `
+        SELECT
+          toString(workspace_id) AS wid,
+          session_id,
+          score,
+          label,
+          model_version,
+          features_json,
+          reasons
+        FROM ${LEAD_RISK_TABLE} FINAL
+        WHERE workspace_id IN {wids:Array(UUID)}
+          AND session_id IN {sids:Array(String)}
+          AND model_version = {mv:String}
+      `,
+    })
+    const rows = (
+      (await res.json()) as CHJson<{
+        wid: string
+        session_id: string
+        score: string | number
+        label: string
+        model_version: string
+        features_json: string
+        reasons: unknown
+      }>
+    ).data ?? []
+    for (const row of rows) {
+      const key = `${row.wid}:${row.session_id}`
+      if (!wanted.has(key)) continue
+      target.set(key, parseLeadRiskRow(row).assessment)
+    }
+  } catch (err) {
+    console.error('[warehouse] lead assessments lookup failed', err)
+  }
+}
+
+function sessionPairParams(
+  refs: Array<{ workspaceId: string; sessionId: string }>,
+): { wids: string[]; sids: string[] } {
+  return {
+    wids: [...new Set(refs.map((ref) => ref.workspaceId))],
+    sids: [...new Set(refs.map((ref) => ref.sessionId))],
+  }
+}
+
+async function loadScoredSessionKeys(
+  refs: Array<{ workspaceId: string; sessionId: string }>,
+): Promise<Set<string>> {
+  const out = new Set<string>()
+  if (refs.length === 0) return out
+  const ch = getClickHouseClient()
+  const res = await ch.query({
+    format: 'JSON',
+    query_params: { ...sessionPairParams(refs), mv: LEAD_FRAUD_MODEL_VERSION },
+    query: `
+      SELECT toString(workspace_id) AS wid, session_id
+      FROM ${LEAD_RISK_TABLE} FINAL
+      WHERE workspace_id IN {wids:Array(UUID)}
+        AND session_id IN {sids:Array(String)}
+        AND model_version = {mv:String}
+    `,
+  })
+  const rows = ((await res.json()) as CHJson<{ wid: string; session_id: string }>).data ?? []
+  for (const row of rows) out.add(`${row.wid}:${row.session_id}`)
+  return out
+}
+
+let rescoreInFlight = false
+let lastRescoreStartedAt = 0
+
+function scheduleWarehouseLeadRescore(): void {
+  const now = Date.now()
+  if (rescoreInFlight || now - lastRescoreStartedAt < WAREHOUSE_RESCORE_MIN_INTERVAL_MS) {
+    return
+  }
+  rescoreInFlight = true
+  lastRescoreStartedAt = now
   void (async () => {
     try {
-      const leadRows = await loadLeadSessionSignals()
-      const needsScore = leadRows.filter((row) => {
-        const key = `${row.workspaceId}:${row.sessionId}`
-        const existing = existingRisk.get(key)
-        return !(existing && existing.modelVersion === LEAD_FRAUD_MODEL_VERSION)
+      const leadRows = await loadLeadSessionSignals({
+        lookbackDays: WAREHOUSE_RESCORE_LOOKBACK_DAYS,
       })
-      if (needsScore.length === 0) return
-      const classified = await classifyLeadSessionRows(leadRows)
-      const needKeys = new Set(
-        needsScore.map((row) => `${row.workspaceId}:${row.sessionId}`),
-      )
-      const toPersist = classified.toPersist.filter((item) =>
-        needKeys.has(`${item.workspaceId}:${item.sessionId}`),
-      )
-      if (toPersist.length > 0) {
-        await upsertLeadRiskBatch(toPersist)
+      if (leadRows.length === 0) return
+      const scored = await loadScoredSessionKeys(leadRows)
+      const needKeys = new Set<string>()
+      for (const row of leadRows) {
+        const key = `${row.workspaceId}:${row.sessionId}`
+        if (!scored.has(key)) needKeys.add(key)
+      }
+      if (needKeys.size === 0) return
+      const classified = await classifyLeadSessionRows(leadRows, { onlyKeys: needKeys })
+      if (classified.toPersist.length > 0) {
+        await upsertLeadRiskBatch(classified.toPersist)
       }
     } catch (err) {
       console.error('[warehouse] background lead rescore failed', err)
+    } finally {
+      rescoreInFlight = false
     }
   })()
-}
-
-function normalizeFraudReason(reason: string): string {
-  return reason.replace(/\s*\(−\d+\s*trust\)\s*$/i, '').trim()
 }
 
 function parseReasonsJson(raw: unknown): string[] {
@@ -1249,177 +1398,102 @@ function parseReasonsJson(raw: unknown): string[] {
 
 async function loadWarehouseLeadInsights(): Promise<WarehouseLeadInsights> {
   const ch = getClickHouseClient()
+  const mv = LEAD_FRAUD_MODEL_VERSION
+  const coverageExpr = `if(JSONExtractString(features_json, 'coverage') IN ('sufficient', 'partial', 'insufficient'), JSONExtractString(features_json, 'coverage'), 'partial')`
 
-  const riskRes = await ch.query({
-    format: 'JSON',
-    query: `
-      SELECT
-        toString(workspace_id) AS workspace_id,
-        session_id,
-        score,
-        label,
-        model_version,
-        features_json,
-        reasons
-      FROM ${LEAD_RISK_TABLE} FINAL
-    `,
-  })
-  const riskRows =
-    (
-      (await riskRes.json()) as CHJson<{
-        workspace_id: string
-        session_id: string
-        score: string | number
-        label: string
-        model_version: string
-        features_json: string
-        reasons: unknown
-      }>
-    ).data ?? []
+  const [countRows, domainRows, reasonRows] = await Promise.all([
+    (async () =>
+      (
+        (
+          await ch.query({
+            format: 'JSON',
+            query_params: { mv },
+            query: `
+              SELECT
+                countIf(label = 'legit' AND cov != 'insufficient') AS legit,
+                countIf(label != 'legit' AND cov != 'insufficient') AS fraud,
+                countIf(cov = 'insufficient') AS insufficient
+              FROM (
+                SELECT label, ${coverageExpr} AS cov
+                FROM ${LEAD_RISK_TABLE} FINAL
+                WHERE model_version = {mv:String}
+              )
+            `,
+          })
+        ).json() as Promise<CHJson<{ legit: string | number; fraud: string | number; insufficient: string | number }>>
+      ).then((j) => j.data ?? []))(),
+    (async () =>
+      (
+        (
+          await ch.query({
+            format: 'JSON',
+            query_params: { mv },
+            query: `
+              SELECT
+                domain,
+                count() AS cnt,
+                countIf(label = 'legit') AS legit,
+                countIf(label != 'legit') AS fraud
+              FROM (
+                SELECT
+                  label,
+                  lowerUTF8(trim(JSONExtractString(features_json, 'email'))) AS email,
+                  substring(email, position(email, '@') + 1) AS domain
+                FROM ${LEAD_RISK_TABLE} FINAL
+                WHERE model_version = {mv:String}
+              )
+              WHERE position(email, '@') > 0 AND domain != ''
+              GROUP BY domain
+              ORDER BY cnt DESC, domain ASC
+              LIMIT 100
+            `,
+          })
+        ).json() as Promise<CHJson<{ domain: string; cnt: string | number; legit: string | number; fraud: string | number }>>
+      ).then((j) => j.data ?? []))(),
+    (async () =>
+      (
+        (
+          await ch.query({
+            format: 'JSON',
+            query_params: { mv },
+            query: `
+              SELECT reason, count() AS cnt
+              FROM (
+                SELECT trim(replaceRegexpOne(arrayJoin(reasons), '(?i)\\\\s*\\\\(-\\\\d+\\\\s*trust\\\\)\\\\s*$', '')) AS reason
+                FROM ${LEAD_RISK_TABLE} FINAL
+                WHERE model_version = {mv:String} AND label != 'legit'
+              )
+              WHERE reason != ''
+              GROUP BY reason
+              ORDER BY cnt DESC, reason ASC
+              LIMIT 25
+            `,
+          })
+        ).json() as Promise<CHJson<{ reason: string; cnt: string | number }>>
+      ).then((j) => j.data ?? []))(),
+  ])
 
-  const existingRisk = new Map<
-    string,
-    {
-      label: 'legit' | 'fraud'
-      modelVersion: string
-      email: string
-      assessment: LeadFraudAssessment
-    }
-  >()
-  for (const row of riskRows) {
-    const wid = String(row.workspace_id || '').trim()
-    const sid = String(row.session_id || '').trim()
-    if (!wid || !sid) continue
-    let email = ''
-    try {
-      const parsed = JSON.parse(row.features_json || '{}') as {
-        email?: unknown
-      }
-      if (typeof parsed.email === 'string') email = parsed.email.trim()
-    } catch {
-      /* ignore */
-    }
-    const label: 'legit' | 'fraud' =
-      row.label === 'legit' ? 'legit' : 'fraud'
-    const reasons = parseReasonsJson(row.reasons)
-    let coverage: LeadFraudAssessment['coverage'] = 'partial'
-    let findings: LeadFraudAssessment['findings'] = []
-    try {
-      const parsed = JSON.parse(row.features_json || '{}') as {
-        coverage?: unknown
-        findings?: unknown
-      }
-      if (
-        parsed.coverage === 'sufficient' ||
-        parsed.coverage === 'partial' ||
-        parsed.coverage === 'insufficient'
-      ) {
-        coverage = parsed.coverage
-      }
-      if (Array.isArray(parsed.findings)) {
-        findings = parsed.findings.filter(
-          (f): f is { code: string; detail: string } =>
-            Boolean(
-              f &&
-                typeof f === 'object' &&
-                typeof (f as { code?: unknown }).code === 'string' &&
-                typeof (f as { detail?: unknown }).detail === 'string',
-            ),
-        )
-      }
-    } catch {
-      /* ignore */
-    }
-    const scoreAvailable = coverage !== 'insufficient'
-    existingRisk.set(`${wid}:${sid}`, {
-      label,
-      modelVersion: String(row.model_version || ''),
-      email,
-      assessment: {
-        score: scoreAvailable ? n(row.score) : null,
-        scoreAvailable,
-        label,
-        effectiveLabel: label,
-        coverage,
-        findings,
-        reasons,
-        modelVersion: String(row.model_version || ''),
-      },
-    })
-  }
+  scheduleWarehouseLeadRescore()
 
-  const labelByKey = new Map<string, 'legit' | 'fraud'>()
-  const emailByKey = new Map<string, string>()
+  const legit = n(countRows[0]?.legit)
+  const fraud = n(countRows[0]?.fraud)
+  const insufficientData = n(countRows[0]?.insufficient)
+  const elevatedRisk = fraud
+  const lowerRisk = legit
+
+  const emailDomains = domainRows.map((row) => ({
+    domain: row.domain,
+    count: n(row.cnt),
+    legit: n(row.legit),
+    fraud: n(row.fraud),
+  }))
+
+  const fraudReasons = reasonRows.map((row) => ({
+    name: row.reason,
+    count: n(row.cnt),
+  }))
+
   const assessmentByKey = new Map<string, LeadFraudAssessment>()
-  const fraudReasonCounts = new Map<string, number>()
-
-  for (const [key, existing] of existingRisk) {
-    if (existing.modelVersion !== LEAD_FRAUD_MODEL_VERSION) continue
-    labelByKey.set(key, existing.label)
-    assessmentByKey.set(key, existing.assessment)
-    if (existing.email.includes('@')) emailByKey.set(key, existing.email)
-    if (existing.label === 'fraud') {
-      for (const reason of existing.assessment.reasons) {
-        const normalized = normalizeFraudReason(reason)
-        if (!normalized) continue
-        fraudReasonCounts.set(
-          normalized,
-          (fraudReasonCounts.get(normalized) ?? 0) + 1,
-        )
-      }
-    }
-  }
-
-  scheduleWarehouseLeadRescore(existingRisk)
-
-  let legit = 0
-  let fraud = 0
-  let elevatedRisk = 0
-  let lowerRisk = 0
-  let insufficientData = 0
-  for (const [key, label] of labelByKey) {
-    const assessment = assessmentByKey.get(key)
-    if (assessment && !assessment.scoreAvailable) {
-      insufficientData += 1
-    } else if (label === 'legit') {
-      legit += 1
-      lowerRisk += 1
-    } else {
-      fraud += 1
-      elevatedRisk += 1
-    }
-  }
-
-  const domainAcc = new Map<
-    string,
-    { count: number; legit: number; fraud: number }
-  >()
-  for (const [key, email] of emailByKey) {
-    const domain = emailDomain(email)
-    if (!domain) continue
-    const cur = domainAcc.get(domain) ?? { count: 0, legit: 0, fraud: 0 }
-    cur.count += 1
-    const label = labelByKey.get(key)
-    if (label === 'legit') cur.legit += 1
-    else if (label === 'fraud') cur.fraud += 1
-    domainAcc.set(domain, cur)
-  }
-
-  const emailDomains = [...domainAcc.entries()]
-    .map(([domain, stats]) => ({
-      domain,
-      count: stats.count,
-      legit: stats.legit,
-      fraud: stats.fraud,
-    }))
-    .sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain))
-    .slice(0, 100)
-
-  const fraudReasons = [...fraudReasonCounts.entries()]
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-    .slice(0, 25)
-
   const shortcutDiscovery = await buildShortcutLeads(assessmentByKey)
   const reviewLeads = await expandReviewLeads(
     shortcutDiscovery.leads,
@@ -1924,6 +1998,7 @@ export async function getWarehouseSummary(): Promise<WarehouseSummary> {
     WAREHOUSE_SUMMARY_CACHE_KEY,
     summary,
     WAREHOUSE_SUMMARY_CACHE_TTL_SEC,
+    WAREHOUSE_SUMMARY_CACHE_STALE_SEC,
   )
   return summary
 }

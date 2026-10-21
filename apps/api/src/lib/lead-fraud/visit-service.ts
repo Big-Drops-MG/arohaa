@@ -1,6 +1,12 @@
 import { CLICKHOUSE_EVENTS_TABLE } from '../clickhouse-events-table.js'
 import { getClickHouseClient } from '../../services/clickhouse.service.js'
 import { loadSessionShadowEvidence } from './session-evidence-load.js'
+import {
+  resolveSessionEventWindow,
+  sessionWindowParams,
+  sessionWindowSql,
+  type SessionEventWindow,
+} from './session-window.js'
 import { upsertVisitRisk } from './visit-persist.js'
 import {
   emptyVisitSignals,
@@ -28,12 +34,14 @@ export async function isSessionEventPersisted(input: {
   workspaceId: string
   sessionId: string
   eventId: string
+  window?: SessionEventWindow | null
 }): Promise<boolean> {
   const workspaceId = input.workspaceId.trim()
   const sessionId = input.sessionId.trim()
   const eventId = input.eventId.trim()
   if (!workspaceId || !sessionId || !eventId) return false
   try {
+    const window = input.window ?? null
     const ch = getClickHouseClient()
     const res = await ch.query({
       query: `
@@ -41,10 +49,10 @@ export async function isSessionEventPersisted(input: {
         FROM ${CLICKHOUSE_EVENTS_TABLE}
         WHERE workspace_id = {workspaceId:UUID}
           AND session_id = {sessionId:String}
-          AND event_id = {eventId:String}
+          AND event_id = {eventId:String}${sessionWindowSql(window)}
         LIMIT 1
       `,
-      query_params: { workspaceId, sessionId, eventId },
+      query_params: { workspaceId, sessionId, eventId, ...sessionWindowParams(window) },
       format: 'JSON',
     })
     const json = (await res.json()) as { data: Array<{ ok: string | number }> }
@@ -195,6 +203,7 @@ function behaviorFingerprintFromEvidence(evidence: {
 async function loadSessionIdentity(input: {
   workspaceId: string
   sessionId: string
+  window: SessionEventWindow | null
 }): Promise<
   | { ok: true; fingerprint: string; clientIpHash: string }
   | { ok: false }
@@ -208,12 +217,13 @@ async function loadSessionIdentity(input: {
           anyHeavy(client_ip_hash) AS client_ip_hash
         FROM ${CLICKHOUSE_EVENTS_TABLE}
         WHERE workspace_id = {workspaceId:UUID}
-          AND session_id = {sessionId:String}
+          AND session_id = {sessionId:String}${sessionWindowSql(input.window)}
         LIMIT 1
       `,
       query_params: {
         workspaceId: input.workspaceId,
         sessionId: input.sessionId,
+        ...sessionWindowParams(input.window),
       },
       format: 'JSON',
     })
@@ -241,12 +251,14 @@ export async function ensureSessionVisitAssessment(input: {
   const workspaceId = input.workspaceId.trim()
   const sessionId = input.sessionId.trim()
   const triggerEventId = input.triggerEventId?.trim()
+  const window = await resolveSessionEventWindow({ workspaceId, sessionId })
 
   if (triggerEventId) {
     const ready = await isSessionEventPersisted({
       workspaceId,
       sessionId,
       eventId: triggerEventId,
+      window,
     })
     if (!ready) {
       throw new VisitAssessNotReadyError(
@@ -256,8 +268,8 @@ export async function ensureSessionVisitAssessment(input: {
     }
   }
 
-  const evidence = await loadSessionShadowEvidence({ workspaceId, sessionId })
-  const identity = await loadSessionIdentity({ workspaceId, sessionId })
+  const evidence = await loadSessionShadowEvidence({ workspaceId, sessionId, window })
+  const identity = await loadSessionIdentity({ workspaceId, sessionId, window })
   const arrivals =
     identity.ok
       ? await loadArrivalStats({

@@ -342,6 +342,7 @@ export async function ensureEventsTable(): Promise<void> {
   await ensureHeatmapSchema(ch)
   await ensureLeadRiskTable(ch)
   await ensureLeadContactKeysTable(ch)
+  await ensureSessionSkipIndexes(ch)
   await ensureLeadReviewTable(ch)
   await ensureLeadReviewAuditTable(ch)
   await ensureVisitRiskTable(ch)
@@ -576,12 +577,6 @@ async function ensureLeadReviewAuditTable(ch: ClickHouseClient): Promise<void> {
 }
 
 const HEATMAP_EVENTS_TABLE = 'heatmap_events'
-const HEATMAP_GRID_X =
-  'toInt32(floor(least(greatest(x, 0.), 1.) * 10.)) * 10'
-const HEATMAP_GRID_Y =
-  'toInt32(floor(least(greatest(y, 0.), 1.) * 10.)) * 10'
-const HEATMAP_DEVICE_EXPR =
-  "if(device != '', device, multiIf(viewport_width < 768, 'mobile', viewport_width < 1024, 'tablet', 'desktop'))"
 
 async function ensureHeatmapSchema(ch: ClickHouseClient): Promise<void> {
   await ch.command({
@@ -619,135 +614,14 @@ async function ensureHeatmapSchema(ch: ClickHouseClient): Promise<void> {
     query: `ALTER TABLE ${HEATMAP_EVENTS_TABLE} MODIFY TTL toDateTime(timestamp) + toIntervalDay(180)`,
   })
 
-  await ch.command({
-    query: `
-      CREATE TABLE IF NOT EXISTS heatmap_clicks_rollup (
-          workspace_id UUID,
-          page_url String,
-          device LowCardinality(String),
-          day Date,
-          grid_x Int32,
-          grid_y Int32,
-          clicks AggregateFunction(count)
-      ) ENGINE = AggregatingMergeTree()
-      ORDER BY (workspace_id, page_url, device, day, grid_x, grid_y)
-    `,
-  })
-  await ch.command({ query: 'DROP VIEW IF EXISTS heatmap_clicks_mv' })
-  await ch.command({
-    query: `
-      CREATE MATERIALIZED VIEW IF NOT EXISTS heatmap_clicks_mv
-      TO heatmap_clicks_rollup
-      AS SELECT
-          workspace_id,
-          page_url,
-          ${HEATMAP_DEVICE_EXPR} AS device,
-          ${chToDate('timestamp')} AS day,
-          ${HEATMAP_GRID_X} AS grid_x,
-          ${HEATMAP_GRID_Y} AS grid_y,
-          countState() AS clicks
-      FROM ${HEATMAP_EVENTS_TABLE}
-      WHERE event_type = 'click'
-      GROUP BY workspace_id, page_url, device, day, grid_x, grid_y
-    `,
-  })
-
-  await ch.command({
-    query: `
-      CREATE TABLE IF NOT EXISTS heatmap_mousemove_rollup (
-          workspace_id UUID,
-          page_url String,
-          device LowCardinality(String),
-          day Date,
-          grid_x Int32,
-          grid_y Int32,
-          moves AggregateFunction(count)
-      ) ENGINE = AggregatingMergeTree()
-      ORDER BY (workspace_id, page_url, device, day, grid_x, grid_y)
-    `,
-  })
-  await ch.command({ query: 'DROP VIEW IF EXISTS heatmap_mousemove_mv' })
-  await ch.command({
-    query: `
-      CREATE MATERIALIZED VIEW IF NOT EXISTS heatmap_mousemove_mv
-      TO heatmap_mousemove_rollup
-      AS SELECT
-          workspace_id,
-          page_url,
-          ${HEATMAP_DEVICE_EXPR} AS device,
-          ${chToDate('timestamp')} AS day,
-          ${HEATMAP_GRID_X} AS grid_x,
-          ${HEATMAP_GRID_Y} AS grid_y,
-          countState() AS moves
-      FROM ${HEATMAP_EVENTS_TABLE}
-      WHERE event_type = 'mousemove'
-      GROUP BY workspace_id, page_url, device, day, grid_x, grid_y
-    `,
-  })
-
-  await ch.command({
-    query: `
-      CREATE TABLE IF NOT EXISTS heatmap_scroll_rollup (
-          workspace_id UUID,
-          page_url String,
-          device LowCardinality(String),
-          day Date,
-          scroll_depth_bucket Int32,
-          events AggregateFunction(count)
-      ) ENGINE = AggregatingMergeTree()
-      ORDER BY (workspace_id, page_url, device, day, scroll_depth_bucket)
-    `,
-  })
-  await ch.command({ query: 'DROP VIEW IF EXISTS heatmap_scroll_mv' })
-  await ch.command({
-    query: `
-      CREATE MATERIALIZED VIEW IF NOT EXISTS heatmap_scroll_mv
-      TO heatmap_scroll_rollup
-      AS SELECT
-          workspace_id,
-          page_url,
-          ${HEATMAP_DEVICE_EXPR} AS device,
-          ${chToDate('timestamp')} AS day,
-          ${HEATMAP_GRID_Y} AS scroll_depth_bucket,
-          countState() AS events
-      FROM ${HEATMAP_EVENTS_TABLE}
-      WHERE event_type = 'scroll'
-      GROUP BY workspace_id, page_url, device, day, scroll_depth_bucket
-    `,
-  })
-
-  await ch.command({
-    query: `
-      CREATE TABLE IF NOT EXISTS heatmap_section_rollup (
-          workspace_id UUID,
-          page_url String,
-          device LowCardinality(String),
-          day Date,
-          element_selector String,
-          dwell_ms AggregateFunction(sum, Float64),
-          views AggregateFunction(count)
-      ) ENGINE = AggregatingMergeTree()
-      ORDER BY (workspace_id, page_url, device, day, element_selector)
-    `,
-  })
-  await ch.command({ query: 'DROP VIEW IF EXISTS heatmap_section_mv' })
-  await ch.command({
-    query: `
-      CREATE MATERIALIZED VIEW IF NOT EXISTS heatmap_section_mv
-      TO heatmap_section_rollup
-      AS SELECT
-          workspace_id,
-          page_url,
-          ${HEATMAP_DEVICE_EXPR} AS device,
-          ${chToDate('timestamp')} AS day,
-          element_selector,
-          sumState(JSONExtractFloat(properties, 'dwell_ms')) AS dwell_ms,
-          countState() AS views
-      FROM ${HEATMAP_EVENTS_TABLE}
-      WHERE event_type = 'section' AND element_selector != ''
-      GROUP BY workspace_id, page_url, device, day, element_selector
-    `,
-  })
+  for (const legacyView of [
+    'heatmap_clicks_mv',
+    'heatmap_mousemove_mv',
+    'heatmap_scroll_mv',
+    'heatmap_section_mv',
+  ]) {
+    await ch.command({ query: `DROP VIEW IF EXISTS ${legacyView}` })
+  }
 
   await ensureHeatmapPointRollup(ch)
 }
@@ -1026,6 +900,57 @@ async function ensureSchemaMetaTable(ch: ClickHouseClient): Promise<void> {
       ORDER BY key
     `,
   })
+}
+
+async function readSchemaMeta(ch: ClickHouseClient, key: string): Promise<string | null> {
+  const res = await ch.query({
+    query: `SELECT value FROM arohaa_schema_meta FINAL WHERE key = {key:String} LIMIT 1`,
+    query_params: { key },
+    format: 'JSON',
+  })
+  const rows = ((await res.json()) as { data: Array<{ value: string }> }).data
+  return rows[0]?.value ?? null
+}
+
+async function writeSchemaMeta(ch: ClickHouseClient, key: string, value: string): Promise<void> {
+  await ch.command({
+    query: `INSERT INTO arohaa_schema_meta (key, value) VALUES ({key:String}, {value:String})`,
+    query_params: { key, value },
+  })
+}
+
+const SESSION_SKIP_INDEX_KEY = 'session_skip_index'
+const SESSION_SKIP_INDEX_VERSION = 'v1'
+
+async function ensureSessionSkipIndexes(ch: ClickHouseClient): Promise<void> {
+  const targets = [CLICKHOUSE_EVENTS_TABLE, LEAD_CONTACT_KEYS_TABLE]
+  for (const table of targets) {
+    await ch.command({
+      query: `ALTER TABLE ${table} ADD INDEX IF NOT EXISTS idx_session_id session_id TYPE bloom_filter(0.01) GRANULARITY 1`,
+    })
+  }
+
+  if ((await readSchemaMeta(ch, SESSION_SKIP_INDEX_KEY)) === SESSION_SKIP_INDEX_VERSION) return
+  await writeSchemaMeta(ch, SESSION_SKIP_INDEX_KEY, SESSION_SKIP_INDEX_VERSION)
+
+  void (async () => {
+    try {
+      for (const table of targets) {
+        await ch.command({
+          query: `ALTER TABLE ${table} MATERIALIZE INDEX idx_session_id`,
+          clickhouse_settings: { mutations_sync: '0' },
+        })
+      }
+    } catch (err) {
+      console.error('[clickhouse] session skip index materialize failed; will retry on next boot', err)
+      await ch
+        .command({
+          query: `ALTER TABLE arohaa_schema_meta DELETE WHERE key = {key:String}`,
+          query_params: { key: SESSION_SKIP_INDEX_KEY },
+        })
+        .catch(() => undefined)
+    }
+  })()
 }
 
 async function rebuildDailyMetricsIfNeeded(ch: ClickHouseClient): Promise<void> {

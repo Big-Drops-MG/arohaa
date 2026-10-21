@@ -396,6 +396,7 @@ export async function ensureSessionsFraudAssessments(input: {
 
 export async function classifyLeadSessionRows(
   rows: LeadSessionSignalRow[],
+  options?: { onlyKeys?: Set<string> },
 ): Promise<{
   labelByKey: Map<string, 'legit' | 'fraud'>
   emailByKey: Map<string, string>
@@ -417,8 +418,12 @@ export async function classifyLeadSessionRows(
   }>
 }> {
   const velocity = computeLeadVelocityMaps(rows)
+  const onlyKeys = options?.onlyKeys
+  const targetRows = onlyKeys
+    ? rows.filter((row) => onlyKeys.has(sessionKey(row.workspaceId, row.sessionId)))
+    : rows
   const fiMap = await loadFiBehaviorBySessions(
-    rows.map((row) => ({
+    targetRows.map((row) => ({
       workspaceId: row.workspaceId,
       sessionId: row.sessionId,
     })),
@@ -443,8 +448,8 @@ export async function classifyLeadSessionRows(
   }> = []
 
   const CONTACT_CONCURRENCY = 8
-  for (let i = 0; i < rows.length; i += CONTACT_CONCURRENCY) {
-    const chunk = rows.slice(i, i + CONTACT_CONCURRENCY)
+  for (let i = 0; i < targetRows.length; i += CONTACT_CONCURRENCY) {
+    const chunk = targetRows.slice(i, i + CONTACT_CONCURRENCY)
     await Promise.all(
       chunk.map(async (row) => {
         const key = sessionKey(row.workspaceId, row.sessionId)

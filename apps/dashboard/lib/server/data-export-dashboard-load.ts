@@ -231,7 +231,7 @@ export async function loadDataExportDashboardData({
     limit: analytics.limit ?? limit,
     offset: analytics.offset ?? offset,
     hasMore: Boolean(analytics.hasMore),
-    hasRedirect: true,
+    hasRedirect: Boolean(row.redirectPageUrl?.trim()),
     level1Stats: level1.stats,
     level1Complete: level1.complete,
     level2Stats: level2.stats,

@@ -8,6 +8,12 @@ import {
 } from './findings.js'
 import { findingsFromPageIntegrity } from './page-integrity.js'
 import { loadApprovedPageIntegrityBaseline } from './page-integrity-baseline.js'
+import {
+  resolveSessionEventWindow,
+  sessionWindowParams,
+  sessionWindowSql,
+  type SessionEventWindow,
+} from './session-window.js'
 
 type CHJson<T> = { data: T[] }
 
@@ -89,6 +95,7 @@ function behaviorHasEngagement(props: Record<string, unknown>): boolean {
 export async function loadSessionShadowEvidence(input: {
   workspaceId: string
   sessionId: string
+  window?: SessionEventWindow | null
 }): Promise<SessionShadowEvidence> {
   const empty: SessionShadowEvidence = {
     integrityFindings: [],
@@ -114,50 +121,41 @@ export async function loadSessionShadowEvidence(input: {
   const sessionId = input.sessionId.trim()
   if (!workspaceId || !sessionId) return empty
 
-  const ch = getClickHouseClient()
-  const [countRes, res] = await Promise.all([
-    ch.query({
-      query: `
-        SELECT count() AS c
-        FROM ${CLICKHOUSE_EVENTS_TABLE}
-        WHERE workspace_id = {workspaceId:UUID}
-          AND session_id = {sessionId:String}
-      `,
-      query_params: { workspaceId, sessionId },
-      format: 'JSON',
-    }),
-    ch.query({
-      query: `
-        SELECT
-          event_id,
-          event_name,
-          created_at,
-          sdk_version,
-          sdk_capabilities,
-          integrity_json,
-          properties,
-          browser,
-          os,
-          device
-        FROM ${CLICKHOUSE_EVENTS_TABLE}
-        WHERE workspace_id = {workspaceId:UUID}
-          AND session_id = {sessionId:String}
-        ORDER BY created_at ASC, event_id ASC
-        LIMIT {limit:UInt32}
-      `,
-      query_params: {
-        workspaceId,
-        sessionId,
-        limit: SESSION_EVIDENCE_EVENT_LIMIT,
-      },
-      format: 'JSON',
-    }),
-  ])
+  const window =
+    input.window === undefined
+      ? await resolveSessionEventWindow({ workspaceId, sessionId })
+      : input.window
 
-  const totalEvents = Number(
-    ((await countRes.json()) as CHJson<{ c: string | number }>).data?.[0]?.c ??
-      0,
-  )
+  const ch = getClickHouseClient()
+  const res = await ch.query({
+    query: `
+      SELECT
+        event_id,
+        event_name,
+        created_at,
+        sdk_version,
+        sdk_capabilities,
+        integrity_json,
+        properties,
+        browser,
+        os,
+        device,
+        count() OVER () AS total_events
+      FROM ${CLICKHOUSE_EVENTS_TABLE}
+      WHERE workspace_id = {workspaceId:UUID}
+        AND session_id = {sessionId:String}${sessionWindowSql(window)}
+      ORDER BY created_at ASC, event_id ASC
+      LIMIT {limit:UInt32}
+    `,
+    query_params: {
+      workspaceId,
+      sessionId,
+      limit: SESSION_EVIDENCE_EVENT_LIMIT,
+      ...sessionWindowParams(window),
+    },
+    format: 'JSON',
+  })
+
   const rows =
     ((await res.json()) as CHJson<{
       event_id: string
@@ -170,10 +168,13 @@ export async function loadSessionShadowEvidence(input: {
       browser: string
       os: string
       device: string
+      total_events: string | number
     }>).data ?? []
 
+  const totalEvents = Number(rows[0]?.total_events ?? 0)
+
   if (rows.length === 0) {
-    return { ...empty, eventCount: totalEvents }
+    return empty
   }
 
   const evidenceTruncated = totalEvents > SESSION_EVIDENCE_EVENT_LIMIT

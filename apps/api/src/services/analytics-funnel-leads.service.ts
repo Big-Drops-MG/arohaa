@@ -1,8 +1,9 @@
 import { getAnalyticsClickHouseClient } from './clickhouse.service.js'
+import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
 import {
+  rangeCacheKey,
   rangeFilter,
   rangeQueryParams,
-  resolveAnalyticsWindow,
   resolveAnalyticsWindowForLanding,
   type AnalyticsCustomRange,
   type AnalyticsRangeId,
@@ -22,6 +23,7 @@ import {
 import { decryptFieldBlob } from '../lib/field-blob.js'
 import {
   normalizeAnalyticsUtmFilter,
+  utmFilterCacheKey,
   type AnalyticsUtmFilter,
 } from '../lib/analytics-utm-filter.js'
 import type {
@@ -1634,6 +1636,10 @@ export async function getFunnelLeads({
   returningOnly?: boolean
 }): Promise<FunnelLeadsResponse> {
   const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, new Date(), custom)
+  const cacheKey = `analytics:funnel-leads:v1:${workspaceId}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}:${limit}:${offset}:${returningOnly ? 'r1' : 'r0'}`
+  const cached = await readAnalyticsCache<FunnelLeadsResponse>(cacheKey)
+  if (cached) return cached
+
   const ch = getAnalyticsClickHouseClient()
   const where = `${rangeFilter()}
     AND event_name IN ('form_success', 'form_step_complete', 'form_step_view')
@@ -1936,7 +1942,7 @@ export async function getFunnelLeads({
     })
   }
 
-  return {
+  const response: FunnelLeadsResponse = {
     rangeId: window.rangeId,
     visibleLeadFieldKeys,
     level1Stats,
@@ -1948,6 +1954,8 @@ export async function getFunnelLeads({
     offset: page.offset,
     hasMore: page.hasMore,
   }
+  await writeAnalyticsCache(cacheKey, response)
+  return response
 }
 
 export function emptyFunnelLeads(
