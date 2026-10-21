@@ -42,6 +42,7 @@ resource "aws_ecs_task_definition" "api" {
         { name = "AWS_ACCESS_KEY_ID", value = var.api_container_aws_access_key_id },
         { name = "AWS_SECRET_ACCESS_KEY", value = var.api_container_aws_secret_access_key },
         { name = "AROHAA_INTERNAL_API_SECRET", value = var.arohaa_internal_api_secret },
+        { name = "SESSION_TOKEN_SECRET", value = var.session_token_secret },
       ]
       logConfiguration = {
         logDriver = "awslogs"

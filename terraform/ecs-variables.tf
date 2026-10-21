@@ -112,3 +112,10 @@ variable "arohaa_internal_api_secret" {
   sensitive   = true
   default     = ""
 }
+
+variable "session_token_secret" {
+  type        = string
+  description = "HMAC secret for issuing/verifying SDK session tokens (SESSION_TOKEN_SECRET)."
+  sensitive   = true
+  default     = ""
+}

@@ -2042,6 +2042,22 @@ export async function getWarehouseSessionEvidence(input: {
   }
 
   const last = events[events.length - 1]!
+  const uniqueIntegrityFindings: unknown[] = []
+  const seenFindingCodes = new Set<string>()
+  for (const finding of integrityFindings) {
+    const code =
+      finding &&
+      typeof finding === 'object' &&
+      'code' in finding &&
+      typeof (finding as { code?: unknown }).code === 'string'
+        ? (finding as { code: string }).code
+        : ''
+    const key = code || JSON.stringify(finding)
+    if (seenFindingCodes.has(key)) continue
+    seenFindingCodes.add(key)
+    uniqueIntegrityFindings.push(finding)
+  }
+
   return {
     sessionId,
     workspaceId,
@@ -2055,7 +2071,7 @@ export async function getWarehouseSessionEvidence(input: {
       createdAt: e.created_at,
       seq: n(e.event_seq),
     })),
-    integrityFindings,
+    integrityFindings: uniqueIntegrityFindings,
     browserObs,
     behaviorSummary,
     attribution: {
