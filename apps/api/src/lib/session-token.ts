@@ -1,7 +1,12 @@
-import { createHmac, timingSafeEqual } from 'node:crypto'
+import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto'
 
 const DEFAULT_TTL_MS = 30 * 60_000
 const MAX_TTL_MS = 60 * 60_000
+const DERIVED_KEY_INFO = 'arohaa-session-token-v1'
+
+function deriveSecret(base: string): string {
+  return Buffer.from(hkdfSync('sha256', base, '', DERIVED_KEY_INFO, 32)).toString('hex')
+}
 
 export type SessionTokenClaims = {
   wid: string
@@ -20,16 +25,17 @@ export function resolveSessionTokenSecret(): SessionTokenSecretStatus {
   const dedicated = process.env.SESSION_TOKEN_SECRET?.trim()
   if (dedicated) return { ok: true, secret: dedicated }
 
+  const internal = process.env.AROHAA_INTERNAL_API_SECRET?.trim()
+  if (internal) return { ok: true, secret: deriveSecret(internal) }
+
   const isProd = process.env.NODE_ENV === 'production'
   if (isProd) {
     return { ok: false, reason: 'missing' }
   }
 
   const devFallback =
-    process.env.FIELD_BLOB_KEY?.trim() ||
-    process.env.CONTACT_HASH_SECRET?.trim() ||
-    process.env.AROHAA_INTERNAL_API_SECRET?.trim()
-  if (devFallback) return { ok: true, secret: devFallback }
+    process.env.FIELD_BLOB_KEY?.trim() || process.env.CONTACT_HASH_SECRET?.trim()
+  if (devFallback) return { ok: true, secret: deriveSecret(devFallback) }
 
   return { ok: false, reason: 'missing' }
 }
