@@ -6,7 +6,8 @@
 #
 # Deploy: scripts/deploy-api-aws.py (or GitHub Actions Deploy API on apps/api changes).
 
-FROM public.ecr.aws/docker/library/node:20-bookworm-slim AS base
+# Docker Hub avoids anonymous public.ecr.aws pull quotas that break CI builds.
+FROM node:20-bookworm-slim AS base
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
