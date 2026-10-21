@@ -33,7 +33,7 @@ import {
   type AnalyticsCustomRange,
   type AnalyticsWindow,
 } from '../lib/analytics-range.js'
-import { getClickHouseClient } from './clickhouse.service.js'
+import { getAnalyticsClickHouseClient } from './clickhouse.service.js'
 
 type CHJson<T> = { data: T[] }
 
@@ -138,7 +138,7 @@ async function seoOrganicFromClickHouse({
   window: AnalyticsWindow
   brandName: string
 }): Promise<{ rows: SeoResultRow[]; content: SeoContentItem[] }> {
-  const ch = getClickHouseClient()
+  const ch = getAnalyticsClickHouseClient()
 
   const currentResult = await ch.query({
     format: 'JSON',
@@ -150,7 +150,7 @@ async function seoOrganicFromClickHouse({
       SELECT
         url AS page_url,
         anyHeavy(nullIf(JSONExtractString(properties, 'page_title'), '')) AS page_title,
-        uniqExact(session_id) AS sessions,
+        uniq(session_id) AS sessions,
         count() AS views
       FROM events_raw
       WHERE ${rangeFilter()}
@@ -172,7 +172,7 @@ async function seoOrganicFromClickHouse({
     query: `
       SELECT
         url AS page_url,
-        uniqExact(session_id) AS sessions
+        uniq(session_id) AS sessions
       FROM events_raw
       WHERE ${previousRangeFilter()}
         AND event_name = 'page_view'

@@ -4,7 +4,6 @@ import {
   rangeCacheKey,
   rangeFilter,
   rangeQueryParams,
-  resolveAnalyticsWindow,
   resolveAnalyticsWindowForLanding,
   type AnalyticsCustomRange,
   type AnalyticsRangeId,
@@ -15,8 +14,8 @@ import {
   type AnalyticsUtmFilter,
 } from '../lib/analytics-utm-filter.js'
 import { computePeriodChangePct } from '../lib/funnel-trend.js'
-import { redis } from './redis.service.js'
-import { getClickHouseClient } from './clickhouse.service.js'
+import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
+import { getAnalyticsClickHouseClient } from './clickhouse.service.js'
 import type {
   FunnelDashboardResponse,
   FunnelDropOffRow,
@@ -50,10 +49,10 @@ function coreFunnelQuery(whereClause: string): string {
   return `
     SELECT
       countIf(event_name = 'page_view') AS page_views,
-      uniqExactIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth','service_click')) AS interactions,
-      uniqExactIf(session_id, event_name = 'form_start') AS form_started,
+      uniqIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth','service_click')) AS interactions,
+      uniqIf(session_id, event_name = 'form_start') AS form_started,
       uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
-      uniqExactIf(session_id, event_name = 'zip_start') AS zip_started,
+      uniqIf(session_id, event_name = 'zip_start') AS zip_started,
       uniqExactIf(session_id, event_name = 'zip_submit') AS zip_submitted
     FROM events_raw
     WHERE ${whereClause}
@@ -71,7 +70,7 @@ function multiStepQuery(whereClause: string): string {
     SELECT
       step_index,
       anyHeavy(step_name) AS step_name,
-      uniqExact(session_id) AS sessions
+      uniq(session_id) AS sessions
     FROM (
       SELECT
         session_id,
@@ -107,7 +106,7 @@ function dropOffQuery(whereClause: string, mode: 'standard' | 'zipRedirect' = 's
     FROM (
       SELECT
         field_name,
-        uniqExact(session_id) AS reached
+        uniq(session_id) AS reached
       FROM (
         SELECT DISTINCT
           session_id,
@@ -123,7 +122,7 @@ function dropOffQuery(whereClause: string, mode: 'standard' | 'zipRedirect' = 's
     INNER JOIN (
       SELECT
         field_name,
-        uniqExact(session_id) AS drop_offs
+        uniq(session_id) AS drop_offs
       FROM (
         SELECT DISTINCT
           session_id,
@@ -329,16 +328,10 @@ export async function getAnalyticsFunnel({
   const dropOffMode =
     formType === 'zip' && hasRedirect ? 'zipRedirect' : 'standard'
   const cacheKey = `analytics:funnel:v10:${workspaceId}:${rangeCacheKey(window, utmKey)}:${formType}:${showOfferSteps ? 'r1' : 'r0'}:${showDropOff ? 'd1' : 'd0'}`
-  try {
-    const cachedStr = await redis.get(cacheKey)
-    if (cachedStr) {
-      return JSON.parse(cachedStr) as FunnelDashboardResponse
-    }
-  } catch (err) {
-    // ignore cache read errors
-  }
+  const cached = await readAnalyticsCache<FunnelDashboardResponse>(cacheKey)
+  if (cached) return cached
 
-  const ch = getClickHouseClient()
+  const ch = getAnalyticsClickHouseClient()
   const p = {
     wid: workspaceId,
     ...rangeQueryParams(window),
@@ -394,11 +387,7 @@ export async function getAnalyticsFunnel({
     dropOffRows: showDropOff ? buildDropOffRows(dropOffRows) : [],
   }
 
-  try {
-    await redis.set(cacheKey, JSON.stringify(response), 'EX', 45)
-  } catch (err) {
-    // ignore cache write errors
-  }
+  await writeAnalyticsCache(cacheKey, response)
   return response
 }
 

@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm'
-import { getClickHouseClient } from './clickhouse.service.js'
+import { getAnalyticsClickHouseClient } from './clickhouse.service.js'
 import {
   db,
   experimentIncludesLandingPage,
@@ -133,7 +133,7 @@ function locationBreakdownQuery(
       ${labelExpr} AS location_label,
       ${variantExpr} AS variant_label,
       uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
-      uniqExact(session_id) AS sessions
+      uniq(session_id) AS sessions
     FROM events_raw
     WHERE ${whereSql}
     GROUP BY location_label, variant_label
@@ -367,7 +367,7 @@ export async function getAnalyticsExperiments({
   const cached = await readAnalyticsCache<AnalyticsExperiments>(cacheKey)
   if (cached) return cached
 
-  const ch = getClickHouseClient()
+  const ch = getAnalyticsClickHouseClient()
   const rangeParams = rangeQueryParams(window)
   const utmParams = utmFilterParams(utmFilter)
 
@@ -394,9 +394,9 @@ export async function getAnalyticsExperiments({
         query: `
           SELECT
             ${variantExpr} AS variant_label,
-            uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+            uniqIf(user_id, event_name = 'page_view') AS visitors,
             uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
-            uniqExact(session_id) AS sessions
+            uniq(session_id) AS sessions
           FROM events_raw
           WHERE ${whereSql}
           GROUP BY variant_label
@@ -466,9 +466,9 @@ export async function getAnalyticsExperiments({
         query: `
           SELECT
             ${singleVariantExpr} AS variant_label,
-            uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+            uniqIf(user_id, event_name = 'page_view') AS visitors,
             uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
-            uniqExact(session_id) AS sessions
+            uniq(session_id) AS sessions
           FROM events_raw
           WHERE ${singleWhere}
           GROUP BY variant_label

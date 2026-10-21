@@ -1,4 +1,4 @@
-import { getClickHouseClient } from './clickhouse.service.js'
+import { getAnalyticsClickHouseClient } from './clickhouse.service.js'
 import {
   DAY_ORDER,
   formatDayOfWeek,
@@ -171,7 +171,7 @@ export async function getAnalyticsSegments({
   const cached = await readAnalyticsCache<AnalyticsSegments>(cacheKey)
   if (cached) return cached
 
-  const ch = getClickHouseClient()
+  const ch = getAnalyticsClickHouseClient()
   const where = rangeFilter(utmFilter)
   const p = {
     wid: workspaceId,
@@ -188,9 +188,9 @@ export async function getAnalyticsSegments({
         query: `
         SELECT
           if(city = '', 'Unknown', city) AS label,
-          uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+          uniqIf(user_id, event_name = 'page_view') AS visitors,
           uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
-          uniqExact(session_id) AS sessions
+          uniq(session_id) AS sessions
         FROM events_raw
         WHERE ${where}
         GROUP BY label
@@ -204,9 +204,9 @@ export async function getAnalyticsSegments({
         query: `
         SELECT
           lower(device) AS label,
-          uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+          uniqIf(user_id, event_name = 'page_view') AS visitors,
           uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
-          uniqExact(session_id) AS sessions
+          uniq(session_id) AS sessions
         FROM events_raw
         WHERE ${where}
         GROUP BY label
@@ -220,9 +220,9 @@ export async function getAnalyticsSegments({
         query: `
         SELECT
           ${chToDayOfWeek('created_at', 1)} AS label,
-          uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+          uniqIf(user_id, event_name = 'page_view') AS visitors,
           uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
-          uniqExact(session_id) AS sessions
+          uniq(session_id) AS sessions
         FROM events_raw
         WHERE ${where}
         GROUP BY label
@@ -236,9 +236,9 @@ export async function getAnalyticsSegments({
             query: `
             SELECT
               ${chDayBucketKey('created_at')} AS bucket,
-              uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+              uniqIf(user_id, event_name = 'page_view') AS visitors,
               uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
-              uniqExact(session_id) AS sessions
+              uniq(session_id) AS sessions
             FROM events_raw
             WHERE ${where}
             GROUP BY bucket

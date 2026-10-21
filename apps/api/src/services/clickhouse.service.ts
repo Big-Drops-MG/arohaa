@@ -68,10 +68,21 @@ TTL toDateTime(created_at) + toIntervalDay(180)
 `
 
 let client: ClickHouseClient | null = null
+let analyticsClient: ClickHouseClient | null = null
 let pingClient: ClickHouseClient | null = null
 let clickHouseBackoffUntil = 0
 const CLICKHOUSE_BACKOFF_MS = 30_000
 const ANALYTICS_MAX_OPEN_CONNECTIONS = 32
+
+
+const ANALYTICS_QUERY_SETTINGS = {
+  max_threads: 4,
+  max_execution_time: 20,
+  max_bytes_to_read: 20_000_000_000,
+  use_query_cache: 1,
+  query_cache_ttl: 60,
+  query_cache_nondeterministic_function_handling: 'ignore',
+} as const
 
 export function shouldSkipClickHouse(): boolean {
   return Date.now() < clickHouseBackoffUntil
@@ -128,6 +139,18 @@ export function getClickHouseClient(): ClickHouseClient {
   })
 
   return client
+}
+
+export function getAnalyticsClickHouseClient(): ClickHouseClient {
+  if (analyticsClient) return analyticsClient
+
+  analyticsClient = createClickHouseClient({
+    max_open_connections: ANALYTICS_MAX_OPEN_CONNECTIONS,
+    request_timeout: 30_000,
+    clickhouse_settings: { ...ANALYTICS_QUERY_SETTINGS },
+  })
+
+  return analyticsClient
 }
 
 function getClickHousePingClient(): ClickHouseClient {
@@ -297,26 +320,25 @@ export async function ensureEventsTable(): Promise<void> {
     `,
   })
 
+  await ch.command({
+    query: `ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS zip_submitted AggregateFunction(uniq, String)`,
+  })
+  await ch.command({
+    query: `ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS service_clicks AggregateFunction(uniq, String)`,
+  })
+
   await ch.command({ query: 'DROP VIEW IF EXISTS daily_metrics_mv' })
 
   await ch.command({
     query: `
       CREATE MATERIALIZED VIEW IF NOT EXISTS daily_metrics_mv
       TO daily_metrics AS
-      SELECT
-          workspace_id,
-          ${chToDate('created_at')} AS day,
-          sum(if(event_name = 'page_view', 1, 0)) AS pageviews,
-          uniqStateIf(user_id, event_name = 'page_view') AS visitors,
-          uniqState(session_id) AS sessions,
-          uniqStateIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth')) AS interactions,
-          uniqStateIf(session_id, event_name = 'form_start') AS form_started,
-          uniqStateIf(session_id, event_name = 'form_success') AS form_submitted
-      FROM ${CLICKHOUSE_EVENTS_TABLE}
-      GROUP BY workspace_id, day
+      ${DAILY_METRICS_SELECT_SQL}
     `,
   })
 
+  await ensureSchemaMetaTable(ch)
+  await ensureSessionRollup(ch)
   await ensureHeatmapSchema(ch)
   await ensureLeadRiskTable(ch)
   await ensureLeadContactKeysTable(ch)
@@ -726,11 +748,275 @@ async function ensureHeatmapSchema(ch: ClickHouseClient): Promise<void> {
       GROUP BY workspace_id, page_url, device, day, element_selector
     `,
   })
+
+  await ensureHeatmapPointRollup(ch)
 }
 
-const DAILY_METRICS_TZ_VERSION = 'america_new_york_v1'
+export const HEATMAP_POINT_ROLLUP_TABLE = 'heatmap_point_rollup'
+const HEATMAP_POINT_ROLLUP_BACKFILL_KEY = 'heatmap_point_rollup_backfill'
 
-async function rebuildDailyMetricsIfNeeded(ch: ClickHouseClient): Promise<void> {
+export const HEATMAP_ROLLUP_DEVICE_SQL = `
+  multiIf(
+    device IN ('mobile', 'tablet', 'desktop'), device,
+    viewport_width > 0 AND viewport_width < 768, 'mobile',
+    viewport_width >= 768 AND viewport_width < 1024, 'tablet',
+    'desktop'
+  )`
+export const HEATMAP_ROLLUP_PAGE_KEY_SQL = `replaceRegexpOne(page_url, '\\\\?[^#]*', '')`
+
+const HEATMAP_POINT_ROLLUP_SELECT_SQL = (extraWhere: string) => `
+      WITH
+        if(JSONHas(properties, 'x'), JSONExtractFloat(properties, 'x'), x) AS ex,
+        if(JSONHas(properties, 'y'), JSONExtractFloat(properties, 'y'), y) AS ey
+      SELECT
+          workspace_id,
+          ${HEATMAP_ROLLUP_PAGE_KEY_SQL} AS page_key,
+          ${HEATMAP_ROLLUP_DEVICE_SQL} AS device,
+          utm_source,
+          utm_s1,
+          ${chToDate('timestamp')} AS day,
+          event_type,
+          element_selector AS selector,
+          ifNull(nullIf(JSONExtractString(properties, 'fieldName'), ''), '') AS field_name,
+          multiIf(
+            event_type = 'mousemove', round(x, 2),
+            event_type IN ('scroll', 'section'), 0.,
+            element_selector = '', round(x, 2),
+            round(ex, 1)
+          ) AS gx,
+          multiIf(
+            event_type = 'mousemove', round(y, 2),
+            event_type = 'scroll', toFloat64(toInt32(floor(least(greatest(y, 0.), 0.9999) * 10.) * 10)),
+            event_type = 'section', 0.,
+            element_selector = '', round(y, 2),
+            round(ey, 1)
+          ) AS gy,
+          count() AS value,
+          sum(x) AS sum_x,
+          sum(y) AS sum_y,
+          sum(ex) AS sum_ex,
+          sum(ey) AS sum_ey,
+          sumIf(JSONExtractFloat(properties, 'dwell_ms'), event_type = 'section') AS dwell_ms,
+          min(timestamp) AS first_at
+      FROM ${HEATMAP_EVENTS_TABLE}
+      ${extraWhere}
+      GROUP BY workspace_id, page_key, device, utm_source, utm_s1, day, event_type, selector, field_name, gx, gy
+`
+
+
+async function ensureHeatmapPointRollup(ch: ClickHouseClient): Promise<void> {
+  await ch.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS ${HEATMAP_POINT_ROLLUP_TABLE} (
+          workspace_id UUID,
+          page_key String,
+          device LowCardinality(String),
+          utm_source LowCardinality(String),
+          utm_s1 LowCardinality(String),
+          day Date,
+          event_type LowCardinality(String),
+          selector String,
+          field_name String,
+          gx Float64,
+          gy Float64,
+          value SimpleAggregateFunction(sum, UInt64),
+          sum_x SimpleAggregateFunction(sum, Float64),
+          sum_y SimpleAggregateFunction(sum, Float64),
+          sum_ex SimpleAggregateFunction(sum, Float64),
+          sum_ey SimpleAggregateFunction(sum, Float64),
+          dwell_ms SimpleAggregateFunction(sum, Float64),
+          first_at SimpleAggregateFunction(min, DateTime64(3))
+      ) ENGINE = AggregatingMergeTree()
+      PARTITION BY toYYYYMM(day)
+      ORDER BY (workspace_id, page_key, event_type, day, device, utm_source, utm_s1, selector, field_name, gx, gy)
+      TTL day + toIntervalDay(180)
+    `,
+  })
+
+  const existing = await ch.query({
+    query: `
+      SELECT value
+      FROM arohaa_schema_meta FINAL
+      WHERE key = {key:String}
+      LIMIT 1
+    `,
+    query_params: { key: HEATMAP_POINT_ROLLUP_BACKFILL_KEY },
+    format: 'JSON',
+  })
+  const alreadyBackfilled =
+    ((await existing.json()) as { data: Array<{ value: string }> }).data.length > 0
+
+  await ch.command({
+    query: `
+      CREATE MATERIALIZED VIEW IF NOT EXISTS ${HEATMAP_POINT_ROLLUP_TABLE}_mv
+      TO ${HEATMAP_POINT_ROLLUP_TABLE} AS
+      ${HEATMAP_POINT_ROLLUP_SELECT_SQL('')}
+    `,
+  })
+
+  if (alreadyBackfilled) return
+
+  const cutoffRes = await ch.query({
+    query: `SELECT formatDateTime(now64(3, 'UTC'), '%Y-%m-%d %H:%i:%S.%f', 'UTC') AS cutoff`,
+    format: 'JSON',
+  })
+  const cutoff = ((await cutoffRes.json()) as { data: Array<{ cutoff: string }> }).data[0]?.cutoff
+  if (!cutoff) return
+
+  await ch.command({
+    query: `
+      INSERT INTO arohaa_schema_meta (key, value)
+      VALUES ({key:String}, {cutoff:String})
+    `,
+    query_params: { key: HEATMAP_POINT_ROLLUP_BACKFILL_KEY, cutoff },
+  })
+
+  void ch
+    .command({
+      query: `
+        INSERT INTO ${HEATMAP_POINT_ROLLUP_TABLE}
+        ${HEATMAP_POINT_ROLLUP_SELECT_SQL(`WHERE timestamp < toDateTime64({cutoff:String}, 3, 'UTC')`)}
+      `,
+      query_params: { cutoff },
+      clickhouse_settings: { max_execution_time: 1800 },
+    })
+    .catch(async (err: unknown) => {
+      console.error('[clickhouse] heatmap_point_rollup backfill failed; will retry on next boot', err)
+      await ch
+        .command({
+          query: `ALTER TABLE arohaa_schema_meta DELETE WHERE key = {key:String}`,
+          query_params: { key: HEATMAP_POINT_ROLLUP_BACKFILL_KEY },
+        })
+        .catch(() => undefined)
+    })
+}
+
+const DAILY_METRICS_TZ_VERSION = 'america_new_york_v2_submissions'
+
+const DAILY_METRICS_SELECT_SQL = `
+      SELECT
+          workspace_id,
+          ${chToDate('created_at')} AS day,
+          sum(if(event_name = 'page_view', 1, 0)) AS pageviews,
+          uniqStateIf(user_id, event_name = 'page_view') AS visitors,
+          uniqState(session_id) AS sessions,
+          uniqStateIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth','service_click')) AS interactions,
+          uniqStateIf(session_id, event_name = 'form_start') AS form_started,
+          uniqStateIf(session_id, event_name = 'form_success') AS form_submitted,
+          uniqStateIf(session_id, event_name IN ('zip_submit', 'form_success')) AS zip_submitted,
+          uniqStateIf(session_id, event_name = 'service_click') AS service_clicks
+      FROM ${CLICKHOUSE_EVENTS_TABLE}
+      GROUP BY workspace_id, day
+`
+
+export const SESSION_ROLLUP_TABLE = 'session_rollup'
+const SESSION_ROLLUP_BACKFILL_KEY = 'session_rollup_backfill'
+
+const SESSION_ROLLUP_SELECT_SQL = (extraWhere: string) => `
+      SELECT
+          workspace_id,
+          session_id,
+          any(user_id) AS user_id,
+          any(utm_source) AS utm_source,
+          any(utm_s1) AS utm_s1,
+          min(created_at) AS first_at,
+          max(created_at) AS last_at,
+          count() AS events,
+          countIf(event_name = 'page_view') AS page_views,
+          max(event_name = 'form_start') AS form_start,
+          max(event_name = 'form_success') AS form_success,
+          max(event_name = 'zip_submit') AS zip_submit,
+          max(event_name = 'service_click') AS service_click,
+          max(event_name IN ('button_click','link_click','form_start','scroll_depth','service_click')) AS interaction
+      FROM ${CLICKHOUSE_EVENTS_TABLE}
+      ${extraWhere}
+      GROUP BY workspace_id, session_id
+`
+
+
+async function ensureSessionRollup(ch: ClickHouseClient): Promise<void> {
+  await ch.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS ${SESSION_ROLLUP_TABLE} (
+          workspace_id UUID,
+          session_id String,
+          user_id SimpleAggregateFunction(any, String),
+          utm_source SimpleAggregateFunction(any, String),
+          utm_s1 SimpleAggregateFunction(any, String),
+          first_at SimpleAggregateFunction(min, DateTime64(3, 'UTC')),
+          last_at SimpleAggregateFunction(max, DateTime64(3, 'UTC')),
+          events SimpleAggregateFunction(sum, UInt64),
+          page_views SimpleAggregateFunction(sum, UInt64),
+          form_start SimpleAggregateFunction(max, UInt8),
+          form_success SimpleAggregateFunction(max, UInt8),
+          zip_submit SimpleAggregateFunction(max, UInt8),
+          service_click SimpleAggregateFunction(max, UInt8),
+          interaction SimpleAggregateFunction(max, UInt8)
+      ) ENGINE = AggregatingMergeTree()
+      ORDER BY (workspace_id, session_id)
+      TTL toDateTime(last_at) + toIntervalDay(180)
+    `,
+  })
+
+  const existing = await ch.query({
+    query: `
+      SELECT value
+      FROM arohaa_schema_meta FINAL
+      WHERE key = {key:String}
+      LIMIT 1
+    `,
+    query_params: { key: SESSION_ROLLUP_BACKFILL_KEY },
+    format: 'JSON',
+  })
+  const rows = ((await existing.json()) as { data: Array<{ value: string }> }).data
+  const alreadyBackfilled = rows.length > 0
+
+  await ch.command({
+    query: `
+      CREATE MATERIALIZED VIEW IF NOT EXISTS ${SESSION_ROLLUP_TABLE}_mv
+      TO ${SESSION_ROLLUP_TABLE} AS
+      ${SESSION_ROLLUP_SELECT_SQL('')}
+    `,
+  })
+
+  if (alreadyBackfilled) return
+
+  const cutoffRes = await ch.query({
+    query: `SELECT formatDateTime(now64(3, 'UTC'), '%Y-%m-%d %H:%i:%S.%f', 'UTC') AS cutoff`,
+    format: 'JSON',
+  })
+  const cutoff = ((await cutoffRes.json()) as { data: Array<{ cutoff: string }> }).data[0]?.cutoff
+  if (!cutoff) return
+
+  await ch.command({
+    query: `
+      INSERT INTO arohaa_schema_meta (key, value)
+      VALUES ({key:String}, {cutoff:String})
+    `,
+    query_params: { key: SESSION_ROLLUP_BACKFILL_KEY, cutoff },
+  })
+
+  void ch
+    .command({
+      query: `
+        INSERT INTO ${SESSION_ROLLUP_TABLE}
+        ${SESSION_ROLLUP_SELECT_SQL(`WHERE created_at < toDateTime64({cutoff:String}, 3, 'UTC')`)}
+      `,
+      query_params: { cutoff },
+      clickhouse_settings: { max_execution_time: 1800 },
+    })
+    .catch(async (err: unknown) => {
+      console.error('[clickhouse] session_rollup backfill failed; will retry on next boot', err)
+      await ch
+        .command({
+          query: `ALTER TABLE arohaa_schema_meta DELETE WHERE key = {key:String}`,
+          query_params: { key: SESSION_ROLLUP_BACKFILL_KEY },
+        })
+        .catch(() => undefined)
+    })
+}
+
+async function ensureSchemaMetaTable(ch: ClickHouseClient): Promise<void> {
   await ch.command({
     query: `
       CREATE TABLE IF NOT EXISTS arohaa_schema_meta (
@@ -740,7 +1026,9 @@ async function rebuildDailyMetricsIfNeeded(ch: ClickHouseClient): Promise<void> 
       ORDER BY key
     `,
   })
+}
 
+async function rebuildDailyMetricsIfNeeded(ch: ClickHouseClient): Promise<void> {
   const versionRes = await ch.query({
     query: `
       SELECT value
@@ -759,17 +1047,7 @@ async function rebuildDailyMetricsIfNeeded(ch: ClickHouseClient): Promise<void> 
   await ch.command({
     query: `
       INSERT INTO daily_metrics
-      SELECT
-          workspace_id,
-          ${chToDate('created_at')} AS day,
-          sum(if(event_name = 'page_view', 1, 0)) AS pageviews,
-          uniqStateIf(user_id, event_name = 'page_view') AS visitors,
-          uniqState(session_id) AS sessions,
-          uniqStateIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth')) AS interactions,
-          uniqStateIf(session_id, event_name = 'form_start') AS form_started,
-          uniqStateIf(session_id, event_name = 'form_success') AS form_submitted
-      FROM ${CLICKHOUSE_EVENTS_TABLE}
-      GROUP BY workspace_id, day
+      ${DAILY_METRICS_SELECT_SQL}
     `,
   })
   await ch.command({
@@ -880,11 +1158,14 @@ export async function insertEvents(rows: EventRow[]): Promise<void> {
 
 export async function closeClickHouseClient(): Promise<void> {
   const main = client
+  const analytics = analyticsClient
   const ping = pingClient
   client = null
+  analyticsClient = null
   pingClient = null
   await Promise.all([
     main ? main.close() : Promise.resolve(),
+    analytics ? analytics.close() : Promise.resolve(),
     ping ? ping.close() : Promise.resolve(),
   ])
 }

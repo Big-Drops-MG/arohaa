@@ -1,4 +1,4 @@
-import { getClickHouseClient } from './clickhouse.service.js'
+import { getAnalyticsClickHouseClient } from './clickhouse.service.js'
 import {
   decryptFieldBlob,
   decryptJsonBlob,
@@ -178,7 +178,7 @@ export async function getSessionInteractionLog({
     }
   }
 
-  const ch = getClickHouseClient()
+  const ch = getAnalyticsClickHouseClient()
   const res = await ch.query({
     format: 'JSON',
     query_params: { wid: workspaceId, sid, ev: FI_EVENT_NAME },

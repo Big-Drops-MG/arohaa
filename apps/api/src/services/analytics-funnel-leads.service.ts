@@ -1,4 +1,4 @@
-import { getClickHouseClient } from './clickhouse.service.js'
+import { getAnalyticsClickHouseClient } from './clickhouse.service.js'
 import {
   rangeFilter,
   rangeQueryParams,
@@ -1634,7 +1634,7 @@ export async function getFunnelLeads({
   returningOnly?: boolean
 }): Promise<FunnelLeadsResponse> {
   const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, new Date(), custom)
-  const ch = getClickHouseClient()
+  const ch = getAnalyticsClickHouseClient()
   const where = `${rangeFilter()}
     AND event_name IN ('form_success', 'form_step_complete', 'form_step_view')
     AND (

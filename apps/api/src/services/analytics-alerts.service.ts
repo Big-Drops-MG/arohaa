@@ -1,4 +1,4 @@
-import { getClickHouseClient } from './clickhouse.service.js'
+import { getAnalyticsClickHouseClient } from './clickhouse.service.js'
 import type { RangeId } from '../types/analytics-experiments.js'
 import type {
   AnalyticsAlertItem,
@@ -76,7 +76,7 @@ export async function getAnalyticsAlerts({
   const cached = await readAnalyticsCache<AnalyticsAlertsResponse>(cacheKey)
   if (cached) return cached
 
-  const ch = getClickHouseClient()
+  const ch = getAnalyticsClickHouseClient()
   const utmSql = utmFilterSql(utmFilter)
   const p = {
     wid: workspaceId,
@@ -91,7 +91,7 @@ export async function getAnalyticsAlerts({
     query_params: p,
     query: `
       SELECT
-        uniqExactIf(
+        uniqIf(
           session_id,
           created_at >= toDateTime64({range_from:String}, 3, 'UTC') AND created_at < toDateTime64({range_to:String}, 3, 'UTC')
         ) AS current_sessions,
@@ -101,14 +101,14 @@ export async function getAnalyticsAlerts({
             AND created_at >= toDateTime64({range_from:String}, 3, 'UTC')
             AND created_at < toDateTime64({range_to:String}, 3, 'UTC')
         ) AS current_form_success,
-        uniqExactIf(
+        uniqIf(
           session_id,
           event_name = 'form_start'
             AND created_at >= toDateTime64({range_from:String}, 3, 'UTC')
             AND created_at < toDateTime64({range_to:String}, 3, 'UTC')
         ) AS current_form_starts,
 
-        uniqExactIf(
+        uniqIf(
           session_id,
           created_at >= toDateTime64({prev_from:String}, 3, 'UTC') AND created_at < toDateTime64({prev_to:String}, 3, 'UTC')
         ) AS prev_sessions,
@@ -118,7 +118,7 @@ export async function getAnalyticsAlerts({
             AND created_at >= toDateTime64({prev_from:String}, 3, 'UTC')
             AND created_at < toDateTime64({prev_to:String}, 3, 'UTC')
         ) AS prev_form_success,
-        uniqExactIf(
+        uniqIf(
           session_id,
           event_name = 'form_start'
             AND created_at >= toDateTime64({prev_from:String}, 3, 'UTC')

@@ -1,4 +1,4 @@
-import { getClickHouseClient } from './clickhouse.service.js'
+import { getAnalyticsClickHouseClient } from './clickhouse.service.js'
 import type { AnalyticsEvents, RangeId } from '../types/analytics-events.js'
 import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
 import {
@@ -49,7 +49,7 @@ export async function getAnalyticsEvents({
   const cached = await readAnalyticsCache<AnalyticsEvents>(cacheKey)
   if (cached) return cached
 
-  const ch = getClickHouseClient()
+  const ch = getAnalyticsClickHouseClient()
   const where = rangeFilter(utmFilter)
   const p = {
     wid: workspaceId,
@@ -68,7 +68,7 @@ export async function getAnalyticsEvents({
           countIf(event_name = 'call_click') AS call_click,
           countIf(event_name = 'form_start') AS form_started,
           countIf(event_name IN ('form_success', 'service_click')) AS form_submitted,
-          uniqExact(session_id) AS total_sessions
+          uniq(session_id) AS total_sessions
         FROM events_raw
         WHERE ${where}
       `,
@@ -81,7 +81,7 @@ export async function getAnalyticsEvents({
           ${chDayBucketKey('created_at')} AS date_label,
           countIf(event_name = 'zip_submit') AS zip_submitted,
           countIf(event_name IN ('form_success', 'service_click')) AS form_submitted,
-          uniqExact(session_id) AS total_sessions
+          uniq(session_id) AS total_sessions
         FROM events_raw
         WHERE ${where}
         GROUP BY date_label
@@ -95,7 +95,7 @@ export async function getAnalyticsEvents({
         SELECT
           nullIf(JSONExtractString(properties, 'service_id'), '') AS service_id,
           nullIf(JSONExtractString(properties, 'service_label'), '') AS service_label,
-          uniqExact(session_id) AS clicks
+          uniq(session_id) AS clicks
         FROM events_raw
         WHERE ${where}
           AND event_name = 'service_click'

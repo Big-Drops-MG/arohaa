@@ -8,7 +8,6 @@ export function submissionMetricLabel(formType: string): string {
   return formType === "zip" ? "Zip Submits" : "Form Submits"
 }
 
-/** Card labels: Active Now is live; Visitors / Submits are all-time. */
 export function submissionCardMetricLabel(formType: string): string {
   return submissionMetricLabel(formType)
 }

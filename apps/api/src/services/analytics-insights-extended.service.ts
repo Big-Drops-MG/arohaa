@@ -39,7 +39,7 @@ async function dropoffInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       SELECT
         ${dayKey} AS day,
         ${FIELD_NAME} AS field,
-        uniqExact(session_id) AS focuses
+        uniq(session_id) AS focuses
       FROM events_raw
       WHERE ${ctx.where}
         AND event_name = 'form_field_focus'
@@ -55,7 +55,7 @@ async function dropoffInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       SELECT
         ${dayKey} AS day,
         ${FIELD_NAME} AS field,
-        uniqExact(session_id) AS focuses
+        uniq(session_id) AS focuses
       FROM events_raw
       WHERE ${ctx.where}
         AND event_name = 'form_field_focus'
@@ -75,7 +75,7 @@ async function dropoffInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       SELECT
         ${dayKey} AS day,
         ${STEP_NAME} AS stage,
-        uniqExact(session_id) AS sessions
+        uniq(session_id) AS sessions
       FROM events_raw
       WHERE ${ctx.where}
         AND event_name = 'form_step_view'
@@ -90,8 +90,8 @@ async function dropoffInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       SELECT
         ${dayKey} AS day,
         if(device IN ('mobile','tablet','desktop'), device, 'desktop') AS device,
-        uniqExactIf(session_id, event_name = 'form_field_focus') AS focuses,
-        uniqExact(session_id) AS sessions
+        uniqIf(session_id, event_name = 'form_field_focus') AS focuses,
+        uniq(session_id) AS sessions
       FROM events_raw
       WHERE ${ctx.where}
       GROUP BY day, device
@@ -104,7 +104,7 @@ async function dropoffInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       SELECT
         ${dayKey} AS day,
         if(state = '', 'Unknown', state) AS state,
-        uniqExactIf(session_id, event_name = 'form_field_focus') AS focuses
+        uniqIf(session_id, event_name = 'form_field_focus') AS focuses
       FROM events_raw
       WHERE ${ctx.where}
       GROUP BY day, state
@@ -204,7 +204,7 @@ async function dropoffInsights(ctx: Ctx): Promise<AnalyticsInsights> {
     SELECT
       band,
       stage,
-      uniqExact(session_id) AS sessions
+      uniq(session_id) AS sessions
     FROM (
       SELECT
         session_id,
@@ -299,8 +299,8 @@ async function deviceInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       SELECT
         ${dayKey} AS day,
         if(device IN ('mobile','tablet','desktop'), device, 'desktop') AS device,
-        uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-        uniqExact(session_id) AS sessions,
+        uniqIf(user_id, event_name = 'page_view') AS visitors,
+        uniq(session_id) AS sessions,
         uniqExactIf(session_id, ${ZIP_SUBMIT}) AS zips,
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads
       FROM events_raw
@@ -353,7 +353,7 @@ async function deviceInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       SELECT
         if(device IN ('mobile','tablet','desktop'), device, 'desktop') AS device,
         if(nullIf(JSONExtractString(properties, 'stepName'), '') = '', concat('Step ', toString(JSONExtractUInt(properties, 'stepIndex'))), JSONExtractString(properties, 'stepName')) AS stage,
-        uniqExact(session_id) AS sessions
+        uniq(session_id) AS sessions
       FROM events_raw
       WHERE ${ctx.where}
         AND event_name = 'form_step_view'
@@ -579,7 +579,7 @@ async function geoInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       SELECT
         ${dayKey} AS day,
         if(city = '', 'Unknown', city) AS city,
-        uniqExact(session_id) AS sessions,
+        uniq(session_id) AS sessions,
         uniqExactIf(session_id, ${ZIP_SUBMIT}) AS zips,
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads
       FROM events_raw
@@ -856,7 +856,7 @@ async function experimentInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       SELECT
         ${dayKey} AS day,
         if(variant = '', '(none)', variant) AS variant,
-        uniqExact(session_id) AS sessions,
+        uniq(session_id) AS sessions,
         uniqExactIf(session_id, ${ZIP_SUBMIT}) AS zips,
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads
       FROM events_raw
@@ -876,7 +876,7 @@ async function experimentInsights(ctx: Ctx): Promise<AnalyticsInsights> {
         SELECT
           cohort_week,
           dateDiff('week', cohort_week, activity_week) AS week_number,
-          uniqExact(vid) AS users
+          uniq(vid) AS users
         FROM (
           SELECT
             coalesce(nullIf(user_id, ''), nullIf(fingerprint, ''), session_id) AS vid,
@@ -909,7 +909,7 @@ async function experimentInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       FROM (
         SELECT
           ${dayKey} AS day,
-          uniqExactIf(session_id, is_return = 1) AS returning_sessions,
+          uniqIf(session_id, is_return = 1) AS returning_sessions,
           uniqExactIf(session_id, is_return = 1 AND has_lead = 1) AS returning_leads
         FROM (
           SELECT
@@ -1122,7 +1122,7 @@ async function ageInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       ),
       queryJson<{ band: string; stage: string; sessions: string }>(
         `
-        SELECT band, stage, uniqExact(session_id) AS sessions
+        SELECT band, stage, uniq(session_id) AS sessions
         FROM (
           SELECT
             session_id,
@@ -1833,12 +1833,12 @@ async function qualityInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       `
       SELECT
         ${dayKey} AS day,
-        uniqExactIf(session_id,
+        uniqIf(session_id,
           positionCaseInsensitive(browser, 'bot') > 0
           OR positionCaseInsensitive(browser, 'crawler') > 0
           OR fingerprint = ''
         ) AS bots,
-        uniqExact(session_id) AS sessions
+        uniq(session_id) AS sessions
       FROM events_raw
       WHERE ${ctx.where}
       GROUP BY day

@@ -62,7 +62,7 @@ export async function intelligenceInsights(
       `
       SELECT
         if(state = '', 'Unknown', state) AS state,
-        uniqExact(session_id) AS sessions,
+        uniq(session_id) AS sessions,
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads
       FROM events_raw
       WHERE ${ctx.where}
@@ -76,7 +76,7 @@ export async function intelligenceInsights(
       `
       SELECT
         if(city = '', 'Unknown', city) AS city,
-        uniqExact(session_id) AS sessions,
+        uniq(session_id) AS sessions,
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads
       FROM events_raw
       WHERE ${ctx.where}
@@ -91,7 +91,7 @@ export async function intelligenceInsights(
       `
       SELECT
         if(zipcode = '', 'Unknown', zipcode) AS zip,
-        uniqExact(session_id) AS sessions,
+        uniq(session_id) AS sessions,
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads
       FROM events_raw
       WHERE ${ctx.where}
@@ -110,7 +110,7 @@ export async function intelligenceInsights(
       `
       SELECT
         if(device IN ('mobile','tablet','desktop'), device, 'desktop') AS device,
-        uniqExact(session_id) AS sessions,
+        uniq(session_id) AS sessions,
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads
       FROM events_raw
       WHERE ${ctx.where}
@@ -151,7 +151,7 @@ export async function intelligenceInsights(
       `
       SELECT
         if(nullIf(utm_source, '') = '', '(direct)', utm_source) AS source,
-        uniqExact(session_id) AS sessions,
+        uniq(session_id) AS sessions,
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads
       FROM events_raw
       WHERE ${ctx.where}
@@ -167,7 +167,7 @@ export async function intelligenceInsights(
         ${chToHour('created_at')} AS hour,
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads,
         uniqExactIf(session_id, ${ZIP_SUBMIT}) AS zips,
-        uniqExact(session_id) AS sessions
+        uniq(session_id) AS sessions
       FROM events_raw
       WHERE ${ctx.where}
       GROUP BY hour
@@ -180,7 +180,7 @@ export async function intelligenceInsights(
       SELECT
         ${chToDayOfWeek('created_at')} AS dow,
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads,
-        uniqExact(session_id) AS sessions
+        uniq(session_id) AS sessions
       FROM events_raw
       WHERE ${ctx.where}
       GROUP BY dow
@@ -218,7 +218,7 @@ export async function intelligenceInsights(
           concat('Step ', toString(JSONExtractUInt(properties, 'stepIndex'))),
           JSONExtractString(properties, 'stepName')
         ) AS stage,
-        uniqExact(session_id) AS sessions
+        uniq(session_id) AS sessions
       FROM events_raw
       WHERE ${ctx.where}
         AND event_name = 'form_step_view'
@@ -233,12 +233,12 @@ export async function intelligenceInsights(
       SELECT
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads,
         0 AS dups,
-        uniqExactIf(
+        uniqIf(
           session_id,
           positionCaseInsensitive(browser, 'bot') > 0
           OR positionCaseInsensitive(browser, 'crawler') > 0
         ) AS bots,
-        uniqExact(session_id) AS sessions
+        uniq(session_id) AS sessions
       FROM events_raw
       WHERE ${ctx.where}
       `,

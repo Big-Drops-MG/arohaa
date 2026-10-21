@@ -1,4 +1,7 @@
-import { getClickHouseClient } from './clickhouse.service.js'
+import {
+  HEATMAP_POINT_ROLLUP_TABLE,
+  getAnalyticsClickHouseClient,
+} from './clickhouse.service.js'
 import {
   rangeQueryParams,
   resolveAnalyticsWindowForLanding,
@@ -6,10 +9,12 @@ import {
   type AnalyticsRangeId,
 } from '../lib/analytics-range.js'
 import {
+  normalizeAnalyticsUtmFilter,
   utmFilterParams,
   utmFilterSql,
   type AnalyticsUtmFilter,
 } from '../lib/analytics-utm-filter.js'
+import { dailyMetricsRangeFilter } from '../lib/session-rollup-sql.js'
 import { canonicalizeHeatmapPageUrl } from './heatmap-route.js'
 import type {
   AnalyticsHeatmapResponse,
@@ -23,13 +28,13 @@ import type {
 } from '../types/analytics-heatmap.js'
 
 type CHJson<T> = { data: T[] }
+type RangeParams = { range_from: string; range_to: string }
 
 const n = (v: string | number | null | undefined): number =>
   typeof v === 'number' ? v : Number(v ?? 0) || 0
 
 const POINTS_LIMIT = 5000
 const MOVE_POINTS_LIMIT = 4000
-
 
 const RESOLVED_DEVICE_SQL = `
   multiIf(
@@ -61,55 +66,108 @@ export function emptyAnalyticsHeatmap(
   }
 }
 
-
 const RAW_TIME_FILTER = `
   workspace_id = {wid:UUID}
   AND timestamp >= toDateTime64({range_from:String}, 3, 'UTC')
   AND timestamp < toDateTime64({range_to:String}, 3, 'UTC')
 `
 
+const PAGE_KEY_SQL = `replaceRegexpOne(page_url, '\\\\?[^#]*', '')`
+const FIELD_NAME_EXPR = `nullIf(JSONExtractString(properties, 'fieldName'), '')`
 
-function deviceMatchSql(device: HeatmapDevice): string {
-  if (device === 'all') return ''
-  return ` AND (${RESOLVED_DEVICE_SQL}) = {device:String}`
+
+function useRollup(utmFilter?: AnalyticsUtmFilter): boolean {
+  return !normalizeAnalyticsUtmFilter(utmFilter)?.segmentSql
 }
 
-const PAGE_KEY_SQL = `replaceRegexpOne(page_url, '\\\\?[^#]*', '')`
+function rollupUtmSql(utmFilter?: AnalyticsUtmFilter): string {
+  const normalized = normalizeAnalyticsUtmFilter(utmFilter)
+  if (!normalized) return ''
+  const parts: string[] = []
+  if (normalized.utm_source?.length) parts.push('utm_source IN {utm_sources:Array(String)}')
+  if (normalized.utm_s1?.length) parts.push('utm_s1 IN {utm_s1s:Array(String)}')
+  return parts.length ? ` AND ${parts.join(' AND ')}` : ''
+}
 
-function pageUrlSql(pageUrl: string | null): string {
-  if (!pageUrl) return ''
-  return ` AND ${PAGE_KEY_SQL} = {page_url:String}`
+function rollupFilter(
+  pageUrl: string | null,
+  device: HeatmapDevice,
+  utmFilter?: AnalyticsUtmFilter,
+): string {
+  return (
+    dailyMetricsRangeFilter() +
+    rollupUtmSql(utmFilter) +
+    (pageUrl ? ' AND page_key = {page_url:String}' : '') +
+    (device === 'all' ? '' : ' AND device = {device:String}')
+  )
+}
+
+function rawFilter(
+  pageUrl: string | null,
+  device: HeatmapDevice,
+  utmFilter?: AnalyticsUtmFilter,
+): string {
+  return (
+    RAW_TIME_FILTER +
+    utmFilterSql(utmFilter) +
+    (pageUrl ? ` AND ${PAGE_KEY_SQL} = {page_url:String}` : '') +
+    (device === 'all' ? '' : ` AND (${RESOLVED_DEVICE_SQL}) = {device:String}`)
+  )
+}
+
+function queryParams(
+  workspaceId: string,
+  rangeParams: RangeParams,
+  utmFilter?: AnalyticsUtmFilter,
+  extra: Record<string, string> = {},
+): Record<string, unknown> {
+  return {
+    wid: workspaceId,
+    ...rangeParams,
+    ...utmFilterParams(utmFilter),
+    ...extra,
+  }
+}
+
+async function runJson<T>(query: string, params: Record<string, unknown>): Promise<T[]> {
+  const ch = getAnalyticsClickHouseClient()
+  const res = await ch.query({ format: 'JSON', query_params: params, query })
+  return ((await res.json()) as CHJson<T>).data
 }
 
 async function listPageUrls(
   workspaceId: string,
-  rangeParams: { range_from: string; range_to: string },
+  rangeParams: RangeParams,
   utmFilter?: AnalyticsUtmFilter,
 ): Promise<string[]> {
-  const ch = getClickHouseClient()
-  const res = await ch.query({
-    format: 'JSON',
-    query_params: {
-      wid: workspaceId,
-      ...rangeParams,
-      ...utmFilterParams(utmFilter),
-    },
-    query: `
-      SELECT
-        ${PAGE_KEY_SQL} AS page_key,
-        count() AS c,
-        min(timestamp) AS first_at
-      FROM heatmap_events
-      WHERE ${RAW_TIME_FILTER}${utmFilterSql(utmFilter)}
-        AND page_url != ''
-      GROUP BY page_key
-      HAVING page_key != ''
-      ORDER BY first_at ASC, c DESC
-      LIMIT 200
-    `,
-  })
-  const json = (await res.json()) as CHJson<{ page_key: string }>
-  return json.data.map((row) => row.page_key)
+  const params = queryParams(workspaceId, rangeParams, utmFilter)
+  const rows = useRollup(utmFilter)
+    ? await runJson<{ page_key: string }>(
+        `
+        SELECT page_key, sum(value) AS c, min(first_at) AS first_at
+        FROM ${HEATMAP_POINT_ROLLUP_TABLE}
+        WHERE ${rollupFilter(null, 'all', utmFilter)}
+          AND page_key != ''
+        GROUP BY page_key
+        ORDER BY first_at ASC, c DESC
+        LIMIT 200
+        `,
+        params,
+      )
+    : await runJson<{ page_key: string }>(
+        `
+        SELECT ${PAGE_KEY_SQL} AS page_key, count() AS c, min(timestamp) AS first_at
+        FROM heatmap_events
+        WHERE ${rawFilter(null, 'all', utmFilter)}
+          AND page_url != ''
+        GROUP BY page_key
+        HAVING page_key != ''
+        ORDER BY first_at ASC, c DESC
+        LIMIT 200
+        `,
+        params,
+      )
+  return rows.map((row) => row.page_key)
 }
 
 async function queryEventCount(
@@ -117,29 +175,34 @@ async function queryEventCount(
   pageUrl: string,
   device: HeatmapDevice,
   eventType: string,
-  rangeParams: { range_from: string; range_to: string },
+  rangeParams: RangeParams,
   utmFilter?: AnalyticsUtmFilter,
 ): Promise<number> {
-  const ch = getClickHouseClient()
-  const res = await ch.query({
-    format: 'JSON',
-    query_params: {
-      wid: workspaceId,
-      page_url: pageUrl,
-      device,
-      etype: eventType,
-      ...rangeParams,
-      ...utmFilterParams(utmFilter),
-    },
-    query: `
-      SELECT count() AS value
-      FROM heatmap_events
-      WHERE ${RAW_TIME_FILTER}${utmFilterSql(utmFilter)}
-        AND event_type = {etype:String}${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
-    `,
+  const params = queryParams(workspaceId, rangeParams, utmFilter, {
+    page_url: pageUrl,
+    device,
+    etype: eventType,
   })
-  const json = (await res.json()) as CHJson<{ value: string | number }>
-  return n(json.data[0]?.value)
+  const rows = useRollup(utmFilter)
+    ? await runJson<{ cnt: string | number }>(
+        `
+        SELECT sum(value) AS cnt
+        FROM ${HEATMAP_POINT_ROLLUP_TABLE}
+        WHERE ${rollupFilter(pageUrl, device, utmFilter)}
+          AND event_type = {etype:String}
+        `,
+        params,
+      )
+    : await runJson<{ cnt: string | number }>(
+        `
+        SELECT count() AS cnt
+        FROM heatmap_events
+        WHERE ${rawFilter(pageUrl, device, utmFilter)}
+          AND event_type = {etype:String}
+        `,
+        params,
+      )
+  return n(rows[0]?.cnt)
 }
 
 function cellsFromPoints(points: HeatmapPoint[]): HeatmapCell[] {
@@ -158,297 +221,271 @@ function cellsFromPoints(points: HeatmapPoint[]): HeatmapCell[] {
   return Array.from(map.values())
 }
 
-async function queryClickPoints(
-  workspaceId: string,
-  pageUrl: string,
-  device: HeatmapDevice,
-  rangeParams: { range_from: string; range_to: string },
-  utmFilter?: AnalyticsUtmFilter,
-): Promise<HeatmapPoint[]> {
-  const ch = getClickHouseClient()
-  const res = await ch.query({
-    format: 'JSON',
-    query_params: {
-      wid: workspaceId,
-      page_url: pageUrl,
-      device,
-      ...rangeParams,
-      ...utmFilterParams(utmFilter),
-    },
-    query: `
-      SELECT
-        element_selector AS selector,
-        if(
-          element_selector = '',
-          round(x, 2),
-          round(JSONExtractFloat(properties, 'x'), 1)
-        ) AS gx,
-        if(
-          element_selector = '',
-          round(y, 2),
-          round(JSONExtractFloat(properties, 'y'), 1)
-        ) AS gy,
-        avg(x) AS px,
-        avg(y) AS py,
-        avg(JSONExtractFloat(properties, 'x')) AS ex,
-        avg(JSONExtractFloat(properties, 'y')) AS ey,
-        count() AS value
-      FROM heatmap_events
-      WHERE ${RAW_TIME_FILTER}${utmFilterSql(utmFilter)}
-        AND event_type = 'click'${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
-      GROUP BY selector, gx, gy
-      ORDER BY value DESC
-      LIMIT ${POINTS_LIMIT}
-    `,
-  })
-  const json = (await res.json()) as CHJson<{
-    selector: string
-    px: string | number
-    py: string | number
-    ex: string | number
-    ey: string | number
-    value: string | number
-  }>
-  return json.data.map((row) => ({
+type SelectorPointRow = {
+  selector: string
+  px: string | number
+  py: string | number
+  ex: string | number
+  ey: string | number
+  cnt: string | number
+}
+
+function mapSelectorPoints(rows: SelectorPointRow[]): HeatmapPoint[] {
+  return rows.map((row) => ({
     x: n(row.px),
     y: n(row.py),
-    value: n(row.value),
+    value: n(row.cnt),
     selector: row.selector || null,
     ex: row.selector ? n(row.ex) : null,
     ey: row.selector ? n(row.ey) : null,
   }))
+}
+
+async function querySelectorPoints(
+  workspaceId: string,
+  pageUrl: string,
+  device: HeatmapDevice,
+  rangeParams: RangeParams,
+  utmFilter: AnalyticsUtmFilter | undefined,
+  eventTypesSql: string,
+  requireFieldName: boolean,
+): Promise<HeatmapPoint[]> {
+  const params = queryParams(workspaceId, rangeParams, utmFilter, {
+    page_url: pageUrl,
+    device,
+  })
+  if (useRollup(utmFilter)) {
+    const rows = await runJson<SelectorPointRow>(
+      `
+      SELECT
+        selector,
+        sum(sum_x) / sum(value) AS px,
+        sum(sum_y) / sum(value) AS py,
+        sum(sum_ex) / sum(value) AS ex,
+        sum(sum_ey) / sum(value) AS ey,
+        sum(value) AS cnt
+      FROM ${HEATMAP_POINT_ROLLUP_TABLE}
+      WHERE ${rollupFilter(pageUrl, device, utmFilter)}
+        AND event_type IN (${eventTypesSql})${requireFieldName ? " AND field_name != ''" : ''}
+      GROUP BY selector, gx, gy
+      ORDER BY cnt DESC
+      LIMIT ${POINTS_LIMIT}
+      `,
+      params,
+    )
+    return mapSelectorPoints(rows)
+  }
+  const rows = await runJson<SelectorPointRow>(
+    `
+    WITH
+      if(JSONHas(properties, 'x'), JSONExtractFloat(properties, 'x'), x) AS exv,
+      if(JSONHas(properties, 'y'), JSONExtractFloat(properties, 'y'), y) AS eyv
+    SELECT
+      element_selector AS selector,
+      if(element_selector = '', round(x, 2), round(exv, 1)) AS gx,
+      if(element_selector = '', round(y, 2), round(eyv, 1)) AS gy,
+      avg(x) AS px,
+      avg(y) AS py,
+      avg(exv) AS ex,
+      avg(eyv) AS ey,
+      count() AS cnt
+    FROM heatmap_events
+    WHERE ${rawFilter(pageUrl, device, utmFilter)}
+      AND event_type IN (${eventTypesSql})${requireFieldName ? ` AND ${FIELD_NAME_EXPR} != ''` : ''}
+    GROUP BY selector, gx, gy
+    ORDER BY cnt DESC
+    LIMIT ${POINTS_LIMIT}
+    `,
+    params,
+  )
+  return mapSelectorPoints(rows)
 }
 
 async function queryMovePoints(
   workspaceId: string,
   pageUrl: string,
   device: HeatmapDevice,
-  rangeParams: { range_from: string; range_to: string },
+  rangeParams: RangeParams,
   utmFilter?: AnalyticsUtmFilter,
 ): Promise<HeatmapPoint[]> {
-  const ch = getClickHouseClient()
-  const res = await ch.query({
-    format: 'JSON',
-    query_params: {
-      wid: workspaceId,
-      page_url: pageUrl,
-      device,
-      ...rangeParams,
-      ...utmFilterParams(utmFilter),
-    },
-    query: `
-      SELECT
-        round(x, 2) AS px,
-        round(y, 2) AS py,
-        count() AS value
-      FROM heatmap_events
-      WHERE ${RAW_TIME_FILTER}${utmFilterSql(utmFilter)}
-        AND event_type = 'mousemove'${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
-      GROUP BY px, py
-      ORDER BY value DESC
-      LIMIT ${MOVE_POINTS_LIMIT}
-    `,
+  const params = queryParams(workspaceId, rangeParams, utmFilter, {
+    page_url: pageUrl,
+    device,
   })
-  const json = (await res.json()) as CHJson<{
-    px: string | number
-    py: string | number
-    value: string | number
-  }>
-  return json.data.map((row) => ({
-    x: n(row.px),
-    y: n(row.py),
-    value: n(row.value),
-  }))
+  type Row = { px: string | number; py: string | number; cnt: string | number }
+  const rows = useRollup(utmFilter)
+    ? await runJson<Row>(
+        `
+        SELECT gx AS px, gy AS py, sum(value) AS cnt
+        FROM ${HEATMAP_POINT_ROLLUP_TABLE}
+        WHERE ${rollupFilter(pageUrl, device, utmFilter)}
+          AND event_type = 'mousemove'
+        GROUP BY px, py
+        ORDER BY cnt DESC
+        LIMIT ${MOVE_POINTS_LIMIT}
+        `,
+        params,
+      )
+    : await runJson<Row>(
+        `
+        SELECT round(x, 2) AS px, round(y, 2) AS py, count() AS cnt
+        FROM heatmap_events
+        WHERE ${rawFilter(pageUrl, device, utmFilter)}
+          AND event_type = 'mousemove'
+        GROUP BY px, py
+        ORDER BY cnt DESC
+        LIMIT ${MOVE_POINTS_LIMIT}
+        `,
+        params,
+      )
+  return rows.map((row) => ({ x: n(row.px), y: n(row.py), value: n(row.cnt) }))
 }
 
 async function queryScrollBuckets(
   workspaceId: string,
   pageUrl: string,
   device: HeatmapDevice,
-  rangeParams: { range_from: string; range_to: string },
+  rangeParams: RangeParams,
   utmFilter?: AnalyticsUtmFilter,
 ): Promise<HeatmapScrollBucket[]> {
-  const ch = getClickHouseClient()
-  const res = await ch.query({
-    format: 'JSON',
-    query_params: {
-      wid: workspaceId,
-      page_url: pageUrl,
-      device,
-      ...rangeParams,
-      ...utmFilterParams(utmFilter),
-    },
-    query: `
-      SELECT
-        toInt32(floor(least(greatest(y, 0.), 0.9999) * 10.) * 10) AS bucket,
-        count() AS value
-      FROM heatmap_events
-      WHERE ${RAW_TIME_FILTER}${utmFilterSql(utmFilter)}
-        AND event_type = 'scroll'${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
-      GROUP BY bucket
-      HAVING value > 0
-      ORDER BY bucket ASC
-    `,
+  const params = queryParams(workspaceId, rangeParams, utmFilter, {
+    page_url: pageUrl,
+    device,
   })
-  const json = (await res.json()) as CHJson<{
-    bucket: string | number
-    value: string | number
-  }>
-  return json.data.map((row) => ({
-    bucket: n(row.bucket),
-    value: n(row.value),
-  }))
+  type Row = { bucket: string | number; cnt: string | number }
+  const rows = useRollup(utmFilter)
+    ? await runJson<Row>(
+        `
+        SELECT toInt32(gy) AS bucket, sum(value) AS cnt
+        FROM ${HEATMAP_POINT_ROLLUP_TABLE}
+        WHERE ${rollupFilter(pageUrl, device, utmFilter)}
+          AND event_type = 'scroll'
+        GROUP BY bucket
+        HAVING cnt > 0
+        ORDER BY bucket ASC
+        `,
+        params,
+      )
+    : await runJson<Row>(
+        `
+        SELECT
+          toInt32(floor(least(greatest(y, 0.), 0.9999) * 10.) * 10) AS bucket,
+          count() AS cnt
+        FROM heatmap_events
+        WHERE ${rawFilter(pageUrl, device, utmFilter)}
+          AND event_type = 'scroll'
+        GROUP BY bucket
+        HAVING cnt > 0
+        ORDER BY bucket ASC
+        `,
+        params,
+      )
+  return rows.map((row) => ({ bucket: n(row.bucket), value: n(row.cnt) }))
 }
 
 async function querySections(
   workspaceId: string,
   pageUrl: string,
   device: HeatmapDevice,
-  rangeParams: { range_from: string; range_to: string },
+  rangeParams: RangeParams,
   utmFilter?: AnalyticsUtmFilter,
 ): Promise<HeatmapSection[]> {
-  const ch = getClickHouseClient()
-  const res = await ch.query({
-    format: 'JSON',
-    query_params: {
-      wid: workspaceId,
-      page_url: pageUrl,
-      device,
-      ...rangeParams,
-      ...utmFilterParams(utmFilter),
-    },
-    query: `
-      SELECT
-        element_selector AS selector,
-        sum(JSONExtractFloat(properties, 'dwell_ms')) AS dwellMs,
-        count() AS views
-      FROM heatmap_events
-      WHERE ${RAW_TIME_FILTER}${utmFilterSql(utmFilter)}
-        AND event_type = 'section'
-        AND element_selector != ''${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
-      GROUP BY element_selector
-      HAVING views > 0
-      ORDER BY dwellMs DESC
-      LIMIT 40
-    `,
+  const params = queryParams(workspaceId, rangeParams, utmFilter, {
+    page_url: pageUrl,
+    device,
   })
-  const json = (await res.json()) as CHJson<{
-    selector: string
-    dwellMs: string | number
-    views: string | number
-  }>
-  return json.data.map((row) => ({
+  type Row = { selector: string; dwellMs: string | number; views: string | number }
+  const rows = useRollup(utmFilter)
+    ? await runJson<Row>(
+        `
+        SELECT selector, sum(dwell_ms) AS dwellMs, sum(value) AS views
+        FROM ${HEATMAP_POINT_ROLLUP_TABLE}
+        WHERE ${rollupFilter(pageUrl, device, utmFilter)}
+          AND event_type = 'section'
+          AND selector != ''
+        GROUP BY selector
+        HAVING views > 0
+        ORDER BY dwellMs DESC
+        LIMIT 40
+        `,
+        params,
+      )
+    : await runJson<Row>(
+        `
+        SELECT
+          element_selector AS selector,
+          sum(JSONExtractFloat(properties, 'dwell_ms')) AS dwellMs,
+          count() AS views
+        FROM heatmap_events
+        WHERE ${rawFilter(pageUrl, device, utmFilter)}
+          AND event_type = 'section'
+          AND element_selector != ''
+        GROUP BY element_selector
+        HAVING views > 0
+        ORDER BY dwellMs DESC
+        LIMIT 40
+        `,
+        params,
+      )
+  return rows.map((row) => ({
     selector: row.selector,
     dwellMs: n(row.dwellMs),
     views: n(row.views),
   }))
 }
 
-const FIELD_NAME_EXPR = `nullIf(JSONExtractString(properties, 'fieldName'), '')`
-
 async function queryFormFields(
   workspaceId: string,
   pageUrl: string,
   device: HeatmapDevice,
-  rangeParams: { range_from: string; range_to: string },
+  rangeParams: RangeParams,
   utmFilter?: AnalyticsUtmFilter,
 ): Promise<HeatmapField[]> {
-  const ch = getClickHouseClient()
-  const res = await ch.query({
-    format: 'JSON',
-    query_params: {
-      wid: workspaceId,
-      page_url: pageUrl,
-      device,
-      ...rangeParams,
-      ...utmFilterParams(utmFilter),
-    },
-    query: `
-      SELECT
-        ${FIELD_NAME_EXPR} AS field_name,
-        anyHeavy(element_selector) AS selector,
-        count() AS value
-      FROM heatmap_events
-      WHERE ${RAW_TIME_FILTER}${utmFilterSql(utmFilter)}
-        AND event_type IN ('field_focus', 'click')
-        AND ${FIELD_NAME_EXPR} != ''${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
-      GROUP BY field_name
-      HAVING value > 0
-      ORDER BY value DESC
-      LIMIT 40
-    `,
+  const params = queryParams(workspaceId, rangeParams, utmFilter, {
+    page_url: pageUrl,
+    device,
   })
-  const json = (await res.json()) as CHJson<{
-    field_name: string
-    selector: string
-    value: string | number
-  }>
-  return json.data.map((row) => ({
+  type Row = { field_name: string; selector: string; cnt: string | number }
+  const rows = useRollup(utmFilter)
+    ? await runJson<Row>(
+        `
+        SELECT field_name, argMax(sel, v) AS selector, sum(v) AS cnt
+        FROM (
+          SELECT field_name, selector AS sel, sum(value) AS v
+          FROM ${HEATMAP_POINT_ROLLUP_TABLE}
+          WHERE ${rollupFilter(pageUrl, device, utmFilter)}
+            AND event_type IN ('field_focus', 'click')
+            AND field_name != ''
+          GROUP BY field_name, sel
+        )
+        GROUP BY field_name
+        HAVING cnt > 0
+        ORDER BY cnt DESC
+        LIMIT 40
+        `,
+        params,
+      )
+    : await runJson<Row>(
+        `
+        SELECT
+          ${FIELD_NAME_EXPR} AS field_name,
+          anyHeavy(element_selector) AS selector,
+          count() AS cnt
+        FROM heatmap_events
+        WHERE ${rawFilter(pageUrl, device, utmFilter)}
+          AND event_type IN ('field_focus', 'click')
+          AND ${FIELD_NAME_EXPR} != ''
+        GROUP BY field_name
+        HAVING cnt > 0
+        ORDER BY cnt DESC
+        LIMIT 40
+        `,
+        params,
+      )
+  return rows.map((row) => ({
     fieldName: row.field_name,
-    count: n(row.value),
+    count: n(row.cnt),
     selector: row.selector || '',
-  }))
-}
-
-async function queryFormPoints(
-  workspaceId: string,
-  pageUrl: string,
-  device: HeatmapDevice,
-  rangeParams: { range_from: string; range_to: string },
-  utmFilter?: AnalyticsUtmFilter,
-): Promise<HeatmapPoint[]> {
-  const ch = getClickHouseClient()
-  const res = await ch.query({
-    format: 'JSON',
-    query_params: {
-      wid: workspaceId,
-      page_url: pageUrl,
-      device,
-      ...rangeParams,
-      ...utmFilterParams(utmFilter),
-    },
-    query: `
-      SELECT
-        element_selector AS selector,
-        if(
-          element_selector = '',
-          round(x, 2),
-          round(if(JSONHas(properties, 'x'), JSONExtractFloat(properties, 'x'), x), 1)
-        ) AS gx,
-        if(
-          element_selector = '',
-          round(y, 2),
-          round(if(JSONHas(properties, 'y'), JSONExtractFloat(properties, 'y'), y), 1)
-        ) AS gy,
-        avg(x) AS px,
-        avg(y) AS py,
-        avg(if(JSONHas(properties, 'x'), JSONExtractFloat(properties, 'x'), x)) AS ex,
-        avg(if(JSONHas(properties, 'y'), JSONExtractFloat(properties, 'y'), y)) AS ey,
-        count() AS value
-      FROM heatmap_events
-      WHERE ${RAW_TIME_FILTER}${utmFilterSql(utmFilter)}
-        AND event_type IN ('field_focus', 'click')
-        AND ${FIELD_NAME_EXPR} != ''${pageUrlSql(pageUrl)}${deviceMatchSql(device)}
-      GROUP BY selector, gx, gy
-      ORDER BY value DESC
-      LIMIT ${POINTS_LIMIT}
-    `,
-  })
-  const json = (await res.json()) as CHJson<{
-    selector: string
-    px: string | number
-    py: string | number
-    ex: string | number
-    ey: string | number
-    value: string | number
-  }>
-  return json.data.map((row) => ({
-    x: n(row.px),
-    y: n(row.py),
-    value: n(row.value),
-    selector: row.selector || null,
-    ex: row.selector ? n(row.ex) : null,
-    ey: row.selector ? n(row.ey) : null,
   }))
 }
 
@@ -472,7 +509,6 @@ function hasHash(url: string): boolean {
     return url.includes('#')
   }
 }
-
 
 export function resolveAnalyticsHeatmapPageUrl(
   pageUrlInput: string | null | undefined,
@@ -531,31 +567,26 @@ export async function getAnalyticsHeatmap({
 
   if (mode === 'click') {
     const [clickPoints, count] = await Promise.all([
-      queryClickPoints(workspaceId, pageUrl, device, rangeParams, utmFilter),
-      queryEventCount(
-        workspaceId,
-        pageUrl,
-        device,
-        'click',
-        rangeParams,
-        utmFilter,
-      ),
+      querySelectorPoints(workspaceId, pageUrl, device, rangeParams, utmFilter, `'click'`, false),
+      queryEventCount(workspaceId, pageUrl, device, 'click', rangeParams, utmFilter),
     ])
     points = clickPoints
     cells = cellsFromPoints(clickPoints)
     totalEvents = count
   } else if (mode === 'scroll') {
-    scrollBuckets = await queryScrollBuckets(
-      workspaceId,
-      pageUrl,
-      device,
-      rangeParams,
-      utmFilter,
-    )
+    scrollBuckets = await queryScrollBuckets(workspaceId, pageUrl, device, rangeParams, utmFilter)
     totalEvents = scrollBuckets.reduce((s, b) => s + b.value, 0)
   } else if (mode === 'form') {
     const [formPoints, formFields] = await Promise.all([
-      queryFormPoints(workspaceId, pageUrl, device, rangeParams, utmFilter),
+      querySelectorPoints(
+        workspaceId,
+        pageUrl,
+        device,
+        rangeParams,
+        utmFilter,
+        `'field_focus', 'click'`,
+        true,
+      ),
       queryFormFields(workspaceId, pageUrl, device, rangeParams, utmFilter),
     ])
     points = formPoints
@@ -565,14 +596,7 @@ export async function getAnalyticsHeatmap({
   } else {
     const [movePoints, count, sectionRows] = await Promise.all([
       queryMovePoints(workspaceId, pageUrl, device, rangeParams, utmFilter),
-      queryEventCount(
-        workspaceId,
-        pageUrl,
-        device,
-        'mousemove',
-        rangeParams,
-        utmFilter,
-      ),
+      queryEventCount(workspaceId, pageUrl, device, 'mousemove', rangeParams, utmFilter),
       querySections(workspaceId, pageUrl, device, rangeParams, utmFilter),
     ])
     points = movePoints

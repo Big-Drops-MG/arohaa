@@ -1,5 +1,5 @@
-import { redis } from './redis.service.js'
-import { getClickHouseClient } from './clickhouse.service.js'
+import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
+import { getAnalyticsClickHouseClient } from './clickhouse.service.js'
 import {
   rangeCacheKey,
   rangeFilter,
@@ -14,6 +14,14 @@ import {
   type AnalyticsWindow,
 } from '../lib/analytics-range.js'
 import { computePeriodChangePct } from '../lib/funnel-trend.js'
+import {
+  canUseDailyMetrics,
+  canUseSessionRollup,
+  dailyMetricsRangeFilter,
+  sessionRollupBounceSql,
+  sessionRollupPreviousRangeFilter,
+  sessionRollupRangeFilter,
+} from '../lib/session-rollup-sql.js'
 import {
   utmFilterParams,
   utmFilterSql,
@@ -30,7 +38,6 @@ import {
   chDayBucketKey,
   chHourBucketKey,
   chMonthBucketKey,
-  chToDate,
   chWeekBucketKey,
   formatAnalyticsSeriesHour,
   formatAnalyticsSeriesMonthDay,
@@ -89,11 +96,11 @@ function useEventsRaw(
   window: AnalyticsWindow,
   utmFilter?: AnalyticsUtmFilter,
 ): boolean {
-  return window.granularity === 'hour' || Boolean(utmFilter)
+  return !canUseDailyMetrics(window.granularity, utmFilter)
 }
 
 function dailyMetricsDayFilter(): string {
-  return `workspace_id = {wid:UUID} AND day >= ${chToDate("toDateTime64({range_from:String}, 3, 'UTC')")} AND day <= ${chToDate("toDateTime64({range_to:String}, 3, 'UTC') - INTERVAL 1 MILLISECOND")}`
+  return dailyMetricsRangeFilter()
 }
 
 const PAGE_PATH_EXPR = `
@@ -135,7 +142,7 @@ const UTM_LABEL_EXPR = `
 `
 
 const ACTIVE_USERS_QUERY = (utmFilter?: AnalyticsUtmFilter) => `
-  SELECT uniqExactIf(
+  SELECT uniqIf(
     user_id,
     created_at >= now() - INTERVAL 5 MINUTE
       AND event_name IN ('heartbeat', 'page_view')
@@ -148,8 +155,8 @@ function kpiQuery(window: AnalyticsWindow, utmFilter?: AnalyticsUtmFilter): stri
   if (useEventsRaw(window, utmFilter)) {
     return `
       SELECT
-        uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-        uniqExact(session_id) AS sessions,
+        uniqIf(user_id, event_name = 'page_view') AS visitors,
+        uniq(session_id) AS sessions,
         countIf(event_name = 'page_view') AS page_views
       FROM events_raw
       WHERE ${rangeFilter(utmFilter)}
@@ -166,6 +173,9 @@ function kpiQuery(window: AnalyticsWindow, utmFilter?: AnalyticsUtmFilter): stri
 }
 
 function bounceQuery(utmFilter?: AnalyticsUtmFilter): string {
+  if (canUseSessionRollup(utmFilter)) {
+    return sessionRollupBounceSql(sessionRollupRangeFilter(utmFilter))
+  }
   return `
     SELECT
       sumIf(1, is_bounce = 1) AS bounces,
@@ -182,8 +192,8 @@ function bounceQuery(utmFilter?: AnalyticsUtmFilter): string {
 function prevKpiQuery(utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
-      uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-      uniqExact(session_id) AS sessions,
+      uniqIf(user_id, event_name = 'page_view') AS visitors,
+      uniq(session_id) AS sessions,
       countIf(event_name = 'page_view') AS page_views
     FROM events_raw
     WHERE ${previousRangeFilter(utmFilter)}
@@ -191,6 +201,9 @@ function prevKpiQuery(utmFilter?: AnalyticsUtmFilter): string {
 }
 
 function prevBounceQuery(utmFilter?: AnalyticsUtmFilter): string {
+  if (canUseSessionRollup(utmFilter)) {
+    return sessionRollupBounceSql(sessionRollupPreviousRangeFilter(utmFilter))
+  }
   return `
     SELECT
       sumIf(1, is_bounce = 1) AS bounces,
@@ -227,8 +240,8 @@ function trafficByTimeQuery(
     return `
       SELECT
         ${timeBucketExpr(window.granularity, 'events')} AS bucket,
-        uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-        uniqExact(session_id) AS sessions,
+        uniqIf(user_id, event_name = 'page_view') AS visitors,
+        uniq(session_id) AS sessions,
         uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted
       FROM events_raw
       WHERE ${rangeLookbackFilter(utmFilter)}
@@ -254,9 +267,9 @@ function trafficByDeviceQuery(utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
       lower(device) AS device,
-      uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+      uniqIf(user_id, event_name = 'page_view') AS visitors,
       uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
-      uniqExact(session_id) AS sessions
+      uniq(session_id) AS sessions
     FROM events_raw
     WHERE ${rangeFilter(utmFilter)}
     GROUP BY device
@@ -269,7 +282,7 @@ function topPagesQuery(utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
       page,
-      uniqExact(user_id) AS visitors
+      uniq(user_id) AS visitors
     FROM (
       SELECT
         user_id,
@@ -287,9 +300,9 @@ function trafficByLocationQuery(utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
       city_label AS city,
-      uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+      uniqIf(user_id, event_name = 'page_view') AS visitors,
       uniqExactIf(session_id, event_name IN ('form_success', 'service_click')) AS form_submitted,
-      uniqExact(session_id) AS sessions
+      uniq(session_id) AS sessions
     FROM (
       SELECT
         if(city = '', 'Unknown', city) AS city_label,
@@ -309,7 +322,7 @@ function referrersQuery(utmFilter?: AnalyticsUtmFilter): string {
   return `
     SELECT
       if(referrer_domain = '', 'Direct', referrer_domain) AS domain,
-      uniqExact(user_id) AS visitors
+      uniq(user_id) AS visitors
     FROM (
       SELECT
         user_id,
@@ -335,7 +348,7 @@ function utmParametersQuery(utmFilter?: AnalyticsUtmFilter): string {
         sess_utm_campaign AS utm_campaign,
         sess_utm_id AS utm_id,
         sess_utm_s1 AS utm_s1,
-        uniqExact(user_id) AS visitors
+        uniq(user_id) AS visitors
       FROM (
         SELECT
           session_id,
@@ -370,7 +383,7 @@ function utmParamDimensionQuery(
   return `
     SELECT
       value,
-      uniqExact(user_id) AS visitors
+      uniq(user_id) AS visitors
     FROM (
       SELECT
         any(user_id) AS user_id,
@@ -526,17 +539,11 @@ export async function getAnalyticsTraffic({
   const now = new Date()
   const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, now, custom)
   const utmKey = utmFilterCacheKey(utmFilter)
-  const cacheKey = `analytics:traffic:v5-prior:${workspaceId}:${rangeCacheKey(window, utmKey)}`
-  try {
-    const cachedStr = await redis.get(cacheKey)
-    if (cachedStr) {
-      return JSON.parse(cachedStr) as TrafficDashboardResponse
-    }
-  } catch (err) {
-    // ignore cache read errors
-  }
+  const cacheKey = `analytics:traffic:v6-rollup:${workspaceId}:${rangeCacheKey(window, utmKey)}`
+  const cached = await readAnalyticsCache<TrafficDashboardResponse>(cacheKey)
+  if (cached) return cached
 
-  const ch = getClickHouseClient()
+  const ch = getAnalyticsClickHouseClient()
   const p = {
     wid: workspaceId,
     ...rangeQueryParams(window),
@@ -695,11 +702,7 @@ export async function getAnalyticsTraffic({
     utmParameters,
   }
 
-  try {
-    await redis.set(cacheKey, JSON.stringify(response), 'EX', 45)
-  } catch (err) {
-    // ignore cache write errors
-  }
+  await writeAnalyticsCache(cacheKey, response)
   return response
 }
 

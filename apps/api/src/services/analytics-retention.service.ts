@@ -1,4 +1,4 @@
-import { getClickHouseClient } from './clickhouse.service.js';
+import { getAnalyticsClickHouseClient } from './clickhouse.service.js';
 import { SegmentCompiler, type SegmentGroup } from './segment-compiler.service.js';
 
 export type CohortRetentionRow = {
@@ -17,7 +17,7 @@ export async function getCohortRetention(
   segmentGroup: SegmentGroup | null = null,
   splitBy?: CohortSplitBy,
 ): Promise<CohortRetentionRow[]> {
-  const client = getClickHouseClient();
+  const client = getAnalyticsClickHouseClient();
   const compiledSegment = new SegmentCompiler().compile(segmentGroup);
 
   const selectChannel = splitBy

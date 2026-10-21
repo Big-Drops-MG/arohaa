@@ -1,4 +1,4 @@
-import { getClickHouseClient } from './clickhouse.service.js'
+import { getAnalyticsClickHouseClient } from './clickhouse.service.js'
 import {
   rangeCacheKey,
   rangeFilter,
@@ -21,6 +21,11 @@ import {
 } from '../lib/analytics-timezone.js'
 import { formatDayOfWeek, DAY_ORDER } from '../lib/day-of-week.js'
 import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
+import {
+  SESSION_ROLLUP,
+  canUseSessionRollup,
+  sessionRollupRangeFilter,
+} from '../lib/session-rollup-sql.js'
 import type {
   AnalyticsInsights,
   InsightChart,
@@ -132,7 +137,7 @@ async function queryJson<T>(
   query: string,
   params: Record<string, unknown>,
 ): Promise<T[]> {
-  const ch = getClickHouseClient()
+  const ch = getAnalyticsClickHouseClient()
   const res = await ch.query({ format: 'JSON', query_params: params, query })
   return ((await res.json()) as CHJson<T>).data ?? []
 }
@@ -141,6 +146,59 @@ type Ctx = {
   where: string
   p: Record<string, unknown>
   window: ReturnType<typeof resolveAnalyticsWindow>
+  utmFilter?: AnalyticsUtmFilter
+}
+
+function bounceSeriesByDayQuery(ctx: Ctx): string {
+  if (canUseSessionRollup(ctx.utmFilter)) {
+    return `
+      SELECT
+        ${chDayBucketKey('first_at')} AS day,
+        countIf(events = 1) AS bounced,
+        count() AS sessions
+      FROM ${SESSION_ROLLUP}
+      WHERE ${sessionRollupRangeFilter(ctx.utmFilter)}
+      GROUP BY day
+      ORDER BY day ASC
+    `
+  }
+  return `
+      SELECT
+        day,
+        countIf(cnt = 1) AS bounced,
+        count() AS sessions
+      FROM (
+        SELECT session_id, ${chDayBucketKey('created_at')} AS day, count() AS cnt
+        FROM events_raw
+        WHERE ${ctx.where}
+        GROUP BY session_id, day
+      )
+      GROUP BY day
+      ORDER BY day ASC
+  `
+}
+
+function bounceTotalQuery(ctx: Ctx): string {
+  if (canUseSessionRollup(ctx.utmFilter)) {
+    return `
+      SELECT
+        countIf(events = 1) AS bounced,
+        count() AS sessions
+      FROM ${SESSION_ROLLUP}
+      WHERE ${sessionRollupRangeFilter(ctx.utmFilter)}
+    `
+  }
+  return `
+      SELECT
+        countIf(cnt = 1) AS bounced,
+        count() AS sessions
+      FROM (
+        SELECT session_id, count() AS cnt
+        FROM events_raw
+        WHERE ${ctx.where}
+        GROUP BY session_id
+      )
+  `
 }
 
 async function volumeInsights(ctx: Ctx): Promise<AnalyticsInsights> {
@@ -157,10 +215,10 @@ async function volumeInsights(ctx: Ctx): Promise<AnalyticsInsights> {
     }>(
       `
       SELECT
-        uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-        uniqExact(session_id) AS sessions,
+        uniqIf(user_id, event_name = 'page_view') AS visitors,
+        uniq(session_id) AS sessions,
         countIf(event_name = 'page_view') AS page_views,
-        uniqExactIf(session_id, event_name = 'zip_start') AS zip_started,
+        uniqIf(session_id, event_name = 'zip_start') AS zip_started,
         uniqExactIf(session_id, ${ZIP_SUBMIT}) AS zip_submitted,
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads,
         countIf(${LEAD_EVENT} AND ${TF_EXPR}) AS tf_leads
@@ -184,13 +242,13 @@ async function volumeInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       `
       SELECT
         ${dayKey} AS day,
-        uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-        uniqExact(session_id) AS sessions,
-        uniqExactIf(session_id, event_name = 'zip_start') AS zip_started,
+        uniqIf(user_id, event_name = 'page_view') AS visitors,
+        uniq(session_id) AS sessions,
+        uniqIf(session_id, event_name = 'zip_start') AS zip_started,
         uniqExactIf(session_id, ${ZIP_SUBMIT}) AS zip_submitted,
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads,
         countIf(event_name = 'page_view') AS page_views,
-        uniqExactIf(session_id, event_name = 'form_start') AS form_starts,
+        uniqIf(session_id, event_name = 'form_start') AS form_starts,
         countIf(${LEAD_EVENT} AND ${TF_EXPR}) AS tf,
         countIf(${LEAD_EVENT}) AS lead_count
       FROM events_raw
@@ -201,36 +259,10 @@ async function volumeInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       ctx.p,
     ),
     queryJson<{ day: string; bounced: string; sessions: string }>(
-      `
-      SELECT
-        day,
-        countIf(cnt = 1) AS bounced,
-        count() AS sessions
-      FROM (
-        SELECT session_id, ${dayKey} AS day, count() AS cnt
-        FROM events_raw
-        WHERE ${ctx.where}
-        GROUP BY session_id, day
-      )
-      GROUP BY day
-      ORDER BY day ASC
-      `,
+      bounceSeriesByDayQuery(ctx),
       ctx.p,
     ),
-    queryJson<{ bounced: string; sessions: string }>(
-      `
-      SELECT
-        countIf(cnt = 1) AS bounced,
-        count() AS sessions
-      FROM (
-        SELECT session_id, count() AS cnt
-        FROM events_raw
-        WHERE ${ctx.where}
-        GROUP BY session_id
-      )
-      `,
-      ctx.p,
-    ),
+    queryJson<{ bounced: string; sessions: string }>(bounceTotalQuery(ctx), ctx.p),
   ])
 
   const k = kpiRows[0]
@@ -372,8 +404,8 @@ async function sourceInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       SELECT
         ${dayKey} AS day,
         if(utm_source = '', '(direct)', utm_source) AS source,
-        uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-        uniqExact(session_id) AS sessions,
+        uniqIf(user_id, event_name = 'page_view') AS visitors,
+        uniq(session_id) AS sessions,
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads,
         uniqExactIf(session_id, ${ZIP_SUBMIT}) AS zips
       FROM events_raw
@@ -388,7 +420,7 @@ async function sourceInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       SELECT
         ${dayKey} AS day,
         if(utm_id = '', '(none)', utm_id) AS utm_id,
-        uniqExact(session_id) AS sessions,
+        uniq(session_id) AS sessions,
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads
       FROM events_raw
       WHERE ${ctx.where}
@@ -402,7 +434,7 @@ async function sourceInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       SELECT
         ${weekKey} AS week,
         if(utm_source = '', '(direct)', utm_source) AS source,
-        uniqExactIf(user_id, event_name = 'page_view') AS visitors
+        uniqIf(user_id, event_name = 'page_view') AS visitors
       FROM events_raw
       WHERE ${ctx.where}
       GROUP BY week, source
@@ -414,8 +446,8 @@ async function sourceInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       `
       SELECT
         if(utm_source = '', '(direct)', utm_source) AS source,
-        uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-        uniqExact(session_id) AS sessions,
+        uniqIf(user_id, event_name = 'page_view') AS visitors,
+        uniq(session_id) AS sessions,
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads,
         uniqExactIf(session_id, ${ZIP_SUBMIT}) AS zips
       FROM events_raw
@@ -553,7 +585,7 @@ async function timeInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       SELECT
         ${hourExpr} AS hour,
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads,
-        uniqExact(session_id) AS sessions,
+        uniq(session_id) AS sessions,
         uniqExactIf(session_id, ${ZIP_SUBMIT}) AS zips
       FROM events_raw
       WHERE ${ctx.where}
@@ -567,7 +599,7 @@ async function timeInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       SELECT
         ${dowExpr} AS dow,
         uniqExactIf(session_id, ${LEAD_EVENT}) AS leads,
-        uniqExact(session_id) AS sessions,
+        uniq(session_id) AS sessions,
         uniqExactIf(session_id, ${ZIP_SUBMIT}) AS zips
       FROM events_raw
       WHERE ${ctx.where}
@@ -594,7 +626,7 @@ async function timeInsights(ctx: Ctx): Promise<AnalyticsInsights> {
       SELECT
         ${hourExpr} AS hour,
         if(nullIf(JSONExtractString(properties, 'stepName'), '') = '', concat('Step ', toString(JSONExtractUInt(properties, 'stepIndex'))), JSONExtractString(properties, 'stepName')) AS stage,
-        uniqExact(session_id) AS sessions
+        uniq(session_id) AS sessions
       FROM events_raw
       WHERE ${ctx.where}
         AND event_name = 'form_step_view'
@@ -835,7 +867,7 @@ export async function getAnalyticsInsights({
   const now = new Date()
   const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, now, custom)
   const utmKey = utmFilterCacheKey(utmFilter)
-  const cacheKey = `analytics:insights:v2:${section}:${workspaceId}:${rangeCacheKey(window, utmKey)}`
+  const cacheKey = `analytics:insights:v3-rollup:${section}:${workspaceId}:${rangeCacheKey(window, utmKey)}`
   const cached = await readAnalyticsCache<AnalyticsInsights>(cacheKey)
   if (cached) return cached
 
@@ -845,7 +877,7 @@ export async function getAnalyticsInsights({
     ...rangeQueryParams(window),
     ...utmFilterParams(utmFilter),
   }
-  const ctx: Ctx = { where, p, window }
+  const ctx: Ctx = { where, p, window, utmFilter }
 
   let result: AnalyticsInsights
   try {

@@ -1,4 +1,4 @@
-import { getClickHouseClient } from './clickhouse.service.js'
+import { getAnalyticsClickHouseClient } from './clickhouse.service.js'
 import {
   rangeCacheKey,
   rangeFilter,
@@ -160,7 +160,7 @@ export async function getAnalyticsWebVitals({
     ...utmFilterParams(utmFilter),
   }
 
-  const ch = getClickHouseClient()
+  const ch = getAnalyticsClickHouseClient()
 
   const [summaryRes, deviceRes, stateRes] = await Promise.all([
     ch.query({

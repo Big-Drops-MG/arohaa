@@ -1,4 +1,4 @@
-import { getClickHouseClient } from './clickhouse.service.js'
+import { getAnalyticsClickHouseClient } from './clickhouse.service.js'
 import { formatDayOfWeek } from '../lib/day-of-week.js'
 import { readAnalyticsCache, writeAnalyticsCache } from '../lib/analytics-cache.js'
 import {
@@ -10,6 +10,7 @@ import {
   chDayBucketKey,
   chHourBucketKey,
   chMonthBucketKey,
+  chToDate,
   chToDayOfWeek,
   chWeekBucketKey,
   formatAnalyticsSeriesHour,
@@ -41,7 +42,19 @@ import {
   utmFilterSql,
   type AnalyticsUtmFilter,
 } from '../lib/analytics-utm-filter.js'
-import { redis } from './redis.service.js'
+import {
+  DAILY_METRICS,
+  SESSION_ROLLUP,
+  canUseDailyMetrics,
+  canUseSessionRollup,
+  dailyMetricsBucketExpr,
+  dailyMetricsPreviousRangeFilter,
+  dailyMetricsRangeFilter,
+  sessionRollupBounceSeriesSql,
+  sessionRollupBounceSql,
+  sessionRollupPreviousRangeFilter,
+  sessionRollupRangeFilter,
+} from '../lib/session-rollup-sql.js'
 import { resolveUsCityCoordinates } from './us-gazetteer.service.js'
 import { resolveCountyFipsForZips } from './us-zip-county.service.js'
 import { US_STATE_NAME_TO_CODE } from '../lib/us-states.js'
@@ -205,6 +218,12 @@ function submissionEventSqlPredicate(formType: LandingFormType): string {
     return `event_name IN ('zip_submit', 'form_success')`
   }
   return `event_name = 'form_success'`
+}
+
+function submissionDailyColumn(formType: LandingFormType): string {
+  if (formType === 'none') return 'service_clicks'
+  if (formType === 'zip') return 'zip_submitted'
+  return 'form_submitted'
 }
 
 function seriesLabel(bucket: Date, granularity: AnalyticsGranularity): string {
@@ -377,16 +396,109 @@ function buildKpiSeries(
   return series
 }
 
+function overviewKpiQuery(
+  formType: LandingFormType,
+  granularity: AnalyticsGranularity,
+  period: 'current' | 'previous',
+  utmFilter?: AnalyticsUtmFilter,
+): string {
+  if (canUseDailyMetrics(granularity, utmFilter)) {
+    return `
+      SELECT
+        uniqMerge(visitors) AS visitors,
+        uniqMerge(sessions) AS sessions,
+        sum(pageviews) AS page_views,
+        uniqMerge(${submissionDailyColumn(formType)}) AS form_submitted
+      FROM ${DAILY_METRICS}
+      WHERE ${period === 'current' ? dailyMetricsRangeFilter() : dailyMetricsPreviousRangeFilter()}
+    `
+  }
+  return `
+    SELECT
+      uniqIf(user_id, event_name = 'page_view') AS visitors,
+      uniq(session_id) AS sessions,
+      countIf(event_name = 'page_view') AS page_views,
+      uniqExactIf(session_id, ${submissionEventSqlPredicate(formType)}) AS form_submitted
+    FROM events_raw
+    WHERE ${period === 'current' ? rangeFilter(utmFilter) : previousRangeFilter(utmFilter)}
+  `
+}
+
+function overviewFunnelQuery(
+  formType: LandingFormType,
+  granularity: AnalyticsGranularity,
+  utmFilter?: AnalyticsUtmFilter,
+): string {
+  if (canUseDailyMetrics(granularity, utmFilter)) {
+    return `
+      SELECT
+        sum(pageviews) AS page_views,
+        uniqMerge(interactions) AS interactions,
+        uniqMerge(form_started) AS form_started,
+        uniqMerge(${submissionDailyColumn(formType)}) AS form_submitted
+      FROM ${DAILY_METRICS}
+      WHERE ${dailyMetricsRangeFilter()}
+    `
+  }
+  return `
+    SELECT
+      countIf(event_name = 'page_view') AS page_views,
+      uniqIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth','service_click')) AS interactions,
+      uniqIf(session_id, event_name = 'form_start') AS form_started,
+      uniqExactIf(session_id, ${submissionEventSqlPredicate(formType)}) AS form_submitted
+    FROM events_raw
+    WHERE ${rangeFilter(utmFilter)}
+  `
+}
+
+function overviewBounceQuery(
+  period: 'current' | 'previous',
+  utmFilter?: AnalyticsUtmFilter,
+): string {
+  if (canUseSessionRollup(utmFilter)) {
+    return sessionRollupBounceSql(
+      period === 'current'
+        ? sessionRollupRangeFilter(utmFilter)
+        : sessionRollupPreviousRangeFilter(utmFilter),
+    )
+  }
+  return `
+    SELECT
+      sumIf(1, is_bounce = 1) AS bounces,
+      count() AS sessions
+    FROM (
+      SELECT session_id, min(created_at) AS first_at, toUInt8(count() = 1) AS is_bounce
+      FROM events_raw
+      WHERE ${period === 'current' ? rangeFilter(utmFilter) : previousRangeFilter(utmFilter)}
+      GROUP BY session_id
+    )
+  `
+}
+
 function overviewSeriesMetricsQuery(
   formType: LandingFormType,
   granularity: AnalyticsGranularity,
   utmFilter?: AnalyticsUtmFilter,
 ): string {
+  if (canUseDailyMetrics(granularity, utmFilter)) {
+    return `
+      SELECT
+        ${dailyMetricsBucketExpr(granularity)} AS bucket,
+        uniqMerge(visitors) AS visitors,
+        uniqMerge(sessions) AS sessions,
+        sum(pageviews) AS page_views,
+        uniqMerge(${submissionDailyColumn(formType)}) AS form_submitted
+      FROM ${DAILY_METRICS}
+      WHERE ${dailyMetricsRangeFilter()}
+      GROUP BY bucket
+      ORDER BY bucket ASC
+    `
+  }
   return `
     SELECT
       ${chBucketExpr(granularity)} AS bucket,
-      uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-      uniqExact(session_id) AS sessions,
+      uniqIf(user_id, event_name = 'page_view') AS visitors,
+      uniq(session_id) AS sessions,
       countIf(event_name = 'page_view') AS page_views,
       uniqExactIf(session_id, ${submissionEventSqlPredicate(formType)}) AS form_submitted
     FROM events_raw
@@ -400,6 +512,12 @@ function overviewSeriesBounceQuery(
   granularity: AnalyticsGranularity,
   utmFilter?: AnalyticsUtmFilter,
 ): string {
+  if (canUseSessionRollup(utmFilter)) {
+    return sessionRollupBounceSeriesSql(
+      chBounceBucketExpr(granularity),
+      sessionRollupRangeFilter(utmFilter),
+    )
+  }
   return `
     SELECT
       ${chBounceBucketExpr(granularity)} AS bucket,
@@ -430,24 +548,17 @@ export async function getAnalyticsOverview(
   const now = new Date()
   const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, now, custom)
   const where = rangeFilter(utmFilter)
-  const previousWhere = previousRangeFilter(utmFilter)
   const p = {
     wid: workspaceId,
     ...rangeQueryParams(window),
     ...previousRangeQueryParams(window),
     ...utmFilterParams(utmFilter),
   }
-  const cacheKey = `analytics:overview:v8-prior:${workspaceId}:${formType}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
-  try {
-    const cachedStr = await redis.get(cacheKey)
-    if (cachedStr) {
-      return JSON.parse(cachedStr) as AnalyticsOverview
-    }
-  } catch (err) {
-    // ignore cache read errors
-  }
+  const cacheKey = `analytics:overview:v9-rollup:${workspaceId}:${formType}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
+  const cached = await readAnalyticsCache<AnalyticsOverview>(cacheKey)
+  if (cached) return cached
 
-  const ch = getClickHouseClient()
+  const ch = getAnalyticsClickHouseClient()
   const usStateWhere = `${where}
           AND state != ''
           AND country IN ('United States', 'USA', 'US')`
@@ -468,31 +579,13 @@ export async function getAnalyticsOverview(
     ch.query({
       format: 'JSON',
       query_params: p,
-      query: `
-        SELECT
-          uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-          uniqExact(session_id) AS sessions,
-          countIf(event_name = 'page_view') AS page_views,
-          uniqExactIf(session_id, ${submissionEventSqlPredicate(formType)}) AS form_submitted
-        FROM events_raw
-        WHERE ${where}
-      `,
+      query: overviewKpiQuery(formType, window.granularity, 'current', utmFilter),
     }),
 
     ch.query({
       format: 'JSON',
       query_params: p,
-      query: `
-        SELECT
-          sumIf(1, is_bounce = 1) AS bounces,
-          count() AS sessions
-        FROM (
-          SELECT session_id, min(created_at) AS first_at, toUInt8(count() = 1) AS is_bounce
-          FROM events_raw
-          WHERE ${where}
-          GROUP BY session_id
-        )
-      `,
+      query: overviewBounceQuery('current', utmFilter),
     }),
 
     ch.query({
@@ -510,15 +603,7 @@ export async function getAnalyticsOverview(
     ch.query({
       format: 'JSON',
       query_params: p,
-      query: `
-        SELECT
-          countIf(event_name = 'page_view') AS page_views,
-          uniqExactIf(session_id, event_name IN ('button_click','link_click','form_start','scroll_depth','service_click')) AS interactions,
-          uniqExactIf(session_id, event_name = 'form_start') AS form_started,
-          uniqExactIf(session_id, ${submissionEventSqlPredicate(formType)}) AS form_submitted
-        FROM events_raw
-        WHERE ${where}
-      `,
+      query: overviewFunnelQuery(formType, window.granularity, utmFilter),
     }),
 
     ch.query({
@@ -526,15 +611,15 @@ export async function getAnalyticsOverview(
       query_params: { wid: workspaceId, ...utmFilterParams(utmFilter) },
       query: `
         SELECT
-          uniqExactIf(
+          uniqIf(
             user_id,
             event_name = 'page_view' AND created_at >= now() - INTERVAL 7 DAY
           ) AS unique_visitors_7d,
-          uniqExactIf(
+          uniqIf(
             session_id,
             created_at >= now() - INTERVAL 24 HOUR
           ) AS sessions_24h,
-          uniqExactIf(
+          uniqIf(
             user_id,
             created_at >= now() - INTERVAL 5 MINUTE
               AND event_name IN ('heartbeat', 'page_view')
@@ -551,7 +636,7 @@ export async function getAnalyticsOverview(
       query: `
         SELECT city FROM events_raw
         WHERE ${where} AND city != ''
-        GROUP BY city ORDER BY uniqExactIf(user_id, event_name = 'page_view') DESC LIMIT 1
+        GROUP BY city ORDER BY uniqIf(user_id, event_name = 'page_view') DESC LIMIT 1
       `,
     }),
 
@@ -586,31 +671,13 @@ export async function getAnalyticsOverview(
     ch.query({
       format: 'JSON',
       query_params: p,
-      query: `
-        SELECT
-          uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-          uniqExact(session_id) AS sessions,
-          countIf(event_name = 'page_view') AS page_views,
-          uniqExactIf(session_id, ${submissionEventSqlPredicate(formType)}) AS form_submitted
-        FROM events_raw
-        WHERE ${previousWhere}
-      `,
+      query: overviewKpiQuery(formType, window.granularity, 'previous', utmFilter),
     }),
 
     ch.query({
       format: 'JSON',
       query_params: p,
-      query: `
-        SELECT
-          sumIf(1, is_bounce = 1) AS bounces,
-          count() AS sessions
-        FROM (
-          SELECT session_id, min(created_at) AS first_at, toUInt8(count() = 1) AS is_bounce
-          FROM events_raw
-          WHERE ${previousWhere}
-          GROUP BY session_id
-        )
-      `,
+      query: overviewBounceQuery('previous', utmFilter),
     }),
   ])
 
@@ -634,8 +701,8 @@ export async function getAnalyticsOverview(
         query: `
           SELECT
             state AS state,
-            uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-            uniqExact(session_id) AS sessions,
+            uniqIf(user_id, event_name = 'page_view') AS visitors,
+            uniq(session_id) AS sessions,
             countIf(event_name = 'page_view') AS page_views,
             uniqExactIf(session_id, ${submissionEventSqlPredicate(formType)}) AS form_submitted
           FROM events_raw
@@ -797,11 +864,7 @@ export async function getAnalyticsOverview(
     activeUsersNow: n(rolling.active_users_now),
   }
 
-  try {
-    await redis.set(cacheKey, JSON.stringify(result), 'EX', 45)
-  } catch (err) {
-    // ignore cache write errors
-  }
+  await writeAnalyticsCache(cacheKey, result)
   return result
 }
 
@@ -906,19 +969,13 @@ export async function getAnalyticsOverviewCities({
   }
   const cacheKey = `analytics:overview:cities:v9-zip-form:${workspaceId}:${formType}:${normalized.code}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
 
-  try {
-    const cachedStr = await redis.get(cacheKey)
-    if (cachedStr) {
-      return JSON.parse(cachedStr) as {
-        state: string
-        cities: OverviewCityMetric[]
-      }
-    }
-  } catch {
-    // ignore cache read errors
-  }
+  const cached = await readAnalyticsCache<{
+    state: string
+    cities: OverviewCityMetric[]
+  }>(cacheKey)
+  if (cached) return cached
 
-  const ch = getClickHouseClient()
+  const ch = getAnalyticsClickHouseClient()
   const stateMatch = `(
     lowerUTF8(trim(state)) = lowerUTF8({state_name:String})
     OR upperUTF8(trim(state)) = {state_code:String}
@@ -943,8 +1000,8 @@ export async function getAnalyticsOverviewCities({
             1,
             ${CITY_ZIP_SAMPLE_LIMIT}
           ) AS zipcodes,
-          uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-          uniqExact(session_id) AS sessions,
+          uniqIf(user_id, event_name = 'page_view') AS visitors,
+          uniq(session_id) AS sessions,
           countIf(event_name = 'page_view') AS page_views,
           uniqExactIf(session_id, ${submissionEventSqlPredicate(formType)}) AS form_submitted
         FROM events_raw
@@ -1039,11 +1096,7 @@ export async function getAnalyticsOverviewCities({
   })
 
   const result = { state: normalized.name, cities }
-  try {
-    await redis.set(cacheKey, JSON.stringify(result), 'EX', 45)
-  } catch {
-    // ignore cache write errors
-  }
+  await writeAnalyticsCache(cacheKey, result)
   return result
 }
 
@@ -1083,20 +1136,14 @@ export async function getAnalyticsOverviewZipcodes({
   }
   const cacheKey = `analytics:overview:zipcodes:v2-zip-form:${workspaceId}:${formType}:${normalized.code}:${city.toLowerCase()}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}`
 
-  try {
-    const cachedStr = await redis.get(cacheKey)
-    if (cachedStr) {
-      return JSON.parse(cachedStr) as {
-        state: string
-        city: string
-        zipcodes: OverviewZipcodeMetric[]
-      }
-    }
-  } catch {
-    // ignore cache read errors
-  }
+  const cached = await readAnalyticsCache<{
+    state: string
+    city: string
+    zipcodes: OverviewZipcodeMetric[]
+  }>(cacheKey)
+  if (cached) return cached
 
-  const ch = getClickHouseClient()
+  const ch = getAnalyticsClickHouseClient()
   const stateMatch = `(
     lowerUTF8(trim(state)) = lowerUTF8({state_name:String})
     OR upperUTF8(trim(state)) = {state_code:String}
@@ -1115,8 +1162,8 @@ export async function getAnalyticsOverviewZipcodes({
       query: `
         SELECT
           zipcode AS zipcode,
-          uniqExactIf(user_id, event_name = 'page_view') AS visitors,
-          uniqExact(session_id) AS sessions,
+          uniqIf(user_id, event_name = 'page_view') AS visitors,
+          uniq(session_id) AS sessions,
           countIf(event_name = 'page_view') AS page_views,
           uniqExactIf(session_id, ${submissionEventSqlPredicate(formType)}) AS form_submitted
         FROM events_raw
@@ -1194,22 +1241,18 @@ export async function getAnalyticsOverviewZipcodes({
   })
 
   const result = { state: normalized.name, city, zipcodes }
-  try {
-    await redis.set(cacheKey, JSON.stringify(result), 'EX', 45)
-  } catch {
-    // ignore cache write errors
-  }
+  await writeAnalyticsCache(cacheKey, result)
   return result
 }
 
-/** Slightly longer than the dashboard poll so collection refreshes can hit Redis. */
-const LANDING_SUMMARY_CACHE_TTL_SEC = 60
+const LANDING_SUMMARY_CACHE_TTL_SEC = 120
+const LANDING_SUMMARY_WINDOW_DAYS = 30
 
 function landingSummaryCacheKey(
   workspaceId: string,
   formType: LandingFormType,
 ): string {
-  return `analytics:landing-summary:v8:${workspaceId}:${formType}`
+  return `analytics:landing-summary:v9-30d:${workspaceId}:${formType}`
 }
 
 export async function getLandingPageCardMetrics(
@@ -1304,7 +1347,7 @@ async function queryLandingPageCardMetrics(
   // Callers group by formType; mixed types would make submission SQL ambiguous.
   const formType = pages[0]!.formType
   const workspaceIds = [...new Set(pages.map((page) => page.workspaceId))]
-  const ch = getClickHouseClient()
+  const ch = getAnalyticsClickHouseClient()
   const submissionPred = submissionEventSqlPredicate(formType)
 
   const res = await ch.query({
@@ -1313,31 +1356,27 @@ async function queryLandingPageCardMetrics(
         metrics AS (
           SELECT
             workspace_id,
-            uniqExactIf(
+            uniqIf(
               user_id,
               created_at >= now() - INTERVAL 5 MINUTE
                 AND event_name IN ('heartbeat', 'page_view')
             ) AS active_users,
-            uniqExactIf(user_id, event_name = 'page_view') AS visitors,
+            uniqIf(user_id, event_name = 'page_view') AS visitors,
             uniqExactIf(session_id, (${submissionPred})) AS form_submissions
           FROM events_raw
           WHERE workspace_id IN ({wids:Array(UUID)})
+            AND event_date_et >= ${chToDate('now()')} - ${LANDING_SUMMARY_WINDOW_DAYS + 1}
+            AND created_at >= now() - INTERVAL ${LANDING_SUMMARY_WINDOW_DAYS} DAY
           GROUP BY workspace_id
         ),
         bounce AS (
           SELECT
             workspace_id,
-            sumIf(1, is_bounce = 1) AS bounces,
+            countIf(events = 1) AS bounces,
             count() AS sessions
-          FROM (
-            SELECT
-              workspace_id,
-              session_id,
-              toUInt8(count() = 1) AS is_bounce
-            FROM events_raw
-            WHERE workspace_id IN ({wids:Array(UUID)})
-            GROUP BY workspace_id, session_id
-          )
+          FROM ${SESSION_ROLLUP}
+          WHERE workspace_id IN ({wids:Array(UUID)})
+            AND first_at >= now() - INTERVAL ${LANDING_SUMMARY_WINDOW_DAYS} DAY
           GROUP BY workspace_id
         )
       SELECT
