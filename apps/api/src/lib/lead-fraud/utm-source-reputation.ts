@@ -165,15 +165,20 @@ export async function loadUtmSourceReputation(input: {
               nullIf(max(form_zip_entered), ''),
               nullIf(max(zipcode), '')
             ) AS zip_val,
-            argMax(properties, (length(properties), created_at)) AS props
+            argMaxIf(
+              properties,
+              (length(properties), created_at),
+              event_name IN ('form_submit', 'form_success', 'form_step_complete')
+            ) AS props
           FROM ${CLICKHOUSE_EVENTS_TABLE}
           WHERE workspace_id = {wid:UUID}
             AND event_date_et >= today() - {lookback_days:UInt32} - 1
             AND created_at >= now64(3, 'UTC') - toIntervalDay({lookback_days:UInt32})
-            AND event_name IN ('form_submit', 'form_success')
             AND session_id != ''
-            AND utm_source IN {sources:Array(String)}
           GROUP BY session_id
+          HAVING
+            max(event_name IN ('form_submit', 'form_success')) = 1
+            AND utm_source IN {sources:Array(String)}
           LIMIT 20000
         `,
       })
