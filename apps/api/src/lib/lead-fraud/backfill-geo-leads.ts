@@ -12,6 +12,9 @@ export type GeoLeadBackfillResult = {
   sessions: number
   scored: number
   errors: number
+  /** Present when a single-workspace run stopped early for paging. */
+  nextAfterSessionId?: string
+  done: boolean
   workspaceSummaries: Array<{
     workspaceId: string
     sessions: number
@@ -90,10 +93,18 @@ export async function backfillGeoLeadFraudAssessments(input?: {
   workspaceId?: string
   dryRun?: boolean
   chunkSize?: number
+  /** Resume cursor (exclusive) within a single workspace. */
+  afterSessionId?: string
+  /** Cap sessions processed in this invocation (for gateway-safe paging). */
+  maxSessions?: number
   onProgress?: (line: string) => void
 }): Promise<GeoLeadBackfillResult> {
   const dryRun = Boolean(input?.dryRun)
-  const chunkSize = Math.max(20, Math.min(500, Math.floor(input?.chunkSize ?? 200)))
+  const chunkSize = Math.max(20, Math.min(500, Math.floor(input?.chunkSize ?? 80)))
+  const maxSessions = Math.max(
+    chunkSize,
+    Math.min(5_000, Math.floor(input?.maxSessions ?? 80)),
+  )
   const log = input?.onProgress ?? (() => {})
   const workspaces = await listWorkspaces(input?.workspaceId)
   log(`workspaces=${workspaces.length} model=${LEAD_FRAUD_MODEL_VERSION} dryRun=${dryRun}`)
@@ -101,15 +112,23 @@ export async function backfillGeoLeadFraudAssessments(input?: {
   let sessions = 0
   let scored = 0
   let errors = 0
+  let nextAfterSessionId: string | undefined
+  let done = true
   const workspaceSummaries: GeoLeadBackfillResult['workspaceSummaries'] = []
 
   for (const workspaceId of workspaces) {
-    let after = ''
+    let after = input?.workspaceId ? (input.afterSessionId?.trim() ?? '') : ''
     let workspaceSessions = 0
     let firstAt = ''
     let lastAt = ''
     for (;;) {
-      const page = await listGeoSubmitSessions(workspaceId, after, chunkSize)
+      if (sessions >= maxSessions) {
+        done = false
+        nextAfterSessionId = after || undefined
+        break
+      }
+      const take = Math.min(chunkSize, maxSessions - sessions)
+      const page = await listGeoSubmitSessions(workspaceId, after, take)
       if (page.sessionIds.length === 0) break
       if (!firstAt && page.minAt) firstAt = page.minAt
       if (page.maxAt) lastAt = page.maxAt
@@ -134,7 +153,12 @@ export async function backfillGeoLeadFraudAssessments(input?: {
         }
       }
 
-      if (page.sessionIds.length < chunkSize) break
+      if (page.sessionIds.length < take) break
+      if (sessions >= maxSessions) {
+        done = false
+        nextAfterSessionId = after
+        break
+      }
     }
     workspaceSummaries.push({
       workspaceId,
@@ -146,6 +170,7 @@ export async function backfillGeoLeadFraudAssessments(input?: {
       `workspace=${workspaceId} sessions=${workspaceSessions}` +
         (firstAt ? ` range=${firstAt}..${lastAt}` : ''),
     )
+    if (!done) break
   }
 
   return {
@@ -155,6 +180,8 @@ export async function backfillGeoLeadFraudAssessments(input?: {
     sessions,
     scored,
     errors,
+    nextAfterSessionId,
+    done,
     workspaceSummaries,
   }
 }

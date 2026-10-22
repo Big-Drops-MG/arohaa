@@ -288,10 +288,18 @@ export async function warehouseRoutes(server: FastifyInstance) {
     const body = (request.body ?? {}) as Record<string, unknown>
     const workspaceId = asString(body.workspaceId || body.landingPageId)
     const dryRun = body.dryRun === true || body.dryRun === '1'
+    const afterSessionId = asString(body.afterSessionId)
+    const maxSessionsRaw = Number(body.maxSessions)
+    const maxSessions =
+      Number.isFinite(maxSessionsRaw) && maxSessionsRaw > 0
+        ? Math.floor(maxSessionsRaw)
+        : undefined
     try {
       const result = await backfillGeoLeadFraudAssessments({
         workspaceId: workspaceId || undefined,
         dryRun,
+        afterSessionId: afterSessionId || undefined,
+        maxSessions,
         onProgress: (line) => request.log.info({ line }, 'lead-fraud backfill'),
       })
       return result
