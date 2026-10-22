@@ -22,12 +22,14 @@ export function composeEvidenceToken(
   behaviorToken: string,
   shadowToken = '',
   networkDatasetToken = '',
+  utmReputationToken = '',
 ): string {
   return [
     contactToken || 'contact:none',
     behaviorToken || 'fi:unknown',
     shadowToken || 'shadow:none',
     networkDatasetToken || 'net:none',
+    utmReputationToken || 'utmrep:none',
   ].join('||')
 }
 

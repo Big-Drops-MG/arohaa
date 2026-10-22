@@ -191,6 +191,11 @@ export function scoreLeadFraud(
     cap: LEAD_FRAUD_CAPS.contact,
     reasons: [],
   }
+  const source: Bucket = {
+    points: 0,
+    cap: LEAD_FRAUD_CAPS.source,
+    reasons: [],
+  }
 
   if (!features.fingerprint.trim()) {
     add(device, W.emptyFingerprint, 'Empty device fingerprint')
@@ -386,6 +391,23 @@ export function scoreLeadFraud(
       features.locationComparisonDetail ||
         'Location comparison unavailable — unknown, not match or mismatch',
     )
+  }
+
+  if (
+    features.utmSourceReputation === 'location_mismatch_cluster' &&
+    features.submitUtmSource.trim()
+  ) {
+    const src = features.submitUtmSource.trim()
+    const n = features.utmSourceSubmitCount
+    const m = features.utmSourceMismatchCount
+    const detail =
+      n > 0
+        ? `utm_source ${src}: ${m}/${n} submits in 30d with ZIP/IP state mismatch`
+        : `utm_source ${src}: elevated location-mismatch cluster`
+    add(source, W.utmSourceLocationCluster, detail)
+    pushFinding(findings, 'utm_source_location_mismatch_cluster', detail, {
+      severity: 'high',
+    })
   }
 
   const network: Bucket = {
@@ -586,6 +608,7 @@ export function scoreLeadFraud(
     completeness,
     contact,
     network,
+    source,
   ]
   const riskPoints = buckets.reduce((sum, b) => sum + b.points, 0)
   let trustScore = Math.max(0, Math.min(100, 100 - Math.round(riskPoints)))

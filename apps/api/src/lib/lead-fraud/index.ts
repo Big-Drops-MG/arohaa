@@ -62,6 +62,15 @@ export {
 export { hashContactValueAll } from './contact-hash.js'
 export { compareEnteredZipToIpGeo } from './location-compare.js'
 export {
+  evaluateUtmSourceReputation,
+  loadUtmSourceReputation,
+  utmSourceReputationToken,
+  UTM_SOURCE_REPUTATION_LOOKBACK_DAYS,
+  UTM_SOURCE_REPUTATION_MIN_SUBMITS,
+  UTM_SOURCE_REPUTATION_MISMATCH_RATE,
+} from './utm-source-reputation.js'
+export { backfillGeoLeadFraudAssessments } from './backfill-geo-leads.js'
+export {
   behaviorEvidenceToken,
   composeEvidenceToken,
   networkEvidenceToken,

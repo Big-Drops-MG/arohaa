@@ -1,6 +1,6 @@
 import type { LeadFraudLabel, LeadSignalCoverage } from './types.js'
 
-export const LEAD_FRAUD_MODEL_VERSION = 'v9'
+export const LEAD_FRAUD_MODEL_VERSION = 'v10'
 
 export const ASSESSMENT_MAX_AGE_MS = 7 * 24 * 60 * 60_000
 
@@ -36,6 +36,7 @@ export const LEAD_FRAUD_WEIGHTS = {
   velocityIpHash: 12,
   velocityEmailDomain: 8,
   locationInconsistency: 10,
+  utmSourceLocationCluster: 30,
   knownProxyList: 8,
   hostingNetwork: 4,
   emptySubmittedLead: 22,
@@ -53,6 +54,7 @@ export const LEAD_FRAUD_CAPS = {
   completeness: 22,
   contact: 16,
   network: 12,
+  source: 30,
 } as const
 
 export const FILL_TOO_FAST_MS = 3_000

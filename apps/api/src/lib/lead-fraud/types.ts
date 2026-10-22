@@ -102,6 +102,12 @@ export type LeadFraudFeatures = {
   shadowExtraFindings: LeadFraudFinding[]
   sdkVersion: string
   sdkCapabilities: string
+  utmSourceReputation:
+    | 'clean'
+    | 'location_mismatch_cluster'
+    | 'unknown'
+  utmSourceSubmitCount: number
+  utmSourceMismatchCount: number
 }
 
 export type LeadRiskRow = {

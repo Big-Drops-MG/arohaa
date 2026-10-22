@@ -30,11 +30,40 @@ import { getNetworkDatasetFingerprint } from '../../services/network-classify.se
 import { loadSessionShadowEvidence } from './session-evidence-load.js'
 import { scoreLeadFraud } from './score.js'
 import { enqueueVisitAssessment } from './visit-assess-queue.js'
+import {
+  loadUtmSourceReputation,
+  utmSourceReputationToken,
+  type UtmSourceReputation,
+} from './utm-source-reputation.js'
 import type {
   LeadFraudAssessment,
   LeadFraudFeatures,
   LeadRiskRow,
 } from './types.js'
+
+function applyUtmSourceReputation(
+  features: LeadFraudFeatures,
+  bySource: Map<string, UtmSourceReputation>,
+): UtmSourceReputation | null {
+  const source = features.submitUtmSource.trim()
+  if (!source) {
+    features.utmSourceReputation = 'unknown'
+    features.utmSourceSubmitCount = 0
+    features.utmSourceMismatchCount = 0
+    return null
+  }
+  const rep = bySource.get(source)
+  if (!rep) {
+    features.utmSourceReputation = 'unknown'
+    features.utmSourceSubmitCount = 0
+    features.utmSourceMismatchCount = 0
+    return null
+  }
+  features.utmSourceReputation = rep.status
+  features.utmSourceSubmitCount = rep.submitCount
+  features.utmSourceMismatchCount = rep.locationMismatchCount
+  return rep
+}
 
 const VELOCITY_LOOKBACK_PAD_MS = 24 * 60 * 60_000
 const VELOCITY_DOMAIN_SAMPLE_LIMIT = 1500
@@ -205,6 +234,20 @@ export async function ensureSessionsFraudAssessments(input: {
     const signalRows = ids
       .map((sid) => bySession.get(sid))
       .filter((row): row is LeadSessionSignalRow => Boolean(row))
+    const utmSources = [
+      ...new Set(
+        signalRows
+          .map((row) => (row.utmSource || '').trim())
+          .filter(Boolean),
+      ),
+    ]
+    const utmRepBySource = await loadUtmSourceReputation({
+      workspaceId: input.workspaceId,
+      sources: utmSources,
+    }).catch((err: unknown) => {
+      console.error('[lead-fraud] utm reputation load failed', err)
+      return new Map<string, UtmSourceReputation>()
+    })
     const fiMap = await loadFiBehaviorBySessions(
       signalRows.map((row) => ({
         workspaceId: row.workspaceId,
@@ -243,6 +286,10 @@ export async function ensureSessionsFraudAssessments(input: {
               workspaceId: signal.workspaceId,
               sessionId: sid,
             }).catch(() => null)
+            const sourceKey = (signal.utmSource || '').trim()
+            const utmRep = sourceKey
+              ? utmRepBySource.get(sourceKey) ?? null
+              : null
             const evidenceToken = composeEvidenceToken(
               contact.evidenceToken,
               behaviorEvidenceToken(fi),
@@ -255,6 +302,7 @@ export async function ensureSessionsFraudAssessments(input: {
                 shadowEvidence?.stableEvidenceKey,
               ),
               networkEvidenceToken(getNetworkDatasetFingerprint()),
+              utmSourceReputationToken(utmRep),
             )
             if (
               !input.forceRescore &&
@@ -311,6 +359,7 @@ export async function ensureSessionsFraudAssessments(input: {
               fi,
             )
             features.velocityWindowKnown = velocityWindowKnown
+            const utmRep = applyUtmSourceReputation(features, utmRepBySource)
             const contact =
               contactBySid.get(sid) ??
               (await loadContactRiskSignals({
@@ -345,6 +394,7 @@ export async function ensureSessionsFraudAssessments(input: {
                 shadowEvidence?.stableEvidenceKey,
               ),
               networkEvidenceToken(getNetworkDatasetFingerprint()),
+              utmSourceReputationToken(utmRep),
             )
             const assessment = scoreLeadFraud(features)
             out.set(sid, assessment)
@@ -422,6 +472,27 @@ export async function classifyLeadSessionRows(
   const targetRows = onlyKeys
     ? rows.filter((row) => onlyKeys.has(sessionKey(row.workspaceId, row.sessionId)))
     : rows
+  const byWorkspaceSources = new Map<string, Set<string>>()
+  for (const row of targetRows) {
+    const src = (row.utmSource || '').trim()
+    if (!src) continue
+    const set = byWorkspaceSources.get(row.workspaceId) ?? new Set<string>()
+    set.add(src)
+    byWorkspaceSources.set(row.workspaceId, set)
+  }
+  const utmRepByWorkspace = new Map<string, Map<string, UtmSourceReputation>>()
+  await Promise.all(
+    [...byWorkspaceSources.entries()].map(async ([workspaceId, sources]) => {
+      const map = await loadUtmSourceReputation({
+        workspaceId,
+        sources: [...sources],
+      }).catch((err: unknown) => {
+        console.error('[lead-fraud] utm reputation load failed', err)
+        return new Map<string, UtmSourceReputation>()
+      })
+      utmRepByWorkspace.set(workspaceId, map)
+    }),
+  )
   const fiMap = await loadFiBehaviorBySessions(
     targetRows.map((row) => ({
       workspaceId: row.workspaceId,
@@ -456,6 +527,10 @@ export async function classifyLeadSessionRows(
         try {
           const fi = fiMap.get(key) ?? null
           const features = buildFeaturesFromLeadSessionSignal(row, velocity, fi)
+          const utmRep = applyUtmSourceReputation(
+            features,
+            utmRepByWorkspace.get(row.workspaceId) ?? new Map(),
+          )
           const contact = await loadContactRiskSignals({
             tenantWorkspaceId: row.tenantWorkspaceId,
             landingPageId: row.workspaceId,
@@ -468,6 +543,7 @@ export async function classifyLeadSessionRows(
             behaviorEvidenceToken(fi),
             '',
             networkEvidenceToken(getNetworkDatasetFingerprint()),
+            utmSourceReputationToken(utmRep),
           )
           if (features.email.includes('@')) emailByKey.set(key, features.email)
           const assessment = scoreLeadFraud(features)

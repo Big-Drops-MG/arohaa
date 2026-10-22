@@ -21,6 +21,7 @@ import {
   upsertPageIntegrityBaseline,
 } from '../lib/lead-fraud/page-integrity-baseline.js'
 import { ensureSessionVisitAssessment } from '../lib/lead-fraud/visit-service.js'
+import { backfillGeoLeadFraudAssessments } from '../lib/lead-fraud/backfill-geo-leads.js'
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -277,6 +278,26 @@ export async function warehouseRoutes(server: FastifyInstance) {
     } catch (err) {
       request.log.error({ err }, 'page integrity baseline fetch failed')
       return reply.code(503).send({ error: 'Baseline unavailable' })
+    }
+  })
+
+  server.post('/v1/warehouse/lead-fraud-backfill', async (request, reply) => {
+    if (!verifyInternalApiRequest(request.headers['x-arohaa-internal'])) {
+      return reply.code(401).send({ error: 'Unauthorized' })
+    }
+    const body = (request.body ?? {}) as Record<string, unknown>
+    const workspaceId = asString(body.workspaceId || body.landingPageId)
+    const dryRun = body.dryRun === true || body.dryRun === '1'
+    try {
+      const result = await backfillGeoLeadFraudAssessments({
+        workspaceId: workspaceId || undefined,
+        dryRun,
+        onProgress: (line) => request.log.info({ line }, 'lead-fraud backfill'),
+      })
+      return result
+    } catch (err) {
+      request.log.error({ err }, 'lead-fraud backfill failed')
+      return reply.code(503).send({ error: 'Lead fraud backfill failed' })
     }
   })
 
