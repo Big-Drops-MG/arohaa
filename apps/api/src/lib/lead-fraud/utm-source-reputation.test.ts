@@ -36,20 +36,20 @@ describe('evaluateUtmSourceReputation', () => {
     expect(rep.rate).toBeCloseTo(0.9)
   })
 
-  it('stays clean at 5/10 mismatch', () => {
+  it('stays clean at 4/10 mismatch', () => {
     const rep = evaluateUtmSourceReputation({
       source: 'good-src',
       submitCount: 10,
-      locationMismatchCount: 5,
+      locationMismatchCount: 4,
     })
     expect(rep.status).toBe('clean')
   })
 
-  it('taints at exactly 70%', () => {
+  it('taints at exactly 50%', () => {
     const rep = evaluateUtmSourceReputation({
       source: 'edge',
       submitCount: 10,
-      locationMismatchCount: 7,
+      locationMismatchCount: 5,
     })
     expect(rep.status).toBe('location_mismatch_cluster')
   })

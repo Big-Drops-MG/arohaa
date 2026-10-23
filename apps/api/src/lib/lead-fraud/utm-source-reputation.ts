@@ -7,7 +7,7 @@ import { compareEnteredZipToIpGeo } from './location-compare.js'
 
 export const UTM_SOURCE_REPUTATION_LOOKBACK_DAYS = 30
 export const UTM_SOURCE_REPUTATION_MIN_SUBMITS = 10
-export const UTM_SOURCE_REPUTATION_MISMATCH_RATE = 0.7
+export const UTM_SOURCE_REPUTATION_MISMATCH_RATE = 0.5
 
 export type UtmSourceReputationStatus =
   | 'clean'
