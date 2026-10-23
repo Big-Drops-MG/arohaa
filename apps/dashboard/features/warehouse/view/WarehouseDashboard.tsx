@@ -17,6 +17,7 @@ import type {
 import { formatDashboardDateTime } from "@/lib/datetime"
 import { getEventDisplayName } from "@/features/warehouse/model/event-display-names"
 import { PartnerScorecardsPanel } from "@/features/warehouse/view/PartnerScorecardsPanel"
+import { UtmSourceTrustPanel } from "@/features/warehouse/view/UtmSourceTrustPanel"
 import { WarehouseLeadReviewSection } from "@/features/warehouse/view/WarehouseLeadReviewSection"
 
 function formatCount(value: number): string {
@@ -513,6 +514,14 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
             icon={ShieldAlert}
           >
             <PartnerScorecardsPanel />
+          </Panel>
+
+          <Panel
+            title="UTM source trust"
+            description="Per-source lead volume and ZIP/IP location mismatch (total, 7d, 30d). Cluster status uses the 30d mismatch rate (≥50%, n≥10)."
+            icon={AtSign}
+          >
+            <UtmSourceTrustPanel />
           </Panel>
 
           <section className="space-y-3">

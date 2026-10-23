@@ -224,6 +224,20 @@ export type WarehousePartnerScorecard = {
   visitCount?: number
 }
 
+export type WarehouseUtmSourceTrustRow = {
+  utmSource: string
+  trustScore: number | null
+  leadsTotal: number
+  leads7d: number
+  leads30d: number
+  mismatchTotal: number
+  mismatch7d: number
+  mismatch30d: number
+  mismatchRate7d: number
+  mismatchRate30d: number
+  reputation: 'clean' | 'location_mismatch_cluster' | 'unknown'
+}
+
 export type WarehouseDetectionHealth = {
   sdkVersions: WarehouseNameCount[]
   eventsWithSdkVersion: number
@@ -2270,6 +2284,113 @@ export async function getWarehousePartnerScorecards(): Promise<
     })
   } catch (err) {
     console.error('[warehouse] partner scorecards failed', err)
+    return []
+  }
+}
+
+export async function getWarehouseUtmSourceTrust(): Promise<
+  WarehouseUtmSourceTrustRow[]
+> {
+  const ch = getClickHouseClient()
+  try {
+    const { evaluateUtmSourceReputation } = await import(
+      '../lib/lead-fraud/utm-source-reputation.js'
+    )
+    const {
+      LEAD_CONTACT_KEYS_TABLE: keysTable,
+      LEAD_RISK_TABLE: riskTable,
+    } = await import('./clickhouse.service.js')
+    const res = await ch.query({
+      format: 'JSON',
+      query: `
+        SELECT
+          if(k.utm_source = '', '(none)', k.utm_source) AS utm_source,
+          uniqExact((k.landing_page_id, k.session_id)) AS leads_total,
+          uniqExactIf(
+            (k.landing_page_id, k.session_id),
+            k.submitted_at >= now64(3, 'UTC') - INTERVAL 7 DAY
+          ) AS leads_7d,
+          uniqExactIf(
+            (k.landing_page_id, k.session_id),
+            k.submitted_at >= now64(3, 'UTC') - INTERVAL 30 DAY
+          ) AS leads_30d,
+          uniqExactIf(
+            (k.landing_page_id, k.session_id),
+            positionCaseInsensitive(risk.findings_json, 'location_inconsistency') > 0
+          ) AS mismatch_total,
+          uniqExactIf(
+            (k.landing_page_id, k.session_id),
+            k.submitted_at >= now64(3, 'UTC') - INTERVAL 7 DAY
+              AND positionCaseInsensitive(risk.findings_json, 'location_inconsistency') > 0
+          ) AS mismatch_7d,
+          uniqExactIf(
+            (k.landing_page_id, k.session_id),
+            k.submitted_at >= now64(3, 'UTC') - INTERVAL 30 DAY
+              AND positionCaseInsensitive(risk.findings_json, 'location_inconsistency') > 0
+          ) AS mismatch_30d,
+          avgIf(
+            risk.score,
+            risk.score IS NOT NULL AND risk.coverage != 'insufficient'
+          ) AS avg_trust
+        FROM ${keysTable} AS k FINAL
+        LEFT JOIN ${riskTable} AS risk FINAL
+          ON k.landing_page_id = toString(risk.workspace_id)
+          AND k.session_id = risk.session_id
+        WHERE k.tenant_workspace_id != ''
+        GROUP BY utm_source
+        HAVING leads_total >= 1
+        ORDER BY leads_30d DESC, leads_total DESC
+        LIMIT 200
+      `,
+    })
+    const rows =
+      (
+        (await res.json()) as CHJson<{
+          utm_source: string
+          leads_total: string
+          leads_7d: string
+          leads_30d: string
+          mismatch_total: string
+          mismatch_7d: string
+          mismatch_30d: string
+          avg_trust: string | number | null
+        }>
+      ).data ?? []
+
+    return rows.map((row) => {
+      const leadsTotal = n(row.leads_total)
+      const leads7d = n(row.leads_7d)
+      const leads30d = n(row.leads_30d)
+      const mismatchTotal = n(row.mismatch_total)
+      const mismatch7d = n(row.mismatch_7d)
+      const mismatch30d = n(row.mismatch_30d)
+      const avgRaw =
+        typeof row.avg_trust === 'number'
+          ? row.avg_trust
+          : Number(row.avg_trust)
+      const trustScore =
+        Number.isFinite(avgRaw) && avgRaw !== null ? Math.round(avgRaw) : null
+      const rep = evaluateUtmSourceReputation({
+        source: row.utm_source === '(none)' ? '' : row.utm_source,
+        submitCount: leads30d,
+        locationMismatchCount: mismatch30d,
+      })
+      return {
+        utmSource: row.utm_source,
+        trustScore,
+        leadsTotal,
+        leads7d,
+        leads30d,
+        mismatchTotal,
+        mismatch7d,
+        mismatch30d,
+        mismatchRate7d: leads7d > 0 ? mismatch7d / leads7d : 0,
+        mismatchRate30d: leads30d > 0 ? mismatch30d / leads30d : 0,
+        reputation: rep.status,
+      }
+    })
+  } catch (err) {
+    console.error('[warehouse] utm source trust failed', err)
     return []
   }
 }

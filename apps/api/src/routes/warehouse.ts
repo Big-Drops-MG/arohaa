@@ -15,6 +15,7 @@ import {
   getWarehousePartnerScorecards,
   getWarehouseSessionEvidence,
   getWarehouseSummary,
+  getWarehouseUtmSourceTrust,
 } from '../services/warehouse.service.js'
 import {
   loadApprovedPageIntegrityBaseline,
@@ -169,6 +170,19 @@ export async function warehouseRoutes(server: FastifyInstance) {
     } catch (err) {
       request.log.error({ err }, 'warehouse partner scorecards failed')
       return reply.code(503).send({ error: 'Partner scorecards unavailable' })
+    }
+  })
+
+  server.get('/v1/warehouse/utm-source-trust', async (request, reply) => {
+    if (!verifyInternalApiRequest(request.headers['x-arohaa-internal'])) {
+      return reply.code(401).send({ error: 'Unauthorized' })
+    }
+    try {
+      const sources = await getWarehouseUtmSourceTrust()
+      return { sources }
+    } catch (err) {
+      request.log.error({ err }, 'warehouse utm source trust failed')
+      return reply.code(503).send({ error: 'UTM source trust unavailable' })
     }
   })
 
