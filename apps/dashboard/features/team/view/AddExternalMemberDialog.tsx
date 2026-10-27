@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Check, Loader2, Shield } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
@@ -88,13 +88,17 @@ export function AddExternalMemberDialog({
     onOpenChange(next)
   }
 
+  const editUserId = mode.kind === "edit" ? mode.userId : null
+
   useEffect(() => {
-    if (!open || mode.kind !== "edit") return
+    if (!open || !editUserId) return
     let cancelled = false
+    setLoadingPrivileges(true)
+    setError(null)
     startTransition(async () => {
       const [projectsResult, grantsResult] = await Promise.all([
         listProjectsForPrivileges(),
-        getExternalMemberPrivileges(mode.userId),
+        getExternalMemberPrivileges(editUserId),
       ])
       if (cancelled) return
       setLoadingPrivileges(false)
@@ -113,7 +117,7 @@ export function AddExternalMemberDialog({
     return () => {
       cancelled = true
     }
-  }, [open, mode, startTransition])
+  }, [open, editUserId, startTransition])
 
   function handleCreate() {
     if (!canSubmitDetails) return
@@ -167,15 +171,20 @@ export function AddExternalMemberDialog({
     router.refresh()
   }
 
-  const canSavePrivileges =
-    Boolean(createdUserId) &&
-    !isPending &&
-    [...new Set(grants.map((g) => g.landingPagePublicId))].every((id) =>
-      scopes.some(
-        (scope) =>
-          scope.landingPagePublicId === id && scope.utmSource.trim().length > 0
-      )
+  const projectsMissingScope = useMemo(() => {
+    const ids = [...new Set(grants.map((g) => g.landingPagePublicId))]
+    return ids.filter(
+      (id) =>
+        !scopes.some(
+          (scope) =>
+            scope.landingPagePublicId === id &&
+            scope.utmSource.trim().length > 0
+        )
     )
+  }, [grants, scopes])
+
+  const canSavePrivileges =
+    Boolean(createdUserId) && !isPending && projectsMissingScope.length === 0
 
   const title =
     mode.kind === "edit"
@@ -292,6 +301,15 @@ export function AddExternalMemberDialog({
           {error ? (
             <p className="text-sm text-destructive" role="alert">
               {error}
+            </p>
+          ) : null}
+
+          {step === "privileges" &&
+          !loadingPrivileges &&
+          projectsMissingScope.length > 0 ? (
+            <p className="text-sm text-amber-800" role="status">
+              Set Team member to Yes, or select at least one UTM Source, for
+              every project that has tabs enabled before saving.
             </p>
           ) : null}
         </div>

@@ -1,6 +1,13 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react"
 import { Check, ChevronDown, ChevronRight, Search, X } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import { Button } from "@workspace/ui/components/button"
@@ -22,9 +29,9 @@ export type PrivilegeProjectOption = {
 type ExternalPrivilegesEditorProps = {
   projects: PrivilegeProjectOption[]
   grants: ExternalPrivilegeGrant[]
-  onChange: (grants: ExternalPrivilegeGrant[]) => void
+  onChange: Dispatch<SetStateAction<ExternalPrivilegeGrant[]>>
   scopes: ExternalProjectScope[]
-  onScopesChange: (scopes: ExternalProjectScope[]) => void
+  onScopesChange: Dispatch<SetStateAction<ExternalProjectScope[]>>
   disabled?: boolean
 }
 
@@ -440,24 +447,37 @@ export function ExternalPrivilegesEditor({
     return set
   }, [checkedProjects, grants, scopes])
 
-  function setGrantsFromKeys(keys: Set<string>) {
-    const next: ExternalPrivilegeGrant[] = []
-    for (const key of keys) {
-      const parsed = parseGrantKey(key)
-      if (!parsed) continue
-      next.push(parsed)
+  function grantsToKeys(list: ExternalPrivilegeGrant[]): Set<string> {
+    const set = new Set<string>()
+    for (const g of list) {
+      set.add(grantKey(g.landingPagePublicId, g.tab, g.section || ""))
     }
-    onChange(next)
+    return set
+  }
+
+  function updateGrantsFromKeys(updater: (keys: Set<string>) => Set<string>) {
+    onChange((prev) => {
+      const nextKeys = updater(grantsToKeys(prev))
+      const next: ExternalPrivilegeGrant[] = []
+      for (const key of nextKeys) {
+        const parsed = parseGrantKey(key)
+        if (!parsed) continue
+        next.push(parsed)
+      }
+      return next
+    })
   }
 
   function setUtmSources(publicId: string, utmSources: string[]) {
-    const next = scopes.filter((s) => s.landingPagePublicId !== publicId)
-    for (const source of utmSources) {
-      const trimmed = source.trim()
-      if (!trimmed || isExternalTeamMemberScope(trimmed)) continue
-      next.push({ landingPagePublicId: publicId, utmSource: trimmed })
-    }
-    onScopesChange(next)
+    onScopesChange((prev) => {
+      const next = prev.filter((s) => s.landingPagePublicId !== publicId)
+      for (const source of utmSources) {
+        const trimmed = source.trim()
+        if (!trimmed || isExternalTeamMemberScope(trimmed)) continue
+        next.push({ landingPagePublicId: publicId, utmSource: trimmed })
+      }
+      return next
+    })
   }
 
   function findTeamMemberTemplatePublicId(
@@ -520,19 +540,23 @@ export function ExternalPrivilegesEditor({
 
   function enableTeamMemberAndCopyPrivileges(publicId: string) {
     const templateId = findTeamMemberTemplatePublicId(publicId)
-    const nextScopes = scopes.filter((s) => s.landingPagePublicId !== publicId)
-    nextScopes.push({
-      landingPagePublicId: publicId,
-      utmSource: EXTERNAL_TEAM_MEMBER_SCOPE,
+    onScopesChange((prev) => {
+      const next = prev.filter((s) => s.landingPagePublicId !== publicId)
+      next.push({
+        landingPagePublicId: publicId,
+        utmSource: EXTERNAL_TEAM_MEMBER_SCOPE,
+      })
+      return next
     })
-    onScopesChange(nextScopes)
 
     const hasOwnGrants = grants.some((g) => g.landingPagePublicId === publicId)
     if (!templateId || hasOwnGrants) return
 
-    const nextGrants = copyGrantsFromTemplate(publicId, templateId, grantSet)
-    setGrantsFromKeys(nextGrants)
-    expandCopiedTabs(publicId, nextGrants)
+    updateGrantsFromKeys((keys) =>
+      copyGrantsFromTemplate(publicId, templateId, keys)
+    )
+    const preview = copyGrantsFromTemplate(publicId, templateId, grantSet)
+    expandCopiedTabs(publicId, preview)
   }
 
   function setTeamMember(publicId: string, enabled: boolean) {
@@ -540,12 +564,15 @@ export function ExternalPrivilegesEditor({
       enableTeamMemberAndCopyPrivileges(publicId)
       return
     }
-    const next = scopes.filter((s) => s.landingPagePublicId !== publicId)
-    onScopesChange(next)
+    onScopesChange((prev) =>
+      prev.filter((s) => s.landingPagePublicId !== publicId)
+    )
   }
 
   function clearProjectScope(publicId: string) {
-    onScopesChange(scopes.filter((s) => s.landingPagePublicId !== publicId))
+    onScopesChange((prev) =>
+      prev.filter((s) => s.landingPagePublicId !== publicId)
+    )
   }
 
   function toggleProject(publicId: string, checked: boolean) {
@@ -578,11 +605,13 @@ export function ExternalPrivilegesEditor({
       return copy
     })
 
-    const nextGrants = new Set(grantSet)
-    for (const key of [...nextGrants]) {
-      if (key.startsWith(`${publicId}::`)) nextGrants.delete(key)
-    }
-    setGrantsFromKeys(nextGrants)
+    updateGrantsFromKeys((keys) => {
+      const next = new Set(keys)
+      for (const key of [...next]) {
+        if (key.startsWith(`${publicId}::`)) next.delete(key)
+      }
+      return next
+    })
     clearProjectScope(publicId)
   }
 
@@ -598,23 +627,13 @@ export function ExternalPrivilegesEditor({
     const hasUtm = (utmByProject.get(publicId)?.length ?? 0) > 0
     if (checked && !teamMember && !hasUtm) return
 
-    const next = new Set(grantSet)
     const tabDef = EXTERNAL_PRIVILEGE_TABS.find((t) => t.value === tab)
     const expandKey = `${publicId}::${tab}`
-
-    for (const key of [...next]) {
-      if (key.startsWith(`${publicId}::${tab}::`)) next.delete(key)
-    }
 
     if (checked) {
       setCheckedProjects((prev) => new Set(prev).add(publicId))
       if (tabDef && tabDef.sections.length > 0) {
-        for (const section of tabDef.sections) {
-          next.add(grantKey(publicId, tab, section.id))
-        }
         setExpandedTabs((prev) => new Set(prev).add(expandKey))
-      } else {
-        next.add(grantKey(publicId, tab, ""))
       }
     } else {
       setExpandedTabs((prev) => {
@@ -624,7 +643,22 @@ export function ExternalPrivilegesEditor({
       })
     }
 
-    setGrantsFromKeys(next)
+    updateGrantsFromKeys((keys) => {
+      const next = new Set(keys)
+      for (const key of [...next]) {
+        if (key.startsWith(`${publicId}::${tab}::`)) next.delete(key)
+      }
+      if (checked) {
+        if (tabDef && tabDef.sections.length > 0) {
+          for (const section of tabDef.sections) {
+            next.add(grantKey(publicId, tab, section.id))
+          }
+        } else {
+          next.add(grantKey(publicId, tab, ""))
+        }
+      }
+      return next
+    })
   }
 
   function isSectionSelected(
@@ -645,12 +679,14 @@ export function ExternalPrivilegesEditor({
     const hasUtm = (utmByProject.get(publicId)?.length ?? 0) > 0
     if (checked && !teamMember && !hasUtm) return
 
-    const next = new Set(grantSet)
-    next.delete(grantKey(publicId, tab, ""))
-    const key = grantKey(publicId, tab, sectionId)
-    if (checked) next.add(key)
-    else next.delete(key)
-    setGrantsFromKeys(next)
+    updateGrantsFromKeys((keys) => {
+      const next = new Set(keys)
+      next.delete(grantKey(publicId, tab, ""))
+      const key = grantKey(publicId, tab, sectionId)
+      if (checked) next.add(key)
+      else next.delete(key)
+      return next
+    })
   }
 
   if (projects.length === 0) {

@@ -196,24 +196,6 @@ export async function replaceExternalPrivileges(
   grants: ExternalPrivilegeGrant[],
   scopes: ExternalProjectScope[] = []
 ): Promise<void> {
-  await db
-    .delete(externalMemberPrivileges)
-    .where(eq(externalMemberPrivileges.userId, userId))
-  await db
-    .delete(externalMemberProjectScopes)
-    .where(eq(externalMemberProjectScopes.userId, userId))
-
-  if (grants.length > 0) {
-    await db.insert(externalMemberPrivileges).values(
-      grants.map((grant) => ({
-        userId,
-        landingPagePublicId: grant.landingPagePublicId,
-        tab: grant.tab,
-        section: grant.section || "",
-      }))
-    )
-  }
-
   const cleanedScopes = scopes
     .map((scope) => ({
       landingPagePublicId: scope.landingPagePublicId.trim(),
@@ -221,15 +203,35 @@ export async function replaceExternalPrivileges(
     }))
     .filter((scope) => scope.landingPagePublicId && scope.utmSource)
 
-  if (cleanedScopes.length > 0) {
-    await db.insert(externalMemberProjectScopes).values(
-      cleanedScopes.map((scope) => ({
-        userId,
-        landingPagePublicId: scope.landingPagePublicId,
-        utmSource: scope.utmSource,
-      }))
-    )
-  }
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(externalMemberPrivileges)
+      .where(eq(externalMemberPrivileges.userId, userId))
+    await tx
+      .delete(externalMemberProjectScopes)
+      .where(eq(externalMemberProjectScopes.userId, userId))
+
+    if (grants.length > 0) {
+      await tx.insert(externalMemberPrivileges).values(
+        grants.map((grant) => ({
+          userId,
+          landingPagePublicId: grant.landingPagePublicId,
+          tab: grant.tab,
+          section: grant.section || "",
+        }))
+      )
+    }
+
+    if (cleanedScopes.length > 0) {
+      await tx.insert(externalMemberProjectScopes).values(
+        cleanedScopes.map((scope) => ({
+          userId,
+          landingPagePublicId: scope.landingPagePublicId,
+          utmSource: scope.utmSource,
+        }))
+      )
+    }
+  })
 }
 
 export async function assertExternalTarget(

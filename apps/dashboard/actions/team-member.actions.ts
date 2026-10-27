@@ -192,45 +192,19 @@ export async function saveExternalMemberPrivileges(input: {
   const scopes = (input.scopes ?? [])
     .map((scope) => ({
       landingPagePublicId: scope.landingPagePublicId.trim(),
-      utmSource: scope.utmSource.trim(),
+      utmSource: scope.utmSource.trim().slice(0, 200),
     }))
     .filter((scope) => scope.landingPagePublicId && scope.utmSource)
 
-  const projectIds = [...new Set(grants.map((g) => g.landingPagePublicId))]
-  if (projectIds.length > 0) {
-    const existingProjects = await db
-      .select({ publicId: landingPages.publicId })
-      .from(landingPages)
-      .where(isNull(landingPages.deletedAt))
+  const grantProjectIds = [...new Set(grants.map((g) => g.landingPagePublicId))]
+  const scopeProjectIds = [
+    ...new Set(scopes.map((scope) => scope.landingPagePublicId)),
+  ]
+  const projectIdsToValidate = [
+    ...new Set([...grantProjectIds, ...scopeProjectIds]),
+  ]
 
-    const validIds = new Set(existingProjects.map((p) => p.publicId))
-    for (const id of projectIds) {
-      if (!validIds.has(id)) {
-        return { error: "One or more selected projects are invalid." }
-      }
-    }
-
-    const scopedProjects = new Set(
-      scopes.map((scope) => scope.landingPagePublicId)
-    )
-    for (const id of projectIds) {
-      if (!scopedProjects.has(id)) {
-        return {
-          error:
-            "Set Team member to Yes, or select at least one UTM Source, for every project that has tabs enabled.",
-        }
-      }
-    }
-  }
-
-  const grantProjectIds = new Set(projectIds)
-  const scopesForGrants = scopes.filter((scope) =>
-    grantProjectIds.has(scope.landingPagePublicId)
-  )
-
-  await replaceExternalPrivileges(input.userId, grants, scopesForGrants)
-
-  const projects = await db
+  const existingProjects = await db
     .select({
       publicId: landingPages.publicId,
       brandName: landingPages.brandName,
@@ -238,16 +212,43 @@ export async function saveExternalMemberPrivileges(input: {
     .from(landingPages)
     .where(isNull(landingPages.deletedAt))
 
-  const brandById = new Map(projects.map((p) => [p.publicId, p.brandName]))
+  const validIds = new Set(existingProjects.map((p) => p.publicId))
+  for (const id of projectIdsToValidate) {
+    if (!validIds.has(id)) {
+      return { error: "One or more selected projects are invalid." }
+    }
+  }
+
+  const scopedProjects = new Set(
+    scopes.map((scope) => scope.landingPagePublicId)
+  )
+  for (const id of grantProjectIds) {
+    if (!scopedProjects.has(id)) {
+      return {
+        error:
+          "Set Team member to Yes, or select at least one UTM Source, for every project that has tabs enabled.",
+      }
+    }
+  }
+
+  const scopesToPersist = scopes.filter((scope) =>
+    validIds.has(scope.landingPagePublicId)
+  )
+
+  await replaceExternalPrivileges(input.userId, grants, scopesToPersist)
+
+  const brandById = new Map(
+    existingProjects.map((p) => [p.publicId, p.brandName])
+  )
   const utmByProject = new Map<string, string[]>()
-  for (const scope of scopesForGrants) {
+  for (const scope of scopesToPersist) {
     const list = utmByProject.get(scope.landingPagePublicId) ?? []
     if (!list.includes(scope.utmSource)) list.push(scope.utmSource)
     utmByProject.set(scope.landingPagePublicId, list)
   }
 
   const accessProjects: ExternalMemberAccessProject[] = []
-  for (const publicId of projectIds) {
+  for (const publicId of grantProjectIds) {
     const tabLabels = new Set<string>()
     for (const grant of grants) {
       if (grant.landingPagePublicId !== publicId) continue

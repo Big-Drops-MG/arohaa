@@ -78,8 +78,15 @@ function buildAccessSummary(
     if (grant.section) sections.add(grant.section)
   }
 
+  const projectIds = new Set<string>([
+    ...byProject.keys(),
+    ...utmById.keys(),
+    ...teamMemberById,
+  ])
+
   const summaries: ProjectAccessSummary[] = []
-  for (const [publicId, tabs] of byProject) {
+  for (const publicId of projectIds) {
+    const tabs = byProject.get(publicId) ?? new Map()
     const tabSummaries: ProjectAccessSummary["tabs"] = []
     for (const tabDef of EXTERNAL_PRIVILEGE_TABS) {
       const sections = tabs.get(tabDef.value)
@@ -126,8 +133,10 @@ export function ExternalMemberDetailsDialog({
     { publicId: string; brandName: string }[]
   >([])
 
+  const memberId = member?.id ?? null
+
   useEffect(() => {
-    if (!open || !member) return
+    if (!open || !memberId) return
     let cancelled = false
     setLoading(true)
     setError(null)
@@ -136,7 +145,7 @@ export function ExternalMemberDetailsDialog({
 
     startTransition(async () => {
       const [privilegesResult, projectsResult] = await Promise.all([
-        getExternalMemberPrivileges(member.id),
+        getExternalMemberPrivileges(memberId),
         listProjectsForPrivileges(),
       ])
       if (cancelled) return
@@ -157,7 +166,7 @@ export function ExternalMemberDetailsDialog({
     return () => {
       cancelled = true
     }
-  }, [open, member, startTransition])
+  }, [open, memberId, startTransition])
 
   const accessSummary = useMemo(
     () => buildAccessSummary(grants, scopes, projects),

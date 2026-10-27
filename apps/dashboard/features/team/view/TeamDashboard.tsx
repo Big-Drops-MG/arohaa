@@ -622,12 +622,12 @@ export function TeamDashboard({ data }: TeamDashboardProps) {
         }}
         mode={
           editPrivilegesMember
-            ? {
+            ? ({
                 kind: "edit",
                 userId: editPrivilegesMember.id,
                 memberName: editPrivilegesMember.name,
-              }
-            : { kind: "create" }
+              } as const)
+            : ({ kind: "create" } as const)
         }
       />
       <ExternalMemberDetailsDialog
