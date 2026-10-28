@@ -156,7 +156,6 @@ function setupZipSubmitClickTracking(): void {
     (e) => {
       const control = findZipSubmitControl(e.target)
       if (!control) return
-      if (control.closest("form")) return
       handleZipControlSubmit(control)
     },
     true,

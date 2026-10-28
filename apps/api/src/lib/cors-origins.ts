@@ -2,11 +2,10 @@ import { isNull } from 'drizzle-orm'
 import { db, landingPages } from '@workspace/database'
 
 const CACHE_TTL_MS = 30_000
-const FORCE_REFRESH_COOLDOWN_MS = 5_000
 
 let cachedOrigins: Set<string> | null = null
 let cachedAt = 0
-let lastForcedRefreshAt = 0
+let refreshInFlight: Promise<Set<string>> | null = null
 
 function normalizeOrigin(value: string): string | null {
   try {
@@ -79,6 +78,22 @@ export async function resolveAllowedCorsOrigins(
   return allowed
 }
 
+
+async function refreshAllowedCorsOrigins(): Promise<Set<string>> {
+  if (refreshInFlight) return refreshInFlight
+
+  refreshInFlight = (async () => {
+    try {
+      invalidateAllowedCorsOrigins()
+      return await resolveAllowedCorsOrigins(true)
+    } finally {
+      refreshInFlight = null
+    }
+  })()
+
+  return refreshInFlight
+}
+
 export function isCorsOriginAllowed(
   origin: string | undefined,
   allowed: Set<string>,
@@ -99,13 +114,7 @@ export async function resolveCorsOriginDecision(
   if (allowed.size === 0) return false
   if (allowed.has(origin)) return origin
 
-  const now = Date.now()
-  if (now - lastForcedRefreshAt < FORCE_REFRESH_COOLDOWN_MS) {
-    return false
-  }
-  lastForcedRefreshAt = now
-  invalidateAllowedCorsOrigins()
-  allowed = await resolveAllowedCorsOrigins(true)
+  allowed = await refreshAllowedCorsOrigins()
   if (allowed.size === 0) return false
   return allowed.has(origin) ? origin : false
 }

@@ -7,6 +7,7 @@ import { setupFormTracking } from "../events/form-tracking"
 import { installFormSemantics } from "../events/form.events"
 import { setupServiceClickTracking } from "../events/service-click.events"
 import { setupOpaqueFieldCapture } from "../events/opaque-field-capture"
+import { setupOfferEngineBridge } from "../events/offer-engine-bridge"
 import { setupFiCapture } from "../events/fi-capture"
 import { setupBehaviorSummary } from "../events/behavior-summary"
 import { setupPageIntegrityObservations } from "../events/page-integrity"
@@ -61,6 +62,7 @@ export function setupLifecycle(): void {
     setupOpaqueFieldCapture()
   } else if (getConfig().formtype === "zip") {
   }
+  setupOfferEngineBridge()
 
   startHeartbeat()
   monitorWebVitals()
