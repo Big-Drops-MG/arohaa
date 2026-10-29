@@ -95,8 +95,10 @@ function networkClassLabel(raw: string | undefined): string {
 
 export function ShortcutLeadsTable({
   rows,
+  emptyMessage,
 }: {
   rows: WarehouseShortcutLead[]
+  emptyMessage?: string
 }) {
   const [logLead, setLogLead] = useState<WarehouseShortcutLead | null>(null)
   const [relatedLead, setRelatedLead] = useState<WarehouseShortcutLead | null>(
@@ -109,7 +111,8 @@ export function ShortcutLeadsTable({
   if (rows.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No Copy/Paste shortcut users yet. Percentages need updated SDK traffic.
+        {emptyMessage ??
+          "No Copy/Paste shortcut users yet. Percentages need updated SDK traffic."}
       </p>
     )
   }

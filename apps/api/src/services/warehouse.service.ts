@@ -44,6 +44,11 @@ import {
   LEAD_RISK_TABLE,
   shouldSkipClickHouse,
 } from './clickhouse.service.js'
+import {
+  compareSessionRecencyDesc,
+  newerTimestamp,
+  selectReviewLeadsWithoutEvictingSeed,
+} from './warehouse-review-leads.js'
 import { and, eq, inArray } from 'drizzle-orm'
 import {
   count,
@@ -299,10 +304,11 @@ export type WarehouseSessionEvidence = {
 }
 
 const SHORTCUT_LEADS_LIMIT = 100
-const REVIEW_LEADS_LIMIT = 100
+const ELEVATED_REVIEW_LIMIT = 100
+const RELATED_REVIEW_LIMIT = 100
 const FI_CLIPBOARD_SESSION_LIMIT = 4_000
 const FI_CLIPBOARD_SCAN_LIMIT = 40_000
-const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v11'
+const WAREHOUSE_SUMMARY_CACHE_KEY = 'warehouse:summary:v12'
 const WAREHOUSE_SUMMARY_CACHE_TTL_SEC = 120
 const WAREHOUSE_SUMMARY_CACHE_STALE_SEC = 120
 const WAREHOUSE_RESCORE_LOOKBACK_DAYS = 30
@@ -313,6 +319,7 @@ type ShortcutSessionFlag = {
   sessionId: string
   usedCopy: boolean
   usedPaste: boolean
+  lastAt?: string
   fiFields?: Record<string, string>
 }
 
@@ -558,6 +565,7 @@ function mergeShortcutFlags(
   }
   existing.usedCopy = existing.usedCopy || flag.usedCopy
   existing.usedPaste = existing.usedPaste || flag.usedPaste
+  existing.lastAt = newerTimestamp(existing.lastAt, flag.lastAt)
   if (flag.fiFields && Object.keys(flag.fiFields).length > 0) {
     existing.fiFields = mergeFieldMaps(existing.fiFields, flag.fiFields)
   }
@@ -569,12 +577,14 @@ async function loadFirstClassShortcutFlags(): Promise<ShortcutSessionFlag[]> {
     session_id: string
     used_copy: string | number | boolean
     used_paste: string | number | boolean
+    last_at: string
   }>(`
     SELECT
       toString(workspace_id) AS workspace_id,
       session_id,
       max(event_name = 'form_shortcut_copy') AS used_copy,
-      max(event_name = 'form_shortcut_paste') AS used_paste
+      max(event_name = 'form_shortcut_paste') AS used_paste,
+      toString(max(created_at)) AS last_at
     FROM ${CLICKHOUSE_EVENTS_TABLE}
     WHERE event_name IN ('form_shortcut_copy', 'form_shortcut_paste')
       AND session_id != ''
@@ -593,6 +603,7 @@ async function loadFirstClassShortcutFlags(): Promise<ShortcutSessionFlag[]> {
       sessionId,
       usedCopy: Boolean(Number(row.used_copy)),
       usedPaste: Boolean(Number(row.used_paste)),
+      lastAt: String(row.last_at || '').trim() || undefined,
     })
   }
   return out
@@ -624,7 +635,8 @@ async function loadFiClipboardShortcutFlags(): Promise<ShortcutSessionFlag[]> {
       SELECT
         toString(e.workspace_id) AS workspace_id,
         e.session_id AS session_id,
-        e.properties AS properties
+        e.properties AS properties,
+        toString(e.created_at) AS created_at
       FROM ${CLICKHOUSE_EVENTS_TABLE} AS e
       INNER JOIN form_sessions AS f
         ON e.workspace_id = f.workspace_id
@@ -641,6 +653,7 @@ async function loadFiClipboardShortcutFlags(): Promise<ShortcutSessionFlag[]> {
         workspace_id: string
         session_id: string
         properties: string
+        created_at: string
       }>
     ).data ?? []
 
@@ -660,6 +673,7 @@ async function loadFiClipboardShortcutFlags(): Promise<ShortcutSessionFlag[]> {
         sessionId,
         usedCopy: hit.usedCopy,
         usedPaste: hit.usedPaste,
+        lastAt: String(row.created_at || '').trim() || undefined,
       })
     } catch {
       /* skip undecryptable batch */
@@ -770,9 +784,14 @@ async function loadShortcutSessionFlags(): Promise<{
     if (flag.usedPaste) pasteSessions += 1
   }
 
-  flags = [...byKey.values()].sort((a, b) =>
-    a.sessionId.localeCompare(b.sessionId),
-  )
+  flags = [...byKey.values()].sort((a, b) => {
+    const at = (a.lastAt || '').trim()
+    const bt = (b.lastAt || '').trim()
+    if (!at && bt) return 1
+    if (at && !bt) return -1
+    if (at !== bt) return bt.localeCompare(at)
+    return a.sessionId.localeCompare(b.sessionId)
+  })
   return { flags, copySessions, pasteSessions }
 }
 
@@ -975,12 +994,7 @@ async function buildShortcutLeads(
     if (leads.length >= SHORTCUT_LEADS_LIMIT) break
   }
 
-  leads.sort((a, b) => {
-    const at = a.createdAt || ''
-    const bt = b.createdAt || ''
-    if (at === bt) return a.sessionId.localeCompare(b.sessionId)
-    return bt.localeCompare(at)
-  })
+  leads.sort(compareSessionRecencyDesc)
   return {
     leads,
     copySessions: discovery.copySessions,
@@ -991,11 +1005,15 @@ async function buildShortcutLeads(
 async function loadElevatedRiskSessionRefs(
   limit: number,
 ): Promise<Array<{ workspaceId: string; sessionId: string }>> {
-  const safeLimit = Math.max(1, Math.min(REVIEW_LEADS_LIMIT, Math.floor(limit)))
+  const safeLimit = Math.max(
+    1,
+    Math.min(ELEVATED_REVIEW_LIMIT, Math.floor(limit)),
+  )
   const ch = getClickHouseClient()
   try {
     const res = await ch.query({
       format: 'JSON',
+      query_params: { mv: LEAD_FRAUD_MODEL_VERSION, lim: safeLimit },
       query: `
         SELECT
           toString(r.workspace_id) AS workspace_id,
@@ -1003,9 +1021,10 @@ async function loadElevatedRiskSessionRefs(
         FROM ${LEAD_RISK_TABLE} AS r FINAL
         WHERE r.label = 'fraud'
           AND r.session_id != ''
+          AND r.model_version = {mv:String}
           AND (r.coverage = '' OR r.coverage != 'insufficient')
         ORDER BY r.scored_at DESC
-        LIMIT ${safeLimit}
+        LIMIT {lim:UInt32}
       `,
     })
     const rows =
@@ -1032,11 +1051,15 @@ async function loadElevatedRiskSessionRefs(
 async function loadRelatedSessionRefs(
   limit: number,
 ): Promise<Array<{ workspaceId: string; sessionId: string }>> {
-  const safeLimit = Math.max(1, Math.min(REVIEW_LEADS_LIMIT, Math.floor(limit)))
+  const safeLimit = Math.max(
+    1,
+    Math.min(RELATED_REVIEW_LIMIT, Math.floor(limit)),
+  )
   const ch = getClickHouseClient()
   try {
     const res = await ch.query({
       format: 'JSON',
+      query_params: { lim: safeLimit },
       query: `
         SELECT
           k.landing_page_id AS workspace_id,
@@ -1061,7 +1084,7 @@ async function loadRelatedSessionRefs(
           AND k.session_id != ''
         GROUP BY k.landing_page_id, k.session_id
         ORDER BY max(k.submitted_at) DESC
-        LIMIT ${safeLimit}
+        LIMIT {lim:UInt32}
       `,
     })
     const rows =
@@ -1151,17 +1174,30 @@ async function expandReviewLeads(
   }
 
   const [elevatedRefs, relatedRefs] = await Promise.all([
-    loadElevatedRiskSessionRefs(REVIEW_LEADS_LIMIT),
-    loadRelatedSessionRefs(REVIEW_LEADS_LIMIT),
+    loadElevatedRiskSessionRefs(ELEVATED_REVIEW_LIMIT),
+    loadRelatedSessionRefs(RELATED_REVIEW_LIMIT),
   ])
 
-  const missing: Array<{ workspaceId: string; sessionId: string }> = []
-  for (const ref of [...elevatedRefs, ...relatedRefs]) {
+  const elevatedMissing: Array<{ workspaceId: string; sessionId: string }> = []
+  for (const ref of elevatedRefs) {
     const key = `${ref.workspaceId}:${ref.sessionId}`
     if (byKey.has(key)) continue
-    missing.push(ref)
+    elevatedMissing.push(ref)
+    if (elevatedMissing.length >= ELEVATED_REVIEW_LIMIT) break
   }
 
+  const relatedMissing: Array<{ workspaceId: string; sessionId: string }> = []
+  const elevatedMissingKeys = new Set(
+    elevatedMissing.map((ref) => `${ref.workspaceId}:${ref.sessionId}`),
+  )
+  for (const ref of relatedRefs) {
+    const key = `${ref.workspaceId}:${ref.sessionId}`
+    if (byKey.has(key) || elevatedMissingKeys.has(key)) continue
+    relatedMissing.push(ref)
+    if (relatedMissing.length >= RELATED_REVIEW_LIMIT) break
+  }
+
+  const missing = [...elevatedMissing, ...relatedMissing]
   if (missing.length > 0) {
     const sessionIds = missing.map((m) => m.sessionId)
     const landingPageIds = missing.map((m) => m.workspaceId)
@@ -1197,25 +1233,27 @@ async function expandReviewLeads(
     }
   }
 
-  const leads = [...byKey.values()]
   const relatedByKey = await loadRelatedCountBySession(
-    leads.map((lead) => ({
+    [...byKey.values()].map((lead) => ({
       workspaceId: lead.workspaceId,
       sessionId: lead.sessionId,
     })),
   )
-  for (const lead of leads) {
+  for (const lead of byKey.values()) {
     lead.relatedCount =
       relatedByKey.get(`${lead.workspaceId}:${lead.sessionId}`) ?? 0
   }
 
-  leads.sort((a, b) => {
-    const at = a.createdAt || ''
-    const bt = b.createdAt || ''
-    if (at === bt) return a.sessionId.localeCompare(b.sessionId)
-    return bt.localeCompare(at)
-  })
-  return leads.slice(0, REVIEW_LEADS_LIMIT)
+  const seedKeys = new Set(
+    seed.map((lead) => `${lead.workspaceId}:${lead.sessionId}`),
+  )
+  const seedLeads = [...byKey.values()].filter((lead) =>
+    seedKeys.has(`${lead.workspaceId}:${lead.sessionId}`),
+  )
+  const extras = [...byKey.values()].filter(
+    (lead) => !seedKeys.has(`${lead.workspaceId}:${lead.sessionId}`),
+  )
+  return selectReviewLeadsWithoutEvictingSeed(seedLeads, extras)
 }
 
 type LeadRiskParsed = {

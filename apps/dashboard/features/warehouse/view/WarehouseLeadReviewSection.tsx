@@ -250,7 +250,16 @@ export function WarehouseLeadReviewSection({
         bodyClassName="min-w-0 px-0 py-0"
       >
         <div className="max-h-[28rem] min-w-0 overflow-x-auto overflow-y-auto overscroll-contain px-5 py-4">
-          <ShortcutLeadsTable rows={filtered} />
+          <ShortcutLeadsTable
+            rows={filtered}
+            emptyMessage={
+              shortcutLeads.length === 0
+                ? undefined
+                : filter === "all"
+                  ? "No review rows matched."
+                  : `No loaded review rows match the ${filter} filter. Clear the filter to see all ${formatCount(shortcutLeads.length)} loaded leads.`
+            }
+          />
         </div>
       </Panel>
 
