@@ -7,23 +7,25 @@ import {
   pickLeadZip,
 } from '../lib/lead-fields.js'
 
-describe('funnel leads zip conversion seeding', () => {
-  it('includes zip_submit sessions without requiring fields/_k blobs', () => {
+describe('funnel leads seeding', () => {
+  it('requires field blobs and does not seed bare zip_submit', () => {
     const where = funnelLeadSeedEventWhere()
-    expect(where).toContain("event_name = 'zip_submit'")
+    expect(where).not.toContain("event_name = 'zip_submit'")
+    expect(where).toContain('form_success')
     expect(where).toContain('"fields"')
-    expect(where).toContain('"zip"')
+    expect(where).toContain('"_k"')
+    expect(where).not.toMatch(/zipcode\s*!=\s*''/)
   })
 
-  it('treats zip_submit props as a displayable lead', () => {
-    const raw = { formId: 'default-form', zip: '90210' }
+  it('still normalizes zip from field props when present', () => {
+    const raw = { formId: 'default-form', zip: '90210', first_name: 'Ada' }
     const fields = normalizeLeadFields(raw)
     const zip = pickLeadZip(fields)
     const visible = fieldsWithoutReserved(fields)
 
     expect(zip).toBe('90210')
+    expect(visible.first_name).toBe('Ada')
     expect(visible.formId).toBeUndefined()
-    expect(visible.formid).toBeUndefined()
-    expect(isDisplayableLead({ zip, fields: visible })).toBe(true)
+    expect(isDisplayableLead({ zip, email: '', fields: visible })).toBe(true)
   })
 })

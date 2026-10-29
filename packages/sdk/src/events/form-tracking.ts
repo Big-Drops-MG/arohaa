@@ -82,13 +82,9 @@ function handleZipControlSubmit(control: HTMLElement): void {
 
   const form = control.closest("form")
   const formId = form ? resolveFormId(form) : "zip"
-  if (hasFormSessionSucceeded(formId)) return
 
   fireZipStartIfApplicable(formId)
-  trackFormSubmit(formId, zip)
-  trackFormSuccess(formId, zip)
   fireZipSubmitIfApplicable(formId, zip)
-  markFormSessionSucceeded(formId)
 }
 
 export function installSubmitFormSuccessObserver(): void {

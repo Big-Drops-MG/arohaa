@@ -59,19 +59,14 @@ import { emailDomain } from '../lib/lead-fraud/disposable-domains.js'
 
 type CHJson<T> = { data: T[] }
 
-const SUBMIT_EVENTS = `event_name IN ('form_success', 'service_click', 'zip_submit')`
+const SUBMIT_EVENTS = `event_name IN ('form_success', 'service_click')`
 
 export function funnelLeadSeedEventWhere(): string {
   return `(
-    event_name = 'zip_submit'
-    OR (
-      event_name IN ('form_success', 'form_step_complete', 'form_step_view')
-      AND (
-        positionCaseInsensitive(properties, '"fields"') > 0
-        OR positionCaseInsensitive(properties, '"_k"') > 0
-        OR zipcode != ''
-        OR positionCaseInsensitive(properties, '"zip"') > 0
-      )
+    event_name IN ('form_success', 'form_step_complete', 'form_step_view')
+    AND (
+      positionCaseInsensitive(properties, '"fields"') > 0
+      OR positionCaseInsensitive(properties, '"_k"') > 0
     )
   )`
 }
@@ -1657,7 +1652,7 @@ export async function getFunnelLeads({
   returningOnly?: boolean
 }): Promise<FunnelLeadsResponse> {
   const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, new Date(), custom)
-  const cacheKey = `analytics:funnel-leads:v3-zip:${workspaceId}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}:${limit}:${offset}:${returningOnly ? 'r1' : 'r0'}`
+  const cacheKey = `analytics:funnel-leads:v4-fields:${workspaceId}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}:${limit}:${offset}:${returningOnly ? 'r1' : 'r0'}`
   const cached = await readAnalyticsCache<FunnelLeadsResponse>(cacheKey)
   if (cached) return cached
 
