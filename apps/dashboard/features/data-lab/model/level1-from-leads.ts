@@ -20,6 +20,11 @@ import {
   hasCompleteLevel3Stats,
 } from "@/features/data-lab/model/level3"
 import type { IntelligenceCenterPayload } from "@/features/data-lab/model/intelligence"
+import {
+  computeLeadQualityByUtmSource,
+  emptyLeadQualityRows,
+  type LeadQualityRow,
+} from "@/features/data-lab/model/lead-quality"
 import { discoverVisibleLeadFieldKeys } from "@/features/data-export/model/lead-field-columns"
 import type { OverviewDateRangeId } from "@/features/overview/model/overview"
 import type { DashboardCustomRange } from "@/features/traffic/model/traffic-range"
@@ -34,6 +39,7 @@ export type DataLabStatsBundle = {
   level1Stats: Level1Stat[]
   level2Stats: Level2Stat[]
   level3: IntelligenceCenterPayload
+  leadQuality: LeadQualityRow[]
 }
 
 export function isLeadFormSubmittedFlag(value: unknown): boolean {
@@ -148,6 +154,7 @@ function statsFromLeads(leads: DataExportLeadRow[]): DataLabStatsBundle {
       level1Stats: emptyLevel1Stats(),
       level2Stats: emptyLevel2Stats(),
       level3: { section: "level3", winners: [], boards: [], actions: [] },
+      leadQuality: emptyLeadQualityRows(),
     }
   }
   const visibleLeadFieldKeys = discoverVisibleLeadFieldKeys(leads)
@@ -155,6 +162,7 @@ function statsFromLeads(leads: DataExportLeadRow[]): DataLabStatsBundle {
     level1Stats: computeLevel1StatsFromLeads(leads),
     level2Stats: computeLevel2StatsFromLeads(leads),
     level3: computeLevel3FromLeads(leads, visibleLeadFieldKeys),
+    leadQuality: computeLeadQualityByUtmSource(leads),
   }
 }
 
@@ -224,6 +232,7 @@ export function dataLabStatsFromExportPayload(
     level1Stats: level1StatsFromExportPayload(payload),
     level2Stats: level2StatsFromExportPayload(payload),
     level3: level3StatsFromExportPayload(payload),
+    leadQuality: computeLeadQualityByUtmSource(payload.leads ?? []),
   }
 }
 
@@ -271,6 +280,7 @@ async function fetchDataExportPage({
 function apiStatsComplete(
   payload: Pick<
     DataExportDashboardData,
+    | "leads"
     | "level1Stats"
     | "level1Complete"
     | "level2Stats"
@@ -291,6 +301,7 @@ function apiStatsComplete(
       level1Stats: payload.level1Stats,
       level2Stats: payload.level2Stats,
       level3: payload.level3!,
+      leadQuality: computeLeadQualityByUtmSource(payload.leads ?? []),
     }
   }
   return null
@@ -327,10 +338,7 @@ export async function fetchDataLabStatsFromLeadsTable({
   > | null
   onProgress?: (stats: DataLabStatsBundle) => void
 }): Promise<DataLabStatsBundle> {
-  if (seed) {
-    const complete = apiStatsComplete(seed)
-    if (complete) return complete
-  }
+  const serverComplete = seed ? apiStatsComplete(seed) : null
 
   const allLeads: DataExportLeadRow[] = []
   const seen = new Set<string>()
@@ -345,15 +353,26 @@ export async function fetchDataLabStatsFromLeadsTable({
     }
   }
 
+  const finalize = (): DataLabStatsBundle => {
+    const fromLeads = statsFromLeads(allLeads)
+    if (!serverComplete) return fromLeads
+    return {
+      level1Stats: serverComplete.level1Stats,
+      level2Stats: serverComplete.level2Stats,
+      level3: serverComplete.level3,
+      leadQuality: fromLeads.leadQuality,
+    }
+  }
+
   const publish = () => {
     if (allLeads.length === 0) return
-    onProgress?.(statsFromLeads(allLeads))
+    onProgress?.(finalize())
   }
 
   if (seed?.leads?.length) {
     pushLeads(seed.leads)
     publish()
-    if (!seed.hasMore) return statsFromLeads(allLeads)
+    if (!seed.hasMore) return finalize()
   }
 
   if (seed?.hasMore && (seed.total ?? 0) > allLeads.length) {
@@ -387,8 +406,6 @@ export async function fetchDataLabStatsFromLeadsTable({
         )
       )
       for (const page of pages) {
-        const complete = apiStatsComplete(page)
-        if (complete) return complete
         pushLeads(
           (page.leads ?? []).map((lead) =>
             mapDataExportLeadRow(lead as Record<string, unknown>)
@@ -398,7 +415,11 @@ export async function fetchDataLabStatsFromLeadsTable({
       publish()
     }
 
-    return statsFromLeads(allLeads)
+    return finalize()
+  }
+
+  if (seed?.leads?.length && !seed.hasMore) {
+    return finalize()
   }
 
   const first = await fetchDataExportPage({
@@ -413,9 +434,6 @@ export async function fetchDataLabStatsFromLeadsTable({
     signal,
   })
 
-  const firstComplete = apiStatsComplete(first)
-  if (firstComplete) return firstComplete
-
   pushLeads(
     (first.leads ?? []).map((lead) =>
       mapDataExportLeadRow(lead as Record<string, unknown>)
@@ -429,7 +447,7 @@ export async function fetchDataLabStatsFromLeadsTable({
   const maxOffset = Math.min(total, LEVEL1_MAX_PAGES * LEVEL1_PAGE_SIZE)
 
   if (!first.hasMore || startOffset >= maxOffset) {
-    return statsFromLeads(allLeads)
+    return finalize()
   }
 
   const offsets: number[] = []
@@ -459,8 +477,6 @@ export async function fetchDataLabStatsFromLeadsTable({
     )
 
     for (const page of pages) {
-      const complete = apiStatsComplete(page)
-      if (complete) return complete
       pushLeads(
         (page.leads ?? []).map((lead) =>
           mapDataExportLeadRow(lead as Record<string, unknown>)
@@ -470,5 +486,5 @@ export async function fetchDataLabStatsFromLeadsTable({
     publish()
   }
 
-  return statsFromLeads(allLeads)
+  return finalize()
 }

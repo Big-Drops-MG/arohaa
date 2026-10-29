@@ -29,11 +29,16 @@ import {
   dataLabStatsFromExportPayload,
   fetchDataLabStatsFromLeadsTable,
 } from "@/features/data-lab/model/level1-from-leads"
+import {
+  emptyLeadQualityRows,
+  type LeadQualityRow,
+} from "@/features/data-lab/model/lead-quality"
 import { hasCompleteLevel3Stats } from "@/features/data-lab/model/level3"
 import type { IntelligenceCenterPayload } from "@/features/data-lab/model/intelligence"
 import { Level1Panel } from "@/features/data-lab/view/Level1Panel"
 import { Level2Panel } from "@/features/data-lab/view/Level2Panel"
 import { Level3Panel } from "@/features/data-lab/view/Level3Panel"
+import { LeadQualityPanel } from "@/features/data-lab/view/LeadQualityPanel"
 import { DataLabLeadsPanel } from "@/features/data-lab/view/DataLabLeadsPanel"
 import type { DataExportDashboardData } from "@/features/data-export/model/data-export"
 import { getDataExportEmptyDashboardData } from "@/features/data-export/controller/data-export-empty-data"
@@ -77,6 +82,7 @@ function seedDataLabStats(initialDataExport: DataExportDashboardData | null) {
       level1Stats: emptyLevel1Stats(),
       level2Stats: emptyLevel2Stats(),
       level3: emptyLevel3Data(),
+      leadQuality: emptyLeadQualityRows(),
     }
   }
   return dataLabStatsFromExportPayload(initialDataExport)
@@ -162,6 +168,9 @@ export function DataLabDashboard({
   const [level3Data, setLevel3Data] = useState<IntelligenceCenterPayload>(
     () => seeded.level3
   )
+  const [leadQuality, setLeadQuality] = useState<LeadQualityRow[]>(
+    () => seeded.leadQuality
+  )
   const [statsLoading, setStatsLoading] = useState(
     () =>
       canAccessDataExport &&
@@ -195,8 +204,8 @@ export function DataLabDashboard({
           setLevel1Stats(completeStats.level1Stats)
           setLevel2Stats(completeStats.level2Stats)
           setLevel3Data(completeStats.level3)
+          setLeadQuality(completeStats.leadQuality)
           setStatsLoading(false)
-          return
         }
 
         const refined = await fetchDataLabStatsFromLeadsTable({
@@ -211,12 +220,14 @@ export function DataLabDashboard({
             setLevel1Stats(progressive.level1Stats)
             setLevel2Stats(progressive.level2Stats)
             setLevel3Data(progressive.level3)
+            setLeadQuality(progressive.leadQuality)
           },
         })
         if (cancelled || controller.signal.aborted) return
         setLevel1Stats(refined.level1Stats)
         setLevel2Stats(refined.level2Stats)
         setLevel3Data(refined.level3)
+        setLeadQuality(refined.leadQuality)
         setStatsLoading(false)
       } catch (err) {
         if (cancelled || controller.signal.aborted) return
@@ -228,6 +239,7 @@ export function DataLabDashboard({
         setLevel1Stats(emptyLevel1Stats())
         setLevel2Stats(emptyLevel2Stats())
         setLevel3Data(emptyLevel3Data())
+        setLeadQuality(emptyLeadQualityRows())
       } finally {
         if (!cancelled && !controller.signal.aborted) {
           setExportLoading(false)
@@ -338,6 +350,16 @@ export function DataLabDashboard({
           {labSection === "level-3" ? (
             <Level3Panel
               data={level3Data}
+              isLoading={cardsLoading}
+              canAccess={canAccessDataExport}
+            />
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="lead-quality" className="mt-5 outline-none">
+          {labSection === "lead-quality" ? (
+            <LeadQualityPanel
+              rows={leadQuality}
               isLoading={cardsLoading}
               canAccess={canAccessDataExport}
             />
