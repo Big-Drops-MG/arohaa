@@ -635,6 +635,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       utm_s1?: string
       utm_dim?: string
       utm_value?: string
+      segment_id?: string
       returning_only?: string
     }
   }>(
@@ -649,6 +650,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
             range_id: rangeIdSchema,
             ...customRangeSchemaProps,
             ...utmFilterSchemaProps,
+            segment_id: { type: 'string', format: 'uuid' },
             limit: { type: 'string', maxLength: 4 },
             offset: { type: 'string', maxLength: 8 },
             returning_only: { type: 'string', enum: ['0', '1', 'true', 'false'] },
@@ -665,7 +667,16 @@ export async function analyticsRoutes(server: FastifyInstance) {
       }
       const limit = Number(request.query.limit ?? 15)
       const offset = Number(request.query.offset ?? 0)
-      const utmFilter = parseAnalyticsUtmFilter(request.query)
+      const parsedUtm = parseAnalyticsUtmFilter(request.query)
+      const segmentFilter = await resolveSegmentFilter(
+        request.query.segment_id,
+        request.query.workspace_id,
+      )
+      const utmFilter = parsedUtm || {}
+      if (segmentFilter) {
+        utmFilter.segmentSql = segmentFilter.sql
+        utmFilter.segmentParams = segmentFilter.params
+      }
       const returningRaw = (request.query.returning_only ?? '').toLowerCase()
       const returningOnly =
         returningRaw === '1' || returningRaw === 'true'

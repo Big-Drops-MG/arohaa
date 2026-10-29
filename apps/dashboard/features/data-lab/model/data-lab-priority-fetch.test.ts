@@ -20,6 +20,8 @@ function payload(brandName: string): DataExportDashboardData {
     level2Complete: true,
     level3: { section: "level3", winners: [], boards: [], actions: [] },
     level3Complete: true,
+    leadQuality: [],
+    leadQualityComplete: true,
   }
 }
 

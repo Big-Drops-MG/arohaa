@@ -5,6 +5,7 @@ import {
 } from "@/features/data-export/model/data-export"
 import { emptyLevel1Stats } from "@/features/data-lab/model/level1"
 import { emptyLevel2Stats } from "@/features/data-lab/model/level2"
+import { emptyLeadQualityRows } from "@/features/data-lab/model/lead-quality"
 import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-range"
 
 export function getDataExportEmptyDashboardData(
@@ -29,5 +30,7 @@ export function getDataExportEmptyDashboardData(
     level2Complete: false,
     level3: null,
     level3Complete: false,
+    leadQuality: emptyLeadQualityRows(),
+    leadQualityComplete: false,
   }
 }

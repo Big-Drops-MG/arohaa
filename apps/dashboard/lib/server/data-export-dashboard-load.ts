@@ -42,6 +42,10 @@ import {
   hasCompleteLevel3Stats,
   resolveLevel3Stats,
 } from "@/features/data-lab/model/level3"
+import {
+  resolveLeadQualityStats,
+  type LeadQualityRow,
+} from "@/features/data-lab/model/lead-quality"
 import type { IntelligenceCenterPayload } from "@/features/data-lab/model/intelligence"
 import { mapDataExportLeadRow } from "@/features/data-lab/model/level1-from-leads"
 import { DEFAULT_ROUTE_MAX_OFFSET } from "@/lib/server/route-query-limits"
@@ -72,6 +76,7 @@ type LeadsApiResponse = {
   level1Stats?: Level1Stat[]
   level2Stats?: Level2Stat[]
   level3?: IntelligenceCenterPayload | null
+  leadQuality?: LeadQualityRow[]
 }
 
 async function fetchLeads(
@@ -220,6 +225,11 @@ export async function loadDataExportDashboardData({
     analytics.visibleLeadFieldKeys ?? [],
     Boolean(analytics.level3 && hasCompleteLevel3Stats(analytics.level3))
   )
+  const leadQuality = resolveLeadQualityStats(
+    analytics.leadQuality,
+    mappedLeads,
+    Array.isArray(analytics.leadQuality)
+  )
 
   return {
     brandName: row.brandName,
@@ -239,6 +249,8 @@ export async function loadDataExportDashboardData({
     level2Complete: level2.complete,
     level3: level3.payload,
     level3Complete: level3.complete,
+    leadQuality: leadQuality.rows,
+    leadQualityComplete: leadQuality.complete,
   }
 }
 

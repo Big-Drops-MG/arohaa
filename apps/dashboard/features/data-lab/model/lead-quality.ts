@@ -309,3 +309,22 @@ export function computeLeadQualityByUtmSource(
 export function emptyLeadQualityRows(): LeadQualityRow[] {
   return []
 }
+
+export function hasCompleteLeadQuality(
+  rows: LeadQualityRow[] | null | undefined
+): boolean {
+  return Array.isArray(rows)
+}
+export function resolveLeadQualityStats(
+  leadQuality: LeadQualityRow[] | undefined,
+  leads: DataExportLeadRow[],
+  complete = false
+): { rows: LeadQualityRow[]; complete: boolean } {
+  if (complete && Array.isArray(leadQuality)) {
+    return { rows: leadQuality, complete: true }
+  }
+  if (leads.length > 0) {
+    return { rows: computeLeadQualityByUtmSource(leads), complete: false }
+  }
+  return { rows: emptyLeadQualityRows(), complete: false }
+}

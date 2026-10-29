@@ -4,6 +4,7 @@ import type {
 } from "@/features/overview/model/overview"
 import type { Level1Stat } from "@/features/data-lab/model/level1"
 import type { Level2Stat } from "@/features/data-lab/model/level2"
+import type { LeadQualityRow } from "@/features/data-lab/model/lead-quality"
 import type { IntelligenceCenterPayload } from "@/features/data-lab/model/intelligence"
 import type { LeadFraudAssessment } from "@/features/data-export/model/interaction-log"
 
@@ -64,7 +65,8 @@ export type DataExportDashboardData = {
   level2Complete: boolean
   level3: IntelligenceCenterPayload | null
   level3Complete: boolean
-  /** Soft-fail shell from a failed upstream fetch — do not treat as authoritative. */
+  leadQuality: LeadQualityRow[]
+  leadQualityComplete: boolean
   analyticsUnavailable?: boolean
 }
 

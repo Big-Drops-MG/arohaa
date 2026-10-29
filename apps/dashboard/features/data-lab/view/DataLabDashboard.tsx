@@ -31,9 +31,11 @@ import {
 } from "@/features/data-lab/model/level1-from-leads"
 import {
   emptyLeadQualityRows,
+  hasCompleteLeadQuality,
   type LeadQualityRow,
 } from "@/features/data-lab/model/lead-quality"
 import { hasCompleteLevel3Stats } from "@/features/data-lab/model/level3"
+import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
 import type { IntelligenceCenterPayload } from "@/features/data-lab/model/intelligence"
 import { Level1Panel } from "@/features/data-lab/view/Level1Panel"
 import { Level2Panel } from "@/features/data-lab/view/Level2Panel"
@@ -98,7 +100,9 @@ function hasCompleteDataLabStats(
     data.level2Complete &&
     Array.isArray(data.level2Stats) &&
     data.level3Complete &&
-    hasCompleteLevel3Stats(data.level3)
+    hasCompleteLevel3Stats(data.level3) &&
+    data.leadQualityComplete &&
+    hasCompleteLeadQuality(data.leadQuality)
   )
 }
 
@@ -113,6 +117,7 @@ export function DataLabDashboard({
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
+  const { segmentId } = useDashboardSegmentFilter()
   const { searchParams } = useDashboardNavigation()
 
   const visibleSections = useMemo(() => {
@@ -213,6 +218,7 @@ export function DataLabDashboard({
           dateRangeId,
           customRange,
           utmFilter,
+          segmentId,
           signal: controller.signal,
           seed: payload,
           onProgress: (progressive) => {
@@ -260,6 +266,7 @@ export function DataLabDashboard({
     dateRangeId,
     customRange,
     utmFilter,
+    segmentId,
     initialDataExport,
     initialDataExportLoading,
   ])

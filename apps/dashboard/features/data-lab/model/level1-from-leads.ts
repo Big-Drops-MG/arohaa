@@ -23,6 +23,7 @@ import type { IntelligenceCenterPayload } from "@/features/data-lab/model/intell
 import {
   computeLeadQualityByUtmSource,
   emptyLeadQualityRows,
+  hasCompleteLeadQuality,
   type LeadQualityRow,
 } from "@/features/data-lab/model/lead-quality"
 import { discoverVisibleLeadFieldKeys } from "@/features/data-export/model/lead-field-columns"
@@ -215,6 +216,24 @@ export function level3StatsFromExportPayload(
   return emptyLevel3Payload()
 }
 
+export function leadQualityFromExportPayload(
+  payload: Pick<
+    DataExportDashboardData,
+    "leads" | "leadQuality" | "leadQualityComplete"
+  >
+): LeadQualityRow[] {
+  if (
+    payload.leadQualityComplete &&
+    hasCompleteLeadQuality(payload.leadQuality)
+  ) {
+    return payload.leadQuality
+  }
+  if (payload.leads?.length) {
+    return computeLeadQualityByUtmSource(payload.leads)
+  }
+  return emptyLeadQualityRows()
+}
+
 export function dataLabStatsFromExportPayload(
   payload: Pick<
     DataExportDashboardData,
@@ -226,13 +245,15 @@ export function dataLabStatsFromExportPayload(
     | "level2Complete"
     | "level3"
     | "level3Complete"
+    | "leadQuality"
+    | "leadQualityComplete"
   >
 ): DataLabStatsBundle {
   return {
     level1Stats: level1StatsFromExportPayload(payload),
     level2Stats: level2StatsFromExportPayload(payload),
     level3: level3StatsFromExportPayload(payload),
-    leadQuality: computeLeadQualityByUtmSource(payload.leads ?? []),
+    leadQuality: leadQualityFromExportPayload(payload),
   }
 }
 
@@ -245,6 +266,7 @@ async function fetchDataExportPage({
   dateRangeId,
   customRange,
   utmFilter,
+  segmentId,
   limit,
   offset,
   signal,
@@ -253,13 +275,14 @@ async function fetchDataExportPage({
   dateRangeId: OverviewDateRangeId
   customRange?: DashboardCustomRange
   utmFilter?: DashboardUtmFilter
+  segmentId?: string | null
   limit: number
   offset: number
   signal?: AbortSignal
 }): Promise<Level1PagePayload> {
   const path = buildAnalyticsApiPath(
     `/api/landing-pages/${encodeURIComponent(projectId)}/data-export`,
-    { rangeId: dateRangeId, customRange, utmFilter }
+    { rangeId: dateRangeId, customRange, utmFilter, segmentId }
   )
   const url = new URL(path, "http://local.invalid")
   url.searchParams.set("limit", String(limit))
@@ -287,6 +310,8 @@ function apiStatsComplete(
     | "level2Complete"
     | "level3"
     | "level3Complete"
+    | "leadQuality"
+    | "leadQualityComplete"
   >
 ): DataLabStatsBundle | null {
   if (
@@ -295,13 +320,15 @@ function apiStatsComplete(
     payload.level2Complete &&
     Array.isArray(payload.level2Stats) &&
     payload.level3Complete &&
-    hasCompleteLevel3Stats(payload.level3)
+    hasCompleteLevel3Stats(payload.level3) &&
+    payload.leadQualityComplete &&
+    hasCompleteLeadQuality(payload.leadQuality)
   ) {
     return {
       level1Stats: payload.level1Stats,
       level2Stats: payload.level2Stats,
       level3: payload.level3!,
-      leadQuality: computeLeadQualityByUtmSource(payload.leads ?? []),
+      leadQuality: payload.leadQuality,
     }
   }
   return null
@@ -312,6 +339,7 @@ export async function fetchDataLabStatsFromLeadsTable({
   dateRangeId,
   customRange,
   utmFilter,
+  segmentId,
   signal,
   seed,
   onProgress,
@@ -320,6 +348,7 @@ export async function fetchDataLabStatsFromLeadsTable({
   dateRangeId: OverviewDateRangeId
   customRange?: DashboardCustomRange
   utmFilter?: DashboardUtmFilter
+  segmentId?: string | null
   signal?: AbortSignal
   seed?: Pick<
     DataExportDashboardData,
@@ -330,6 +359,8 @@ export async function fetchDataLabStatsFromLeadsTable({
     | "level2Complete"
     | "level3"
     | "level3Complete"
+    | "leadQuality"
+    | "leadQualityComplete"
     | "visibleLeadFieldKeys"
     | "total"
     | "limit"
@@ -339,6 +370,10 @@ export async function fetchDataLabStatsFromLeadsTable({
   onProgress?: (stats: DataLabStatsBundle) => void
 }): Promise<DataLabStatsBundle> {
   const serverComplete = seed ? apiStatsComplete(seed) : null
+  if (serverComplete) {
+    onProgress?.(serverComplete)
+    return serverComplete
+  }
 
   const allLeads: DataExportLeadRow[] = []
   const seen = new Set<string>()
@@ -353,19 +388,32 @@ export async function fetchDataLabStatsFromLeadsTable({
     }
   }
 
+  const serverLeadQuality =
+    seed?.leadQualityComplete && hasCompleteLeadQuality(seed.leadQuality)
+      ? seed.leadQuality
+      : null
+
   const finalize = (): DataLabStatsBundle => {
     const fromLeads = statsFromLeads(allLeads)
-    if (!serverComplete) return fromLeads
+    const level1Ready =
+      seed?.level1Complete && hasCompleteLevel1Stats(seed.level1Stats)
+    const level2Ready = seed?.level2Complete && Array.isArray(seed.level2Stats)
+    const level3Ready =
+      seed?.level3Complete && hasCompleteLevel3Stats(seed.level3)
     return {
-      level1Stats: serverComplete.level1Stats,
-      level2Stats: serverComplete.level2Stats,
-      level3: serverComplete.level3,
-      leadQuality: fromLeads.leadQuality,
+      level1Stats: level1Ready ? seed!.level1Stats : fromLeads.level1Stats,
+      level2Stats: level2Ready ? seed!.level2Stats : fromLeads.level2Stats,
+      level3: level3Ready ? seed!.level3! : fromLeads.level3,
+      leadQuality: serverLeadQuality ?? fromLeads.leadQuality,
     }
   }
 
   const publish = () => {
-    if (allLeads.length === 0) return
+    if (allLeads.length === 0 && !serverLeadQuality) return
+    onProgress?.(finalize())
+  }
+
+  if (serverLeadQuality) {
     onProgress?.(finalize())
   }
 
@@ -399,6 +447,7 @@ export async function fetchDataLabStatsFromLeadsTable({
             dateRangeId,
             customRange,
             utmFilter,
+            segmentId,
             limit: LEVEL1_PAGE_SIZE,
             offset,
             signal,
@@ -427,6 +476,7 @@ export async function fetchDataLabStatsFromLeadsTable({
     dateRangeId,
     customRange,
     utmFilter,
+    segmentId,
     limit: LEVEL1_PAGE_SIZE,
     offset: seed?.leads?.length
       ? (seed.offset ?? 0) + (seed.limit || seed.leads.length)
@@ -469,6 +519,7 @@ export async function fetchDataLabStatsFromLeadsTable({
           dateRangeId,
           customRange,
           utmFilter,
+          segmentId,
           limit: pageLimit,
           offset,
           signal,

@@ -47,6 +47,8 @@ function page(offset: number): DataExportDashboardData {
     level2Complete: false,
     level3: { section: "level3", winners: [], boards: [], actions: [] },
     level3Complete: true,
+    leadQuality: [],
+    leadQualityComplete: false,
   }
 }
 

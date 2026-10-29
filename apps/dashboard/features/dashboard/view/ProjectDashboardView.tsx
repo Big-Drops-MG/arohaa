@@ -53,6 +53,7 @@ import {
 import { fetchDataLabStatsFromLeadsTable } from "@/features/data-lab/model/level1-from-leads"
 import { hasCompleteLevel1Stats } from "@/features/data-lab/model/level1"
 import { hasCompleteLevel3Stats } from "@/features/data-lab/model/level3"
+import { hasCompleteLeadQuality } from "@/features/data-lab/model/lead-quality"
 import { DATA_EXPORT_PAGE_SIZE } from "@/features/data-export/model/data-export"
 
 export type { ProjectTabValue }
@@ -112,12 +113,12 @@ function ProjectDashboardViewInner({
   const dataLabPath = useMemo(() => {
     const path = buildAnalyticsApiPath(
       `/api/landing-pages/${encodeURIComponent(projectId)}/data-export`,
-      { rangeId: dateRangeId, customRange, utmFilter }
+      { rangeId: dateRangeId, customRange, utmFilter, segmentId }
     )
     const url = new URL(path, "http://local.invalid")
     url.searchParams.set("limit", "50")
     return `${url.pathname}${url.search}`
-  }, [customRange, dateRangeId, projectId, utmFilter])
+  }, [customRange, dateRangeId, projectId, utmFilter, segmentId])
   const [dataLabPreload, setDataLabPreload] = useState<{
     requestKey: string
     data: ProjectTabData["data-export"] | null
@@ -155,7 +156,9 @@ function ProjectDashboardViewInner({
           data.level2Complete &&
           Array.isArray(data.level2Stats) &&
           data.level3Complete &&
-          hasCompleteLevel3Stats(data.level3)
+          hasCompleteLevel3Stats(data.level3) &&
+          data.leadQualityComplete &&
+          hasCompleteLeadQuality(data.leadQuality)
         let completeData = data
         if (!statsComplete) {
           const completeStats = await fetchDataLabStatsFromLeadsTable({
@@ -163,6 +166,7 @@ function ProjectDashboardViewInner({
             dateRangeId,
             customRange,
             utmFilter,
+            segmentId,
             signal: controller.signal,
             seed: data,
           })
@@ -174,6 +178,8 @@ function ProjectDashboardViewInner({
             level2Complete: true,
             level3: completeStats.level3,
             level3Complete: true,
+            leadQuality: completeStats.leadQuality,
+            leadQualityComplete: true,
           }
         }
 
@@ -213,6 +219,7 @@ function ProjectDashboardViewInner({
     dateRangeId,
     projectId,
     utmFilter,
+    segmentId,
     visibleTabs,
   ])
 

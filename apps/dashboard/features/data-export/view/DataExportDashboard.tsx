@@ -34,6 +34,7 @@ import { overviewCardPointerFocusResetClassName } from "@/features/overview/view
 import { OverviewHeader } from "@/features/overview/view/OverviewHeader"
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
 import {
   buildAnalyticsApiPath,
   shouldUseInitialTabData,
@@ -183,6 +184,7 @@ export function DataExportDashboard({
   const { dateRangeId, customRange, setDateRangeId, setCustomRange } =
     useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
+  const { segmentId } = useDashboardSegmentFilter()
   const [dashboardData, setDashboardData] = useState(initialData)
   const [pageOffset, setPageOffset] = useState(initialData.offset)
   const [isBlockingLoad, setIsBlockingLoad] = useState(false)
@@ -233,7 +235,7 @@ export function DataExportDashboard({
 
       const url = buildAnalyticsApiPath(
         `/api/landing-pages/${encodeURIComponent(projectId)}/data-export`,
-        { rangeId: dateRangeId, customRange, utmFilter }
+        { rangeId: dateRangeId, customRange, utmFilter, segmentId }
       )
       const withPaging = new URL(url, window.location.origin)
       withPaging.searchParams.set("limit", String(DATA_EXPORT_PAGE_SIZE))
@@ -290,6 +292,7 @@ export function DataExportDashboard({
       onDataChange,
       projectId,
       returningOnly,
+      segmentId,
       utmFilter,
     ]
   )
@@ -304,7 +307,9 @@ export function DataExportDashboard({
           dateRangeId,
           initialData.defaultDateRangeId,
           utmFilter,
-          customRange
+          customRange,
+          undefined,
+          segmentId
         )
       ) {
         if (isTabLoading) return
@@ -324,7 +329,9 @@ export function DataExportDashboard({
         dateRangeId,
         initialData.defaultDateRangeId,
         utmFilter,
-        customRange
+        customRange,
+        undefined,
+        segmentId
       )
     ) {
       setDashboardData(initialData)
@@ -343,6 +350,7 @@ export function DataExportDashboard({
     isActive,
     isTabLoading,
     returningOnly,
+    segmentId,
     utmFilter,
   ])
 

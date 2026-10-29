@@ -22,10 +22,17 @@ import {
 } from '../lib/lead-fields.js'
 import { decryptFieldBlob } from '../lib/field-blob.js'
 import {
+  hasAnalyticsUtmFilter,
   normalizeAnalyticsUtmFilter,
   utmFilterCacheKey,
+  utmFilterParams,
   type AnalyticsUtmFilter,
 } from '../lib/analytics-utm-filter.js'
+import {
+  computeLeadQualityByUtmSource,
+  emptyLeadQualityRows,
+  type LeadQualityRow,
+} from '../lib/lead-quality.js'
 import type {
   IntelligenceBoard,
   IntelligenceWinner,
@@ -101,6 +108,7 @@ export type FunnelLeadsResponse = {
   level1Stats: Level1Stat[]
   level2Stats: Level2Stat[]
   level3: Level3Payload
+  leadQuality: LeadQualityRow[]
 }
 
 type RawLeadSessionRow = {
@@ -1652,13 +1660,22 @@ export async function getFunnelLeads({
   returningOnly?: boolean
 }): Promise<FunnelLeadsResponse> {
   const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, new Date(), custom)
-  const cacheKey = `analytics:funnel-leads:v4-fields:${workspaceId}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}:${limit}:${offset}:${returningOnly ? 'r1' : 'r0'}`
+  const cacheKey = `analytics:funnel-leads:v5-lead-quality:${workspaceId}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}:${limit}:${offset}:${returningOnly ? 'r1' : 'r0'}`
   const cached = await readAnalyticsCache<FunnelLeadsResponse>(cacheKey)
   if (cached) return cached
 
   const ch = getAnalyticsClickHouseClient()
+  const sessionFilterSql = hasAnalyticsUtmFilter(utmFilter)
+    ? `
+    AND session_id IN (
+      SELECT session_id
+      FROM events_raw
+      WHERE ${rangeFilter(utmFilter)}
+      GROUP BY session_id
+    )`
+    : ''
   const where = `${rangeFilter()}
-    AND ${funnelLeadSeedEventWhere()}`
+    AND ${funnelLeadSeedEventWhere()}${sessionFilterSql}`
 
   const returningJoin = returningOnly
     ? `
@@ -1703,6 +1720,7 @@ export async function getFunnelLeads({
   const p = {
     wid: workspaceId,
     ...rangeQueryParams(window),
+    ...utmFilterParams(utmFilter),
     lim: MAX_RAW_SESSIONS,
     off: 0,
   }
@@ -1839,6 +1857,7 @@ export async function getFunnelLeads({
   const level2Stats = computeLevel2StatsFromLeads(displayable)
   const visibleLeadFieldKeys = discoverVisibleLeadFieldKeys(displayable)
   const level3 = computeLevel3FromLeads(displayable, visibleLeadFieldKeys)
+  const leadQuality = computeLeadQualityByUtmSource(displayable)
   const page = paginateDisplayableLeads(displayable, limit, offset)
 
   let pageLeads = page.leads
@@ -1985,6 +2004,7 @@ export async function getFunnelLeads({
     level1Stats,
     level2Stats,
     level3,
+    leadQuality,
     leads: pageLeads,
     total: page.total,
     limit: page.limit,
@@ -2011,5 +2031,6 @@ export function emptyFunnelLeads(
     level1Stats: computeLevel1StatsFromLeads([]),
     level2Stats: computeLevel2StatsFromLeads([]),
     level3: computeLevel3FromLeads([], []),
+    leadQuality: emptyLeadQualityRows(),
   }
 }
