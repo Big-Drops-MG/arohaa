@@ -458,7 +458,7 @@ async function loadSessionMetaByKey(
         toString(workspace_id) AS workspace_id,
         session_id,
         max(created_at) AS last_at,
-        maxIf(created_at, event_name IN ('form_submit', 'form_success')) AS submitted_at,
+        maxIf(created_at, event_name IN ('form_submit', 'form_success', 'zip_submit')) AS submitted_at,
         anyIf(utm_source, utm_source != '') AS utm_source,
         anyIf(utm_id, utm_id != '') AS utm_id,
         anyIf(utm_s1, utm_s1 != '') AS utm_s1,
@@ -614,7 +614,7 @@ async function loadFiClipboardShortcutFlags(): Promise<ShortcutSessionFlag[]> {
           workspace_id,
           session_id
         FROM ${CLICKHOUSE_EVENTS_TABLE}
-        WHERE event_name IN ('form_start', 'form_submit', 'form_success')
+        WHERE event_name IN ('form_start', 'form_submit', 'form_success', 'zip_submit')
           AND session_id != ''
           AND created_at >= now() - INTERVAL 180 DAY
         GROUP BY workspace_id, session_id

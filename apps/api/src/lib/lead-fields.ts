@@ -300,13 +300,15 @@ export function pickLeadZip(fields: Record<string, string>): string {
   return ''
 }
 
+const META_FIELD_RE = /^(formid|form_id|formtype|form_type)$/i
+
 export function fieldsWithoutReserved(
   fields: Record<string, string>,
 ): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [key, value] of Object.entries(fields)) {
     if (EMAIL_KEY_RE.test(key) || ZIP_KEY_RE.test(key)) continue
-    if (NOISE_FIELD_RE.test(key)) continue
+    if (NOISE_FIELD_RE.test(key) || META_FIELD_RE.test(key)) continue
     if (fields.dob && DOB_PART_RE.test(key)) continue
     out[key] = value
   }

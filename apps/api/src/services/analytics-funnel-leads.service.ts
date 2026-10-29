@@ -59,7 +59,22 @@ import { emailDomain } from '../lib/lead-fraud/disposable-domains.js'
 
 type CHJson<T> = { data: T[] }
 
-const SUBMIT_EVENTS = `event_name IN ('form_success', 'service_click')`
+const SUBMIT_EVENTS = `event_name IN ('form_success', 'service_click', 'zip_submit')`
+
+export function funnelLeadSeedEventWhere(): string {
+  return `(
+    event_name = 'zip_submit'
+    OR (
+      event_name IN ('form_success', 'form_step_complete', 'form_step_view')
+      AND (
+        positionCaseInsensitive(properties, '"fields"') > 0
+        OR positionCaseInsensitive(properties, '"_k"') > 0
+        OR zipcode != ''
+        OR positionCaseInsensitive(properties, '"zip"') > 0
+      )
+    )
+  )`
+}
 
 export type FunnelLeadRow = {
   sessionId: string
@@ -1642,17 +1657,13 @@ export async function getFunnelLeads({
   returningOnly?: boolean
 }): Promise<FunnelLeadsResponse> {
   const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, new Date(), custom)
-  const cacheKey = `analytics:funnel-leads:v2:${workspaceId}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}:${limit}:${offset}:${returningOnly ? 'r1' : 'r0'}`
+  const cacheKey = `analytics:funnel-leads:v3-zip:${workspaceId}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}:${limit}:${offset}:${returningOnly ? 'r1' : 'r0'}`
   const cached = await readAnalyticsCache<FunnelLeadsResponse>(cacheKey)
   if (cached) return cached
 
   const ch = getAnalyticsClickHouseClient()
   const where = `${rangeFilter()}
-    AND event_name IN ('form_success', 'form_step_complete', 'form_step_view')
-    AND (
-      positionCaseInsensitive(properties, '"fields"') > 0
-      OR positionCaseInsensitive(properties, '"_k"') > 0
-    )`
+    AND ${funnelLeadSeedEventWhere()}`
 
   const returningJoin = returningOnly
     ? `
@@ -1740,10 +1751,22 @@ export async function getFunnelLeads({
       LEFT JOIN (
         SELECT
           session_id,
-          max(nullIf(zipcode, '')) AS zip_val
+          max(
+            nullIf(
+              if(
+                zipcode != '',
+                zipcode,
+                nullIf(JSONExtractString(properties, 'zip'), '')
+              ),
+              ''
+            )
+          ) AS zip_val
         FROM events_raw
         WHERE ${rangeFilter()}
-          AND zipcode != ''
+          AND (
+            zipcode != ''
+            OR JSONExtractString(properties, 'zip') != ''
+          )
         GROUP BY session_id
       ) AS z ON z.session_id = l.session_id
       __CLIENT_IP_JOIN__
