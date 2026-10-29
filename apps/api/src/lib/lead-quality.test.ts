@@ -17,6 +17,27 @@ describe('leadMatchesQualityAttribute', () => {
     expect(leadMatchesQualityAttribute(lead, 'homeowner')).toBe(true)
     expect(leadMatchesQualityAttribute(lead, 'multiVehicle')).toBe(true)
   })
+
+  it('matches banded credit button labels under credit_rating', () => {
+    expect(
+      leadMatchesQualityAttribute(
+        { utmSource: '559', fields: { credit_rating: 'Excellent (701+)' } },
+        'goodCredit',
+      ),
+    ).toBe(true)
+    expect(
+      leadMatchesQualityAttribute(
+        { utmSource: '559', fields: { credit_rating: 'Good (640–700)' } },
+        'goodCredit',
+      ),
+    ).toBe(true)
+    expect(
+      leadMatchesQualityAttribute(
+        { utmSource: '559', fields: { credit_rating: 'Fair (560–639)' } },
+        'goodCredit',
+      ),
+    ).toBe(false)
+  })
 })
 
 describe('computeLeadQualityByUtmSource', () => {

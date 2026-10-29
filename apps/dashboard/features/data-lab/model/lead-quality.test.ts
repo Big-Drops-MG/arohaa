@@ -60,6 +60,9 @@ describe("lead quality attribute matching", () => {
     const credit = lead("tiktok", { driver_0_credit: "Good / Excellent" })
     expect(leadMatchesQualityAttribute(credit, "goodCredit")).toBe(true)
 
+    const banded = lead("tiktok", { credit_rating: "Excellent (701+)" })
+    expect(leadMatchesQualityAttribute(banded, "goodCredit")).toBe(true)
+
     const multi = lead("tiktok", { car_1_make: "TOY" })
     expect(leadMatchesQualityAttribute(multi, "multiVehicle")).toBe(true)
 

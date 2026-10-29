@@ -144,6 +144,15 @@ function readValue(
 const PEELABLE_RADIO_BASE_RE =
   /^(?:car|driver|vehicle)_\d+_(?:year|make|model|gender|married|fault|dui|military|sr22|credit|homeowner|education|occupation|license|age)$/i
 
+const NAV_CHOICE_RE =
+  /^(next|continue|back|previous|submit|start|get\s*quotes?|see\s*quotes?|view\s*quotes?|skip|close|ok|done|apply|search|yes\s*please|no\s*thanks)$/i
+
+const CREDIT_CHOICE_RE =
+  /^(excellent|good|fair|poor|average|good\s*\/\s*excellent)(\b|[(\s]|$)/i
+
+const CHOICE_TARGET_SELECTOR =
+  '[role="option"], [role="radio"], [role="checkbox"], [data-value], [data-arohaa-field], button, [role="button"], label'
+
 function peelRadioField(
   key: string,
   value: string,
@@ -154,13 +163,131 @@ function peelRadioField(
   const option = key.slice(idx + 1)
   if (!option || !PEELABLE_RADIO_BASE_RE.test(base)) return null
   const lower = value.trim().toLowerCase()
-  if (["on", "true", "1", "yes"].includes(lower)) {
+  if (["on", "true", "1", "yes", ""].includes(lower)) {
     return { key: base, value: option }
   }
   if (lower === option.toLowerCase()) {
     return { key: base, value: option }
   }
+  if (lower.startsWith(option.toLowerCase())) {
+    return { key: base, value: option }
+  }
   return null
+}
+
+function fieldKeyFromStepName(stepName: string): string {
+  const raw = stepName.toLowerCase()
+  if (/credit/.test(raw)) return "credit_rating"
+  if (/home\s*owner|own\s*home|residence/.test(raw)) return "homeowner"
+  if (/military/.test(raw)) return "military_affiliation"
+  if (/marital|married/.test(raw)) return "married"
+  if (/currently\s*insured|\binsured\b/.test(raw)) return "currently_insured"
+  if (/gender|\bsex\b/.test(raw)) return "driver_0_gender"
+  if (/\bdui\b|dwai/.test(raw)) return "driver_0_dui"
+  if (/\bfault\b|accident/.test(raw)) return "driver_0_fault"
+  if (/second\s*vehicle|another\s*vehicle|vehicles?\s*owned/.test(raw)) {
+    return "second_vehicle"
+  }
+  return ""
+}
+
+function cleanChoiceText(raw: string): string {
+  return raw.replace(/\s+/g, " ").trim().slice(0, 120)
+}
+
+function resolveChoiceTarget(target: EventTarget | null): Element | null {
+  if (!(target instanceof Element)) return null
+  return target.closest(CHOICE_TARGET_SELECTOR)
+}
+
+function resolveChoiceValue(el: Element): string {
+  const dataValue = el.getAttribute("data-value")?.trim()
+  if (dataValue) return cleanChoiceText(dataValue)
+  const aria = el.getAttribute("aria-label")?.trim()
+  if (aria) return cleanChoiceText(aria)
+  if (el instanceof HTMLInputElement || el instanceof HTMLButtonElement) {
+    const v = el.value?.trim()
+    if (v && !["on", "true", "1", "yes"].includes(v.toLowerCase())) {
+      return cleanChoiceText(v)
+    }
+  }
+  return cleanChoiceText(el.textContent || "")
+}
+
+function resolveChoiceFieldKey(el: Element, value: string): string {
+  const explicit =
+    el.getAttribute("data-arohaa-field")?.trim() ||
+    el.getAttribute("name")?.trim() ||
+    el.closest("[data-arohaa-field]")?.getAttribute("data-arohaa-field")?.trim() ||
+    el.closest("[name]")?.getAttribute("name")?.trim() ||
+    ""
+  if (explicit && !SKIP_KEY_RE.test(explicit) && !NOISE_KEY_RE.test(explicit)) {
+    return explicit
+  }
+
+  const stepKey = fieldKeyFromStepName(
+    hashToStepName(
+      lastHash || (typeof window !== "undefined" ? window.location.hash : ""),
+    ),
+  )
+  if (stepKey) return stepKey
+
+  if (CREDIT_CHOICE_RE.test(value)) return "credit_rating"
+  return ""
+}
+
+function isPlausibleChoiceValue(key: string, value: string): boolean {
+  if (!value || NAV_CHOICE_RE.test(value) || value.length > 80) return false
+  if (/credit/i.test(key)) return CREDIT_CHOICE_RE.test(value)
+  return true
+}
+
+function storeChoice(key: string, value: string): void {
+  let nextKey = key
+  let nextValue = value
+  const peeled = peelRadioField(nextKey, nextValue)
+  if (peeled) {
+    nextKey = peeled.key
+    nextValue = peeled.value
+    clearSiblingOptionKeys(nextKey)
+  }
+  if (!isPlausibleChoiceValue(nextKey, nextValue)) return
+  if (SKIP_KEY_RE.test(nextKey) || NOISE_KEY_RE.test(nextKey)) return
+  if (lockedKeys.has(nextKey) && !isContactAddress(nextValue)) return
+  storeField(nextKey, nextValue)
+}
+
+function ingestChoiceClick(target: EventTarget | null): void {
+  const el = resolveChoiceTarget(target)
+  if (!el) return
+
+  if (
+    el instanceof HTMLInputElement ||
+    el instanceof HTMLTextAreaElement ||
+    el instanceof HTMLSelectElement
+  ) {
+    ingestField(el)
+    return
+  }
+
+  if (el instanceof HTMLLabelElement && el.control) {
+    const control = el.control
+    queueMicrotask(() => {
+      if (
+        control instanceof HTMLInputElement ||
+        control instanceof HTMLTextAreaElement ||
+        control instanceof HTMLSelectElement
+      ) {
+        ingestField(control)
+      }
+    })
+  }
+
+  const value = resolveChoiceValue(el)
+  if (!value) return
+  const key = resolveChoiceFieldKey(el, value)
+  if (!key) return
+  storeChoice(key, value)
 }
 
 function clearSiblingOptionKeys(base: string): void {
@@ -387,6 +514,13 @@ export function setupOpaqueFieldCapture(): void {
     },
     true,
   )
+  document.addEventListener(
+    "click",
+    (e) => {
+      ingestChoiceClick(e.target)
+    },
+    true,
+  )
 
   window.addEventListener("hashchange", () => onRouteMaybeChanged())
 
@@ -412,4 +546,13 @@ export function setupOpaqueFieldCapture(): void {
     },
     true,
   )
+}
+
+export const __opaqueFieldTest = {
+  peelRadioField,
+  fieldKeyFromStepName,
+  cleanChoiceText,
+  isPlausibleChoiceValue,
+  CREDIT_CHOICE_RE,
+  NAV_CHOICE_RE,
 }
