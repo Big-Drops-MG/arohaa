@@ -9,6 +9,17 @@ import {
   type AnalyticsRangeId,
 } from '../lib/analytics-range.js'
 import {
+  ALL_TIME_DISPLAYABLE_STALE_SEC,
+  ALL_TIME_DISPLAYABLE_TTL_SEC,
+  ALL_TIME_INCREMENTAL_OVERLAP_MS,
+  allTimeDisplayableCacheKey,
+  displayableLeadsWatermark,
+  mergeDisplayableLeadsBySession,
+  subtractMsFromClickHouseTimestamp,
+  type DisplayableLeadSnapshotRow,
+  type DisplayableLeadsSnapshot,
+} from '../lib/funnel-leads-displayable-cache.js'
+import {
   formatAnalyticsHourWindow,
   getAnalyticsEtParts,
 } from '../lib/analytics-timezone.js'
@@ -1642,6 +1653,42 @@ export function paginateDisplayableLeads(
   }
 }
 
+function toSnapshotLead(lead: FunnelLeadRow): DisplayableLeadSnapshotRow {
+  return {
+    sessionId: lead.sessionId,
+    macId: lead.macId,
+    createdAt: lead.createdAt,
+    submittedAt: lead.submittedAt,
+    zip: lead.zip,
+    clientIp: lead.clientIp,
+    email: lead.email,
+    utmSource: lead.utmSource,
+    utmId: lead.utmId,
+    utmS1: lead.utmS1,
+    trustedFormUrl: lead.trustedFormUrl,
+    formSubmitted: lead.formSubmitted,
+    returnCount: lead.returnCount,
+    fields: lead.fields,
+  }
+}
+
+function fromSnapshotLead(lead: DisplayableLeadSnapshotRow): FunnelLeadRow {
+  return {
+    ...lead,
+    fraud: {
+      score: null,
+      scoreAvailable: false,
+      label: 'fraud',
+      effectiveLabel: 'fraud',
+      coverage: 'insufficient',
+      findings: [],
+      reasons: [],
+      modelVersion: '',
+    },
+    behavior: null,
+  }
+}
+
 export async function getFunnelLeads({
   workspaceId,
   rangeId,
@@ -1660,9 +1707,28 @@ export async function getFunnelLeads({
   returningOnly?: boolean
 }): Promise<FunnelLeadsResponse> {
   const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, new Date(), custom)
-  const cacheKey = `analytics:funnel-leads:v5-lead-quality:${workspaceId}:${rangeCacheKey(window, utmFilterCacheKey(utmFilter))}:${limit}:${offset}:${returningOnly ? 'r1' : 'r0'}`
+  const utmKey = utmFilterCacheKey(utmFilter)
+  const cacheKey = `analytics:funnel-leads:v5-lead-quality:${workspaceId}:${rangeCacheKey(window, utmKey)}:${limit}:${offset}:${returningOnly ? 'r1' : 'r0'}`
   const cached = await readAnalyticsCache<FunnelLeadsResponse>(cacheKey)
   if (cached) return cached
+
+  const useAllTimeIncremental = window.rangeId === 'all_time'
+  const displayableCacheKey = useAllTimeIncremental
+    ? allTimeDisplayableCacheKey(workspaceId, utmKey, returningOnly)
+    : null
+  const priorSnapshot = displayableCacheKey
+    ? await readAnalyticsCache<DisplayableLeadsSnapshot>(displayableCacheKey)
+    : null
+  const priorLeads = priorSnapshot?.leads?.length
+    ? priorSnapshot.leads.map(fromSnapshotLead)
+    : []
+  const since =
+    useAllTimeIncremental && priorSnapshot?.watermark
+      ? subtractMsFromClickHouseTimestamp(
+          priorSnapshot.watermark,
+          ALL_TIME_INCREMENTAL_OVERLAP_MS,
+        )
+      : null
 
   const ch = getAnalyticsClickHouseClient()
   const sessionFilterSql = hasAnalyticsUtmFilter(utmFilter)
@@ -1674,8 +1740,11 @@ export async function getFunnelLeads({
       GROUP BY session_id
     )`
     : ''
+  const sinceSql = since
+    ? ` AND created_at >= toDateTime64({since:String}, 3, 'UTC')`
+    : ''
   const where = `${rangeFilter()}
-    AND ${funnelLeadSeedEventWhere()}${sessionFilterSql}`
+    AND ${funnelLeadSeedEventWhere()}${sessionFilterSql}${sinceSql}`
 
   const returningJoin = returningOnly
     ? `
@@ -1717,13 +1786,14 @@ export async function getFunnelLeads({
     ? 'greatest(toUInt32(1), ret.return_count) AS return_count'
     : 'toUInt32(0) AS return_count'
 
-  const p = {
+  const p: Record<string, unknown> = {
     wid: workspaceId,
     ...rangeQueryParams(window),
     ...utmFilterParams(utmFilter),
     lim: MAX_RAW_SESSIONS,
     off: 0,
   }
+  if (since) p.since = since
 
   const leadSelectBase = `
       SELECT
@@ -1846,11 +1916,34 @@ export async function getFunnelLeads({
     .filter((lead) => isDisplayableLead(lead))
     .filter((lead) => leadMatchesUtmFilter(lead, utmFilter))
 
-  let displayable = normalizedLeads
+  let freshLeads = normalizedLeads
   try {
-    displayable = await resolveVehicleNamesInLeads(normalizedLeads)
+    freshLeads = await resolveVehicleNamesInLeads(normalizedLeads)
   } catch (error) {
     console.error('[funnel-leads] vehicle model lookup failed', error)
+  }
+
+  const displayable =
+    priorLeads.length > 0
+      ? mergeDisplayableLeadsBySession(priorLeads, freshLeads, MAX_RAW_SESSIONS)
+      : freshLeads
+
+  if (displayableCacheKey) {
+    const snapshot: DisplayableLeadsSnapshot = {
+      watermark:
+        displayableLeadsWatermark(displayable) ||
+        priorSnapshot?.watermark ||
+        '',
+      leads: displayable.map(toSnapshotLead),
+    }
+    if (snapshot.watermark) {
+      await writeAnalyticsCache(
+        displayableCacheKey,
+        snapshot,
+        ALL_TIME_DISPLAYABLE_TTL_SEC,
+        ALL_TIME_DISPLAYABLE_STALE_SEC,
+      )
+    }
   }
 
   const level1Stats = computeLevel1StatsFromLeads(displayable)
