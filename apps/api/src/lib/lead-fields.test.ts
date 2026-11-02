@@ -55,6 +55,43 @@ describe('normalizeLeadFields', () => {
     })
   })
 
+  it('composes dob from driver-dob parts', () => {
+    expect(
+      normalizeLeadFields({
+        'driver-dob-month': '11',
+        'driver-dob-day': '2',
+        'driver-dob-year': '1988',
+      }),
+    ).toEqual({
+      dob: '11/02/1988',
+    })
+  })
+
+  it('peels banded credit radio values', () => {
+    expect(
+      normalizeLeadFields({
+        driver_0_credit_Excellent: 'Excellent (701+)',
+      }),
+    ).toEqual({
+      driver_0_credit: 'Excellent',
+    })
+  })
+
+  it('strips privacy chrome fields from reserved output', () => {
+    expect(
+      fieldsWithoutReserved(
+        normalizeLeadFields({
+          access_personal_info: 'on',
+          are_you_agent: 'on',
+          homeowner: 'Yes',
+          submit: '1',
+        }),
+      ),
+    ).toEqual({
+      homeowner: 'Yes',
+    })
+  })
+
   it('drops unusable dob fragments', () => {
     expect(
       normalizeLeadFields({

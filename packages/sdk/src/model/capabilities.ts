@@ -1,7 +1,7 @@
 export const SDK_VERSION =
   typeof process !== "undefined" && process.env.SDK_VERSION
     ? process.env.SDK_VERSION
-    : "1.1.0"
+    : "1.1.1"
 
 export const SDK_CAPABILITY = {
   fi: "fi",

@@ -87,9 +87,9 @@ const UNIT_KEY_RE =
 const ADDRESS_LINE1_RE = /^(address|address_?line_?1|addr1|street|street_?address)$/i
 
 const NOISE_FIELD_RE =
-  /^(input|select|textarea|search|receipt|xxtrustedform\w*|trustedform\w*|jornaya_lead_id|leadid_token|universal_leadid|consent-confirmation-certificate-id)$/i
+  /^(input|select|textarea|search|receipt|submit|unnamed|compare_rates|access_personal_info|delete_personal_info|opt_out_sale|are_you_agent|information_type|source_of_personal_info|xxtrustedform\w*|trustedform\w*|jornaya_lead_id|leadid_token|universal_leadid|consent-confirmation-certificate-id)$/i
 
-const DOB_PART_RE = /^dob-0-(month|day|year)$/i
+const DOB_PART_RE = /^(?:dob-0|driver-dob|driver_dob|dob)[_-]?(month|day|year)$/i
 
 export function normalizeFieldKey(key: string): string {
   let out = key
@@ -158,6 +158,9 @@ function peelRadioKey(
   const trimmed = value.trim()
   if (isTruthyFlag(trimmed)) return { base, option }
   if (trimmed.toLowerCase() === option.toLowerCase()) return { base, option }
+  if (trimmed.toLowerCase().startsWith(option.toLowerCase())) {
+    return { base, option }
+  }
   return null
 }
 
@@ -270,9 +273,22 @@ function pad2(value: string): string {
 
 function composeDob(fields: Record<string, string>): void {
   if (fields.dob) return
-  const month = fields['dob-0-month'] || fields.dob_month
-  const day = fields['dob-0-day'] || fields.dob_day
-  const year = fields['dob-0-year'] || fields.dob_year || fields['birthday-year']
+  const month =
+    fields['dob-0-month'] ||
+    fields.dob_month ||
+    fields['driver-dob-month'] ||
+    fields.driver_dob_month
+  const day =
+    fields['dob-0-day'] ||
+    fields.dob_day ||
+    fields['driver-dob-day'] ||
+    fields.driver_dob_day
+  const year =
+    fields['dob-0-year'] ||
+    fields.dob_year ||
+    fields['birthday-year'] ||
+    fields['driver-dob-year'] ||
+    fields.driver_dob_year
   if (!month || !day || !year) return
   const mm = pad2(month)
   const dd = pad2(day)

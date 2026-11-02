@@ -19,6 +19,35 @@ describe("opaque field choice helpers", () => {
     expect(__opaqueFieldTest.fieldKeyFromStepName("Currently Insured")).toBe(
       "currently_insured",
     )
+    expect(__opaqueFieldTest.fieldKeyFromStepName("currently-insured")).toBe(
+      "currently_insured",
+    )
+  })
+
+  it("resolves yes/no from shared-name radio ids used on live LPs", () => {
+    expect(__opaqueFieldTest.optionFromToggleId("insured_yes")).toBe("Yes")
+    expect(__opaqueFieldTest.optionFromToggleId("insured_no")).toBe("No")
+    expect(__opaqueFieldTest.optionFromToggleId("homeowner_yes")).toBe("Yes")
+    expect(__opaqueFieldTest.optionFromToggleId("military_no")).toBe("No")
+    expect(__opaqueFieldTest.optionFromToggleId("second_vehicle_yes")).toBe(
+      "Yes",
+    )
+
+    const yes = {
+      id: "insured_yes",
+      type: "radio",
+    } as HTMLInputElement
+    expect(
+      __opaqueFieldTest.resolveToggleChoice(yes, "currently_insured", "on"),
+    ).toEqual({ key: "currently_insured", value: "Yes" })
+
+    const no = {
+      id: "insured_no",
+      type: "radio",
+    } as HTMLInputElement
+    expect(
+      __opaqueFieldTest.resolveToggleChoice(no, "currently_insured", "on"),
+    ).toEqual({ key: "currently_insured", value: "No" })
   })
 
   it("recognizes credit button labels used on live LPs", () => {

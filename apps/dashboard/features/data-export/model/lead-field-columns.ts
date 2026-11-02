@@ -1,6 +1,5 @@
 import type { DataExportLeadRow } from "@/features/data-export/model/data-export"
 
-/** Dynamic lead field columns, highest-priority identity/geo first. */
 const PREFERRED_FIELD_ORDER = [
   "first_name",
   "last_name",
@@ -9,6 +8,9 @@ const PREFERRED_FIELD_ORDER = [
   "state",
   "dob",
 ] as const
+
+const HIDDEN_FIELD_KEY_RE =
+  /^(access_personal_info|delete_personal_info|opt_out_sale|are_you_agent|information_type|source_of_personal_info|submit|unnamed|compare_rates|receipt)$/i
 
 const LABEL_OVERRIDES: Record<string, string> = {
   dob: "Date of Birth",
@@ -37,10 +39,6 @@ const LABEL_OVERRIDES: Record<string, string> = {
   unnamed: "Unknown Control",
 }
 
-/**
- * Dynamic field columns shown in the Leads table: union of keys present on
- * lead.fields (already normalized / phone-stripped by the API).
- */
 export function discoverVisibleLeadFieldKeys(
   leads: Array<Pick<DataExportLeadRow, "fields">>
 ): string[] {
@@ -61,7 +59,9 @@ export function sortLeadFieldKeys(keys: string[]): string[] {
   return [...keys]
     .filter((key) => {
       const lower = key.trim().toLowerCase()
-      return lower !== "first_name" && lower !== "last_name"
+      if (lower === "first_name" || lower === "last_name") return false
+      if (HIDDEN_FIELD_KEY_RE.test(lower)) return false
+      return true
     })
     .sort((a, b) => {
       const ai = preferred.get(
@@ -77,7 +77,6 @@ export function sortLeadFieldKeys(keys: string[]): string[] {
     })
 }
 
-/** Display label for lead field keys (`first_name` → `First Name`). */
 export function humanizeLeadFieldLabel(key: string): string {
   const trimmed = key.trim()
   if (!trimmed) return ""

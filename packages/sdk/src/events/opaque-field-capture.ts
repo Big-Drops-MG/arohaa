@@ -176,7 +176,7 @@ function peelRadioField(
 }
 
 function fieldKeyFromStepName(stepName: string): string {
-  const raw = stepName.toLowerCase()
+  const raw = stepName.toLowerCase().replace(/[-_]+/g, " ")
   if (/credit/.test(raw)) return "credit_rating"
   if (/home\s*owner|own\s*home|residence/.test(raw)) return "homeowner"
   if (/military/.test(raw)) return "military_affiliation"
@@ -188,7 +188,47 @@ function fieldKeyFromStepName(stepName: string): string {
   if (/second\s*vehicle|another\s*vehicle|vehicles?\s*owned/.test(raw)) {
     return "second_vehicle"
   }
+  if (/include\s*bundle|home\s*insurance\s*quote/.test(raw)) {
+    return "include_bundle"
+  }
   return ""
+}
+
+function optionFromToggleId(id: string): "Yes" | "No" | null {
+  if (/[_-]?yes$/i.test(id)) return "Yes"
+  if (/[_-]?no$/i.test(id)) return "No"
+  return null
+}
+
+function resolveToggleChoice(
+  el: HTMLInputElement,
+  key: string,
+  value: string,
+): { key: string; value: string } {
+  const id = el.id?.trim() || ""
+  if (id) {
+    const peeledId = peelRadioField(id, value || "on")
+    if (peeledId) return peeledId
+  }
+
+  const peeledKey = peelRadioField(key, value)
+  if (peeledKey) return peeledKey
+
+  const lower = value.trim().toLowerCase()
+  const generic = ["on", "true", "1"].includes(lower)
+  if (generic && id) {
+    const option = optionFromToggleId(id)
+    if (option) return { key, value: option }
+  }
+
+  if (
+    (el.type === "checkbox" || el.type === "radio") &&
+    ["on", "true", "1", "yes"].includes(lower)
+  ) {
+    return { key, value: "Yes" }
+  }
+
+  return { key, value }
 }
 
 function cleanChoiceText(raw: string): string {
@@ -371,6 +411,12 @@ function ingestField(el: Element): void {
   if (!key || SKIP_KEY_RE.test(key) || NOISE_KEY_RE.test(key)) return
   let value = readValue(el)
   if (!value) {
+    if (
+      el instanceof HTMLInputElement &&
+      (el.type === "radio" || el.type === "checkbox")
+    ) {
+      return
+    }
     if (!lockedKeys.has(key)) delete fieldValues[key]
     return
   }
@@ -378,17 +424,18 @@ function ingestField(el: Element): void {
   if (isDigestValue(value)) return
   if (EMAIL_KEY_RE.test(key) && !value.includes("@")) return
 
-  const peeled = peelRadioField(key, value)
-  if (peeled) {
-    key = peeled.key
-    value = peeled.value
+  if (el instanceof HTMLInputElement && (el.type === "radio" || el.type === "checkbox")) {
+    const resolved = resolveToggleChoice(el, key, value)
+    key = resolved.key
+    value = resolved.value
     clearSiblingOptionKeys(key)
-  } else if (
-    el instanceof HTMLInputElement &&
-    el.type === "checkbox" &&
-    ["on", "true", "1", "yes"].includes(value.toLowerCase())
-  ) {
-    value = "Yes"
+  } else {
+    const peeled = peelRadioField(key, value)
+    if (peeled) {
+      key = peeled.key
+      value = peeled.value
+      clearSiblingOptionKeys(key)
+    }
   }
 
   if (lockedKeys.has(key) && !isContactAddress(value)) return
@@ -400,7 +447,12 @@ function ingestField(el: Element): void {
 function scanVisibleFields(): void {
   if (typeof document === "undefined") return
   const nodes = document.querySelectorAll("input, textarea, select")
-  for (const el of nodes) ingestField(el)
+  for (const el of nodes) {
+    if (el instanceof HTMLInputElement && el.type === "radio" && !el.checked) {
+      continue
+    }
+    ingestField(el)
+  }
   composeDobIntoFieldValues()
 }
 
@@ -553,6 +605,8 @@ export const __opaqueFieldTest = {
   fieldKeyFromStepName,
   cleanChoiceText,
   isPlausibleChoiceValue,
+  optionFromToggleId,
+  resolveToggleChoice,
   CREDIT_CHOICE_RE,
   NAV_CHOICE_RE,
 }
