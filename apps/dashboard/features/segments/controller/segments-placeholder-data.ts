@@ -2,9 +2,11 @@ import type { SegmentsDashboardData } from "@/features/segments/model/segments"
 import { TRAFFIC_DATE_RANGE_OPTIONS } from "@/features/traffic/model/traffic-range"
 
 export function getSegmentsPlaceholderData(
-  _landingPagePublicId: string
+  _landingPagePublicId: string,
+  formType?: string
 ): SegmentsDashboardData {
   void _landingPagePublicId
+  const formLabel = formType === "zip" ? "Zip Submitted" : "Form Submitted"
 
   return {
     formType: "single",
@@ -22,7 +24,7 @@ export function getSegmentsPlaceholderData(
       columns: [
         { key: "label", label: "City" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
+        { key: "formSubmitted", label: formLabel },
         { key: "fsr", label: "FSR" },
       ],
       rows: [
@@ -52,7 +54,7 @@ export function getSegmentsPlaceholderData(
       columns: [
         { key: "label", label: "Device" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
+        { key: "formSubmitted", label: formLabel },
         { key: "fsr", label: "FSR" },
       ],
       rows: [
@@ -82,7 +84,7 @@ export function getSegmentsPlaceholderData(
         { key: "label", label: "Day" },
         { key: "date", label: "Date" },
         { key: "visitors", label: "Visitors" },
-        { key: "formSubmitted", label: "Form Submitted" },
+        { key: "formSubmitted", label: formLabel },
         { key: "fsr", label: "FSR" },
       ],
       rows: [
