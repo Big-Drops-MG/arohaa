@@ -41,6 +41,7 @@ import { Level1Panel } from "@/features/data-lab/view/Level1Panel"
 import { Level2Panel } from "@/features/data-lab/view/Level2Panel"
 import { Level3Panel } from "@/features/data-lab/view/Level3Panel"
 import { LeadQualityPanel } from "@/features/data-lab/view/LeadQualityPanel"
+import { DataLabUtmSourceTrustPanel } from "@/features/data-lab/view/DataLabUtmSourceTrustPanel"
 import { DataLabLeadReviewPanel } from "@/features/data-lab/view/DataLabLeadReviewPanel"
 import { DataLabLeadsPanel } from "@/features/data-lab/view/DataLabLeadsPanel"
 import type { DataExportDashboardData } from "@/features/data-export/model/data-export"
@@ -131,6 +132,7 @@ export function DataLabDashboard({
     if (allowed.has("leads")) {
       allowed.add("retention")
       allowed.add("lead-review")
+      allowed.add("source-trust")
     }
     const filtered = DATA_LAB_SECTIONS.filter((s) => allowed.has(s.id))
     return filtered.length > 0 ? filtered : DATA_LAB_SECTIONS
@@ -373,6 +375,17 @@ export function DataLabDashboard({
               rows={leadQuality}
               isLoading={cardsLoading}
               canAccess={canAccessDataExport}
+            />
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="source-trust" className="mt-5 outline-none">
+          {labSection === "source-trust" ? (
+            <DataLabUtmSourceTrustPanel
+              projectId={projectId}
+              canAccess={canAccessDataExport}
+              isActive={isActive}
+              onDataChange={handleExportDataChange}
             />
           ) : null}
         </TabsContent>

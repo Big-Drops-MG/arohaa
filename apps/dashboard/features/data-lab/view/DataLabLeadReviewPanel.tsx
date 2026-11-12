@@ -10,12 +10,16 @@ import {
   CardTitle,
 } from "@workspace/ui/components/card"
 import { cn } from "@workspace/ui/lib/utils"
-import { getDataExportEmptyDashboardData } from "@/features/data-export/controller/data-export-empty-data"
-import {
-  DATA_EXPORT_PAGE_SIZE,
-  type DataExportDashboardData,
-  type DataExportLeadRow,
+import type {
+  DataExportDashboardData,
+  DataExportLeadRow,
 } from "@/features/data-export/model/data-export"
+import {
+  DATA_LAB_LEADS_SCAN_MAX_PAGES,
+  DATA_LAB_LEADS_SCAN_PAGE_SIZE,
+  loadDataLabLeadsScan,
+  peekDataLabLeadsScanCache,
+} from "@/features/data-lab/model/data-lab-leads-scan"
 import { leadHasElevatedRisk } from "@/features/data-lab/model/lead-review"
 import { LeadReviewTable } from "@/features/data-lab/view/LeadReviewTable"
 import {
@@ -27,11 +31,8 @@ import { overviewCardPointerFocusResetClassName } from "@/features/overview/view
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
-import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
 
-const SCAN_PAGE_SIZE = Math.max(DATA_EXPORT_PAGE_SIZE, 50)
 const VIEW_PAGE_SIZE = 50
-const MAX_SCAN_PAGES = 40
 
 function formatCount(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
@@ -59,78 +60,73 @@ export function DataLabLeadReviewPanel({
   const { dateRangeId, customRange } = useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
   const { segmentId } = useDashboardSegmentFilter()
+  const scanInput = useMemo(
+    () => ({
+      projectId,
+      rangeId: dateRangeId,
+      customRange,
+      utmFilter,
+      segmentId,
+    }),
+    [customRange, dateRangeId, projectId, segmentId, utmFilter]
+  )
+
   const [elevatedLeads, setElevatedLeads] = useState<DataExportLeadRow[]>([])
   const [scannedLeadTotal, setScannedLeadTotal] = useState(0)
   const [pagesScanned, setPagesScanned] = useState(0)
   const [viewOffset, setViewOffset] = useState(0)
   const [isBlockingLoad, setIsBlockingLoad] = useState(false)
-  const [scanComplete, setScanComplete] = useState(false)
+  const [fromCache, setFromCache] = useState(false)
 
-  const fetchRawPage = useCallback(
-    async (
-      offset: number,
-      signal?: AbortSignal
-    ): Promise<DataExportDashboardData | null> => {
-      const url = buildAnalyticsApiPath(
-        `/api/landing-pages/${encodeURIComponent(projectId)}/data-export`,
-        { rangeId: dateRangeId, customRange, utmFilter, segmentId }
-      )
-      const withPaging = new URL(url, window.location.origin)
-      withPaging.searchParams.set("limit", String(SCAN_PAGE_SIZE))
-      withPaging.searchParams.set("offset", String(offset))
-      const res = await fetch(withPaging.pathname + withPaging.search, {
-        cache: "no-store",
-        signal,
-      })
-      if (!res.ok) return null
-      return (await res.json()) as DataExportDashboardData
-    },
-    [customRange, dateRangeId, projectId, segmentId, utmFilter]
-  )
+  const applyScanLeads = useCallback((leads: DataExportLeadRow[]) => {
+    setElevatedLeads(leads.filter(leadHasElevatedRisk))
+  }, [])
 
   const loadElevatedLeads = useCallback(
     async (signal?: AbortSignal) => {
-      setIsBlockingLoad(true)
-      setElevatedLeads([])
-      setScannedLeadTotal(0)
-      setPagesScanned(0)
-      setViewOffset(0)
-      setScanComplete(false)
-
-      const found: DataExportLeadRow[] = []
-      let offset = 0
-      let total = 0
-      let pages = 0
-      let lastPage: DataExportDashboardData | null = null
+      const cached = peekDataLabLeadsScanCache(scanInput)
+      if (cached) {
+        applyScanLeads(cached.leads)
+        setScannedLeadTotal(cached.total)
+        setPagesScanned(cached.pagesScanned)
+        setFromCache(true)
+        setViewOffset(0)
+        setIsBlockingLoad(false)
+      } else {
+        setIsBlockingLoad(true)
+        setFromCache(false)
+        setViewOffset(0)
+      }
 
       try {
-        while (!signal?.aborted && pages < MAX_SCAN_PAGES) {
-          const page = await fetchRawPage(offset, signal)
-          if (!page) break
-          lastPage = page
-          total = page.total
-          pages += 1
-          for (const lead of page.leads) {
-            if (leadHasElevatedRisk(lead)) found.push(lead)
-          }
-          setElevatedLeads([...found])
-          setScannedLeadTotal(total)
-          setPagesScanned(pages)
-          offset += page.limit || SCAN_PAGE_SIZE
-          if (offset >= total || page.leads.length === 0) break
-        }
-        if (lastPage) onDataChange?.(lastPage)
-        setScanComplete(true)
-      } catch {
+        const result = await loadDataLabLeadsScan(scanInput, {
+          signal,
+          onProgress: (partial) => {
+            if (signal?.aborted) return
+            applyScanLeads(partial.leads)
+            setScannedLeadTotal(partial.total)
+            setPagesScanned(partial.pagesScanned)
+          },
+        })
         if (signal?.aborted) return
-        setElevatedLeads([])
-        setScannedLeadTotal(0)
-        setScanComplete(true)
+        applyScanLeads(result.leads)
+        setScannedLeadTotal(result.total)
+        setPagesScanned(result.pagesScanned)
+        setFromCache(result.fromCache && result.addedCount === 0)
+        if (result.lastPage) onDataChange?.(result.lastPage)
+      } catch (error) {
+        if (signal?.aborted) return
+        if (error instanceof Error && error.name === "AbortError") return
+        if (!cached) {
+          setElevatedLeads([])
+          setScannedLeadTotal(0)
+          setPagesScanned(0)
+        }
       } finally {
         if (!signal?.aborted) setIsBlockingLoad(false)
       }
     },
-    [fetchRawPage, onDataChange]
+    [applyScanLeads, onDataChange, scanInput]
   )
 
   useEffect(() => {
@@ -198,22 +194,26 @@ export function DataLabLeadReviewPanel({
                   ? `Scanning for elevated-risk leads… ${formatCount(totalElevated)} found so far`
                   : totalElevated > 0
                     ? `${formatCount(totalElevated)} elevated-risk sessions — assessments are informational only`
-                    : scanComplete
-                      ? "No elevated-risk leads in this Data Lab range / UTM / segment"
-                      : "Elevated-risk leads only (use Leads table for the full set)"}
+                    : "No elevated-risk leads in this Data Lab range / UTM / segment"}
               </p>
               {!showLoading && scannedLeadTotal > 0 ? (
                 <p className="mt-1 text-xs text-muted-foreground">
+                  {fromCache ? "Cached scan · " : ""}
                   Scanned {formatCount(pagesScanned)} page
                   {pagesScanned === 1 ? "" : "s"} (
                   {formatCount(
-                    Math.min(pagesScanned * SCAN_PAGE_SIZE, scannedLeadTotal)
+                    Math.min(
+                      pagesScanned * DATA_LAB_LEADS_SCAN_PAGE_SIZE,
+                      scannedLeadTotal
+                    )
                   )}{" "}
                   of {formatCount(scannedLeadTotal)} leads)
-                  {pagesScanned >= MAX_SCAN_PAGES &&
-                  pagesScanned * SCAN_PAGE_SIZE < scannedLeadTotal
+                  {pagesScanned >= DATA_LAB_LEADS_SCAN_MAX_PAGES &&
+                  pagesScanned * DATA_LAB_LEADS_SCAN_PAGE_SIZE <
+                    scannedLeadTotal
                     ? " — scan capped; narrow the date range if needed"
                     : ""}
+                  {fromCache ? " · refreshes about every 2 minutes" : ""}
                 </p>
               ) : null}
             </div>

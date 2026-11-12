@@ -3,6 +3,7 @@ export const DATA_LAB_SECTIONS = [
   { id: "level-2", label: "Level 2" },
   { id: "level-3", label: "Level 3" },
   { id: "lead-quality", label: "Lead quality" },
+  { id: "source-trust", label: "Source trust" },
   { id: "lead-review", label: "Lead review" },
   { id: "leads", label: "Leads table" },
   { id: "retention", label: "Retention" },

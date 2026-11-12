@@ -17,7 +17,6 @@ import type {
 import { formatDashboardDateTime } from "@/lib/datetime"
 import { getEventDisplayName } from "@/features/warehouse/model/event-display-names"
 import { PartnerScorecardsPanel } from "@/features/warehouse/view/PartnerScorecardsPanel"
-import { UtmSourceTrustPanel } from "@/features/warehouse/view/UtmSourceTrustPanel"
 import { CalibrationPanel } from "@/features/warehouse/view/CalibrationPanel"
 
 function formatCount(value: number): string {
@@ -524,10 +523,13 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
 
           <Panel
             title="UTM source trust"
-            description="Per-source lead volume and ZIP/IP location mismatch (total, 7d, 30d). Cluster status uses the 30d mismatch rate (≥50%, n≥10)."
+            description="Moved to Data Lab → Source trust (project-scoped, respects date / UTM / segment filters)."
             icon={AtSign}
           >
-            <UtmSourceTrustPanel />
+            <p className="text-sm text-muted-foreground">
+              Open a landing page in Data Lab and use the Source trust tab for
+              per-source trust scores and ZIP/IP mismatch rates.
+            </p>
           </Panel>
 
           <section className="space-y-3">
