@@ -14,7 +14,11 @@ import { LeadInteractionLogDialog } from "@/features/data-export/view/LeadIntera
 import { LeadRiskBadge } from "@/features/data-export/view/LeadRiskBadge"
 import { buildBehaviorTitle } from "@/features/data-export/view/LeadBehaviorBadge"
 import { SessionEvidenceDialog } from "@/features/warehouse/view/SessionEvidenceDialog"
-import { pasteActivityLabel } from "@/features/data-lab/model/lead-review"
+import {
+  leadSourceDetail,
+  leadSourceLabel,
+  pasteActivityLabel,
+} from "@/features/data-lab/model/lead-review"
 import {
   formatInDashboardTimezone,
   getDashboardTimezoneAbbreviation,
@@ -112,7 +116,8 @@ export function LeadReviewTable({
               <th className={thClassName}>Email</th>
               <th className={thClassName}>Zip</th>
               <th className={thClassName}>IP</th>
-              <th className={thClassName}>UTM source</th>
+              <th className={thClassName}>Source</th>
+              <th className={thClassName}>UTM ID</th>
               <th className={thClassName}>TrustedForm</th>
               <th className={thClassName}>Submitted</th>
               {fieldKeys.map((key) => (
@@ -201,7 +206,13 @@ export function LeadReviewTable({
                 >
                   {cellValue(lead.clientIp)}
                 </td>
-                <td className={tdClassName}>{cellValue(lead.utmSource)}</td>
+                <td
+                  className={cn(tdClassName, "max-w-[12rem] whitespace-normal")}
+                  title={leadSourceDetail(lead) || undefined}
+                >
+                  {leadSourceLabel(lead)}
+                </td>
+                <td className={tdClassName}>{cellValue(lead.utmId)}</td>
                 <td
                   className={cn(
                     tdClassName,

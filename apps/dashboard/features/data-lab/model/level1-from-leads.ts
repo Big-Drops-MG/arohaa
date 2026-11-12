@@ -81,6 +81,7 @@ export function mapDataExportLeadRow(
     email: String(raw.email ?? ""),
     utmSource: String(raw.utmSource ?? raw.utm_source ?? ""),
     utmId: String(raw.utmId ?? raw.utm_id ?? ""),
+    utmS1: String(raw.utmS1 ?? raw.utm_s1 ?? ""),
     trustedFormUrl: String(raw.trustedFormUrl ?? raw.trusted_form_url ?? ""),
     formSubmitted: isLeadFormSubmittedFlag(
       raw.formSubmitted ?? raw.form_submitted

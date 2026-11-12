@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
 import type { DataExportLeadRow } from "@/features/data-export/model/data-export"
 import {
-  matchesLeadReviewFilter,
+  leadHasElevatedRisk,
+  leadSourceLabel,
   pasteActivityLabel,
-  summarizeLeadReview,
 } from "./lead-review"
 
 function lead(
@@ -27,8 +27,9 @@ function lead(
     zip: "10001",
     clientIp: "1.1.1.1",
     email: "a@b.com",
-    utmSource: "559",
+    utmSource: "",
     utmId: "",
+    utmS1: "",
     trustedFormUrl: "",
     formSubmitted: true,
     returnCount: 0,
@@ -69,28 +70,24 @@ function lead(
   }
 }
 
-describe("lead-review filters", () => {
-  it("summarizes elevated, incomplete, and paste counts", () => {
-    const rows = [
-      lead({ fraudLabel: "fraud" }),
-      lead({ coverage: "insufficient", fraudLabel: "legit" }),
-      lead({ pasteCount: 2 }),
-    ]
-    expect(summarizeLeadReview(rows)).toEqual({
-      submissions: 3,
-      elevated: 1,
-      incomplete: 1,
-      paste: 1,
-    })
+describe("lead-review helpers", () => {
+  it("detects elevated risk leads", () => {
+    expect(leadHasElevatedRisk(lead({ fraudLabel: "fraud" }))).toBe(true)
+    expect(leadHasElevatedRisk(lead({ fraudLabel: "legit" }))).toBe(false)
   })
 
-  it("matches paste and elevated filters", () => {
-    const pasted = lead({ pasteCount: 1 })
-    const elevated = lead({ fraudLabel: "fraud" })
-    expect(matchesLeadReviewFilter(pasted, "paste")).toBe(true)
-    expect(matchesLeadReviewFilter(elevated, "elevated")).toBe(true)
-    expect(matchesLeadReviewFilter(pasted, "elevated")).toBe(false)
-    expect(pasteActivityLabel(pasted)).toBe("Paste (Ctrl+V)")
+  it("falls back across utm source fields", () => {
+    expect(leadSourceLabel(lead({ utmSource: "559" }))).toBe("559")
+    expect(leadSourceLabel(lead({ utmId: "abc" }))).toBe("utm_id:abc")
+    expect(leadSourceLabel(lead({ utmS1: "camp1" }))).toBe("s1:camp1")
+    expect(leadSourceLabel(lead({ fields: { sid: "from-fields" } }))).toBe(
+      "from-fields"
+    )
+    expect(leadSourceLabel(lead())).toBe("—")
+  })
+
+  it("formats paste activity", () => {
+    expect(pasteActivityLabel(lead({ pasteCount: 1 }))).toBe("Paste (Ctrl+V)")
     expect(pasteActivityLabel(lead({ pasteCount: 3 }))).toBe("Paste ×3")
   })
 })

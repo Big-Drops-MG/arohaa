@@ -1,14 +1,5 @@
 import type { DataExportLeadRow } from "@/features/data-export/model/data-export"
 
-export const LEAD_REVIEW_FILTERS = [
-  { id: "all", label: "Submissions" },
-  { id: "elevated", label: "Elevated risk", tone: "fraud" as const },
-  { id: "incomplete", label: "Incomplete data" },
-  { id: "paste", label: "Paste activity" },
-] as const
-
-export type LeadReviewFilterId = (typeof LEAD_REVIEW_FILTERS)[number]["id"]
-
 export function leadHasElevatedRisk(lead: DataExportLeadRow): boolean {
   const fraud = lead.fraud
   return Boolean(
@@ -17,46 +8,36 @@ export function leadHasElevatedRisk(lead: DataExportLeadRow): boolean {
   )
 }
 
-export function leadHasIncompleteAssessment(lead: DataExportLeadRow): boolean {
-  const fraud = lead.fraud
-  return fraud == null || fraud.coverage === "insufficient"
+export function leadSourceLabel(lead: DataExportLeadRow): string {
+  const source = lead.utmSource.trim()
+  if (source) return source
+
+  const id = lead.utmId.trim()
+  if (id) return `utm_id:${id}`
+
+  const s1 = (lead.utmS1 || "").trim()
+  if (s1) return `s1:${s1}`
+
+  const fromFields = [
+    lead.fields.utm_source,
+    lead.fields.utmsource,
+    lead.fields.sid,
+    lead.fields.source,
+  ]
+    .map((value) => (value || "").trim())
+    .find(Boolean)
+  if (fromFields) return fromFields
+
+  return "—"
 }
 
-export function leadHasPasteActivity(lead: DataExportLeadRow): boolean {
-  return (lead.behavior?.pasteCount ?? 0) > 0
-}
-
-export function matchesLeadReviewFilter(
-  lead: DataExportLeadRow,
-  filter: LeadReviewFilterId
-): boolean {
-  if (filter === "all") return true
-  if (filter === "elevated") return leadHasElevatedRisk(lead)
-  if (filter === "incomplete") return leadHasIncompleteAssessment(lead)
-  if (filter === "paste") return leadHasPasteActivity(lead)
-  return true
-}
-
-export function summarizeLeadReview(leads: DataExportLeadRow[]): {
-  submissions: number
-  elevated: number
-  incomplete: number
-  paste: number
-} {
-  let elevated = 0
-  let incomplete = 0
-  let paste = 0
-  for (const lead of leads) {
-    if (leadHasElevatedRisk(lead)) elevated += 1
-    if (leadHasIncompleteAssessment(lead)) incomplete += 1
-    if (leadHasPasteActivity(lead)) paste += 1
-  }
-  return {
-    submissions: leads.length,
-    elevated,
-    incomplete,
-    paste,
-  }
+export function leadSourceDetail(lead: DataExportLeadRow): string {
+  const parts = [
+    lead.utmSource.trim() ? `source=${lead.utmSource.trim()}` : "",
+    lead.utmId.trim() ? `id=${lead.utmId.trim()}` : "",
+    (lead.utmS1 || "").trim() ? `s1=${lead.utmS1.trim()}` : "",
+  ].filter(Boolean)
+  return parts.join(" · ")
 }
 
 export function pasteActivityLabel(lead: DataExportLeadRow): string {

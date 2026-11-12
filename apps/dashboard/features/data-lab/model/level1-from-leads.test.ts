@@ -20,6 +20,7 @@ function lead(sessionId: string): DataExportLeadRow {
     email: "",
     utmSource: "",
     utmId: "",
+    utmS1: "",
     trustedFormUrl: "",
     formSubmitted: true,
     returnCount: 0,

@@ -61,6 +61,7 @@ type LeadsApiResponse = {
     email?: string
     utmSource?: string
     utmId?: string
+    utmS1?: string
     trustedFormUrl?: string
     formSubmitted?: boolean
     fields: Record<string, string>

@@ -253,17 +253,32 @@ function resolveLeadUtm(input: {
   utmId?: string
   utmS1?: string
   url?: string
+  fields?: Record<string, string>
 }): { utmSource: string; utmId: string; utmS1: string } {
   const url = input.url || ''
+  const fields = input.fields ?? {}
+  const fieldValue = (...keys: string[]) => {
+    for (const key of keys) {
+      const direct = (fields[key] || '').trim()
+      if (direct) return direct.slice(0, 200)
+      const lower = (fields[key.toLowerCase()] || '').trim()
+      if (lower) return lower.slice(0, 200)
+    }
+    return ''
+  }
   return {
     utmSource:
       (input.utmSource || '').trim() ||
-      pickQueryParam(url, ['utm_source', 'sid']),
+      fieldValue('utm_source', 'utmsource', 'sid', 'source') ||
+      pickQueryParam(url, ['utm_source', 'sid', 'source']),
     utmId:
       (input.utmId || '').trim() ||
+      fieldValue('utm_id', 'utmid', 'tid', 'uid') ||
       pickQueryParam(url, ['utm_id', 'tid', 'uid']),
     utmS1:
-      (input.utmS1 || '').trim() || pickQueryParam(url, ['utm_s1', 's1']),
+      (input.utmS1 || '').trim() ||
+      fieldValue('utm_s1', 'utms1', 's1') ||
+      pickQueryParam(url, ['utm_s1', 's1']),
   }
 }
 
@@ -322,6 +337,7 @@ function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
     utmId: row.utm_id,
     utmS1: row.utm_s1,
     url: row.sample_url,
+    fields: rawFields,
   })
   const formSubmitted = isLeadFormSubmitted(row.form_submitted)
   const submittedAt = isValidLeadTimestamp(row.submitted_at)
