@@ -181,8 +181,8 @@ export function DataLabUtmSourceTrustPanel({
             </CardTitle>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Per-source trust and ZIP/IP location mismatch for the current Data
-              Lab date range, UTM, and segment filters. Cluster uses the 30-day
-              mismatch rate within that window (≥50%, n≥10).
+              Lab date range, UTM, and segment filters. Cluster uses the 7d and
+              30d mismatch rate within those windows (≥50%, n≥10).
             </p>
             {isLoading ? (
               <p className="mt-1 text-xs text-muted-foreground">
@@ -235,8 +235,10 @@ export function DataLabUtmSourceTrustPanel({
               <thead>
                 <tr className="border-b border-border bg-muted/30">
                   <th className={cn(thClassName, "text-left")}>Source</th>
-                  <th className={thClassName}>Trust</th>
-                  <th className={thClassName}>Status</th>
+                  <th className={thClassName}>Trust 7d</th>
+                  <th className={thClassName}>Trust 30d</th>
+                  <th className={thClassName}>Status 7d</th>
+                  <th className={thClassName}>Status 30d</th>
                   <th className={thClassName}>Leads</th>
                   <th className={thClassName}>7d</th>
                   <th className={thClassName}>30d</th>
@@ -262,17 +264,30 @@ export function DataLabUtmSourceTrustPanel({
                       {row.utmSource}
                     </td>
                     <td className={tdClassName}>
-                      {row.trustScore == null ? "—" : row.trustScore}
+                      {row.trustScore7d == null ? "—" : row.trustScore7d}
+                    </td>
+                    <td className={tdClassName}>
+                      {row.trustScore30d == null ? "—" : row.trustScore30d}
                     </td>
                     <td
                       className={cn(
                         tdClassName,
-                        row.reputation === "location_mismatch_cluster"
+                        row.reputation7d === "location_mismatch_cluster"
                           ? "font-medium text-rose-700"
                           : "text-muted-foreground"
                       )}
                     >
-                      {reputationLabel(row.reputation)}
+                      {reputationLabel(row.reputation7d)}
+                    </td>
+                    <td
+                      className={cn(
+                        tdClassName,
+                        row.reputation30d === "location_mismatch_cluster"
+                          ? "font-medium text-rose-700"
+                          : "text-muted-foreground"
+                      )}
+                    >
+                      {reputationLabel(row.reputation30d)}
                     </td>
                     <td className={tdClassName}>{row.leadsTotal}</td>
                     <td className={tdClassName}>{row.leads7d}</td>

@@ -12,6 +12,8 @@ export type UtmSourceTrustReputation =
 export type UtmSourceTrustRow = {
   utmSource: string
   trustScore: number | null
+  trustScore7d: number | null
+  trustScore30d: number | null
   leadsTotal: number
   leads7d: number
   leads30d: number
@@ -20,6 +22,8 @@ export type UtmSourceTrustRow = {
   mismatch30d: number
   mismatchRate7d: number
   mismatchRate30d: number
+  reputation7d: UtmSourceTrustReputation
+  reputation30d: UtmSourceTrustReputation
   reputation: UtmSourceTrustReputation
 }
 
@@ -27,6 +31,10 @@ type Bucket = {
   utmSource: string
   scoreSum: number
   scoreCount: number
+  scoreSum7d: number
+  scoreCount7d: number
+  scoreSum30d: number
+  scoreCount30d: number
   leadsTotal: number
   leads7d: number
   leads30d: number
@@ -42,6 +50,11 @@ function leadTimestampMs(lead: DataExportLeadRow): number {
     ? raw
     : `${raw.replace(" ", "T")}${/[zZ]|[+-]\d{2}:?\d{2}$/.test(raw) ? "" : "Z"}`
   return new Date(normalized).getTime()
+}
+
+function avgScore(sum: number, count: number): number | null {
+  if (count <= 0) return null
+  return Math.round(sum / count)
 }
 
 export function leadHasLocationMismatch(lead: DataExportLeadRow): boolean {
@@ -88,6 +101,10 @@ export function computeUtmSourceTrustRows(
         utmSource,
         scoreSum: 0,
         scoreCount: 0,
+        scoreSum7d: 0,
+        scoreCount7d: 0,
+        scoreSum30d: 0,
+        scoreCount30d: 0,
         leadsTotal: 0,
         leads7d: 0,
         leads30d: 0,
@@ -106,13 +123,21 @@ export function computeUtmSourceTrustRows(
     if (in30) bucket.leads30d += 1
 
     const fraud = lead.fraud
-    if (
+    const hasScore =
       fraud?.scoreAvailable &&
       fraud.score != null &&
       Number.isFinite(fraud.score)
-    ) {
+    if (hasScore && fraud.score != null) {
       bucket.scoreSum += fraud.score
       bucket.scoreCount += 1
+      if (in7) {
+        bucket.scoreSum7d += fraud.score
+        bucket.scoreCount7d += 1
+      }
+      if (in30) {
+        bucket.scoreSum30d += fraud.score
+        bucket.scoreCount30d += 1
+      }
     }
 
     if (leadHasLocationMismatch(lead)) {
@@ -128,12 +153,24 @@ export function computeUtmSourceTrustRows(
         bucket.leads7d > 0 ? bucket.mismatch7d / bucket.leads7d : 0
       const mismatchRate30d =
         bucket.leads30d > 0 ? bucket.mismatch30d / bucket.leads30d : 0
+      const reputation7d = evaluateUtmSourceTrustReputation({
+        source: bucket.utmSource,
+        submitCount: bucket.leads7d,
+        locationMismatchCount: bucket.mismatch7d,
+      })
+      const reputation30d = evaluateUtmSourceTrustReputation({
+        source: bucket.utmSource,
+        submitCount: bucket.leads30d,
+        locationMismatchCount: bucket.mismatch30d,
+      })
+      const trustScore = avgScore(bucket.scoreSum, bucket.scoreCount)
+      const trustScore7d = avgScore(bucket.scoreSum7d, bucket.scoreCount7d)
+      const trustScore30d = avgScore(bucket.scoreSum30d, bucket.scoreCount30d)
       return {
         utmSource: bucket.utmSource,
-        trustScore:
-          bucket.scoreCount > 0
-            ? Math.round(bucket.scoreSum / bucket.scoreCount)
-            : null,
+        trustScore,
+        trustScore7d,
+        trustScore30d,
         leadsTotal: bucket.leadsTotal,
         leads7d: bucket.leads7d,
         leads30d: bucket.leads30d,
@@ -142,11 +179,9 @@ export function computeUtmSourceTrustRows(
         mismatch30d: bucket.mismatch30d,
         mismatchRate7d,
         mismatchRate30d,
-        reputation: evaluateUtmSourceTrustReputation({
-          source: bucket.utmSource,
-          submitCount: bucket.leads30d,
-          locationMismatchCount: bucket.mismatch30d,
-        }),
+        reputation7d,
+        reputation30d,
+        reputation: reputation30d,
       } satisfies UtmSourceTrustRow
     })
     .sort((a, b) => {

@@ -94,7 +94,41 @@ describe("utm-source-trust", () => {
     expect(rows).toHaveLength(2)
     expect(rows[0]?.utmSource).toBe("559")
     expect(rows[0]?.trustScore).toBe(80)
+    expect(rows[0]?.trustScore7d).toBe(80)
+    expect(rows[0]?.trustScore30d).toBe(80)
     expect(rows[1]?.utmSource).toBe("utm_id:abc")
     expect(rows[1]?.mismatchTotal).toBe(1)
+  })
+
+  it("computes 7d and 30d trust and status windows separately", () => {
+    const now = Date.parse("2026-11-12T12:00:00Z")
+    const recentMismatch = Array.from({ length: 10 }, (_, i) =>
+      lead({
+        sessionId: `r${i}`,
+        utmSource: "cluster7",
+        score: 20,
+        submittedAt: "2026-11-11 10:00:00",
+        findings: [{ code: "location_inconsistency", detail: "mismatch" }],
+      })
+    )
+    const olderClean = Array.from({ length: 12 }, (_, i) =>
+      lead({
+        sessionId: `o${i}`,
+        utmSource: "cluster7",
+        score: 90,
+        submittedAt: "2026-10-20 10:00:00",
+      })
+    )
+    const rows = computeUtmSourceTrustRows(
+      [...recentMismatch, ...olderClean],
+      now
+    )
+    const row = rows.find((item) => item.utmSource === "cluster7")
+    expect(row?.leads7d).toBe(10)
+    expect(row?.leads30d).toBe(22)
+    expect(row?.trustScore7d).toBe(20)
+    expect(row?.trustScore30d).toBe(58)
+    expect(row?.reputation7d).toBe("location_mismatch_cluster")
+    expect(row?.reputation30d).toBe("clean")
   })
 })
