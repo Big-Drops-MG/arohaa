@@ -18,7 +18,7 @@ import { formatDashboardDateTime } from "@/lib/datetime"
 import { getEventDisplayName } from "@/features/warehouse/model/event-display-names"
 import { PartnerScorecardsPanel } from "@/features/warehouse/view/PartnerScorecardsPanel"
 import { UtmSourceTrustPanel } from "@/features/warehouse/view/UtmSourceTrustPanel"
-import { WarehouseLeadReviewSection } from "@/features/warehouse/view/WarehouseLeadReviewSection"
+import { CalibrationPanel } from "@/features/warehouse/view/CalibrationPanel"
 
 function formatCount(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
@@ -395,20 +395,26 @@ export function WarehouseDashboard({ data }: { data: WarehouseDashboardData }) {
             </p>
           </section>
 
-          <WarehouseLeadReviewSection
-            submissions={summary.quality?.submissions ?? 0}
-            elevatedRisk={
-              summary.quality?.flagged ?? summary.risk.elevatedRisk ?? 0
-            }
-            incompleteAssessments={
-              summary.quality?.incompleteAssessments ??
-              summary.risk.insufficientData ??
-              0
-            }
-            relatedContactGroups={summary.quality?.relatedContactGroups ?? 0}
-            pendingReviews={summary.quality?.pendingReviews ?? 0}
-            shortcutLeads={summary.shortcutLeads ?? []}
-          />
+          <section className="rounded-xl border border-border bg-background">
+            <header className="flex items-start gap-3 border-b border-border px-5 py-4">
+              <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground">
+                <ShieldAlert className="size-4" aria-hidden />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-foreground">
+                  Calibration
+                </h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Lead review moved to Data Lab. Findings vs later administrator
+                  decisions — do not change weights from a single partner
+                  sample.
+                </p>
+              </div>
+            </header>
+            <div className="px-5 py-4">
+              <CalibrationPanel />
+            </div>
+          </section>
 
           <section className="space-y-3">
             <h2 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
