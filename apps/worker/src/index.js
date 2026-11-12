@@ -13,6 +13,7 @@ import {
   waitUntilReady,
   quitRedisClient,
   payloadLogMeta,
+  resolveBrpopTimeoutSec,
 } from './redis-clients.js';
 
 const MAX_BATCH_SIZE = 1000;
@@ -20,7 +21,7 @@ const FLUSH_INTERVAL_MS = 2000;
 const MAX_HEATMAP_BATCH_SIZE = 5000;
 const HEATMAP_FLUSH_INTERVAL_MS = 2000;
 const SHUTDOWN_DRAIN_MS = 8_000;
-const BRPOP_TIMEOUT_SEC = 1;
+const BRPOP_TIMEOUT_SEC = resolveBrpopTimeoutSec();
 
 const PRIORITY_EVENT_NAMES = new Set([
   'form_success',
@@ -91,7 +92,10 @@ async function requeueInFlight(queueName, payload) {
 }
 
 async function startQueueConsumption() {
-  logger.info('starting queue consumption from analytics_queue');
+  logger.info(
+    { brpopTimeoutSec: BRPOP_TIMEOUT_SEC },
+    'starting queue consumption from analytics_queue',
+  );
 
   while (!isShuttingDown) {
     try {

@@ -72,8 +72,11 @@ def main() -> None:
     click_base = pick("WEB_PUSH_CLICK_BASE_URL") or "https://api.arohaa.net"
     encryption_key = vapid_key or auth_secret
 
+    brpop_timeout = pick("REDIS_BRPOP_TIMEOUT_SEC") or "15"
+
     worker_env = f"""NODE_ENV=production
 REDIS_URL={pick("REDIS_URL") or pick("KV_URL")}
+REDIS_BRPOP_TIMEOUT_SEC={brpop_timeout}
 CLICKHOUSE_URL={pick("CLICKHOUSE_URL")}
 CLICKHOUSE_USER={pick("CLICKHOUSE_USER")}
 CLICKHOUSE_PASSWORD={pick("CLICKHOUSE_PASSWORD")}

@@ -2,9 +2,11 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 import { neon } from '@neondatabase/serverless'
 import webpush from 'web-push'
 import { logger } from '../logger.js'
+import { resolveBrpopTimeoutSec } from '../redis-clients.js'
 
 const WEB_PUSH_QUEUE = 'web_push_queue'
 const DUE_POLL_MS = 5_000
+const BRPOP_TIMEOUT_SEC = resolveBrpopTimeoutSec()
 const ALGO = 'aes-256-gcm'
 const IV_LENGTH = 12
 
@@ -626,7 +628,7 @@ export async function startWebPushConsumption(redis, { isShuttingDown }) {
 
   while (!isShuttingDown()) {
     try {
-      const result = await redis.brpop(WEB_PUSH_QUEUE, 1)
+      const result = await redis.brpop(WEB_PUSH_QUEUE, BRPOP_TIMEOUT_SEC)
       if (!result) continue
       const [, payload] = result
       let parsed

@@ -2,6 +2,13 @@ import { Redis } from 'ioredis'
 import { logger } from './logger.js'
 
 const LOCAL_REDIS_URL = 'redis://127.0.0.1:6379'
+const DEFAULT_BRPOP_TIMEOUT_SEC = 15
+
+export function resolveBrpopTimeoutSec() {
+  const raw = Number(process.env.REDIS_BRPOP_TIMEOUT_SEC?.trim())
+  if (Number.isFinite(raw) && raw >= 1 && raw <= 60) return Math.floor(raw)
+  return DEFAULT_BRPOP_TIMEOUT_SEC
+}
 
 export function resolveRedisUrl() {
   const candidates = [
