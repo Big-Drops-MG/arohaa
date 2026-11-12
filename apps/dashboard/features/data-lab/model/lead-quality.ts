@@ -174,12 +174,10 @@ function hasSecondVehicle(fields: Record<string, string>): boolean {
   return carSlots >= 2
 }
 
-export function leadMatchesQualityAttribute(
-  lead: DataExportLeadRow,
+function leadMatchesQualityAttributeFromFields(
+  fields: Record<string, string>,
   attributeId: LeadQualityAttributeId
 ): boolean {
-  const fields = fieldMap(lead)
-
   switch (attributeId) {
     case "homeowner":
       return isHomeowner(
@@ -238,6 +236,13 @@ export function leadMatchesQualityAttribute(
   }
 }
 
+export function leadMatchesQualityAttribute(
+  lead: DataExportLeadRow,
+  attributeId: LeadQualityAttributeId
+): boolean {
+  return leadMatchesQualityAttributeFromFields(fieldMap(lead), attributeId)
+}
+
 function formatUtmSource(raw: string): string {
   const value = raw.trim()
   return value || "(none)"
@@ -280,8 +285,9 @@ export function computeLeadQualityByUtmSource(
       buckets.set(utmSource, bucket)
     }
     bucket.totalLeads += 1
+    const fields = fieldMap(lead)
     for (const attr of LEAD_QUALITY_ATTRIBUTES) {
-      if (leadMatchesQualityAttribute(lead, attr.id)) {
+      if (leadMatchesQualityAttributeFromFields(fields, attr.id)) {
         bucket.hits[attr.id] += 1
       }
     }

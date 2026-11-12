@@ -7,6 +7,7 @@ import {
   resolveAnalyticsWindowForLanding,
   type AnalyticsCustomRange,
   type AnalyticsRangeId,
+  type AnalyticsWindow,
 } from '../lib/analytics-range.js'
 import {
   ALL_TIME_DISPLAYABLE_STALE_SEC,
@@ -120,6 +121,69 @@ export type FunnelLeadsResponse = {
   level2Stats: Level2Stat[]
   level3: Level3Payload
   leadQuality: LeadQualityRow[]
+}
+
+type FunnelLeadsAggregatesCache = {
+  rangeId: AnalyticsRangeId
+  visibleLeadFieldKeys: string[]
+  level1Stats: Level1Stat[]
+  level2Stats: Level2Stat[]
+  level3: Level3Payload
+  leadQuality: LeadQualityRow[]
+  total: number
+}
+
+type FunnelLeadsPageCache = {
+  leads: FunnelLeadRow[]
+  total: number
+  limit: number
+  offset: number
+  hasMore: boolean
+}
+
+function funnelLeadsAggregatesCacheKey(
+  workspaceId: string,
+  rangeKey: string,
+  returningOnly: boolean,
+): string {
+  return `analytics:funnel-leads:agg:v1:${workspaceId}:${rangeKey}:${returningOnly ? 'r1' : 'r0'}`
+}
+
+function funnelLeadsPageCacheKey(
+  workspaceId: string,
+  rangeKey: string,
+  limit: number,
+  offset: number,
+  returningOnly: boolean,
+): string {
+  return `analytics:funnel-leads:page:v1:${workspaceId}:${rangeKey}:${limit}:${offset}:${returningOnly ? 'r1' : 'r0'}`
+}
+
+function funnelLeadsCohortCacheKey(
+  workspaceId: string,
+  rangeKey: string,
+  returningOnly: boolean,
+): string {
+  return `analytics:funnel-leads:cohort:v1:${workspaceId}:${rangeKey}:${returningOnly ? 'r1' : 'r0'}`
+}
+
+function mergeFunnelLeadsResponse(
+  aggregates: FunnelLeadsAggregatesCache,
+  page: FunnelLeadsPageCache,
+): FunnelLeadsResponse {
+  return {
+    rangeId: aggregates.rangeId,
+    visibleLeadFieldKeys: aggregates.visibleLeadFieldKeys,
+    level1Stats: aggregates.level1Stats,
+    level2Stats: aggregates.level2Stats,
+    level3: aggregates.level3,
+    leadQuality: aggregates.leadQuality,
+    leads: page.leads,
+    total: page.total,
+    limit: page.limit,
+    offset: page.offset,
+    hasMore: page.hasMore,
+  }
 }
 
 type RawLeadSessionRow = {
@@ -1689,6 +1753,159 @@ function fromSnapshotLead(lead: DisplayableLeadSnapshotRow): FunnelLeadRow {
   }
 }
 
+async function enrichFunnelLeadsPage({
+  workspaceId,
+  window,
+  pageLeads: initialPageLeads,
+}: {
+  workspaceId: string
+  window: AnalyticsWindow
+  pageLeads: FunnelLeadRow[]
+}): Promise<FunnelLeadRow[]> {
+  let pageLeads = initialPageLeads
+  try {
+    const missingIp = pageLeads.filter((lead) => !lead.clientIp.trim())
+    if (missingIp.length > 0) {
+      const ipByKey = await loadClientIpBySessions(
+        missingIp.map((lead) => ({
+          workspaceId,
+          sessionId: lead.sessionId,
+        })),
+      )
+      if (ipByKey.size > 0) {
+        pageLeads = pageLeads.map((lead) => {
+          if (lead.clientIp.trim()) return lead
+          const ip = ipByKey.get(`${workspaceId}:${lead.sessionId}`)
+          return ip ? { ...lead, clientIp: ip } : lead
+        })
+      }
+    }
+  } catch (error) {
+    console.error('[funnel-leads] session IP backfill failed', error)
+  }
+
+  try {
+    const sessionIds = pageLeads.map((lead) => lead.sessionId)
+    const rangeParams = rangeQueryParams(window)
+    const [fraudMap, ctxBySid, fiMap, behaviorMap] = await Promise.all([
+      ensureSessionsFraudAssessments({
+        workspaceId,
+        sessionIds,
+        concurrency: 4,
+      }),
+      loadSessionContextByIds(workspaceId, sessionIds).catch(() => new Map()),
+      loadFiBehaviorBySessions(
+        sessionIds.map((sessionId) => ({ workspaceId, sessionId })),
+      ).catch(() => new Map()),
+      loadBehaviorSummaryBySessions({
+        workspaceId,
+        sessionIds,
+        window: {
+          rangeFrom: rangeParams.range_from,
+          rangeTo: rangeParams.range_to,
+        },
+      }).catch((error: unknown) => {
+        console.error('[funnel-leads] behavior summary load failed', error)
+        return new Map<string, LeadBehaviorSummary>()
+      }),
+    ])
+    pageLeads = pageLeads.map((lead) => ({
+      ...lead,
+      behavior: behaviorMap.get(lead.sessionId) ?? null,
+    }))
+
+    const velocity = computeLeadVelocityMaps([...ctxBySid.values()])
+    const key = (sid: string) => `${workspaceId}:${sid}`
+
+    pageLeads = await Promise.all(
+      pageLeads.map(async (lead) => {
+        const ctx = ctxBySid.get(lead.sessionId)
+        const clientIp =
+          (lead.clientIp || '').trim() || (ctx?.clientIp || '').trim()
+        const scored = fraudMap.get(lead.sessionId)
+        if (scored && !isScoringUnavailable(scored)) {
+          return { ...lead, clientIp: clientIp || lead.clientIp, fraud: scored }
+        }
+
+        try {
+          if (ctx) {
+            const fi = fiMap.get(key(lead.sessionId)) ?? null
+            const features = buildFeaturesFromLeadSessionSignal(
+              {
+                ...ctx,
+                props:
+                  ctx.props && ctx.props !== '{}'
+                    ? ctx.props
+                    : JSON.stringify({
+                        fields: {
+                          ...lead.fields,
+                          email: lead.email,
+                          zip: lead.zip,
+                        },
+                        xxTrustedFormCertUrl: lead.trustedFormUrl,
+                      }),
+                formSubmitted: lead.formSubmitted || ctx.formSubmitted,
+                fingerprint: ctx.fingerprint || lead.macId || '',
+              },
+              velocity,
+              fi,
+            )
+            features.velocityWindowKnown = ctxBySid.size > 0
+            if (!features.email.trim()) features.email = lead.email
+            if (!features.firstName.trim()) {
+              features.firstName = (lead.fields.first_name || '').trim()
+            }
+            if (!features.lastName.trim()) {
+              features.lastName = (lead.fields.last_name || '').trim()
+            }
+            if (!features.formZipEntered.trim()) {
+              features.formZipEntered = (lead.zip || '').trim()
+              features.zip = features.formZipEntered
+            }
+            if (!features.trustedFormUrl.trim()) {
+              features.trustedFormUrl = lead.trustedFormUrl
+            }
+            const contact = await loadContactRiskSignals({
+              tenantWorkspaceId: ctx.tenantWorkspaceId,
+              landingPageId: workspaceId,
+              sessionId: lead.sessionId,
+              matchLimit: 100,
+            })
+            Object.assign(features, contact)
+            return {
+              ...lead,
+              clientIp: clientIp || lead.clientIp,
+              fraud: scoreLeadFraud(features),
+            }
+          }
+          return {
+            ...lead,
+            clientIp: clientIp || lead.clientIp,
+            fraud: scoreLeadFromFunnelFields(lead),
+          }
+        } catch {
+          return {
+            ...lead,
+            clientIp: clientIp || lead.clientIp,
+            fraud: scored ?? unavailableLeadFraud(),
+          }
+        }
+      }),
+    )
+  } catch (error) {
+    console.error('[funnel-leads] fraud scoring failed', error)
+    pageLeads = pageLeads.map((lead) => {
+      try {
+        return { ...lead, fraud: scoreLeadFromFunnelFields(lead) }
+      } catch {
+        return { ...lead, fraud: unavailableLeadFraud() }
+      }
+    })
+  }
+
+  return pageLeads
+}
+
 export async function getFunnelLeads({
   workspaceId,
   rangeId,
@@ -1708,17 +1925,34 @@ export async function getFunnelLeads({
 }): Promise<FunnelLeadsResponse> {
   const window = await resolveAnalyticsWindowForLanding(rangeId, workspaceId, new Date(), custom)
   const utmKey = utmFilterCacheKey(utmFilter)
-  const cacheKey = `analytics:funnel-leads:v5-lead-quality:${workspaceId}:${rangeCacheKey(window, utmKey)}:${limit}:${offset}:${returningOnly ? 'r1' : 'r0'}`
-  const cached = await readAnalyticsCache<FunnelLeadsResponse>(cacheKey)
-  if (cached) return cached
+  const rangeKey = rangeCacheKey(window, utmKey)
+  const aggregatesKey = funnelLeadsAggregatesCacheKey(
+    workspaceId,
+    rangeKey,
+    returningOnly,
+  )
+  const pageKey = funnelLeadsPageCacheKey(
+    workspaceId,
+    rangeKey,
+    limit,
+    offset,
+    returningOnly,
+  )
+  const [cachedAggregates, cachedPage] = await Promise.all([
+    readAnalyticsCache<FunnelLeadsAggregatesCache>(aggregatesKey),
+    readAnalyticsCache<FunnelLeadsPageCache>(pageKey),
+  ])
+  if (cachedAggregates && cachedPage) {
+    return mergeFunnelLeadsResponse(cachedAggregates, cachedPage)
+  }
 
   const useAllTimeIncremental = window.rangeId === 'all_time'
   const displayableCacheKey = useAllTimeIncremental
     ? allTimeDisplayableCacheKey(workspaceId, utmKey, returningOnly)
-    : null
-  const priorSnapshot = displayableCacheKey
-    ? await readAnalyticsCache<DisplayableLeadsSnapshot>(displayableCacheKey)
-    : null
+    : funnelLeadsCohortCacheKey(workspaceId, rangeKey, returningOnly)
+  const priorSnapshot = await readAnalyticsCache<DisplayableLeadsSnapshot>(
+    displayableCacheKey,
+  )
   const priorLeads = priorSnapshot?.leads?.length
     ? priorSnapshot.leads.map(fromSnapshotLead)
     : []
@@ -1729,6 +1963,42 @@ export async function getFunnelLeads({
           ALL_TIME_INCREMENTAL_OVERLAP_MS,
         )
       : null
+  const canServeFromCohort = !useAllTimeIncremental && priorLeads.length > 0
+
+  if (canServeFromCohort) {
+    let aggregates = cachedAggregates
+    if (!aggregates) {
+      const visibleLeadFieldKeys = discoverVisibleLeadFieldKeys(priorLeads)
+      aggregates = {
+        rangeId: window.rangeId,
+        visibleLeadFieldKeys,
+        level1Stats: computeLevel1StatsFromLeads(priorLeads),
+        level2Stats: computeLevel2StatsFromLeads(priorLeads),
+        level3: computeLevel3FromLeads(priorLeads, visibleLeadFieldKeys),
+        leadQuality: computeLeadQualityByUtmSource(priorLeads),
+        total: priorLeads.length,
+      }
+      await writeAnalyticsCache(aggregatesKey, aggregates)
+    }
+    if (cachedPage) {
+      return mergeFunnelLeadsResponse(aggregates, cachedPage)
+    }
+    const page = paginateDisplayableLeads(priorLeads, limit, offset)
+    const pageLeads = await enrichFunnelLeadsPage({
+      workspaceId,
+      window,
+      pageLeads: page.leads,
+    })
+    const pagePayload: FunnelLeadsPageCache = {
+      leads: pageLeads,
+      total: page.total,
+      limit: page.limit,
+      offset: page.offset,
+      hasMore: page.hasMore,
+    }
+    await writeAnalyticsCache(pageKey, pagePayload)
+    return mergeFunnelLeadsResponse(aggregates, pagePayload)
+  }
 
   const ch = getAnalyticsClickHouseClient()
   const sessionFilterSql = hasAnalyticsUtmFilter(utmFilter)
@@ -1928,14 +2198,12 @@ export async function getFunnelLeads({
       ? mergeDisplayableLeadsBySession(priorLeads, freshLeads, MAX_RAW_SESSIONS)
       : freshLeads
 
-  if (displayableCacheKey) {
-    const snapshot: DisplayableLeadsSnapshot = {
-      watermark:
-        displayableLeadsWatermark(displayable) ||
-        priorSnapshot?.watermark ||
-        '',
-      leads: displayable.map(toSnapshotLead),
-    }
+  const snapshot: DisplayableLeadsSnapshot = {
+    watermark:
+      displayableLeadsWatermark(displayable) || priorSnapshot?.watermark || '',
+    leads: displayable.map(toSnapshotLead),
+  }
+  if (useAllTimeIncremental) {
     if (snapshot.watermark) {
       await writeAnalyticsCache(
         displayableCacheKey,
@@ -1944,168 +2212,41 @@ export async function getFunnelLeads({
         ALL_TIME_DISPLAYABLE_STALE_SEC,
       )
     }
+  } else {
+    await writeAnalyticsCache(displayableCacheKey, snapshot)
   }
 
-  const level1Stats = computeLevel1StatsFromLeads(displayable)
-  const level2Stats = computeLevel2StatsFromLeads(displayable)
   const visibleLeadFieldKeys = discoverVisibleLeadFieldKeys(displayable)
-  const level3 = computeLevel3FromLeads(displayable, visibleLeadFieldKeys)
-  const leadQuality = computeLeadQualityByUtmSource(displayable)
-  const page = paginateDisplayableLeads(displayable, limit, offset)
-
-  let pageLeads = page.leads
-  try {
-    const missingIp = pageLeads.filter((lead) => !lead.clientIp.trim())
-    if (missingIp.length > 0) {
-      const ipByKey = await loadClientIpBySessions(
-        missingIp.map((lead) => ({
-          workspaceId,
-          sessionId: lead.sessionId,
-        })),
-      )
-      if (ipByKey.size > 0) {
-        pageLeads = pageLeads.map((lead) => {
-          if (lead.clientIp.trim()) return lead
-          const ip = ipByKey.get(`${workspaceId}:${lead.sessionId}`)
-          return ip ? { ...lead, clientIp: ip } : lead
-        })
-      }
-    }
-  } catch (error) {
-    console.error('[funnel-leads] session IP backfill failed', error)
-  }
-
-  try {
-    const sessionIds = pageLeads.map((lead) => lead.sessionId)
-    const rangeParams = rangeQueryParams(window)
-    const [fraudMap, ctxBySid, fiMap, behaviorMap] = await Promise.all([
-      ensureSessionsFraudAssessments({
-        workspaceId,
-        sessionIds,
-        concurrency: 4,
-      }),
-      loadSessionContextByIds(workspaceId, sessionIds).catch(() => new Map()),
-      loadFiBehaviorBySessions(
-        sessionIds.map((sessionId) => ({ workspaceId, sessionId })),
-      ).catch(() => new Map()),
-      loadBehaviorSummaryBySessions({
-        workspaceId,
-        sessionIds,
-        window: { rangeFrom: rangeParams.range_from, rangeTo: rangeParams.range_to },
-      }).catch((error: unknown) => {
-        console.error('[funnel-leads] behavior summary load failed', error)
-        return new Map<string, LeadBehaviorSummary>()
-      }),
-    ])
-    pageLeads = pageLeads.map((lead) => ({
-      ...lead,
-      behavior: behaviorMap.get(lead.sessionId) ?? null,
-    }))
-
-    const velocity = computeLeadVelocityMaps([...ctxBySid.values()])
-    const key = (sid: string) => `${workspaceId}:${sid}`
-
-    pageLeads = await Promise.all(
-      pageLeads.map(async (lead) => {
-        const ctx = ctxBySid.get(lead.sessionId)
-        const clientIp =
-          (lead.clientIp || '').trim() || (ctx?.clientIp || '').trim()
-        const scored = fraudMap.get(lead.sessionId)
-        if (scored && !isScoringUnavailable(scored)) {
-          return { ...lead, clientIp: clientIp || lead.clientIp, fraud: scored }
-        }
-
-        try {
-          if (ctx) {
-            const fi = fiMap.get(key(lead.sessionId)) ?? null
-            const features = buildFeaturesFromLeadSessionSignal(
-              {
-                ...ctx,
-                props:
-                  ctx.props && ctx.props !== '{}'
-                    ? ctx.props
-                    : JSON.stringify({
-                        fields: {
-                          ...lead.fields,
-                          email: lead.email,
-                          zip: lead.zip,
-                        },
-                        xxTrustedFormCertUrl: lead.trustedFormUrl,
-                      }),
-                formSubmitted: lead.formSubmitted || ctx.formSubmitted,
-                fingerprint: ctx.fingerprint || lead.macId || '',
-              },
-              velocity,
-              fi,
-            )
-            features.velocityWindowKnown = ctxBySid.size > 0
-            if (!features.email.trim()) features.email = lead.email
-            if (!features.firstName.trim()) {
-              features.firstName = (lead.fields.first_name || '').trim()
-            }
-            if (!features.lastName.trim()) {
-              features.lastName = (lead.fields.last_name || '').trim()
-            }
-            if (!features.formZipEntered.trim()) {
-              features.formZipEntered = (lead.zip || '').trim()
-              features.zip = features.formZipEntered
-            }
-            if (!features.trustedFormUrl.trim()) {
-              features.trustedFormUrl = lead.trustedFormUrl
-            }
-            const contact = await loadContactRiskSignals({
-              tenantWorkspaceId: ctx.tenantWorkspaceId,
-              landingPageId: workspaceId,
-              sessionId: lead.sessionId,
-              matchLimit: 100,
-            })
-            Object.assign(features, contact)
-            return {
-              ...lead,
-              clientIp: clientIp || lead.clientIp,
-              fraud: scoreLeadFraud(features),
-            }
-          }
-          return {
-            ...lead,
-            clientIp: clientIp || lead.clientIp,
-            fraud: scoreLeadFromFunnelFields(lead),
-          }
-        } catch {
-          return {
-            ...lead,
-            clientIp: clientIp || lead.clientIp,
-            fraud: scored ?? unavailableLeadFraud(),
-          }
-        }
-      }),
-    )
-  } catch (error) {
-    console.error('[funnel-leads] fraud scoring failed', error)
-    pageLeads = pageLeads.map((lead) => {
-      try {
-        return { ...lead, fraud: scoreLeadFromFunnelFields(lead) }
-      } catch {
-        return { ...lead, fraud: unavailableLeadFraud() }
-      }
-    })
-  }
-
-  const response: FunnelLeadsResponse = {
+  const aggregates: FunnelLeadsAggregatesCache = {
     rangeId: window.rangeId,
     visibleLeadFieldKeys,
-    level1Stats,
-    level2Stats,
-    level3,
-    leadQuality,
+    level1Stats: computeLevel1StatsFromLeads(displayable),
+    level2Stats: computeLevel2StatsFromLeads(displayable),
+    level3: computeLevel3FromLeads(displayable, visibleLeadFieldKeys),
+    leadQuality: computeLeadQualityByUtmSource(displayable),
+    total: displayable.length,
+  }
+  await writeAnalyticsCache(aggregatesKey, aggregates)
+
+  const page = paginateDisplayableLeads(displayable, limit, offset)
+  if (cachedPage) {
+    return mergeFunnelLeadsResponse(aggregates, cachedPage)
+  }
+
+  const pageLeads = await enrichFunnelLeadsPage({
+    workspaceId,
+    window,
+    pageLeads: page.leads,
+  })
+  const pagePayload: FunnelLeadsPageCache = {
     leads: pageLeads,
     total: page.total,
     limit: page.limit,
     offset: page.offset,
     hasMore: page.hasMore,
   }
-  await writeAnalyticsCache(cacheKey, response)
-  return response
+  await writeAnalyticsCache(pageKey, pagePayload)
+  return mergeFunnelLeadsResponse(aggregates, pagePayload)
 }
 
 export function emptyFunnelLeads(
