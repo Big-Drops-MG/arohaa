@@ -43,6 +43,7 @@ import { Level3Panel } from "@/features/data-lab/view/Level3Panel"
 import { LeadQualityPanel } from "@/features/data-lab/view/LeadQualityPanel"
 import { DataLabUtmSourceTrustPanel } from "@/features/data-lab/view/DataLabUtmSourceTrustPanel"
 import { DataLabLeadReviewPanel } from "@/features/data-lab/view/DataLabLeadReviewPanel"
+import { DataLabCallCenterPanel } from "@/features/data-lab/view/DataLabCallCenterPanel"
 import { DataLabLeadsPanel } from "@/features/data-lab/view/DataLabLeadsPanel"
 import type { DataExportDashboardData } from "@/features/data-export/model/data-export"
 import { getDataExportEmptyDashboardData } from "@/features/data-export/controller/data-export-empty-data"
@@ -133,6 +134,7 @@ export function DataLabDashboard({
       allowed.add("retention")
       allowed.add("lead-review")
       allowed.add("source-trust")
+      allowed.add("call-outcomes")
     }
     const filtered = DATA_LAB_SECTIONS.filter((s) => allowed.has(s.id))
     return filtered.length > 0 ? filtered : DATA_LAB_SECTIONS
@@ -392,6 +394,16 @@ export function DataLabDashboard({
         <TabsContent value="lead-review" className="mt-5 outline-none">
           {labSection === "lead-review" ? (
             <DataLabLeadReviewPanel
+              projectId={projectId}
+              canAccess={canAccessDataExport}
+              isActive={isActive}
+            />
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="call-outcomes" className="mt-5 outline-none">
+          {labSection === "call-outcomes" ? (
+            <DataLabCallCenterPanel
               projectId={projectId}
               canAccess={canAccessDataExport}
               isActive={isActive}
