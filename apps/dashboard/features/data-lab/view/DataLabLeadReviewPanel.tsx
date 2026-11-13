@@ -10,17 +10,7 @@ import {
   CardTitle,
 } from "@workspace/ui/components/card"
 import { cn } from "@workspace/ui/lib/utils"
-import type {
-  DataExportDashboardData,
-  DataExportLeadRow,
-} from "@/features/data-export/model/data-export"
-import {
-  DATA_LAB_LEADS_SCAN_MAX_PAGES,
-  DATA_LAB_LEADS_SCAN_PAGE_SIZE,
-  loadDataLabLeadsScan,
-  peekDataLabLeadsScanCache,
-} from "@/features/data-lab/model/data-lab-leads-scan"
-import { leadHasElevatedRisk } from "@/features/data-lab/model/lead-review"
+import type { DataExportLeadRow } from "@/features/data-export/model/data-export"
 import { LeadReviewTable } from "@/features/data-lab/view/LeadReviewTable"
 import {
   overviewAnalyticCardHeaderClassName,
@@ -31,6 +21,7 @@ import { overviewCardPointerFocusResetClassName } from "@/features/overview/view
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
 
 const VIEW_PAGE_SIZE = 50
 
@@ -43,112 +34,95 @@ function formatCount(value: number): string {
 type DataLabLeadReviewPanelProps = {
   projectId: string
   canAccess: boolean
-  data: DataExportDashboardData | null
-  isLoading: boolean
   isActive: boolean
-  onDataChange?: (data: DataExportDashboardData) => void
 }
 
 export function DataLabLeadReviewPanel({
   projectId,
   canAccess,
-  data: initialData,
-  isLoading: isTabLoading,
   isActive,
-  onDataChange,
 }: DataLabLeadReviewPanelProps) {
   const { dateRangeId, customRange } = useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
   const { segmentId } = useDashboardSegmentFilter()
-  const scanInput = useMemo(
-    () => ({
-      projectId,
-      rangeId: dateRangeId,
-      customRange,
-      utmFilter,
-      segmentId,
-    }),
+  const [elevatedLeads, setElevatedLeads] = useState<DataExportLeadRow[]>([])
+  const [totalElevated, setTotalElevated] = useState(0)
+  const [viewOffset, setViewOffset] = useState(0)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const filterKey = useMemo(
+    () =>
+      buildAnalyticsApiPath(
+        `/api/landing-pages/${encodeURIComponent(projectId)}/elevated-leads`,
+        {
+          rangeId: dateRangeId,
+          customRange,
+          utmFilter,
+          segmentId,
+        }
+      ),
     [customRange, dateRangeId, projectId, segmentId, utmFilter]
   )
 
-  const [elevatedLeads, setElevatedLeads] = useState<DataExportLeadRow[]>([])
-  const [scannedLeadTotal, setScannedLeadTotal] = useState(0)
-  const [pagesScanned, setPagesScanned] = useState(0)
-  const [viewOffset, setViewOffset] = useState(0)
-  const [isBlockingLoad, setIsBlockingLoad] = useState(false)
-  const [fromCache, setFromCache] = useState(false)
+  useEffect(() => {
+    setViewOffset(0)
+  }, [filterKey])
 
-  const applyScanLeads = useCallback((leads: DataExportLeadRow[]) => {
-    setElevatedLeads(leads.filter(leadHasElevatedRisk))
-  }, [])
-
-  const loadElevatedLeads = useCallback(
-    async (signal?: AbortSignal) => {
-      const cached = peekDataLabLeadsScanCache(scanInput)
-      if (cached) {
-        applyScanLeads(cached.leads)
-        setScannedLeadTotal(cached.total)
-        setPagesScanned(cached.pagesScanned)
-        setFromCache(true)
-        setViewOffset(0)
-        setIsBlockingLoad(false)
-      } else {
-        setIsBlockingLoad(true)
-        setFromCache(false)
-        setViewOffset(0)
-      }
-
+  const loadPage = useCallback(
+    async (offset: number, signal?: AbortSignal) => {
+      setIsLoading(true)
+      setError(null)
       try {
-        const result = await loadDataLabLeadsScan(scanInput, {
-          signal,
-          onProgress: (partial) => {
-            if (signal?.aborted) return
-            applyScanLeads(partial.leads)
-            setScannedLeadTotal(partial.total)
-            setPagesScanned(partial.pagesScanned)
-          },
-        })
-        if (signal?.aborted) return
-        applyScanLeads(result.leads)
-        setScannedLeadTotal(result.total)
-        setPagesScanned(result.pagesScanned)
-        setFromCache(result.fromCache && result.addedCount === 0)
-        if (result.lastPage) onDataChange?.(result.lastPage)
-      } catch (error) {
-        if (signal?.aborted) return
-        if (error instanceof Error && error.name === "AbortError") return
-        if (!cached) {
-          setElevatedLeads([])
-          setScannedLeadTotal(0)
-          setPagesScanned(0)
+        const path = buildAnalyticsApiPath(
+          `/api/landing-pages/${encodeURIComponent(projectId)}/elevated-leads`,
+          {
+            rangeId: dateRangeId,
+            customRange,
+            utmFilter,
+            segmentId,
+            extra: {
+              limit: String(VIEW_PAGE_SIZE),
+              offset: String(offset),
+            },
+          }
+        )
+        const res = await fetch(path, { cache: "no-store", signal })
+        if (!res.ok) throw new Error(`elevated-leads ${res.status}`)
+        const json = (await res.json()) as {
+          leads?: DataExportLeadRow[]
+          total?: number
         }
+        if (signal?.aborted) return
+        setElevatedLeads(json.leads ?? [])
+        setTotalElevated(Number(json.total ?? 0) || 0)
+      } catch (err) {
+        if (signal?.aborted) return
+        if (err instanceof Error && err.name === "AbortError") return
+        setError("Failed to load elevated-risk leads.")
+        setElevatedLeads([])
+        setTotalElevated(0)
       } finally {
-        if (!signal?.aborted) setIsBlockingLoad(false)
+        if (!signal?.aborted) setIsLoading(false)
       }
     },
-    [applyScanLeads, onDataChange, scanInput]
+    [customRange, dateRangeId, projectId, segmentId, utmFilter]
   )
 
   useEffect(() => {
     if (!isActive || !canAccess) return
     const controller = new AbortController()
-    void loadElevatedLeads(controller.signal)
+    void loadPage(viewOffset, controller.signal)
     return () => controller.abort()
-  }, [canAccess, isActive, loadElevatedLeads])
+  }, [canAccess, isActive, loadPage, viewOffset])
 
-  const viewRows = useMemo(
-    () => elevatedLeads.slice(viewOffset, viewOffset + VIEW_PAGE_SIZE),
-    [elevatedLeads, viewOffset]
-  )
-  const totalElevated = elevatedLeads.length
   const currentPage =
     totalElevated === 0 ? 1 : Math.floor(viewOffset / VIEW_PAGE_SIZE) + 1
   const totalPages = Math.max(1, Math.ceil(totalElevated / VIEW_PAGE_SIZE) || 1)
   const rangeStart = totalElevated === 0 ? 0 : viewOffset + 1
-  const rangeEnd = Math.min(viewOffset + viewRows.length, totalElevated)
+  const rangeEnd = Math.min(viewOffset + elevatedLeads.length, totalElevated)
   const canGoPrev = viewOffset > 0
   const canGoNext = viewOffset + VIEW_PAGE_SIZE < totalElevated
-  const showLoading = isTabLoading || isBlockingLoad
 
   if (!canAccess) {
     return (
@@ -190,32 +164,14 @@ export function DataLabLeadReviewPanel({
                 Lead review
               </CardTitle>
               <p className="mt-0.5 text-sm text-muted-foreground">
-                {showLoading
-                  ? `Scanning for elevated-risk leads… ${formatCount(totalElevated)} found so far`
-                  : totalElevated > 0
-                    ? `${formatCount(totalElevated)} elevated-risk sessions — assessments are informational only`
-                    : "No elevated-risk leads in this Data Lab range / UTM / segment"}
+                {isLoading
+                  ? "Loading elevated-risk leads…"
+                  : error
+                    ? error
+                    : totalElevated > 0
+                      ? `${formatCount(totalElevated)} elevated-risk sessions — assessments are informational only`
+                      : "No elevated-risk leads in this Data Lab range / UTM / segment"}
               </p>
-              {!showLoading && scannedLeadTotal > 0 ? (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {fromCache ? "Cached scan · " : ""}
-                  Scanned {formatCount(pagesScanned)} page
-                  {pagesScanned === 1 ? "" : "s"} (
-                  {formatCount(
-                    Math.min(
-                      pagesScanned * DATA_LAB_LEADS_SCAN_PAGE_SIZE,
-                      scannedLeadTotal
-                    )
-                  )}{" "}
-                  of {formatCount(scannedLeadTotal)} leads)
-                  {pagesScanned >= DATA_LAB_LEADS_SCAN_MAX_PAGES &&
-                  pagesScanned * DATA_LAB_LEADS_SCAN_PAGE_SIZE <
-                    scannedLeadTotal
-                    ? " — scan capped; narrow the date range if needed"
-                    : ""}
-                  {fromCache ? " · refreshes about every 2 minutes" : ""}
-                </p>
-              ) : null}
             </div>
           </div>
           <p className="shrink-0 text-sm text-muted-foreground tabular-nums">
@@ -225,18 +181,18 @@ export function DataLabLeadReviewPanel({
         <CardContent
           className={cn(
             "overflow-hidden p-0",
-            showLoading && "pointer-events-none opacity-60"
+            isLoading && "pointer-events-none opacity-60"
           )}
         >
           <LeadReviewTable
-            rows={viewRows}
+            rows={elevatedLeads}
             projectId={projectId}
             pageOffset={viewOffset}
             emptyMessage={
-              showLoading
-                ? "Scanning leads for elevated risk…"
-                : initialData?.analyticsUnavailable
-                  ? "Lead data is unavailable for this project."
+              isLoading
+                ? "Loading elevated-risk leads…"
+                : error
+                  ? error
                   : "No elevated-risk leads for the current Data Lab filters. Check the Leads table for all submissions."
             }
           />
@@ -253,7 +209,7 @@ export function DataLabLeadReviewPanel({
                 variant="outline"
                 size="sm"
                 className="h-8 rounded-lg border-neutral-200 bg-white px-2.5 shadow-xs"
-                disabled={!canGoPrev || showLoading}
+                disabled={!canGoPrev || isLoading}
                 onClick={() =>
                   setViewOffset((value) => Math.max(0, value - VIEW_PAGE_SIZE))
                 }
@@ -270,7 +226,7 @@ export function DataLabLeadReviewPanel({
                 variant="outline"
                 size="sm"
                 className="h-8 rounded-lg border-neutral-200 bg-white px-2.5 shadow-xs"
-                disabled={!canGoNext || showLoading}
+                disabled={!canGoNext || isLoading}
                 onClick={() => setViewOffset((value) => value + VIEW_PAGE_SIZE)}
                 aria-label="Next page"
               >

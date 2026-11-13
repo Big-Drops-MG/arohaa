@@ -394,10 +394,7 @@ export function DataLabDashboard({
             <DataLabLeadReviewPanel
               projectId={projectId}
               canAccess={canAccessDataExport}
-              data={exportData}
-              isLoading={leadsLoading}
               isActive={isActive}
-              onDataChange={handleExportDataChange}
             />
           ) : null}
         </TabsContent>
