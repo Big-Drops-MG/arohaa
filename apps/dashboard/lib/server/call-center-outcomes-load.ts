@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm"
+import { and, desc, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm"
 import {
   callCenterLeadOutcomes,
   callCenterSourceRollups,
@@ -6,15 +6,25 @@ import {
   db,
 } from "@workspace/database"
 import {
+  normalizeDashboardUtmFilter,
+  type DashboardUtmFilter,
+} from "@/features/dashboard/model/utm-attribution-filter"
+import {
   normalizeCallCenterSid,
   parseCallCenterCsv,
   type CallCenterOutcomesPayload,
   type CallCenterSourceRollupRow,
   type CallCenterUploadSummary,
 } from "@/features/data-lab/model/call-center-csv"
+import {
+  parseTrafficRangeId,
+  type DashboardCustomRange,
+} from "@/features/traffic/model/traffic-range"
+import { resolveUtmFilterForActor } from "@/lib/server/analytics-utm-params"
 import { canAccessLeadsForLandingPage } from "@/lib/server/data-export-acl"
 import { requireLandingPageActor } from "@/lib/server/landing-auth"
 import { getActiveLandingPageForActor } from "@/lib/server/landing-pages-store"
+import { resolveNotificationCenterAnalyticsWindow } from "@/lib/server/web-push-analytics-range"
 
 const INSERT_CHUNK = 400
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024
@@ -44,13 +54,40 @@ function emptyTotals() {
 }
 
 export async function loadCallCenterOutcomes(
-  landingPagePublicId: string
+  landingPagePublicId: string,
+  rangeIdRaw?: string | null,
+  customRange?: DashboardCustomRange | null,
+  utmFilter?: DashboardUtmFilter | null
 ): Promise<
   | { ok: true; data: CallCenterOutcomesPayload }
   | { ok: false; status: number; error: string }
 > {
   const access = await requireLandingAccess(landingPagePublicId)
   if (!access.ok) return access
+
+  const rangeId = parseTrafficRangeId(rangeIdRaw)
+  const window = resolveNotificationCenterAnalyticsWindow(
+    rangeId,
+    new Date(),
+    customRange
+  )
+  const scopedUtm = await resolveUtmFilterForActor(
+    access.actor,
+    landingPagePublicId,
+    utmFilter
+  )
+  const normalizedUtm = normalizeDashboardUtmFilter(scopedUtm)
+  const sidFilter = normalizedUtm?.utm_source?.filter(Boolean) ?? []
+
+  const outcomeFilters = [
+    eq(callCenterLeadOutcomes.landingPageId, access.row.id),
+    isNotNull(callCenterLeadOutcomes.occurredAt),
+    gte(callCenterLeadOutcomes.occurredAt, window.start),
+    lt(callCenterLeadOutcomes.occurredAt, window.end),
+  ]
+  if (sidFilter.length > 0) {
+    outcomeFilters.push(inArray(callCenterLeadOutcomes.sid, sidFilter))
+  }
 
   const [uploads, rollups] = await Promise.all([
     db
@@ -69,30 +106,38 @@ export async function loadCallCenterOutcomes(
       .limit(20),
     db
       .select({
-        sid: callCenterSourceRollups.sid,
-        leads: callCenterSourceRollups.leads,
-        contacted: callCenterSourceRollups.contacted,
-        transferred: callCenterSourceRollups.transferred,
-        duration15m: callCenterSourceRollups.duration15m,
-        duration20m: callCenterSourceRollups.duration20m,
-        duplicates: callCenterSourceRollups.duplicates,
+        sid: sql<string>`CASE WHEN ${callCenterLeadOutcomes.sid} = '' THEN '—' ELSE ${callCenterLeadOutcomes.sid} END`,
+        leads: sql<number>`count(*)::int`,
+        contacted: sql<number>`sum(CASE WHEN ${callCenterLeadOutcomes.ccContacted} THEN 1 ELSE 0 END)::int`,
+        transferred: sql<number>`sum(CASE WHEN ${callCenterLeadOutcomes.ccTransferred} THEN 1 ELSE 0 END)::int`,
+        duration15m: sql<number>`sum(CASE WHEN ${callCenterLeadOutcomes.duration15m} THEN 1 ELSE 0 END)::int`,
+        duration20m: sql<number>`sum(CASE WHEN ${callCenterLeadOutcomes.duration20m} THEN 1 ELSE 0 END)::int`,
+        duplicates: sql<number>`sum(CASE WHEN ${callCenterLeadOutcomes.duplicate} THEN 1 ELSE 0 END)::int`,
       })
-      .from(callCenterSourceRollups)
-      .where(eq(callCenterSourceRollups.landingPageId, access.row.id))
-      .orderBy(desc(callCenterSourceRollups.leads)),
+      .from(callCenterLeadOutcomes)
+      .where(and(...outcomeFilters))
+      .groupBy(
+        sql`CASE WHEN ${callCenterLeadOutcomes.sid} = '' THEN '—' ELSE ${callCenterLeadOutcomes.sid} END`
+      )
+      .orderBy(sql`count(*) DESC`),
   ])
 
-  const sources: CallCenterSourceRollupRow[] = rollups.map((row) => ({
-    sid: row.sid,
-    leads: row.leads,
-    contacted: row.contacted,
-    transferred: row.transferred,
-    duration15m: row.duration15m,
-    duration20m: row.duration20m,
-    duplicates: row.duplicates,
-    contactRate: row.leads > 0 ? row.contacted / row.leads : 0,
-    transferRate: row.leads > 0 ? row.transferred / row.leads : 0,
-  }))
+  const sources: CallCenterSourceRollupRow[] = rollups.map((row) => {
+    const leads = Number(row.leads) || 0
+    const contacted = Number(row.contacted) || 0
+    const transferred = Number(row.transferred) || 0
+    return {
+      sid: row.sid || "—",
+      leads,
+      contacted,
+      transferred,
+      duration15m: Number(row.duration15m) || 0,
+      duration20m: Number(row.duration20m) || 0,
+      duplicates: Number(row.duplicates) || 0,
+      contactRate: leads > 0 ? contacted / leads : 0,
+      transferRate: leads > 0 ? transferred / leads : 0,
+    }
+  })
 
   const totals = sources.reduce((acc, row) => {
     acc.leads += row.leads

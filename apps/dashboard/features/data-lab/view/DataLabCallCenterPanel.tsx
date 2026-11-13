@@ -20,6 +20,9 @@ import {
   overviewSectionHeadingClassName,
 } from "@/features/overview/view/overview-card-density"
 import { overviewCardPointerFocusResetClassName } from "@/features/overview/view/overview-focus-styles"
+import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
+import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
 
 const thClassName =
   "px-4 py-3 text-right text-xs font-semibold tracking-wide whitespace-nowrap text-muted-foreground"
@@ -45,6 +48,8 @@ export function DataLabCallCenterPanel({
   canAccess,
   isActive,
 }: DataLabCallCenterPanelProps) {
+  const { dateRangeId, customRange } = useDashboardDateRange()
+  const { utmFilter } = useDashboardUtmFilter()
   const inputRef = useRef<HTMLInputElement>(null)
   const [data, setData] = useState<CallCenterOutcomesPayload | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -57,10 +62,15 @@ export function DataLabCallCenterPanel({
       setIsLoading(true)
       setError(null)
       try {
-        const res = await fetch(
+        const path = buildAnalyticsApiPath(
           `/api/landing-pages/${encodeURIComponent(projectId)}/call-center-outcomes`,
-          { cache: "no-store", signal }
+          {
+            rangeId: dateRangeId,
+            customRange,
+            utmFilter,
+          }
         )
+        const res = await fetch(path, { cache: "no-store", signal })
         if (!res.ok) throw new Error(`load ${res.status}`)
         const json = (await res.json()) as CallCenterOutcomesPayload
         if (signal?.aborted) return
@@ -74,7 +84,7 @@ export function DataLabCallCenterPanel({
         if (!signal?.aborted) setIsLoading(false)
       }
     },
-    [projectId]
+    [customRange, dateRangeId, projectId, utmFilter]
   )
 
   useEffect(() => {
@@ -166,7 +176,8 @@ export function DataLabCallCenterPanel({
               </CardTitle>
               <p className="mt-0.5 text-sm text-muted-foreground">
                 Upload call-center lead logs to see contact and transfer rates
-                by SID (utm_source). Aggregates are precomputed for fast loads.
+                by SID (utm_source). Totals follow the dashboard date and source
+                filters.
               </p>
               {uploadMessage ? (
                 <p className="mt-1 text-xs text-muted-foreground">
@@ -247,7 +258,9 @@ export function DataLabCallCenterPanel({
             <p className="px-4 py-10 text-center text-sm text-muted-foreground">
               {isLoading
                 ? "Loading call outcomes…"
-                : "No call-center uploads yet. Upload a CSV to populate this table."}
+                : data?.uploads && data.uploads.length > 0
+                  ? "No call outcomes in the selected date range or source filter."
+                  : "No call-center uploads yet. Upload a CSV to populate this table."}
             </p>
           ) : (
             <div className="overflow-x-auto">

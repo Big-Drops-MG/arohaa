@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server"
+import { parseDashboardCustomRange } from "@/features/traffic/model/traffic-range"
+import { parseUtmFilterFromSearchParams } from "@/lib/server/analytics-utm-params"
 import {
   ingestCallCenterCsv,
   loadCallCenterOutcomes,
 } from "@/lib/server/call-center-outcomes-load"
 import { route } from "@/lib/server/route"
+import { MAX_DASHBOARD_CUSTOM_SPAN_DAYS } from "@/lib/server/route-query"
 
 export const GET = route(
   {
@@ -12,9 +15,21 @@ export const GET = route(
     tab: "data-lab",
     section: "leads",
     rateLimit: "landing",
+    query: {
+      maxCustomRangeDays: MAX_DASHBOARD_CUSTOM_SPAN_DAYS,
+    },
   },
-  async ({ params }) => {
-    const res = await loadCallCenterOutcomes(params.publicId!)
+  async ({ params, request }) => {
+    const { searchParams } = new URL(request.url)
+    const res = await loadCallCenterOutcomes(
+      params.publicId!,
+      searchParams.get("range_id"),
+      parseDashboardCustomRange(
+        searchParams.get("from"),
+        searchParams.get("to")
+      ),
+      parseUtmFilterFromSearchParams(searchParams)
+    )
     if (!res.ok) {
       return NextResponse.json({ error: res.error }, { status: res.status })
     }
