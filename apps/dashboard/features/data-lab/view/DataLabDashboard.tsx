@@ -385,7 +385,6 @@ export function DataLabDashboard({
               projectId={projectId}
               canAccess={canAccessDataExport}
               isActive={isActive}
-              onDataChange={handleExportDataChange}
             />
           ) : null}
         </TabsContent>

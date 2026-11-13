@@ -13,6 +13,7 @@ import {
 import {
   getFunnelLeads,
 } from '../services/analytics-funnel-leads.service.js'
+import { getLandingPageSourceTrust } from '../services/analytics-source-trust.service.js'
 import { getSessionInteractionLog } from '../services/analytics-interaction-log.service.js'
 import { getWarehouseSessionEvidence } from '../services/warehouse.service.js'
 import { landingPageHasRedirect } from '../lib/landing-redirect.js'
@@ -698,6 +699,71 @@ export async function analyticsRoutes(server: FastifyInstance) {
           }),
         logLabel: 'analytics funnel leads query ok',
         logContext: { range_id: parsed.rangeId, returning_only: returningOnly },
+      })
+    },
+  )
+
+  server.get<{
+    Querystring: {
+      workspace_id: string
+      range_id?: string
+      from?: string
+      to?: string
+      utm_source?: string
+      utm_s1?: string
+      utm_dim?: string
+      utm_value?: string
+      segment_id?: string
+    }
+  }>(
+    '/v1/analytics/source-trust',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['workspace_id'],
+          properties: {
+            workspace_id: { type: 'string', format: 'uuid' },
+            range_id: rangeIdSchema,
+            ...customRangeSchemaProps,
+            ...utmFilterSchemaProps,
+            segment_id: { type: 'string', format: 'uuid' },
+          },
+        },
+      },
+      config: ANALYTICS_RATE_LIMIT,
+    },
+    async (request, reply) => {
+      const { workspace_id } = request.query
+      const parsed = parseRangeQuery(request.query)
+      if (!parsed.ok) {
+        return reply.code(400).send({ error: parsed.error })
+      }
+      const parsedUtm = parseAnalyticsUtmFilter(request.query)
+      const segmentFilter = await resolveSegmentFilter(
+        request.query.segment_id,
+        request.query.workspace_id,
+      )
+      const utmFilter = parsedUtm || {}
+      if (segmentFilter) {
+        utmFilter.segmentSql = segmentFilter.sql
+        utmFilter.segmentParams = segmentFilter.params
+      }
+
+      await sendAnalyticsQuery({
+        request,
+        reply,
+        workspaceId: workspace_id,
+        guard: guardFunnelLeadsRequest,
+        run: () =>
+          getLandingPageSourceTrust({
+            workspaceId: workspace_id,
+            rangeId: parsed.rangeId,
+            custom: parsed.custom,
+            utmFilter,
+          }),
+        logLabel: 'analytics source trust query ok',
+        logContext: { range_id: parsed.rangeId },
       })
     },
   )

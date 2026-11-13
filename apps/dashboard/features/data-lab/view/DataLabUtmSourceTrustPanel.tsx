@@ -9,20 +9,7 @@ import {
   CardTitle,
 } from "@workspace/ui/components/card"
 import { cn } from "@workspace/ui/lib/utils"
-import type {
-  DataExportDashboardData,
-  DataExportLeadRow,
-} from "@/features/data-export/model/data-export"
-import {
-  DATA_LAB_LEADS_SCAN_MAX_PAGES,
-  DATA_LAB_LEADS_SCAN_PAGE_SIZE,
-  loadDataLabLeadsScan,
-  peekDataLabLeadsScanCache,
-} from "@/features/data-lab/model/data-lab-leads-scan"
-import {
-  computeUtmSourceTrustRows,
-  type UtmSourceTrustRow,
-} from "@/features/data-lab/model/utm-source-trust"
+import type { UtmSourceTrustRow } from "@/features/data-lab/model/utm-source-trust"
 import {
   overviewAnalyticCardHeaderClassName,
   overviewAnalyticCardShellClassName,
@@ -32,6 +19,7 @@ import { overviewCardPointerFocusResetClassName } from "@/features/overview/view
 import { useDashboardDateRange } from "@/hooks/use-dashboard-date-range"
 import { useDashboardSegmentFilter } from "@/hooks/use-dashboard-segment-filter"
 import { useDashboardUtmFilter } from "@/hooks/use-dashboard-utm-filter"
+import { buildAnalyticsApiPath } from "@/lib/dashboard/analytics-query"
 
 const thClassName =
   "px-4 py-3 text-right text-xs font-semibold tracking-wide whitespace-nowrap text-muted-foreground"
@@ -56,90 +44,67 @@ type DataLabUtmSourceTrustPanelProps = {
   projectId: string
   canAccess: boolean
   isActive: boolean
-  onDataChange?: (data: DataExportDashboardData) => void
 }
 
 export function DataLabUtmSourceTrustPanel({
   projectId,
   canAccess,
   isActive,
-  onDataChange,
 }: DataLabUtmSourceTrustPanelProps) {
   const { dateRangeId, customRange } = useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
   const { segmentId } = useDashboardSegmentFilter()
-  const scanInput = useMemo(
-    () => ({
-      projectId,
-      rangeId: dateRangeId,
-      customRange,
-      utmFilter,
-      segmentId,
-    }),
+  const requestPath = useMemo(
+    () =>
+      buildAnalyticsApiPath(
+        `/api/landing-pages/${encodeURIComponent(projectId)}/source-trust`,
+        {
+          rangeId: dateRangeId,
+          customRange,
+          utmFilter,
+          segmentId,
+        }
+      ),
     [customRange, dateRangeId, projectId, segmentId, utmFilter]
   )
 
-  const [leads, setLeads] = useState<DataExportLeadRow[]>([])
-  const [scannedLeadTotal, setScannedLeadTotal] = useState(0)
-  const [pagesScanned, setPagesScanned] = useState(0)
+  const [rows, setRows] = useState<UtmSourceTrustRow[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [fromCache, setFromCache] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const loadLeads = useCallback(
+  const loadRows = useCallback(
     async (signal?: AbortSignal) => {
-      const cached = peekDataLabLeadsScanCache(scanInput)
-      if (cached) {
-        setLeads(cached.leads)
-        setScannedLeadTotal(cached.total)
-        setPagesScanned(cached.pagesScanned)
-        setFromCache(true)
-        setError(null)
-        setIsLoading(false)
-      } else {
-        setIsLoading(true)
-        setFromCache(false)
-        setError(null)
-      }
-
+      setIsLoading(true)
+      setError(null)
       try {
-        const result = await loadDataLabLeadsScan(scanInput, {
+        const res = await fetch(requestPath, {
+          cache: "no-store",
           signal,
-          onProgress: (partial) => {
-            if (signal?.aborted) return
-            setLeads(partial.leads)
-            setScannedLeadTotal(partial.total)
-            setPagesScanned(partial.pagesScanned)
-          },
         })
-        if (signal?.aborted) return
-        setLeads(result.leads)
-        setScannedLeadTotal(result.total)
-        setPagesScanned(result.pagesScanned)
-        setFromCache(result.fromCache && result.addedCount === 0)
-        if (result.lastPage) onDataChange?.(result.lastPage)
-      } catch (error) {
-        if (signal?.aborted) return
-        if (error instanceof Error && error.name === "AbortError") return
-        if (!cached) {
-          setError("Failed to load leads for source trust.")
-          setLeads([])
+        if (!res.ok) {
+          throw new Error(`source-trust ${res.status}`)
         }
+        const json = (await res.json()) as { sources?: UtmSourceTrustRow[] }
+        if (signal?.aborted) return
+        setRows(json.sources ?? [])
+      } catch (err) {
+        if (signal?.aborted) return
+        if (err instanceof Error && err.name === "AbortError") return
+        setError("Failed to load source trust.")
+        setRows([])
       } finally {
         if (!signal?.aborted) setIsLoading(false)
       }
     },
-    [onDataChange, scanInput]
+    [requestPath]
   )
 
   useEffect(() => {
     if (!isActive || !canAccess) return
     const controller = new AbortController()
-    void loadLeads(controller.signal)
+    void loadRows(controller.signal)
     return () => controller.abort()
-  }, [canAccess, isActive, loadLeads])
-
-  const rows = useMemo(() => computeUtmSourceTrustRows(leads), [leads])
+  }, [canAccess, isActive, loadRows])
 
   if (!canAccess) {
     return (
@@ -180,33 +145,10 @@ export function DataLabUtmSourceTrustPanel({
               Source trust
             </CardTitle>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Per-source trust and ZIP/IP location mismatch for the current Data
-              Lab date range, UTM, and segment filters. Cluster uses the 7d and
-              30d mismatch rate within those windows (≥50%, n≥10).
+              Per-source trust and ZIP/IP location mismatch for this landing
+              page with the current Data Lab date range, UTM, and segment
+              filters. Cluster uses the 7d and 30d mismatch rate (≥50%, n≥10).
             </p>
-            {isLoading ? (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Scanning leads… {formatCount(leads.length)} loaded
-              </p>
-            ) : scannedLeadTotal > 0 ? (
-              <p className="mt-1 text-xs text-muted-foreground">
-                {fromCache ? "Cached scan · " : ""}
-                Scanned {formatCount(pagesScanned)} page
-                {pagesScanned === 1 ? "" : "s"} (
-                {formatCount(
-                  Math.min(
-                    pagesScanned * DATA_LAB_LEADS_SCAN_PAGE_SIZE,
-                    scannedLeadTotal
-                  )
-                )}{" "}
-                of {formatCount(scannedLeadTotal)} leads)
-                {pagesScanned >= DATA_LAB_LEADS_SCAN_MAX_PAGES &&
-                pagesScanned * DATA_LAB_LEADS_SCAN_PAGE_SIZE < scannedLeadTotal
-                  ? " — scan capped; narrow the date range if needed"
-                  : ""}
-                {fromCache ? " · refreshes about every 2 minutes" : ""}
-              </p>
-            ) : null}
           </div>
         </div>
         <p className="shrink-0 text-sm text-muted-foreground tabular-nums">
@@ -226,7 +168,7 @@ export function DataLabUtmSourceTrustPanel({
         ) : rows.length === 0 ? (
           <p className="px-4 py-10 text-center text-sm text-muted-foreground">
             {isLoading
-              ? "Scanning leads for source trust…"
+              ? "Loading source trust…"
               : "No sources in this Data Lab range yet."}
           </p>
         ) : (
