@@ -271,6 +271,11 @@ export type LeadTierTrustInput = {
   score?: number | null
 }
 
+export type ResolveLeadTierOptions = {
+  fraud?: LeadTierTrustInput | null
+  formSubmitted?: boolean
+}
+
 const FRAUD_BELOW_TRUST = 50
 
 export function passesLeadTierTrustGate(
@@ -293,16 +298,29 @@ export function passesLeadTierTrustGate(
 export function resolveLeadTier(
   stored: unknown,
   fields: Record<string, string>,
-  fraud?: LeadTierTrustInput | null
+  options?: ResolveLeadTierOptions | LeadTierTrustInput | null
 ): LeadTier {
+  const opts = normalizeResolveOptions(options)
+  if (opts.formSubmitted === false) return "standard"
+
   const profile =
     stored === "premium" || stored === "standard"
       ? stored
       : classifyLeadTier(fields)
-  if (profile === "premium" && !passesLeadTierTrustGate(fraud)) {
+  if (profile === "premium" && !passesLeadTierTrustGate(opts.fraud)) {
     return "standard"
   }
   return profile
+}
+
+function normalizeResolveOptions(
+  options?: ResolveLeadTierOptions | LeadTierTrustInput | null
+): ResolveLeadTierOptions {
+  if (!options) return {}
+  if ("fraud" in options || "formSubmitted" in options) {
+    return options as ResolveLeadTierOptions
+  }
+  return { fraud: options as LeadTierTrustInput }
 }
 
 function formatUtmSource(raw: string): string {

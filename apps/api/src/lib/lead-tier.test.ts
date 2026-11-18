@@ -102,6 +102,20 @@ describe('resolveLeadTier', () => {
       }),
     ).toBe('premium')
   })
+
+  it('forces standard when the form was not submitted', () => {
+    expect(
+      resolveLeadTier('premium', premiumFields, {
+        formSubmitted: false,
+        fraud: {
+          scoreAvailable: true,
+          label: 'legit',
+          effectiveLabel: 'legit',
+          score: 90,
+        },
+      }),
+    ).toBe('standard')
+  })
 })
 
 describe('leadTierForIngestEvent', () => {
@@ -126,7 +140,12 @@ describe('leadTierForIngestEvent', () => {
     ).toBe('standard')
   })
 
-  it('leaves non-lead events and empty forms unclassified', () => {
+  it('leaves step/view events and empty forms unclassified', () => {
+    expect(
+      leadTierForIngestEvent('form_step_complete', {
+        fields: { homeowner: 'Yes', insured: 'Yes', vehicles: '2' },
+      }),
+    ).toBe('')
     expect(
       leadTierForIngestEvent('page_view', {
         fields: { homeowner: 'Yes', insured: 'Yes', vehicles: '2' },

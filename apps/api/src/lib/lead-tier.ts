@@ -15,18 +15,18 @@ export type LeadTierTrustInput = {
   score?: number | null
 }
 
+export type ResolveLeadTierOptions = {
+  fraud?: LeadTierTrustInput | null
+  formSubmitted?: boolean
+}
+
 export const PREMIUM_LEAD_CRITERIA: readonly LeadQualityAttributeId[] = [
   'homeowner',
   'currentlyInsured',
   'multiVehicle',
 ]
 
-const LEAD_TIER_EVENT_NAMES = new Set([
-  'form_success',
-  'form_submit',
-  'form_step_complete',
-  'form_step_view',
-])
+const LEAD_TIER_SUBMIT_EVENTS = new Set(['form_success', 'form_submit'])
 
 export function isLeadTier(value: unknown): value is LeadTier {
   return value === 'premium' || value === 'standard'
@@ -61,13 +61,29 @@ export function passesLeadTierTrustGate(
 export function resolveLeadTier(
   stored: unknown,
   fields: Record<string, string>,
-  fraud?: LeadTierTrustInput | null,
+  options?: ResolveLeadTierOptions | LeadTierTrustInput | null,
 ): LeadTier {
+  const opts = normalizeResolveOptions(options)
+  if (opts.formSubmitted === false) return 'standard'
+
   const profile = isLeadTier(stored) ? stored : classifyLeadTier(fields)
-  if (profile === 'premium' && !passesLeadTierTrustGate(fraud)) {
+  if (profile === 'premium' && !passesLeadTierTrustGate(opts.fraud)) {
     return 'standard'
   }
   return profile
+}
+
+function normalizeResolveOptions(
+  options?: ResolveLeadTierOptions | LeadTierTrustInput | null,
+): ResolveLeadTierOptions {
+  if (!options) return {}
+  if (
+    'fraud' in options ||
+    'formSubmitted' in options
+  ) {
+    return options as ResolveLeadTierOptions
+  }
+  return { fraud: options as LeadTierTrustInput }
 }
 
 function scalarFieldMap(source: unknown): Record<string, string> {
@@ -89,7 +105,7 @@ export function leadTierForIngestEvent(
   eventName: string,
   props: Record<string, unknown> | undefined,
 ): LeadTier | '' {
-  if (!LEAD_TIER_EVENT_NAMES.has(eventName) || !props) return ''
+  if (!LEAD_TIER_SUBMIT_EVENTS.has(eventName) || !props) return ''
   const blob = props[OPAQUE_PROP_KEY]
   const fromBlob =
     typeof blob === 'string' && blob.length > 0

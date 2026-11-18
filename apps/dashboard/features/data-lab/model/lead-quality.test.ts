@@ -148,4 +148,18 @@ describe("classifyLeadTier", () => {
       })
     ).toBe("standard")
   })
+
+  it("forces standard when the form was not submitted", () => {
+    expect(
+      resolveLeadTier("premium", premiumFields, {
+        formSubmitted: false,
+        fraud: {
+          scoreAvailable: true,
+          label: "legit",
+          effectiveLabel: "legit",
+          score: 90,
+        },
+      })
+    ).toBe("standard")
+  })
 })

@@ -366,7 +366,9 @@ function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
     formSubmitted,
     returnCount,
     fields: fieldsWithoutReserved(fields),
-    leadTier: resolveLeadTier(row.lead_tier, fields),
+    leadTier: resolveLeadTier(row.lead_tier, fields, {
+      formSubmitted,
+    }),
     fraud: {
       score: null,
       scoreAvailable: false,
@@ -1760,7 +1762,9 @@ function toSnapshotLead(lead: FunnelLeadRow): DisplayableLeadSnapshotRow {
 function fromSnapshotLead(lead: DisplayableLeadSnapshotRow): FunnelLeadRow {
   return {
     ...lead,
-    leadTier: resolveLeadTier(lead.leadTier, lead.fields),
+    leadTier: resolveLeadTier(lead.leadTier, lead.fields, {
+      formSubmitted: lead.formSubmitted,
+    }),
     fraud: {
       score: null,
       scoreAvailable: false,
@@ -1927,7 +1931,10 @@ async function enrichFunnelLeadsPage({
 
   return pageLeads.map((lead) => ({
     ...lead,
-    leadTier: resolveLeadTier(lead.leadTier, lead.fields, lead.fraud),
+    leadTier: resolveLeadTier(lead.leadTier, lead.fields, {
+      fraud: lead.fraud,
+      formSubmitted: lead.formSubmitted,
+    }),
   }))
 }
 

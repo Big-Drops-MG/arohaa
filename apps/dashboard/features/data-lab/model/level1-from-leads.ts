@@ -69,6 +69,9 @@ export function mapDataExportLeadRow(
       : {}
 
   const fraud = mapLeadFraud(raw.fraud)
+  const formSubmitted = isLeadFormSubmittedFlag(
+    raw.formSubmitted ?? raw.form_submitted
+  )
   return {
     sessionId: String(raw.sessionId ?? raw.session_id ?? ""),
     macId: String(raw.macId ?? raw.mac_id ?? ""),
@@ -85,9 +88,7 @@ export function mapDataExportLeadRow(
     utmId: String(raw.utmId ?? raw.utm_id ?? ""),
     utmS1: String(raw.utmS1 ?? raw.utm_s1 ?? ""),
     trustedFormUrl: String(raw.trustedFormUrl ?? raw.trusted_form_url ?? ""),
-    formSubmitted: isLeadFormSubmittedFlag(
-      raw.formSubmitted ?? raw.form_submitted
-    ),
+    formSubmitted,
     returnCount: (() => {
       const value = Number(raw.returnCount ?? raw.return_count ?? 0)
       return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
@@ -96,7 +97,10 @@ export function mapDataExportLeadRow(
     fraud,
     behavior: mapLeadBehaviorSummary(raw.behavior),
     callReport: mapLeadCallReport(raw.callReport ?? raw.call_report),
-    leadTier: resolveLeadTier(raw.leadTier ?? raw.lead_tier, fields, fraud),
+    leadTier: resolveLeadTier(raw.leadTier ?? raw.lead_tier, fields, {
+      fraud,
+      formSubmitted,
+    }),
   }
 }
 

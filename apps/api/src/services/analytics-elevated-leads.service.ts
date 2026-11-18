@@ -214,6 +214,7 @@ export function toElevatedFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
   const submittedAt = isValidLeadTimestamp(row.submitted_at)
     ? row.submitted_at.trim()
     : null
+  const formSubmitted = isLeadFormSubmitted(row.form_submitted)
   return {
     sessionId: row.session_id,
     macId: formatFingerprintAsMacId(row.fingerprint || ''),
@@ -226,10 +227,10 @@ export function toElevatedFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
     utmId: utm.utmId,
     utmS1: utm.utmS1,
     trustedFormUrl: pickTrustedFormUrl(rawFields),
-    formSubmitted: isLeadFormSubmitted(row.form_submitted),
+    formSubmitted,
     returnCount: 0,
     fields: fieldsWithoutReserved(fields),
-    leadTier: resolveLeadTier(row.lead_tier, fields),
+    leadTier: resolveLeadTier(row.lead_tier, fields, { formSubmitted }),
     fraud: unavailableFraud(),
     behavior: null,
   }
@@ -508,7 +509,10 @@ export async function getElevatedRiskLeads(input: {
     leads.push({
       ...lead,
       fraud,
-      leadTier: resolveLeadTier(lead.leadTier, lead.fields, fraud),
+      leadTier: resolveLeadTier(lead.leadTier, lead.fields, {
+        fraud,
+        formSubmitted: lead.formSubmitted,
+      }),
       behavior: behaviorMap.get(sessionId) ?? null,
     })
   }
