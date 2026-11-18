@@ -12,7 +12,7 @@ import {
 import {
   normalizeCallCenterSid,
   parseCallCenterCsv,
-  type CallCenterOutcomesPayload,
+  type CallCenterReportPayload,
   type CallCenterSourceRollupRow,
   type CallCenterUploadSummary,
 } from "@/features/data-lab/model/call-center-csv"
@@ -29,7 +29,7 @@ import { resolveNotificationCenterAnalyticsWindow } from "@/lib/server/web-push-
 const INSERT_CHUNK = 400
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 
-export type { CallCenterOutcomesPayload, CallCenterUploadSummary }
+export type { CallCenterReportPayload, CallCenterUploadSummary }
 
 async function requireLandingAccess(publicId: string) {
   const actor = await requireLandingPageActor()
@@ -53,13 +53,13 @@ function emptyTotals() {
   }
 }
 
-export async function loadCallCenterOutcomes(
+export async function loadCallCenterReport(
   landingPagePublicId: string,
   rangeIdRaw?: string | null,
   customRange?: DashboardCustomRange | null,
   utmFilter?: DashboardUtmFilter | null
 ): Promise<
-  | { ok: true; data: CallCenterOutcomesPayload }
+  | { ok: true; data: CallCenterReportPayload }
   | { ok: false; status: number; error: string }
 > {
   const access = await requireLandingAccess(landingPagePublicId)

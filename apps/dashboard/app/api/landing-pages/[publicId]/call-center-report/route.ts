@@ -3,8 +3,8 @@ import { parseDashboardCustomRange } from "@/features/traffic/model/traffic-rang
 import { parseUtmFilterFromSearchParams } from "@/lib/server/analytics-utm-params"
 import {
   ingestCallCenterCsv,
-  loadCallCenterOutcomes,
-} from "@/lib/server/call-center-outcomes-load"
+  loadCallCenterReport,
+} from "@/lib/server/call-center-report-load"
 import { route } from "@/lib/server/route"
 import { MAX_DASHBOARD_CUSTOM_SPAN_DAYS } from "@/lib/server/route-query"
 
@@ -21,7 +21,7 @@ export const GET = route(
   },
   async ({ params, request }) => {
     const { searchParams } = new URL(request.url)
-    const res = await loadCallCenterOutcomes(
+    const res = await loadCallCenterReport(
       params.publicId!,
       searchParams.get("range_id"),
       parseDashboardCustomRange(

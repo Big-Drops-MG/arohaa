@@ -5,7 +5,7 @@ export const DATA_LAB_SECTIONS = [
   { id: "lead-quality", label: "Lead quality" },
   { id: "source-trust", label: "Source trust" },
   { id: "lead-review", label: "Lead review" },
-  { id: "call-outcomes", label: "Call outcomes" },
+  { id: "call-report", label: "Call report" },
   { id: "leads", label: "Leads table" },
   { id: "retention", label: "Retention" },
 ] as const
@@ -17,8 +17,8 @@ const SECTION_IDS = new Set<string>(DATA_LAB_SECTIONS.map((s) => s.id))
 export function parseDataLabSection(
   value: string | null | undefined
 ): DataLabSectionId {
-  if (value && SECTION_IDS.has(value)) return value as DataLabSectionId
-  return "level-1"
+  if (!value) return "level-1"
+  return normalizeDataLabSectionId(value)
 }
 
 export function dataLabSectionLabel(id: DataLabSectionId): string {
@@ -32,6 +32,7 @@ export function mapLegacyInsightSectionToDataLab(
 }
 
 export function normalizeDataLabSectionId(section: string): DataLabSectionId {
+  if (section === "call-outcomes") return "call-report"
   if (SECTION_IDS.has(section)) return section as DataLabSectionId
   if (section === "export") return "leads"
   return "level-1"

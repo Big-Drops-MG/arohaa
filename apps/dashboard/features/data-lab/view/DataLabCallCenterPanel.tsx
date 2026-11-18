@@ -11,7 +11,7 @@ import {
 } from "@workspace/ui/components/card"
 import { cn } from "@workspace/ui/lib/utils"
 import type {
-  CallCenterOutcomesPayload,
+  CallCenterReportPayload,
   CallCenterSourceRollupRow,
 } from "@/features/data-lab/model/call-center-csv"
 import {
@@ -51,7 +51,7 @@ export function DataLabCallCenterPanel({
   const { dateRangeId, customRange } = useDashboardDateRange()
   const { utmFilter } = useDashboardUtmFilter()
   const inputRef = useRef<HTMLInputElement>(null)
-  const [data, setData] = useState<CallCenterOutcomesPayload | null>(null)
+  const [data, setData] = useState<CallCenterReportPayload | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -63,7 +63,7 @@ export function DataLabCallCenterPanel({
       setError(null)
       try {
         const path = buildAnalyticsApiPath(
-          `/api/landing-pages/${encodeURIComponent(projectId)}/call-center-outcomes`,
+          `/api/landing-pages/${encodeURIComponent(projectId)}/call-center-report`,
           {
             rangeId: dateRangeId,
             customRange,
@@ -72,13 +72,13 @@ export function DataLabCallCenterPanel({
         )
         const res = await fetch(path, { cache: "no-store", signal })
         if (!res.ok) throw new Error(`load ${res.status}`)
-        const json = (await res.json()) as CallCenterOutcomesPayload
+        const json = (await res.json()) as CallCenterReportPayload
         if (signal?.aborted) return
         setData(json)
       } catch (err) {
         if (signal?.aborted) return
         if (err instanceof Error && err.name === "AbortError") return
-        setError("Failed to load call-center outcomes.")
+        setError("Failed to load call report.")
         setData(null)
       } finally {
         if (!signal?.aborted) setIsLoading(false)
@@ -103,7 +103,7 @@ export function DataLabCallCenterPanel({
         const form = new FormData()
         form.set("file", file)
         const res = await fetch(
-          `/api/landing-pages/${encodeURIComponent(projectId)}/call-center-outcomes`,
+          `/api/landing-pages/${encodeURIComponent(projectId)}/call-center-report`,
           {
             method: "POST",
             body: form,
@@ -138,7 +138,7 @@ export function DataLabCallCenterPanel({
         <Lock className="size-5 text-neutral-400" aria-hidden />
         <div>
           <p className="text-sm font-medium text-foreground">
-            Call outcomes are restricted
+            Call report is restricted
           </p>
           <p className="mt-1 max-w-md text-sm text-muted-foreground">
             Call-center uploads are only available to approved operators.
@@ -172,7 +172,7 @@ export function DataLabCallCenterPanel({
             </div>
             <div className="min-w-0">
               <CardTitle className={overviewSectionHeadingClassName}>
-                Call outcomes
+                Call report
               </CardTitle>
               <p className="mt-0.5 text-sm text-muted-foreground">
                 Upload call-center lead logs to see contact and transfer rates
@@ -257,9 +257,9 @@ export function DataLabCallCenterPanel({
           {sources.length === 0 ? (
             <p className="px-4 py-10 text-center text-sm text-muted-foreground">
               {isLoading
-                ? "Loading call outcomes…"
+                ? "Loading call report…"
                 : data?.uploads && data.uploads.length > 0
-                  ? "No call outcomes in the selected date range or source filter."
+                  ? "No call report rows in the selected date range or source filter."
                   : "No call-center uploads yet. Upload a CSV to populate this table."}
             </p>
           ) : (

@@ -67,7 +67,7 @@ export const EXTERNAL_PRIVILEGE_TABS: PrivilegeTabDef[] = PROJECT_TABS.map(
             { id: "lead-quality", label: "Lead quality" },
             { id: "source-trust", label: "Source trust" },
             { id: "lead-review", label: "Lead review" },
-            { id: "call-outcomes", label: "Call outcomes" },
+            { id: "call-report", label: "Call report" },
             { id: "leads", label: "Leads table" },
             { id: "retention", label: "Retention" },
           ]

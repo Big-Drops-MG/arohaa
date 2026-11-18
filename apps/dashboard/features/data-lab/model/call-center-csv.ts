@@ -50,7 +50,7 @@ export type CallCenterUploadSummary = {
   createdAt: string
 }
 
-export type CallCenterOutcomesPayload = {
+export type CallCenterReportPayload = {
   uploads: CallCenterUploadSummary[]
   sources: CallCenterSourceRollupRow[]
   totals: {

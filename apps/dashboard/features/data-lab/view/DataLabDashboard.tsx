@@ -134,7 +134,7 @@ export function DataLabDashboard({
       allowed.add("retention")
       allowed.add("lead-review")
       allowed.add("source-trust")
-      allowed.add("call-outcomes")
+      allowed.add("call-report")
     }
     const filtered = DATA_LAB_SECTIONS.filter((s) => allowed.has(s.id))
     return filtered.length > 0 ? filtered : DATA_LAB_SECTIONS
@@ -401,8 +401,8 @@ export function DataLabDashboard({
           ) : null}
         </TabsContent>
 
-        <TabsContent value="call-outcomes" className="mt-5 outline-none">
-          {labSection === "call-outcomes" ? (
+        <TabsContent value="call-report" className="mt-5 outline-none">
+          {labSection === "call-report" ? (
             <DataLabCallCenterPanel
               projectId={projectId}
               canAccess={canAccessDataExport}
