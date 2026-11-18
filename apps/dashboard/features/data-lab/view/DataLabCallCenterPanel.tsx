@@ -37,6 +37,11 @@ function formatCount(value: number): string {
   return value.toLocaleString("en-US")
 }
 
+function countWithLeadPct(count: number, leads: number): string {
+  const rate = leads > 0 ? count / leads : 0
+  return `${formatCount(count)} (${pct(rate)})`
+}
+
 type DataLabCallCenterPanelProps = {
   projectId: string
   canAccess: boolean
@@ -214,21 +219,38 @@ export function DataLabCallCenterPanel({
         </CardHeader>
         <CardContent className="space-y-4 px-4 pb-4">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            {[
-              ["Leads", totals?.leads ?? 0],
-              ["Contacted", totals?.contacted ?? 0],
-              ["Transferred", totals?.transferred ?? 0],
-              ["15m+", totals?.duration15m ?? 0],
-              ["20m+", totals?.duration20m ?? 0],
-              ["Duplicates", totals?.duplicates ?? 0],
-            ].map(([label, value]) => (
+            {(
+              [
+                ["Leads", formatCount(totals?.leads ?? 0)],
+                ["Contacted", formatCount(totals?.contacted ?? 0)],
+                ["Transferred", formatCount(totals?.transferred ?? 0)],
+                [
+                  "15m+",
+                  countWithLeadPct(
+                    totals?.duration15m ?? 0,
+                    totals?.leads ?? 0
+                  ),
+                ],
+                [
+                  "20m+",
+                  countWithLeadPct(
+                    totals?.duration20m ?? 0,
+                    totals?.leads ?? 0
+                  ),
+                ],
+                [
+                  "Duplicates",
+                  countWithLeadPct(totals?.duplicates ?? 0, totals?.leads ?? 0),
+                ],
+              ] as const
+            ).map(([label, value]) => (
               <div
                 key={label}
                 className="rounded-lg border border-border px-3 py-2"
               >
                 <p className="text-xs text-muted-foreground">{label}</p>
                 <p className="mt-0.5 text-sm font-medium tabular-nums">
-                  {formatCount(Number(value))}
+                  {value}
                 </p>
               </div>
             ))}
@@ -297,9 +319,15 @@ export function DataLabCallCenterPanel({
                       <td className={tdClassName}>{row.transferred}</td>
                       <td className={tdClassName}>{pct(row.contactRate)}</td>
                       <td className={tdClassName}>{pct(row.transferRate)}</td>
-                      <td className={tdClassName}>{row.duration15m}</td>
-                      <td className={tdClassName}>{row.duration20m}</td>
-                      <td className={tdClassName}>{row.duplicates}</td>
+                      <td className={tdClassName}>
+                        {countWithLeadPct(row.duration15m, row.leads)}
+                      </td>
+                      <td className={tdClassName}>
+                        {countWithLeadPct(row.duration20m, row.leads)}
+                      </td>
+                      <td className={tdClassName}>
+                        {countWithLeadPct(row.duplicates, row.leads)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
