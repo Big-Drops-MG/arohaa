@@ -28,6 +28,7 @@ function lead(
     fraud: null,
     behavior: null,
     callReport: null,
+    leadTier: "standard",
     ...overrides,
   }
 }

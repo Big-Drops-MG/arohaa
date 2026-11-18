@@ -75,6 +75,7 @@ function baseRow(overrides: Partial<EventRow> = {}): EventRow {
     retry_id: '',
     client_ts: 0,
     integrity_json: '',
+    lead_tier: '',
     ...overrides,
   }
 }

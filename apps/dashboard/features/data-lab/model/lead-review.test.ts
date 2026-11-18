@@ -67,6 +67,7 @@ function lead(
           }
         : null,
     callReport: null,
+    leadTier: "standard",
     ...rest,
   }
 }

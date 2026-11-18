@@ -40,6 +40,7 @@ function lead(
     },
     behavior: null,
     callReport: null,
+    leadTier: "standard",
     ...rest,
   }
 }

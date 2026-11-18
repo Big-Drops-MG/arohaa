@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { DataExportLeadRow } from "@/features/data-export/model/data-export"
 import {
+  classifyLeadTier,
   computeLeadQualityByUtmSource,
   formatLeadQualityPercent,
   leadMatchesQualityAttribute,
@@ -28,6 +29,7 @@ function lead(
     fraud: null,
     behavior: null,
     callReport: null,
+    leadTier: "standard",
   }
 }
 
@@ -93,5 +95,34 @@ describe("computeLeadQualityByUtmSource", () => {
     const none = rows.find((row) => row.utmSource === "(none)")
     expect(none?.totalLeads).toBe(1)
     expect(formatLeadQualityPercent(none?.rates.homeowner ?? 0)).toBe("100%")
+  })
+})
+
+describe("classifyLeadTier", () => {
+  it("is premium for homeowner + insured + 2+ vehicles", () => {
+    expect(
+      classifyLeadTier({
+        Driver_0_Homeowner: "Own",
+        currently_insured: "Yes",
+        num_vehicles: "2",
+      })
+    ).toBe("premium")
+  })
+
+  it("is standard when any criterion is missing", () => {
+    expect(
+      classifyLeadTier({
+        driver_0_homeowner: "Own",
+        currently_insured: "Yes",
+        num_vehicles: "1",
+      })
+    ).toBe("standard")
+    expect(
+      classifyLeadTier({
+        driver_0_homeowner: "Rent",
+        currently_insured: "Yes",
+        num_vehicles: "2",
+      })
+    ).toBe("standard")
   })
 })

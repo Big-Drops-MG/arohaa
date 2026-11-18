@@ -400,7 +400,7 @@ export function DataExportDashboard({
     )
   }
 
-  const colCount = (returningOnly ? 17 : 16) + fieldColumns.length
+  const colCount = (returningOnly ? 18 : 17) + fieldColumns.length
 
   function leadRowToneClass(lead: DataExportLeadRow): string {
     const report = lead.callReport
@@ -476,6 +476,7 @@ export function DataExportDashboard({
                   <th className={thClassName}>#</th>
                   <th className={thClassName}>When</th>
                   <th className={thClassName}>Trust score</th>
+                  <th className={thClassName}>Lead tier</th>
                   <th className={thClassName}>Call status</th>
                   <th className={thClassName}>Session</th>
                   <th className={thClassName}>First Name</th>
@@ -535,6 +536,20 @@ export function DataExportDashboard({
                       </td>
                       <td className={tdClassName}>
                         <LeadRiskBadge fraud={lead.fraud} />
+                      </td>
+                      <td className={tdClassName}>
+                        {lead.leadTier === "premium" ? (
+                          <span
+                            className="rounded-md bg-violet-100 px-1.5 py-0.5 text-[11px] font-medium text-violet-800"
+                            title="Homeowner, currently insured, 2+ vehicles"
+                          >
+                            Premium
+                          </span>
+                        ) : (
+                          <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                            Standard
+                          </span>
+                        )}
                       </td>
                       <td className={tdClassName}>
                         {lead.callReport ? (

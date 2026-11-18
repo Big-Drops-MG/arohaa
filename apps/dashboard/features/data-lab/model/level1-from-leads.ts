@@ -21,6 +21,7 @@ import {
 } from "@/features/data-lab/model/level3"
 import type { IntelligenceCenterPayload } from "@/features/data-lab/model/intelligence"
 import {
+  classifyLeadTier,
   computeLeadQualityByUtmSource,
   emptyLeadQualityRows,
   hasCompleteLeadQuality,
@@ -91,10 +92,19 @@ export function mapDataExportLeadRow(
       return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
     })(),
     fields,
+    leadTier: mapLeadTier(raw.leadTier ?? raw.lead_tier, fields),
     fraud: mapLeadFraud(raw.fraud),
     behavior: mapLeadBehaviorSummary(raw.behavior),
     callReport: mapLeadCallReport(raw.callReport ?? raw.call_report),
   }
+}
+
+function mapLeadTier(
+  raw: unknown,
+  fields: Record<string, string>
+): DataExportLeadRow["leadTier"] {
+  if (raw === "premium" || raw === "standard") return raw
+  return classifyLeadTier(fields)
 }
 
 function mapLeadCallReport(raw: unknown): DataExportLeadRow["callReport"] {

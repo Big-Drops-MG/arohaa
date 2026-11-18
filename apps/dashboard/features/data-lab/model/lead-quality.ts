@@ -1,4 +1,7 @@
-import type { DataExportLeadRow } from "@/features/data-export/model/data-export"
+import type {
+  DataExportLeadRow,
+  LeadTier,
+} from "@/features/data-export/model/data-export"
 
 export const LEAD_QUALITY_ATTRIBUTES = [
   {
@@ -36,9 +39,9 @@ export type LeadQualityRow = {
   rates: Record<LeadQualityAttributeId, number>
 }
 
-function fieldMap(lead: DataExportLeadRow): Record<string, string> {
+function fieldMap(fields: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const [key, value] of Object.entries(lead.fields ?? {})) {
+  for (const [key, value] of Object.entries(fields ?? {})) {
     out[key.trim().toLowerCase()] = String(value ?? "").trim()
   }
   return out
@@ -240,7 +243,25 @@ export function leadMatchesQualityAttribute(
   lead: DataExportLeadRow,
   attributeId: LeadQualityAttributeId
 ): boolean {
-  return leadMatchesQualityAttributeFromFields(fieldMap(lead), attributeId)
+  return leadMatchesQualityAttributeFromFields(
+    fieldMap(lead.fields),
+    attributeId
+  )
+}
+
+export const PREMIUM_LEAD_CRITERIA: readonly LeadQualityAttributeId[] = [
+  "homeowner",
+  "currentlyInsured",
+  "multiVehicle",
+]
+
+export function classifyLeadTier(fields: Record<string, string>): LeadTier {
+  const normalized = fieldMap(fields)
+  return PREMIUM_LEAD_CRITERIA.every((id) =>
+    leadMatchesQualityAttributeFromFields(normalized, id)
+  )
+    ? "premium"
+    : "standard"
 }
 
 function formatUtmSource(raw: string): string {
@@ -285,7 +306,7 @@ export function computeLeadQualityByUtmSource(
       buckets.set(utmSource, bucket)
     }
     bucket.totalLeads += 1
-    const fields = fieldMap(lead)
+    const fields = fieldMap(lead.fields)
     for (const attr of LEAD_QUALITY_ATTRIBUTES) {
       if (leadMatchesQualityAttributeFromFields(fields, attr.id)) {
         bucket.hits[attr.id] += 1

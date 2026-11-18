@@ -5,6 +5,7 @@ import {
   FI_EVENT_NAME,
 } from '../lib/field-blob.js'
 import { extractContactHashesFromProps } from '../lib/lead-fraud/contact-hash.js'
+import { leadTierForIngestEvent } from '../lib/lead-tier.js'
 
 export interface IngestEventBody {
   event_id?: string
@@ -96,6 +97,7 @@ export interface EventRow {
   retry_id: string
   client_ts: number
   integrity_json: string
+  lead_tier: string
 }
 
 export interface EnrichmentForRow {
@@ -262,6 +264,7 @@ export function ingestBodyToEventRow(
     retry_id: (body.retry_id ?? '').trim().slice(0, 64),
     client_ts: clientTs,
     integrity_json: integrityExtra,
+    lead_tier: leadTierForIngestEvent(eventName, body.props),
   }
 }
 

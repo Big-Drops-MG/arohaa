@@ -18,6 +18,7 @@ export type DisplayableLeadSnapshotRow = {
   formSubmitted: boolean
   returnCount: number
   fields: Record<string, string>
+  leadTier?: string
   macId: string
 }
 

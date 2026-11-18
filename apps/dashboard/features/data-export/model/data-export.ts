@@ -38,6 +38,8 @@ export type LeadCallReportStatus = {
   sid: string
 }
 
+export type LeadTier = "premium" | "standard"
+
 export type DataExportLeadRow = {
   sessionId: string
   macId: string
@@ -53,6 +55,7 @@ export type DataExportLeadRow = {
   formSubmitted: boolean
   returnCount: number
   fields: Record<string, string>
+  leadTier: LeadTier
   fraud: LeadFraudAssessment | null
   behavior: LeadBehaviorSummary | null
   callReport: LeadCallReportStatus | null

@@ -26,6 +26,7 @@ import {
   pickTrustedFormUrl,
 } from '../lib/lead-fields.js'
 import { extractRawFieldMap } from '../lib/lead-fraud/field-signals.js'
+import { resolveLeadTier } from '../lib/lead-tier.js'
 import { loadBehaviorSummaryBySessions } from '../lib/lead-fraud/behavior-summary-batch.js'
 import type { LeadFraudAssessment } from '../lib/lead-fraud/types.js'
 import {
@@ -88,6 +89,7 @@ type RawLeadSessionRow = {
   utm_source: string
   utm_id: string
   utm_s1: string
+  lead_tier?: string
 }
 
 function contactKeysUtmSql(filter?: AnalyticsUtmFilter): string {
@@ -227,6 +229,7 @@ export function toElevatedFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
     formSubmitted: isLeadFormSubmitted(row.form_submitted),
     returnCount: 0,
     fields: fieldsWithoutReserved(fields),
+    leadTier: resolveLeadTier(row.lead_tier, fields),
     fraud: unavailableFraud(),
     behavior: null,
   }
@@ -343,6 +346,7 @@ async function loadLeadRowsForSessions(input: {
       l.last_at AS last_at,
       l.submitted_at AS submitted_at,
       l.props AS props,
+      l.lead_tier AS lead_tier,
       l.form_submitted AS form_submitted,
       l.sample_url AS sample_url,
       z.zip_val AS zip_val,
@@ -356,6 +360,7 @@ async function loadLeadRowsForSessions(input: {
         max(created_at) AS last_at,
         maxIf(created_at, ${SUBMIT_EVENTS}) AS submitted_at,
         argMax(properties, (length(properties), created_at)) AS props,
+        argMax(lead_tier, (length(properties), created_at)) AS lead_tier,
         argMax(url, (length(properties), created_at)) AS sample_url,
         max(${SUBMIT_EVENTS}) AS form_submitted
       FROM ${CLICKHOUSE_EVENTS_TABLE}

@@ -34,6 +34,7 @@ function lead({
     formSubmitted,
     returnCount: 0,
     fields,
+    leadTier: 'standard',
     fraud: {
       score: 100,
       scoreAvailable: true,

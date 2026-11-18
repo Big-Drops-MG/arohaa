@@ -45,6 +45,7 @@ import {
   emptyLeadQualityRows,
   type LeadQualityRow,
 } from '../lib/lead-quality.js'
+import { resolveLeadTier, type LeadTier } from '../lib/lead-tier.js'
 import type {
   IntelligenceBoard,
   IntelligenceWinner,
@@ -105,6 +106,7 @@ export type FunnelLeadRow = {
   formSubmitted: boolean
   returnCount: number
   fields: Record<string, string>
+  leadTier: LeadTier
   fraud: LeadFraudAssessment
   behavior: LeadBehaviorSummary | null
 }
@@ -200,6 +202,7 @@ type RawLeadSessionRow = {
   utm_id: string
   utm_s1: string
   return_count?: number | string
+  lead_tier?: string
 }
 
 const MAX_RAW_SESSIONS = 20_000
@@ -363,6 +366,7 @@ function toFunnelLead(row: RawLeadSessionRow): FunnelLeadRow {
     formSubmitted,
     returnCount,
     fields: fieldsWithoutReserved(fields),
+    leadTier: resolveLeadTier(row.lead_tier, fields),
     fraud: {
       score: null,
       scoreAvailable: false,
@@ -1749,12 +1753,14 @@ function toSnapshotLead(lead: FunnelLeadRow): DisplayableLeadSnapshotRow {
     formSubmitted: lead.formSubmitted,
     returnCount: lead.returnCount,
     fields: lead.fields,
+    leadTier: lead.leadTier,
   }
 }
 
 function fromSnapshotLead(lead: DisplayableLeadSnapshotRow): FunnelLeadRow {
   return {
     ...lead,
+    leadTier: resolveLeadTier(lead.leadTier, lead.fields),
     fraud: {
       score: null,
       scoreAvailable: false,
@@ -2088,6 +2094,7 @@ export async function getFunnelLeads({
         l.last_at AS last_at,
         l.submitted_at AS submitted_at,
         l.props AS props,
+        l.lead_tier AS lead_tier,
         l.form_submitted AS form_submitted,
         l.sample_url AS sample_url,
         z.zip_val AS zip_val,
@@ -2102,6 +2109,7 @@ export async function getFunnelLeads({
           max(created_at) AS last_at,
           maxIf(created_at, ${SUBMIT_EVENTS}) AS submitted_at,
           argMax(properties, (length(properties), created_at)) AS props,
+          __LEAD_TIER_SELECT__
           argMax(url, (length(properties), created_at)) AS sample_url,
           max(${SUBMIT_EVENTS}) AS form_submitted
         FROM events_raw
@@ -2170,9 +2178,14 @@ export async function getFunnelLeads({
       ) AS ip ON ip.session_id = l.session_id`
 
   const queryWithIp = leadSelectBase
+    .replace(
+      '__LEAD_TIER_SELECT__',
+      'argMax(lead_tier, (length(properties), created_at)) AS lead_tier,',
+    )
     .replace('__CLIENT_IP_SELECT__', 'ip.client_ip AS client_ip,')
     .replace('__CLIENT_IP_JOIN__', clientIpJoin)
   const queryWithoutIp = leadSelectBase
+    .replace('__LEAD_TIER_SELECT__', `'' AS lead_tier,`)
     .replace('__CLIENT_IP_SELECT__', `'' AS client_ip,`)
     .replace('__CLIENT_IP_JOIN__', '')
 

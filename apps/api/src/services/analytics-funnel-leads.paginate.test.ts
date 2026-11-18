@@ -21,6 +21,7 @@ function lead(sessionId: string): FunnelLeadRow {
     formSubmitted: false,
     returnCount: 0,
     fields: {},
+    leadTier: 'standard',
     fraud: {
       score: 100,
       scoreAvailable: true,

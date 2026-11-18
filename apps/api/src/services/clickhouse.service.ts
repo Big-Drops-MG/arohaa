@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_EVENTS_TABLE} (
     retry_id String DEFAULT '',
     client_ts Int64 DEFAULT 0,
     integrity_json String DEFAULT '',
+    lead_tier LowCardinality(String) DEFAULT '',
     event_date_et Date MATERIALIZED ${chToDate('created_at')}
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(event_date_et)
@@ -299,6 +300,10 @@ export async function ensureEventsTable(): Promise<void> {
   await ch.command({
     query:
       `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS integrity_json String DEFAULT ''`,
+  })
+  await ch.command({
+    query:
+      `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} ADD COLUMN IF NOT EXISTS lead_tier LowCardinality(String) DEFAULT ''`,
   })
   await ch.command({
     query: `ALTER TABLE ${CLICKHOUSE_EVENTS_TABLE} MODIFY TTL toDateTime(created_at) + toIntervalDay(180)`,

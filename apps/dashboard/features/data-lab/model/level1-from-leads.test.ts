@@ -28,6 +28,7 @@ function lead(sessionId: string): DataExportLeadRow {
     fraud: null,
     behavior: null,
     callReport: null,
+    leadTier: "standard",
   }
 }
 
