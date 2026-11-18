@@ -541,7 +541,7 @@ export function DataExportDashboard({
                         {lead.leadTier === "premium" ? (
                           <span
                             className="rounded-md bg-violet-100 px-1.5 py-0.5 text-[11px] font-medium text-violet-800"
-                            title="Homeowner, currently insured, 2+ vehicles"
+                            title="Homeowner, currently insured, 2+ vehicles, and not flagged as fraud"
                           >
                             Premium
                           </span>

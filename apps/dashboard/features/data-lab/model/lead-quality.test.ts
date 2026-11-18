@@ -5,6 +5,7 @@ import {
   computeLeadQualityByUtmSource,
   formatLeadQualityPercent,
   leadMatchesQualityAttribute,
+  resolveLeadTier,
 } from "@/features/data-lab/model/lead-quality"
 
 function lead(
@@ -99,14 +100,14 @@ describe("computeLeadQualityByUtmSource", () => {
 })
 
 describe("classifyLeadTier", () => {
+  const premiumFields = {
+    Driver_0_Homeowner: "Own",
+    currently_insured: "Yes",
+    num_vehicles: "2",
+  }
+
   it("is premium for homeowner + insured + 2+ vehicles", () => {
-    expect(
-      classifyLeadTier({
-        Driver_0_Homeowner: "Own",
-        currently_insured: "Yes",
-        num_vehicles: "2",
-      })
-    ).toBe("premium")
+    expect(classifyLeadTier(premiumFields)).toBe("premium")
   })
 
   it("is standard when any criterion is missing", () => {
@@ -122,6 +123,28 @@ describe("classifyLeadTier", () => {
         driver_0_homeowner: "Rent",
         currently_insured: "Yes",
         num_vehicles: "2",
+      })
+    ).toBe("standard")
+  })
+
+  it("keeps premium when trust is mid-range but not fraud", () => {
+    expect(
+      resolveLeadTier("premium", premiumFields, {
+        scoreAvailable: true,
+        label: "legit",
+        effectiveLabel: "legit",
+        score: 62,
+      })
+    ).toBe("premium")
+  })
+
+  it("demotes premium when trust flags fraud", () => {
+    expect(
+      resolveLeadTier("premium", premiumFields, {
+        scoreAvailable: true,
+        label: "fraud",
+        effectiveLabel: "fraud",
+        score: 32,
       })
     ).toBe("standard")
   })

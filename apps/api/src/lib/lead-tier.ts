@@ -1,4 +1,5 @@
 import { decryptFieldBlob, OPAQUE_PROP_KEY } from './field-blob.js'
+import { LEAD_FRAUD_THRESHOLDS } from './lead-fraud/constants.js'
 import { normalizeLeadFields } from './lead-fields.js'
 import {
   leadMatchesQualityAttribute,
@@ -6,6 +7,13 @@ import {
 } from './lead-quality.js'
 
 export type LeadTier = 'premium' | 'standard'
+
+export type LeadTierTrustInput = {
+  scoreAvailable?: boolean
+  effectiveLabel?: string | null
+  label?: string | null
+  score?: number | null
+}
 
 export const PREMIUM_LEAD_CRITERIA: readonly LeadQualityAttributeId[] = [
   'homeowner',
@@ -33,11 +41,33 @@ export function classifyLeadTier(fields: Record<string, string>): LeadTier {
     : 'standard'
 }
 
+export function passesLeadTierTrustGate(
+  fraud?: LeadTierTrustInput | null,
+): boolean {
+  if (!fraud) return true
+  if (fraud.scoreAvailable === false) return true
+  const label = String(fraud.effectiveLabel || fraud.label || '').trim()
+  if (label === 'fraud') return false
+  if (
+    typeof fraud.score === 'number' &&
+    Number.isFinite(fraud.score) &&
+    fraud.score < LEAD_FRAUD_THRESHOLDS.fraudBelowTrust
+  ) {
+    return false
+  }
+  return true
+}
+
 export function resolveLeadTier(
   stored: unknown,
   fields: Record<string, string>,
+  fraud?: LeadTierTrustInput | null,
 ): LeadTier {
-  return isLeadTier(stored) ? stored : classifyLeadTier(fields)
+  const profile = isLeadTier(stored) ? stored : classifyLeadTier(fields)
+  if (profile === 'premium' && !passesLeadTierTrustGate(fraud)) {
+    return 'standard'
+  }
+  return profile
 }
 
 function scalarFieldMap(source: unknown): Record<string, string> {

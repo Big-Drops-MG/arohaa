@@ -21,9 +21,9 @@ import {
 } from "@/features/data-lab/model/level3"
 import type { IntelligenceCenterPayload } from "@/features/data-lab/model/intelligence"
 import {
-  classifyLeadTier,
   computeLeadQualityByUtmSource,
   emptyLeadQualityRows,
+  resolveLeadTier,
   hasCompleteLeadQuality,
   type LeadQualityRow,
 } from "@/features/data-lab/model/lead-quality"
@@ -68,6 +68,7 @@ export function mapDataExportLeadRow(
         )
       : {}
 
+  const fraud = mapLeadFraud(raw.fraud)
   return {
     sessionId: String(raw.sessionId ?? raw.session_id ?? ""),
     macId: String(raw.macId ?? raw.mac_id ?? ""),
@@ -92,19 +93,11 @@ export function mapDataExportLeadRow(
       return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
     })(),
     fields,
-    leadTier: mapLeadTier(raw.leadTier ?? raw.lead_tier, fields),
-    fraud: mapLeadFraud(raw.fraud),
+    fraud,
     behavior: mapLeadBehaviorSummary(raw.behavior),
     callReport: mapLeadCallReport(raw.callReport ?? raw.call_report),
+    leadTier: resolveLeadTier(raw.leadTier ?? raw.lead_tier, fields, fraud),
   }
-}
-
-function mapLeadTier(
-  raw: unknown,
-  fields: Record<string, string>
-): DataExportLeadRow["leadTier"] {
-  if (raw === "premium" || raw === "standard") return raw
-  return classifyLeadTier(fields)
 }
 
 function mapLeadCallReport(raw: unknown): DataExportLeadRow["callReport"] {

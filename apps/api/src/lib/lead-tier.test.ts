@@ -49,16 +49,56 @@ describe('classifyLeadTier', () => {
 })
 
 describe('resolveLeadTier', () => {
-  it('prefers the tier stored at ingest', () => {
-    expect(resolveLeadTier('premium', {})).toBe('premium')
+  const premiumFields = {
+    homeowner: 'Yes',
+    insured: 'Yes',
+    vehicles: '2',
+  }
+
+  it('prefers the tier stored at ingest when trust passes', () => {
+    expect(
+      resolveLeadTier('premium', {}, {
+        scoreAvailable: true,
+        label: 'legit',
+        effectiveLabel: 'legit',
+        score: 62,
+      }),
+    ).toBe('premium')
   })
 
   it('classifies from fields when nothing was stored', () => {
+    expect(resolveLeadTier('', premiumFields)).toBe('premium')
+  })
+
+  it('demotes premium to standard when trust flags fraud', () => {
     expect(
-      resolveLeadTier('', {
-        homeowner: 'Yes',
-        insured: 'Yes',
-        vehicles: '2',
+      resolveLeadTier('premium', premiumFields, {
+        scoreAvailable: true,
+        label: 'fraud',
+        effectiveLabel: 'fraud',
+        score: 32,
+      }),
+    ).toBe('standard')
+  })
+
+  it('demotes premium when score is below the fraud threshold', () => {
+    expect(
+      resolveLeadTier('premium', premiumFields, {
+        scoreAvailable: true,
+        label: 'legit',
+        effectiveLabel: 'legit',
+        score: 49,
+      }),
+    ).toBe('standard')
+  })
+
+  it('keeps premium when scoring is unavailable', () => {
+    expect(
+      resolveLeadTier('premium', premiumFields, {
+        scoreAvailable: false,
+        label: 'fraud',
+        effectiveLabel: 'fraud',
+        score: null,
       }),
     ).toBe('premium')
   })

@@ -264,6 +264,47 @@ export function classifyLeadTier(fields: Record<string, string>): LeadTier {
     : "standard"
 }
 
+export type LeadTierTrustInput = {
+  scoreAvailable?: boolean
+  effectiveLabel?: string | null
+  label?: string | null
+  score?: number | null
+}
+
+const FRAUD_BELOW_TRUST = 50
+
+export function passesLeadTierTrustGate(
+  fraud?: LeadTierTrustInput | null
+): boolean {
+  if (!fraud) return true
+  if (fraud.scoreAvailable === false) return true
+  const label = String(fraud.effectiveLabel || fraud.label || "").trim()
+  if (label === "fraud") return false
+  if (
+    typeof fraud.score === "number" &&
+    Number.isFinite(fraud.score) &&
+    fraud.score < FRAUD_BELOW_TRUST
+  ) {
+    return false
+  }
+  return true
+}
+
+export function resolveLeadTier(
+  stored: unknown,
+  fields: Record<string, string>,
+  fraud?: LeadTierTrustInput | null
+): LeadTier {
+  const profile =
+    stored === "premium" || stored === "standard"
+      ? stored
+      : classifyLeadTier(fields)
+  if (profile === "premium" && !passesLeadTierTrustGate(fraud)) {
+    return "standard"
+  }
+  return profile
+}
+
 function formatUtmSource(raw: string): string {
   const value = raw.trim()
   return value || "(none)"

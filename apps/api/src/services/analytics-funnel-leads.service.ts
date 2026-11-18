@@ -1925,7 +1925,10 @@ async function enrichFunnelLeadsPage({
     })
   }
 
-  return pageLeads
+  return pageLeads.map((lead) => ({
+    ...lead,
+    leadTier: resolveLeadTier(lead.leadTier, lead.fields, lead.fraud),
+  }))
 }
 
 export async function getFunnelLeads({

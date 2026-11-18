@@ -508,6 +508,7 @@ export async function getElevatedRiskLeads(input: {
     leads.push({
       ...lead,
       fraud,
+      leadTier: resolveLeadTier(lead.leadTier, lead.fields, fraud),
       behavior: behaviorMap.get(sessionId) ?? null,
     })
   }
