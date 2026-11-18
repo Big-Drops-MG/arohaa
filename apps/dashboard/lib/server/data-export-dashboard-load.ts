@@ -48,6 +48,7 @@ import {
 } from "@/features/data-lab/model/lead-quality"
 import type { IntelligenceCenterPayload } from "@/features/data-lab/model/intelligence"
 import { mapDataExportLeadRow } from "@/features/data-lab/model/level1-from-leads"
+import { attachCallReportStatusToLeads } from "@/lib/server/call-center-report-load"
 import { DEFAULT_ROUTE_MAX_OFFSET } from "@/lib/server/route-query-limits"
 
 type LeadsApiResponse = {
@@ -213,6 +214,11 @@ export async function loadDataExportDashboardData({
     mappedLevel2Stats = resolved[1]
   } catch (error) {
     console.error("[data-export] vehicle model lookup failed", error)
+  }
+  try {
+    mappedLeads = await attachCallReportStatusToLeads(row.id, mappedLeads)
+  } catch (error) {
+    console.error("[data-export] call report status attach failed", error)
   }
   const level1 = resolveLevel1Stats(analytics.level1Stats, mappedLeads)
   const level2 = resolveLevel2Stats(

@@ -39,6 +39,7 @@ function lead(
       modelVersion: "test",
     },
     behavior: null,
+    callReport: null,
     ...rest,
   }
 }

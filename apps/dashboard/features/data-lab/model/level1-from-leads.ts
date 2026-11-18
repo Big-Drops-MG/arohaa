@@ -93,6 +93,19 @@ export function mapDataExportLeadRow(
     fields,
     fraud: mapLeadFraud(raw.fraud),
     behavior: mapLeadBehaviorSummary(raw.behavior),
+    callReport: mapLeadCallReport(raw.callReport ?? raw.call_report),
+  }
+}
+
+function mapLeadCallReport(raw: unknown): DataExportLeadRow["callReport"] {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null
+  const row = raw as Record<string, unknown>
+  return {
+    contacted: Boolean(row.contacted ?? row.ccContacted),
+    duplicate: Boolean(row.duplicate),
+    transferred: Boolean(row.transferred ?? row.ccTransferred),
+    disposition: String(row.disposition ?? row.ccDisposition ?? ""),
+    sid: String(row.sid ?? ""),
   }
 }
 

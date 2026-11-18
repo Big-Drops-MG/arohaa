@@ -14,6 +14,7 @@ import { getDataExportEmptyDashboardData } from "@/features/data-export/controll
 import {
   DATA_EXPORT_PAGE_SIZE,
   type DataExportDashboardData,
+  type DataExportLeadRow,
 } from "@/features/data-export/model/data-export"
 import {
   discoverVisibleLeadFieldKeys,
@@ -399,7 +400,22 @@ export function DataExportDashboard({
     )
   }
 
-  const colCount = (returningOnly ? 16 : 15) + fieldColumns.length
+  const colCount = (returningOnly ? 17 : 16) + fieldColumns.length
+
+  function leadRowToneClass(lead: DataExportLeadRow): string {
+    const report = lead.callReport
+    if (!report) return "border-b border-border last:border-b-0"
+    if (report.duplicate && report.contacted) {
+      return "border-b border-border last:border-b-0 bg-emerald-50/90 shadow-[inset_4px_0_0_0_rgba(245,158,11,0.9)] hover:bg-emerald-50"
+    }
+    if (report.duplicate) {
+      return "border-b border-border last:border-b-0 bg-amber-50 hover:bg-amber-50/80"
+    }
+    if (report.contacted) {
+      return "border-b border-border last:border-b-0 bg-emerald-50 hover:bg-emerald-50/80"
+    }
+    return "border-b border-border last:border-b-0"
+  }
   const projectLabel = dashboardData.brandName.trim() || "Project"
 
   return (
@@ -426,6 +442,22 @@ export function DataExportDashboard({
             <p className="mt-0.5 truncate text-sm font-medium text-foreground">
               {projectLabel}
             </p>
+            <p className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  className="inline-block size-2.5 rounded-sm bg-emerald-200 ring-1 ring-emerald-300"
+                  aria-hidden
+                />
+                Contacted
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  className="inline-block size-2.5 rounded-sm bg-amber-200 ring-1 ring-amber-300"
+                  aria-hidden
+                />
+                Duplicate
+              </span>
+            </p>
           </div>
           <p className="shrink-0 text-sm text-muted-foreground tabular-nums">
             {formatEntryCount(total)}
@@ -444,6 +476,7 @@ export function DataExportDashboard({
                   <th className={thClassName}>#</th>
                   <th className={thClassName}>When</th>
                   <th className={thClassName}>Trust score</th>
+                  <th className={thClassName}>Call status</th>
                   <th className={thClassName}>Session</th>
                   <th className={thClassName}>First Name</th>
                   <th className={thClassName}>Last Name</th>
@@ -487,7 +520,7 @@ export function DataExportDashboard({
                   dashboardData.leads.map((lead, index) => (
                     <tr
                       key={`${lead.sessionId}-${lead.createdAt}`}
-                      className="border-b border-border last:border-b-0"
+                      className={leadRowToneClass(lead)}
                     >
                       <td
                         className={cn(
@@ -502,6 +535,28 @@ export function DataExportDashboard({
                       </td>
                       <td className={tdClassName}>
                         <LeadRiskBadge fraud={lead.fraud} />
+                      </td>
+                      <td className={tdClassName}>
+                        {lead.callReport ? (
+                          <div className="flex flex-wrap gap-1">
+                            {lead.callReport.contacted ? (
+                              <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800">
+                                Contacted
+                              </span>
+                            ) : null}
+                            {lead.callReport.duplicate ? (
+                              <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-900">
+                                Dupe
+                              </span>
+                            ) : null}
+                            {!lead.callReport.contacted &&
+                            !lead.callReport.duplicate ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </td>
                       <td className={tdClassName}>
                         <Button

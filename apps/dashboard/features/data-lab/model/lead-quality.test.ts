@@ -27,6 +27,7 @@ function lead(
     fields,
     fraud: null,
     behavior: null,
+    callReport: null,
   }
 }
 

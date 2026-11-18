@@ -66,6 +66,7 @@ function lead(
             sdkInitMs: null,
           }
         : null,
+    callReport: null,
     ...rest,
   }
 }

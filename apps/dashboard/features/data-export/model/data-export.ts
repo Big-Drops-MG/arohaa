@@ -30,6 +30,14 @@ export type LeadBehaviorSummary = {
   sdkInitMs: number | null
 }
 
+export type LeadCallReportStatus = {
+  contacted: boolean
+  duplicate: boolean
+  transferred: boolean
+  disposition: string
+  sid: string
+}
+
 export type DataExportLeadRow = {
   sessionId: string
   macId: string
@@ -47,6 +55,7 @@ export type DataExportLeadRow = {
   fields: Record<string, string>
   fraud: LeadFraudAssessment | null
   behavior: LeadBehaviorSummary | null
+  callReport: LeadCallReportStatus | null
 }
 
 export type DataExportDashboardData = {

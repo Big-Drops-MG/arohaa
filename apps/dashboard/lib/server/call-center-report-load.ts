@@ -1,10 +1,24 @@
-import { and, desc, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm"
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm"
 import {
   callCenterLeadOutcomes,
   callCenterSourceRollups,
   callCenterUploads,
   db,
 } from "@workspace/database"
+import type {
+  DataExportLeadRow,
+  LeadCallReportStatus,
+} from "@/features/data-export/model/data-export"
 import {
   normalizeDashboardUtmFilter,
   type DashboardUtmFilter,
@@ -30,6 +44,110 @@ const INSERT_CHUNK = 400
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 
 export type { CallCenterReportPayload, CallCenterUploadSummary }
+
+function betterCallReportStatus(
+  current: LeadCallReportStatus | null,
+  next: LeadCallReportStatus
+): LeadCallReportStatus {
+  if (!current) return next
+  return {
+    contacted: current.contacted || next.contacted,
+    duplicate: current.duplicate || next.duplicate,
+    transferred: current.transferred || next.transferred,
+    disposition: next.disposition || current.disposition,
+    sid: next.sid || current.sid,
+  }
+}
+
+function callReportStatusFromOutcome(row: {
+  sid: string
+  ccContacted: boolean
+  duplicate: boolean
+  ccTransferred: boolean
+  ccDisposition: string
+}): LeadCallReportStatus {
+  return {
+    contacted: Boolean(row.ccContacted),
+    duplicate: Boolean(row.duplicate),
+    transferred: Boolean(row.ccTransferred),
+    disposition: row.ccDisposition || "",
+    sid: normalizeCallCenterSid(row.sid),
+  }
+}
+
+export async function attachCallReportStatusToLeads(
+  landingPageId: string,
+  leads: DataExportLeadRow[]
+): Promise<DataExportLeadRow[]> {
+  if (leads.length === 0) return leads
+
+  const lookupKeys = [
+    ...new Set(
+      leads.flatMap((lead) =>
+        [lead.utmId, lead.sessionId, lead.utmS1]
+          .map((value) => value.trim())
+          .filter(Boolean)
+      )
+    ),
+  ]
+  if (lookupKeys.length === 0) {
+    return leads.map((lead) => ({
+      ...lead,
+      callReport: lead.callReport ?? null,
+    }))
+  }
+
+  const matched = new Map<string, LeadCallReportStatus>()
+  const chunkSize = 400
+  for (let i = 0; i < lookupKeys.length; i += chunkSize) {
+    const chunk = lookupKeys.slice(i, i + chunkSize)
+    const rows = await db
+      .select({
+        tid: callCenterLeadOutcomes.tid,
+        uid: callCenterLeadOutcomes.uid,
+        sid: callCenterLeadOutcomes.sid,
+        ccContacted: callCenterLeadOutcomes.ccContacted,
+        duplicate: callCenterLeadOutcomes.duplicate,
+        ccTransferred: callCenterLeadOutcomes.ccTransferred,
+        ccDisposition: callCenterLeadOutcomes.ccDisposition,
+      })
+      .from(callCenterLeadOutcomes)
+      .where(
+        and(
+          eq(callCenterLeadOutcomes.landingPageId, landingPageId),
+          or(
+            inArray(callCenterLeadOutcomes.tid, chunk),
+            inArray(callCenterLeadOutcomes.uid, chunk)
+          )
+        )
+      )
+
+    for (const row of rows) {
+      const status = callReportStatusFromOutcome(row)
+      for (const key of [row.tid, row.uid]) {
+        const trimmed = key.trim()
+        if (!trimmed) continue
+        matched.set(
+          trimmed,
+          betterCallReportStatus(matched.get(trimmed) ?? null, status)
+        )
+      }
+    }
+  }
+
+  return leads.map((lead) => {
+    const keys = [lead.utmId, lead.sessionId, lead.utmS1]
+      .map((value) => value.trim())
+      .filter(Boolean)
+    let status: LeadCallReportStatus | null = null
+    for (const key of keys) {
+      const hit = matched.get(key)
+      if (!hit) continue
+      status = betterCallReportStatus(status, hit)
+    }
+    return { ...lead, callReport: status }
+  })
+}
 
 async function requireLandingAccess(publicId: string) {
   const actor = await requireLandingPageActor()

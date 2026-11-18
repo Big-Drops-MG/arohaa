@@ -27,6 +27,7 @@ function lead(sessionId: string): DataExportLeadRow {
     fields: { city: "New York", state: "NY" },
     fraud: null,
     behavior: null,
+    callReport: null,
   }
 }
 
