@@ -8,6 +8,7 @@
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "geoip:download": "node scripts/download-geoip.mjs",
+    "network-lists:sync": "tsx scripts/sync-network-lists.mts",
     "predev": "node scripts/download-geoip.mjs"
   },
   "dependencies": {

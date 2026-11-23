@@ -1,28 +1,28 @@
 {
-  "asOf": "2026-03-20",
+  "asOf": "2026-11-23",
   "source": "arohaa-seed-hosting-asns",
-  "expiresAfterDays": 90,
+  "expiresAfterDays": 14,
   "proxyCidrs": [],
   "proxyCidrsV6": [],
   "hostingAsns": [
-    16509, 14618, 15169, 396982, 8075, 13335, 14061, 20473, 16276, 24940, 63949,
-    62567, 31898, 45102, 36351, 209242
+    8075, 13335, 14061, 14618, 15169, 16276, 16509, 20473, 24940, 31898, 36351,
+    45102, 62567, 63949, 209242, 396982
   ],
   "hostingOrgPatterns": [
+    "akamai",
+    "alibaba",
     "amazon",
     "aws",
+    "azure",
+    "cloudflare",
+    "digitalocean",
     "google cloud",
     "google llc",
-    "microsoft",
-    "azure",
-    "digitalocean",
-    "linode",
-    "akamai",
-    "ovh",
     "hetzner",
-    "vultr",
-    "cloudflare",
+    "linode",
+    "microsoft",
     "oracle cloud",
-    "alibaba"
+    "ovh",
+    "vultr"
   ]
 }

@@ -46,21 +46,25 @@ type NetworkListFile = {
 type ParsedCidrV4 = { version: 4; network: number; mask: number }
 type ParsedCidrV6 = { version: 6; network: bigint; maskBits: number }
 type ParsedCidr = ParsedCidrV4 | ParsedCidrV6
+type Ipv4Range = { start: number; end: number }
 
 type NetworkListCache = {
   asOf: string
   source: string
   loadedAt: string
   expiresAfterDays: number
+  proxyExpired: boolean
   expired: boolean
   parseStatus: NetworkDatasetHealth['parseStatus']
   proxyCidrs: ParsedCidr[]
+  proxyV4Ranges: Ipv4Range[]
+  proxyV6Cidrs: ParsedCidrV6[]
   hostingAsns: Set<number>
   hostingOrgPatterns: string[]
   addressFamilies: Array<'ipv4' | 'ipv6'>
 }
 
-const DEFAULT_EXPIRY_DAYS = 90
+const DEFAULT_EXPIRY_DAYS = 14
 
 const UNAVAILABLE: NetworkClassification = {
   networkClass: 'unavailable',
@@ -76,28 +80,50 @@ let asnReader: Reader<AsnResponse> | null = null
 let asnInitTried = false
 let asnDbStatus: NetworkDatasetHealth['asnDbStatus'] = 'missing'
 
-function candidateListPaths(): string[] {
+function apiRootDir(): string {
+  return fileURLToPath(new URL('../..', import.meta.url))
+}
+
+function candidateSeedPaths(): string[] {
   const configured = process.env.AROHAA_NETWORK_LIST_PATH?.trim()
   if (configured) return [configured]
-  const apiRoot = fileURLToPath(new URL('../..', import.meta.url))
   const cwd = process.cwd()
   return [
-    resolve(apiRoot, 'data/network-lists.json'),
+    resolve(apiRootDir(), 'data/network-lists.json'),
     resolve(cwd, 'apps/api/data/network-lists.json'),
     resolve(cwd, 'data/network-lists.json'),
+  ]
+}
+
+function candidateSyncedPaths(): string[] {
+  const configured = process.env.AROHAA_NETWORK_LIST_SYNCED_PATH?.trim()
+  if (configured) return [configured]
+  const cwd = process.cwd()
+  return [
+    resolve(apiRootDir(), 'data/network-lists.synced.json'),
+    resolve(cwd, 'apps/api/data/network-lists.synced.json'),
+    resolve(cwd, 'data/network-lists.synced.json'),
   ]
 }
 
 function candidateAsnPaths(): string[] {
   const configured = process.env.GEOIP_ASN_DB_PATH?.trim()
   if (configured) return [configured]
-  const apiRoot = fileURLToPath(new URL('../..', import.meta.url))
   const cwd = process.cwd()
   return [
     resolve(cwd, 'geoip', 'dbip-asn-lite.mmdb'),
-    resolve(apiRoot, 'geoip', 'dbip-asn-lite.mmdb'),
+    resolve(apiRootDir(), 'geoip', 'dbip-asn-lite.mmdb'),
     resolve(cwd, 'apps', 'api', 'geoip', 'dbip-asn-lite.mmdb'),
   ]
+}
+
+function readJsonFile(path: string): NetworkListFile | null {
+  if (!existsSync(path)) return null
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as NetworkListFile
+  } catch {
+    return null
+  }
 }
 
 function ipv4ToInt(ip: string): number | null {
@@ -119,7 +145,8 @@ function ipv6ToBigInt(ip: string): bigint | null {
     const sides = normalized.split('::')
     if (sides.length > 2) return null
     const head = sides[0] ? sides[0].split(':').filter(Boolean) : []
-    const tail = sides.length === 2 && sides[1] ? sides[1].split(':').filter(Boolean) : []
+    const tail =
+      sides.length === 2 && sides[1] ? sides[1].split(':').filter(Boolean) : []
     if (head.length + tail.length > 8) return null
     const mid = Array(8 - head.length - tail.length).fill('0')
     const parts = [...head, ...mid, ...tail]
@@ -153,6 +180,41 @@ function parseCidr(cidr: string): ParsedCidr | null {
   return { version: 4, network: (base & mask) >>> 0, mask }
 }
 
+function cidrToIpv4Range(cidr: ParsedCidrV4): Ipv4Range {
+  const start = cidr.network >>> 0
+  const end = (cidr.network | (~cidr.mask >>> 0)) >>> 0
+  return { start, end }
+}
+
+function mergeIpv4Ranges(ranges: Ipv4Range[]): Ipv4Range[] {
+  if (ranges.length === 0) return []
+  const sorted = [...ranges].sort((a, b) => a.start - b.start || a.end - b.end)
+  const out: Ipv4Range[] = [{ ...sorted[0]! }]
+  for (let i = 1; i < sorted.length; i++) {
+    const cur = sorted[i]!
+    const last = out[out.length - 1]!
+    if (cur.start <= (last.end + 1) >>> 0 || cur.start <= last.end) {
+      last.end = Math.max(last.end, cur.end) >>> 0
+    } else {
+      out.push({ ...cur })
+    }
+  }
+  return out
+}
+
+function ipv4InRanges(value: number, ranges: Ipv4Range[]): boolean {
+  let lo = 0
+  let hi = ranges.length - 1
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1
+    const range = ranges[mid]!
+    if (value < range.start) hi = mid - 1
+    else if (value > range.end) lo = mid + 1
+    else return true
+  }
+  return false
+}
+
 function isExpired(asOf: string, expiresAfterDays: number): boolean {
   if (!asOf) return true
   const published = Date.parse(asOf)
@@ -169,72 +231,132 @@ function emptyCache(
     source: '',
     loadedAt: new Date().toISOString(),
     expiresAfterDays: DEFAULT_EXPIRY_DAYS,
+    proxyExpired: true,
     expired: true,
     parseStatus,
     proxyCidrs: [],
+    proxyV4Ranges: [],
+    proxyV6Cidrs: [],
     hostingAsns: new Set(),
     hostingOrgPatterns: [],
     addressFamilies: [],
   }
 }
 
+function buildCacheFromFiles(
+  seed: NetworkListFile | null,
+  synced: NetworkListFile | null,
+): NetworkListCache {
+  if (!seed && !synced) return emptyCache('missing')
+
+  const expiresAfterDays =
+    typeof synced?.expiresAfterDays === 'number' &&
+    Number.isFinite(synced.expiresAfterDays)
+      ? synced.expiresAfterDays
+      : typeof seed?.expiresAfterDays === 'number' &&
+          Number.isFinite(seed.expiresAfterDays)
+        ? seed.expiresAfterDays
+        : DEFAULT_EXPIRY_DAYS
+
+  const asOf = String(synced?.asOf || seed?.asOf || '').trim()
+  const proxyExpired = isExpired(asOf, expiresAfterDays)
+
+  const proxyRaw = [
+    ...(synced?.proxyCidrs ?? seed?.proxyCidrs ?? []),
+    ...(synced?.proxyCidrsV6 ?? seed?.proxyCidrsV6 ?? []),
+  ]
+  const parsedProxy = proxyRaw
+    .map(parseCidr)
+    .filter((c): c is ParsedCidr => Boolean(c))
+  const proxyV4 = parsedProxy.filter(
+    (c): c is ParsedCidrV4 => c.version === 4,
+  )
+  const proxyV6Cidrs = parsedProxy.filter(
+    (c): c is ParsedCidrV6 => c.version === 6,
+  )
+  const proxyV4Ranges = mergeIpv4Ranges(proxyV4.map(cidrToIpv4Range))
+
+  const hostingAsns = new Set(
+    [...(seed?.hostingAsns ?? []), ...(synced?.hostingAsns ?? [])].filter((n) =>
+      Number.isFinite(n),
+    ),
+  )
+  const hostingOrgPatterns = [
+    ...new Set(
+      [...(seed?.hostingOrgPatterns ?? []), ...(synced?.hostingOrgPatterns ?? [])]
+        .map((p) => p.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ]
+
+  const addressFamilies: Array<'ipv4' | 'ipv6'> = []
+  if (proxyV4.length > 0 || hostingAsns.size > 0) addressFamilies.push('ipv4')
+  if (proxyV6Cidrs.length > 0) addressFamilies.push('ipv6')
+
+  const hasAnything =
+    parsedProxy.length > 0 ||
+    hostingAsns.size > 0 ||
+    hostingOrgPatterns.length > 0
+
+  const parseStatus: NetworkDatasetHealth['parseStatus'] = !hasAnything
+    ? 'empty'
+    : proxyExpired && parsedProxy.length > 0
+      ? 'stale'
+      : 'ok'
+
+  const sourceParts = [
+    synced?.source ? String(synced.source).trim() : null,
+    seed?.source ? String(seed.source).trim() : null,
+  ].filter(Boolean)
+
+  return {
+    asOf,
+    source: sourceParts.join('+') || 'network-lists',
+    loadedAt: new Date().toISOString(),
+    expiresAfterDays,
+    proxyExpired,
+    expired: proxyExpired && parsedProxy.length > 0,
+    parseStatus,
+    proxyCidrs: parsedProxy,
+    proxyV4Ranges,
+    proxyV6Cidrs,
+    hostingAsns,
+    hostingOrgPatterns,
+    addressFamilies,
+  }
+}
+
 function loadList(force = false): NetworkListCache {
   if (listCache && !force) return listCache
-  let next: NetworkListCache | null = null
-  for (const path of candidateListPaths()) {
+
+  let seed: NetworkListFile | null = null
+  let seedFailed = false
+  for (const path of candidateSeedPaths()) {
     if (!existsSync(path)) continue
-    try {
-      const parsed = JSON.parse(readFileSync(path, 'utf8')) as NetworkListFile
-      const expiresAfterDays =
-        typeof parsed.expiresAfterDays === 'number' &&
-        Number.isFinite(parsed.expiresAfterDays)
-          ? parsed.expiresAfterDays
-          : DEFAULT_EXPIRY_DAYS
-      const asOf = String(parsed.asOf || '').trim()
-      const expired = isExpired(asOf, expiresAfterDays)
-      const v4 = (parsed.proxyCidrs ?? [])
-        .map(parseCidr)
-        .filter((c): c is ParsedCidr => Boolean(c))
-      const v6 = (parsed.proxyCidrsV6 ?? [])
-        .map(parseCidr)
-        .filter((c): c is ParsedCidr => Boolean(c))
-      const proxyCidrs = [...v4, ...v6]
-      const hostingAsns = new Set(
-        (parsed.hostingAsns ?? []).filter((n) => Number.isFinite(n)),
-      )
-      const hostingOrgPatterns = (parsed.hostingOrgPatterns ?? [])
-        .map((p) => p.trim().toLowerCase())
-        .filter(Boolean)
-      const addressFamilies: Array<'ipv4' | 'ipv6'> = []
-      if (v4.length > 0 || hostingAsns.size > 0) addressFamilies.push('ipv4')
-      if (v6.length > 0) addressFamilies.push('ipv6')
-      const parseStatus: NetworkDatasetHealth['parseStatus'] = expired
-        ? 'stale'
-        : proxyCidrs.length === 0 &&
-            hostingAsns.size === 0 &&
-            hostingOrgPatterns.length === 0
-          ? 'empty'
-          : 'ok'
-      next = {
-        asOf,
-        source: String(parsed.source || 'network-lists.json').trim(),
-        loadedAt: new Date().toISOString(),
-        expiresAfterDays,
-        expired,
-        parseStatus,
-        proxyCidrs,
-        hostingAsns,
-        hostingOrgPatterns,
-        addressFamilies,
-      }
-      break
-    } catch {
-      next = emptyCache('failed')
-      break
+    const parsed = readJsonFile(path)
+    if (!parsed) {
+      seedFailed = true
+      continue
     }
+    seed = parsed
+    break
   }
-  if (!next) next = emptyCache('missing')
-  listCache = next
+
+  let synced: NetworkListFile | null = null
+  for (const path of candidateSyncedPaths()) {
+    if (!existsSync(path)) continue
+    const parsed = readJsonFile(path)
+    if (!parsed) continue
+    synced = parsed
+    break
+  }
+
+  if (!seed && !synced) {
+    listCache = emptyCache(seedFailed ? 'failed' : 'missing')
+    return listCache
+  }
+
+  listCache = buildCacheFromFiles(seed, synced)
   return listCache
 }
 
@@ -243,8 +365,9 @@ export function getNetworkDatasetFingerprint(): string {
   return [
     list.asOf || 'none',
     list.parseStatus,
-    list.expired ? 'expired' : 'fresh',
+    list.proxyExpired ? 'proxy_expired' : 'fresh',
     list.source || 'unknown',
+    String(list.proxyCidrs.length),
   ].join(':')
 }
 
@@ -266,20 +389,27 @@ async function ensureAsnReader(): Promise<Reader<AsnResponse> | null> {
   return null
 }
 
-function ipInProxyList(ip: string, cidrs: ParsedCidr[]): boolean {
+function ipInProxyList(
+  ip: string,
+  cidrs: ParsedCidr[],
+  ranges?: Ipv4Range[],
+  v6Cidrs?: ParsedCidrV6[],
+): boolean {
   if (ip.includes(':')) {
     const value = ipv6ToBigInt(ip)
     if (value == null) return false
-    for (const cidr of cidrs) {
-      if (cidr.version !== 6) continue
+    const list = v6Cidrs ?? cidrs.filter((c): c is ParsedCidrV6 => c.version === 6)
+    for (const cidr of list) {
       const shift = BigInt(128 - cidr.maskBits)
       if (cidr.maskBits === 0) return true
       if (value >> shift === cidr.network >> shift) return true
     }
     return false
   }
+
   const value = ipv4ToInt(ip)
   if (value == null) return false
+  if (ranges && ranges.length > 0) return ipv4InRanges(value, ranges)
   for (const cidr of cidrs) {
     if (cidr.version !== 4) continue
     if ((value & cidr.mask) >>> 0 === cidr.network) return true
@@ -305,26 +435,25 @@ export function getNetworkDatasetHealth(): NetworkDatasetHealth {
   const proxyListStatus: NetworkDatasetHealth['proxyListStatus'] =
     list.parseStatus === 'failed' || list.parseStatus === 'missing'
       ? list.parseStatus
-      : list.expired
-        ? 'stale'
-        : list.proxyCidrs.length === 0
-          ? 'empty'
+      : list.proxyCidrs.length === 0
+        ? 'empty'
+        : list.proxyExpired
+          ? 'stale'
           : 'ok'
+
   const hostingAsnStatus: NetworkDatasetHealth['hostingAsnStatus'] =
     list.parseStatus === 'failed' || list.parseStatus === 'missing'
       ? list.parseStatus
-      : list.expired
-        ? 'stale'
-        : list.hostingAsns.size === 0 && list.hostingOrgPatterns.length === 0
-          ? 'empty'
-          : 'ok'
+      : list.hostingAsns.size === 0 && list.hostingOrgPatterns.length === 0
+        ? 'empty'
+        : 'ok'
 
   return {
     source: list.source,
     publicationDate: list.asOf,
     loadTime: list.loadedAt,
     expiryPolicyDays: list.expiresAfterDays,
-    expired: list.expired,
+    expired: list.proxyExpired && list.proxyCidrs.length > 0,
     supportedAddressFamilies:
       list.addressFamilies.length > 0
         ? list.addressFamilies
@@ -343,6 +472,16 @@ export function reloadNetworkLists(): NetworkDatasetHealth {
   return getNetworkDatasetHealth()
 }
 
+function matchProxy(list: NetworkListCache, ip: string): boolean {
+  if (list.proxyCidrs.length === 0 || list.proxyExpired) return false
+  return ipInProxyList(
+    ip,
+    list.proxyCidrs,
+    list.proxyV4Ranges,
+    list.proxyV6Cidrs,
+  )
+}
+
 export async function classifyNetwork(ip: string): Promise<NetworkClassification> {
   const normalized = ip.startsWith('::ffff:') ? ip.slice(7) : ip.trim()
   if (!normalized || isPrivateOrLocal(normalized)) {
@@ -356,15 +495,6 @@ export async function classifyNetwork(ip: string): Promise<NetworkClassification
   const reader = await ensureAsnReader()
   const health = getNetworkDatasetHealth()
 
-  if (list.expired) {
-    return {
-      ...UNAVAILABLE,
-      evidenceSource: list.source,
-      evidenceAsOf: list.asOf,
-      detail: `Network list expired (as of ${list.asOf || 'unknown'}); classification unavailable`,
-    }
-  }
-
   const proxyUsable = health.proxyListStatus === 'ok'
   const hostingUsable = health.hostingAsnStatus === 'ok'
   const asnUsable = Boolean(reader) && health.asnDbStatus === 'ok'
@@ -372,20 +502,21 @@ export async function classifyNetwork(ip: string): Promise<NetworkClassification
   if (!proxyUsable && !hostingUsable && !asnUsable) {
     return {
       ...UNAVAILABLE,
+      evidenceSource: list.source,
+      evidenceAsOf: list.asOf,
       detail:
-        'No ASN database or usable network list loaded; classification unavailable',
+        list.proxyExpired && list.proxyCidrs.length > 0
+          ? `Network proxy list expired (as of ${list.asOf || 'unknown'}); ASN/hosting also unavailable`
+          : 'No ASN database or usable network list loaded; classification unavailable',
     }
   }
 
-  const evidenceSource = [
-    list.source || null,
-    asnUsable ? 'asn-mmdb' : null,
-  ]
+  const evidenceSource = [list.source || null, asnUsable ? 'asn-mmdb' : null]
     .filter(Boolean)
     .join('+')
   const evidenceAsOf = list.asOf || ''
 
-  if (proxyUsable && ipInProxyList(normalized, list.proxyCidrs)) {
+  if (proxyUsable && matchProxy(list, normalized)) {
     return {
       networkClass: 'known_proxy_list',
       asn: null,
@@ -471,19 +602,13 @@ export function classifyNetworkSync(ip: string): NetworkClassification {
     }
   }
   const list = loadList()
-  if (list.expired) {
-    return {
-      ...UNAVAILABLE,
-      evidenceSource: list.source,
-      evidenceAsOf: list.asOf,
-      detail: `Network list expired (as of ${list.asOf || 'unknown'}); classification unavailable`,
-    }
-  }
   const evidenceSource = list.source || 'network-lists.json'
   const evidenceAsOf = list.asOf || ''
-  const proxyUsable = list.proxyCidrs.length > 0
+  const proxyUsable = list.proxyCidrs.length > 0 && !list.proxyExpired
+  const hostingUsable =
+    list.hostingAsns.size > 0 || list.hostingOrgPatterns.length > 0
 
-  if (proxyUsable && ipInProxyList(normalized, list.proxyCidrs)) {
+  if (proxyUsable && matchProxy(list, normalized)) {
     return {
       networkClass: 'known_proxy_list',
       asn: null,
@@ -504,8 +629,9 @@ export function classifyNetworkSync(ip: string): NetworkClassification {
       const org = result?.autonomous_system_organization?.trim() || ''
       const orgLower = org.toLowerCase()
       if (
-        (asn != null && list.hostingAsns.has(asn)) ||
-        list.hostingOrgPatterns.some((p) => orgLower.includes(p))
+        hostingUsable &&
+        ((asn != null && list.hostingAsns.has(asn)) ||
+          list.hostingOrgPatterns.some((p) => orgLower.includes(p)))
       ) {
         return {
           networkClass: 'hosting_network',
@@ -531,7 +657,7 @@ export function classifyNetworkSync(ip: string): NetworkClassification {
     }
   }
 
-  if (list.proxyCidrs.length === 0 && list.hostingAsns.size === 0) {
+  if (!proxyUsable && !hostingUsable) {
     return {
       ...UNAVAILABLE,
       evidenceSource,
@@ -566,10 +692,14 @@ export async function initNetworkClassify(logger?: {
     },
     'network classification ready',
   )
-  if (health.expired || health.parseStatus === 'missing') {
+  if (
+    health.proxyListStatus === 'empty' ||
+    health.proxyListStatus === 'stale' ||
+    health.parseStatus === 'missing'
+  ) {
     logger?.warn(
       health,
-      'network classification limited: load GEOIP_ASN_DB_PATH and/or apps/api/data/network-lists.json',
+      'network classification limited: run network list sync and/or load GEOIP_ASN_DB_PATH',
     )
   }
 }
@@ -581,6 +711,8 @@ export const __networkClassifyTest = {
   ipInProxyList,
   isExpired,
   loadList,
+  mergeIpv4Ranges,
+  ipv4InRanges,
   resetCache: () => {
     listCache = null
     asnReader = null

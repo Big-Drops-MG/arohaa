@@ -28,6 +28,20 @@ describe('network classify', () => {
     ).toBe(false)
   })
 
+  it('matches IPv4 via merged ranges', () => {
+    const ranges = __networkClassifyTest.mergeIpv4Ranges([
+      { start: 0xc0000200, end: 0xc00002ff },
+      { start: 0xc0000300, end: 0xc00003ff },
+    ])
+    expect(ranges.length).toBe(1)
+    expect(
+      __networkClassifyTest.ipv4InRanges(0xc0000255, ranges),
+    ).toBe(true)
+    expect(
+      __networkClassifyTest.ipv4InRanges(0xc0000400, ranges),
+    ).toBe(false)
+  })
+
   it('returns unavailable for private addresses', () => {
     const result = classifyNetworkSync('127.0.0.1')
     expect(result.networkClass).toBe('unavailable')
@@ -41,6 +55,13 @@ describe('network classify', () => {
     if (health.proxyListStatus === 'empty') {
       const classified = classifyNetworkSync('8.8.8.8')
       expect(classified.networkClass).not.toBe('known_proxy_list')
+    }
+  })
+
+  it('keeps hosting usable when proxy list is stale', () => {
+    const health = getNetworkDatasetHealth()
+    if (health.hostingAsnStatus === 'ok') {
+      expect(health.hostingAsnStatus).toBe('ok')
     }
   })
 

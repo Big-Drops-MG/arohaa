@@ -43,6 +43,10 @@ import {
   stopGscSeoSyncScheduler,
 } from './services/gsc-seo-sync-scheduler.js'
 import {
+  startNetworkListSyncScheduler,
+  stopNetworkListSyncScheduler,
+} from './services/network-list-sync-scheduler.js'
+import {
   startVisitAssessQueueProcessor,
   stopVisitAssessQueueProcessor,
 } from './lib/lead-fraud/visit-assess-queue.js'
@@ -285,6 +289,7 @@ const start = async () => {
     startQueueDepthMonitor({ logger: server.log })
     startConnectionWarmer({ logger: server.log })
     startGscSeoSyncScheduler({ logger: server.log })
+    startNetworkListSyncScheduler({ logger: server.log })
     startVisitAssessQueueProcessor()
 
     const port = Number(process.env.PORT) || 3001
@@ -304,6 +309,7 @@ const shutdown = async (signal: string) => {
     await stopQueueDepthMonitor()
     stopConnectionWarmer()
     stopGscSeoSyncScheduler()
+    stopNetworkListSyncScheduler()
     stopVisitAssessQueueProcessor()
     await server.close()
     await closeClickHouseClient()
