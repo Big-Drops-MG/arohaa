@@ -12,8 +12,9 @@ import {
 import {
   claimIngestEventId,
   isValidEventId,
-  markIngestEventQueued,
+  markIngestOwnershipQueued,
   releaseIngestEventId,
+  releaseIngestOwnership,
 } from '../lib/ingest-idempotency.js'
 import { ALLOWED_INGEST_EVENT_NAMES } from '../lib/allowed-event-names.js'
 import { buildShortcutRowsFromFi } from '../lib/fi-shortcut-derive.js'
@@ -23,9 +24,7 @@ import { normalizeReferrer } from '../utils/referrer.js'
 import {
   claimContentFingerprint,
   evaluateEventIntegrity,
-  markContentQueued,
   newConflictEventId,
-  releaseContentClaim,
   serializeIntegrityFindings,
 } from '../lib/event-integrity.js'
 import type { VisitAssessEnqueueInput } from '../lib/lead-fraud/visit-assess-queue.js'
@@ -174,13 +173,12 @@ async function ingestOne(
     duplicateClaim: claim.status === 'duplicate',
   })
   if (integrity.suppressCanonicalInsert && !integrity.contentConflict) {
-    if (integrity.contentOwnerToken) {
-      await releaseContentClaim(
-        eventId,
-        integrity.contentOwnerToken,
-        integrity.contentFingerprint,
-      )
-    }
+    await releaseIngestOwnership({
+      eventId,
+      eventOwnerToken,
+      contentFingerprint: integrity.contentFingerprint,
+      contentOwnerToken: integrity.contentOwnerToken,
+    })
     request.log.info(
       {
         trace_id: traceId,
@@ -203,16 +201,12 @@ async function ingestOne(
   }
 
   const releaseOwnedClaims = async () => {
-    if (eventOwnerToken) {
-      await releaseIngestEventId(eventId, eventOwnerToken)
-    }
-    if (integrity.contentOwnerToken) {
-      await releaseContentClaim(
-        eventId,
-        integrity.contentOwnerToken,
-        integrity.contentFingerprint,
-      )
-    }
+    await releaseIngestOwnership({
+      eventId,
+      eventOwnerToken,
+      contentFingerprint: integrity.contentFingerprint,
+      contentOwnerToken: integrity.contentOwnerToken,
+    })
   }
 
   const originHeader = request.headers.origin
@@ -366,19 +360,19 @@ async function ingestOne(
               triggerEventId: conflictId,
             },
           })
-          await markIngestEventQueued(conflictId, conflictClaim.ownerToken)
-          await markContentQueued(
-            conflictId,
-            integrity.contentFingerprint,
-            conflictContent.ownerToken,
-          )
+          await markIngestOwnershipQueued({
+            eventId: conflictId,
+            eventOwnerToken: conflictClaim.ownerToken,
+            contentFingerprint: integrity.contentFingerprint,
+            contentOwnerToken: conflictContent.ownerToken,
+          })
         } catch (err) {
-          await releaseIngestEventId(conflictId, conflictClaim.ownerToken)
-          await releaseContentClaim(
-            conflictId,
-            conflictContent.ownerToken,
-            integrity.contentFingerprint,
-          )
+          await releaseIngestOwnership({
+            eventId: conflictId,
+            eventOwnerToken: conflictClaim.ownerToken,
+            contentFingerprint: integrity.contentFingerprint,
+            contentOwnerToken: conflictContent.ownerToken,
+          })
           throw err
         }
       }
@@ -391,12 +385,12 @@ async function ingestOne(
       await pushEvent(row, {
         visitAssess: visitAssessFor(eventId, ev),
       })
-      await markIngestEventQueued(eventId, eventOwnerToken)
-      await markContentQueued(
+      await markIngestOwnershipQueued({
         eventId,
-        integrity.contentFingerprint,
-        integrity.contentOwnerToken,
-      )
+        eventOwnerToken,
+        contentFingerprint: integrity.contentFingerprint,
+        contentOwnerToken: integrity.contentOwnerToken,
+      })
       for (const derived of buildShortcutRowsFromFi(row)) {
         const derivedId = derived.event_id.trim()
         if (!derivedId || !isValidEventId(derivedId)) continue
@@ -415,19 +409,19 @@ async function ingestOne(
         }
         try {
           await pushEvent(derived)
-          await markIngestEventQueued(derivedId, derivedClaim.ownerToken)
-          await markContentQueued(
-            derivedId,
-            integrity.contentFingerprint,
-            derivedContent.ownerToken,
-          )
+          await markIngestOwnershipQueued({
+            eventId: derivedId,
+            eventOwnerToken: derivedClaim.ownerToken,
+            contentFingerprint: integrity.contentFingerprint,
+            contentOwnerToken: derivedContent.ownerToken,
+          })
         } catch (err) {
-          await releaseIngestEventId(derivedId, derivedClaim.ownerToken)
-          await releaseContentClaim(
-            derivedId,
-            derivedContent.ownerToken,
-            integrity.contentFingerprint,
-          )
+          await releaseIngestOwnership({
+            eventId: derivedId,
+            eventOwnerToken: derivedClaim.ownerToken,
+            contentFingerprint: integrity.contentFingerprint,
+            contentOwnerToken: derivedContent.ownerToken,
+          })
           request.log.error(
             {
               err,

@@ -1,6 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { redis } from '../services/redis.service.js'
 import type { IngestEventBody } from '../types/event.js'
+import {
+  completeContentValue,
+  contentIdKey,
+  pendingContentValue,
+} from './ingest-idempotency.js'
 import { verifySessionToken } from './session-token.js'
 import {
   createFinding,
@@ -15,6 +20,13 @@ const FUTURE_SKEW_MS = 5 * 60_000
 
 const CONTENT_PENDING = 'pending:'
 const CONTENT_COMPLETE = 'complete:'
+
+/** SADD + EXPIRE in one round-trip. */
+const SEQ_SADD_EXPIRE_LUA = `
+local added = redis.call("SADD", KEYS[1], ARGV[1])
+redis.call("EXPIRE", KEYS[1], tonumber(ARGV[2]))
+return added
+`
 
 const CONTENT_COMPLETE_IF_OWNER_LUA = `
 if redis.call("GET", KEYS[1]) == ARGV[1] then
@@ -84,10 +96,6 @@ export type IntegrityResult = {
   contentOwnerToken: string | null
 }
 
-function pendingContentValue(ownerToken: string, fingerprint: string): string {
-  return `${CONTENT_PENDING}${ownerToken}|${fingerprint}`
-}
-
 function contentFingerprint(body: IngestEventBody): string {
   const stable = {
     ev: body.event_name ?? body.ev ?? '',
@@ -105,28 +113,18 @@ function contentFingerprint(body: IngestEventBody): string {
   return createHash('sha256').update(JSON.stringify(stable)).digest('hex')
 }
 
-function contentKey(eventId: string): string {
-  return `ingest:eid:body:${eventId.trim()}`
-}
-
+/**
+ * Claim content key in one EVAL (SET NX path folded into takeover script via GET miss).
+ */
 export async function claimContentFingerprint(
   eventId: string,
   fingerprint: string,
   opts?: { allowTakeover?: boolean },
 ): Promise<ContentClaimResult> {
-  const key = contentKey(eventId)
+  const key = contentIdKey(eventId)
   const ownerToken = randomUUID()
   const pendingValue = pendingContentValue(ownerToken, fingerprint)
   try {
-    const claimed = await redis.set(
-      key,
-      pendingValue,
-      'EX',
-      CONTENT_PENDING_TTL_SEC,
-      'NX',
-    )
-    if (claimed === 'OK') return { status: 'new', ownerToken }
-
     const outcome = (await redis.eval(
       CONTENT_TAKEOVER_LUA,
       1,
@@ -160,14 +158,14 @@ export async function markContentQueued(
   fingerprint: string,
   ownerToken: string,
 ): Promise<boolean> {
-  const key = contentKey(eventId)
+  const key = contentIdKey(eventId)
   try {
     const result = await redis.eval(
       CONTENT_COMPLETE_IF_OWNER_LUA,
       1,
       key,
       pendingContentValue(ownerToken, fingerprint),
-      `${CONTENT_COMPLETE}${fingerprint}`,
+      completeContentValue(fingerprint),
       String(CONTENT_COMPLETE_TTL_SEC),
     )
     return result === 'OK' || result === 1
@@ -181,7 +179,7 @@ export async function releaseContentClaim(
   ownerToken: string,
   fingerprint: string,
 ): Promise<boolean> {
-  const key = contentKey(eventId)
+  const key = contentIdKey(eventId)
   try {
     const result = await redis.eval(
       CONTENT_RELEASE_IF_OWNER_LUA,
@@ -211,8 +209,15 @@ async function checkSequenceReuse(input: {
   const scope = `${(input.lpId ?? '').trim() || '_'}:${input.sid.trim()}`
   const setKey = `ingest:seqset:${scope}`
   try {
-    const added = await redis.sadd(setKey, String(seq))
-    await redis.expire(setKey, SEQ_TTL_SEC)
+    const added = Number(
+      await redis.eval(
+        SEQ_SADD_EXPIRE_LUA,
+        1,
+        setKey,
+        String(seq),
+        String(SEQ_TTL_SEC),
+      ),
+    )
     if (added === 0) {
       return createFinding({
         code: 'event_sequence_reuse',
@@ -384,12 +389,15 @@ export async function evaluateEventIntegrity(
   findings.push(...tokenFindings(body))
   findings.push(...timestampFindings(body))
 
-  const seqFinding = await checkSequenceReuse({
-    sid: body.sid,
-    lpId: body.lp_id,
-    seq: body.seq,
-  })
-  if (seqFinding) findings.push(seqFinding)
+  // Skip seq bookkeeping on known event-id duplicates — saves Redis ops on replays.
+  if (!opts.duplicateClaim) {
+    const seqFinding = await checkSequenceReuse({
+      sid: body.sid,
+      lpId: body.lp_id,
+      seq: body.seq,
+    })
+    if (seqFinding) findings.push(seqFinding)
+  }
 
   const fingerprint = contentFingerprint(body)
   const eventId = body.event_id?.trim() ?? ''
@@ -490,4 +498,5 @@ export const __eventIntegrityTest = {
   CONTENT_COMPLETE,
   contentFingerprint,
   pendingContentValue,
+  SEQ_SADD_EXPIRE_LUA,
 }

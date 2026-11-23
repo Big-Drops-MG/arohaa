@@ -19,6 +19,9 @@ vi.mock('../services/redis.service.js', () => ({
     expire: vi.fn(async () => 1),
     eval: vi.fn(async (script: string, _n: number, ...args: unknown[]) => {
       const key = String(args[0])
+      if (script.includes('SADD') && script.includes('EXPIRE')) {
+        return 1
+      }
       if (script.includes('ZRANGEBYSCORE')) return 0
       if (script.includes('DEL')) {
         if (store.get(key) === String(args[1])) {
@@ -27,40 +30,36 @@ vi.mock('../services/redis.service.js', () => ({
         }
         return 0
       }
-      if (script.includes('complete:') || script.includes('SET')) {
-        if (script.includes('ZRANGEBYSCORE')) return 0
-        if (script.includes('pendingPrefix') || script.includes('pending:')) {
-          const pendingValue = String(args[1])
-          const completePrefix = String(args[3])
-          const pendingPrefix = String(args[4])
-          const fingerprint = String(args[5])
-          const allowTakeover = String(args[6]) === '1'
-          const cur = store.get(key)
-          if (!cur) {
+      if (script.includes('completePrefix') || script.includes('pendingPrefix')) {
+        const pendingValue = String(args[1])
+        const completePrefix = String(args[3])
+        const pendingPrefix = String(args[4])
+        const fingerprint = String(args[5])
+        const allowTakeover = String(args[6]) === '1'
+        const cur = store.get(key)
+        if (!cur) {
+          store.set(key, pendingValue)
+          return 'new'
+        }
+        if (cur === `${completePrefix}${fingerprint}`) return 'same_complete'
+        if (cur.startsWith(completePrefix)) return 'conflict'
+        if (cur.startsWith(pendingPrefix)) {
+          const sep = cur.indexOf('|', pendingPrefix.length)
+          if (sep < 0) return 'conflict'
+          const fp = cur.slice(sep + 1)
+          if (fp !== fingerprint) return 'conflict'
+          if (allowTakeover) {
             store.set(key, pendingValue)
-            return 'new'
+            return 'reclaimed'
           }
-          if (cur === `${completePrefix}${fingerprint}`) return 'same_complete'
-          if (cur.startsWith(completePrefix)) return 'conflict'
-          if (cur.startsWith(pendingPrefix)) {
-            const sep = cur.indexOf('|', pendingPrefix.length)
-            if (sep < 0) return 'conflict'
-            const fp = cur.slice(sep + 1)
-            if (fp !== fingerprint) return 'conflict'
-            if (allowTakeover) {
-              store.set(key, pendingValue)
-              return 'reclaimed'
-            }
-            return 'same_pending'
-          }
-          if (cur === fingerprint) return 'same_complete'
-          return 'conflict'
+          return 'same_pending'
         }
-        if (store.get(key) === String(args[1])) {
-          store.set(key, String(args[2]))
-          return 'OK'
-        }
-        return 0
+        if (cur === fingerprint) return 'same_complete'
+        return 'conflict'
+      }
+      if (script.includes('SET') && store.get(key) === String(args[1])) {
+        store.set(key, String(args[2]))
+        return 'OK'
       }
       return 0
     }),

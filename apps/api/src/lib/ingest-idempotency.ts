@@ -11,6 +11,14 @@ const EVENT_ID_RE =
 const PENDING_PREFIX = 'pending:'
 const COMPLETE_VALUE = 'complete'
 
+/** Single round-trip claim: SET NX or duplicate. */
+const CLAIM_LUA = `
+if redis.call("SET", KEYS[1], ARGV[1], "EX", tonumber(ARGV[2]), "NX") then
+  return "claimed"
+end
+return "duplicate"
+`
+
 const COMPLETE_IF_OWNER_LUA = `
 if redis.call("GET", KEYS[1]) == ARGV[1] then
   return redis.call("SET", KEYS[1], ARGV[2], "EX", tonumber(ARGV[3]))
@@ -25,6 +33,38 @@ end
 return 0
 `
 
+/**
+ * Finalize event-id + content ownership in one EVAL (2 keys).
+ * KEYS[1]=event, KEYS[2]=content
+ */
+const COMPLETE_BOTH_IF_OWNER_LUA = `
+local eok = 0
+local cok = 0
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  redis.call("SET", KEYS[1], ARGV[2], "EX", tonumber(ARGV[3]))
+  eok = 1
+end
+if redis.call("GET", KEYS[2]) == ARGV[4] then
+  redis.call("SET", KEYS[2], ARGV[5], "EX", tonumber(ARGV[6]))
+  cok = 1
+end
+return {eok, cok}
+`
+
+const RELEASE_BOTH_IF_OWNER_LUA = `
+local eok = 0
+local cok = 0
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  redis.call("DEL", KEYS[1])
+  eok = 1
+end
+if ARGV[2] ~= '' and redis.call("GET", KEYS[2]) == ARGV[2] then
+  redis.call("DEL", KEYS[2])
+  cok = 1
+end
+return {eok, cok}
+`
+
 export type IngestEventClaim =
   | { status: 'claimed'; ownerToken: string }
   | { status: 'duplicate' }
@@ -36,20 +76,27 @@ export function isValidEventId(value: string | undefined | null): boolean {
   return trimmed.length >= 8 && trimmed.length <= 64 && EVENT_ID_RE.test(trimmed)
 }
 
-function eventIdKey(eventId: string): string {
+export function eventIdKey(eventId: string): string {
   return `ingest:eid:${eventId.trim()}`
 }
 
-function isCompleteValue(value: string): boolean {
-  return value === COMPLETE_VALUE || value === '1'
-}
-
-function isPendingValue(value: string): boolean {
-  return value.startsWith(PENDING_PREFIX)
+export function contentIdKey(eventId: string): string {
+  return `ingest:eid:body:${eventId.trim()}`
 }
 
 function pendingValue(ownerToken: string): string {
   return `${PENDING_PREFIX}${ownerToken}`
+}
+
+export function pendingContentValue(
+  ownerToken: string,
+  fingerprint: string,
+): string {
+  return `${PENDING_PREFIX}${ownerToken}|${fingerprint}`
+}
+
+export function completeContentValue(fingerprint: string): string {
+  return `complete:${fingerprint}`
 }
 
 export async function claimIngestEventId(
@@ -59,33 +106,14 @@ export async function claimIngestEventId(
   const ownerToken = randomUUID()
   const token = pendingValue(ownerToken)
   try {
-    const claimed = await redis.set(
+    const outcome = (await redis.eval(
+      CLAIM_LUA,
+      1,
       key,
       token,
-      'EX',
-      INGEST_OWNER_LEASE_SEC,
-      'NX',
-    )
-    if (claimed === 'OK') return { status: 'claimed', ownerToken }
-
-    const existing = await redis.get(key)
-    if (!existing) {
-      const retry = await redis.set(
-        key,
-        token,
-        'EX',
-        INGEST_OWNER_LEASE_SEC,
-        'NX',
-      )
-      return retry === 'OK'
-        ? { status: 'claimed', ownerToken }
-        : { status: 'unavailable' }
-    }
-
-    if (isCompleteValue(existing) || isPendingValue(existing)) {
-      return { status: 'duplicate' }
-    }
-
+      String(INGEST_OWNER_LEASE_SEC),
+    )) as string
+    if (outcome === 'claimed') return { status: 'claimed', ownerToken }
     return { status: 'duplicate' }
   } catch {
     return { status: 'unavailable' }
@@ -130,6 +158,85 @@ export async function releaseIngestEventId(
   }
 }
 
+export async function markIngestOwnershipQueued(input: {
+  eventId: string
+  eventOwnerToken: string
+  contentFingerprint: string
+  contentOwnerToken: string
+}): Promise<{ eventOk: boolean; contentOk: boolean }> {
+  const eventId = input.eventId.trim()
+  try {
+    const result = (await redis.eval(
+      COMPLETE_BOTH_IF_OWNER_LUA,
+      2,
+      eventIdKey(eventId),
+      contentIdKey(eventId),
+      pendingValue(input.eventOwnerToken),
+      COMPLETE_VALUE,
+      String(COMPLETE_TTL_SEC),
+      pendingContentValue(input.contentOwnerToken, input.contentFingerprint),
+      completeContentValue(input.contentFingerprint),
+      String(COMPLETE_TTL_SEC),
+    )) as [number, number] | number[]
+    const eok = Number(Array.isArray(result) ? result[0] : 0)
+    const cok = Number(Array.isArray(result) ? result[1] : 0)
+    return { eventOk: eok === 1, contentOk: cok === 1 }
+  } catch {
+    return { eventOk: false, contentOk: false }
+  }
+}
+
+export async function releaseIngestOwnership(input: {
+  eventId: string
+  eventOwnerToken?: string | null
+  contentFingerprint?: string
+  contentOwnerToken?: string | null
+}): Promise<void> {
+  const eventId = input.eventId.trim()
+  const eventPending = input.eventOwnerToken
+    ? pendingValue(input.eventOwnerToken)
+    : ''
+  const contentPending =
+    input.contentOwnerToken && input.contentFingerprint
+      ? pendingContentValue(input.contentOwnerToken, input.contentFingerprint)
+      : ''
+
+  if (!eventPending && !contentPending) return
+
+  try {
+    if (eventPending && contentPending) {
+      await redis.eval(
+        RELEASE_BOTH_IF_OWNER_LUA,
+        2,
+        eventIdKey(eventId),
+        contentIdKey(eventId),
+        eventPending,
+        contentPending,
+      )
+      return
+    }
+    if (eventPending) {
+      await redis.eval(
+        RELEASE_IF_OWNER_LUA,
+        1,
+        eventIdKey(eventId),
+        eventPending,
+      )
+      return
+    }
+    if (contentPending) {
+      await redis.eval(
+        RELEASE_IF_OWNER_LUA,
+        1,
+        contentIdKey(eventId),
+        contentPending,
+      )
+    }
+  } catch {
+    /* best-effort release */
+  }
+}
+
 export const __ingestIdempotencyTest = {
   PENDING_PREFIX,
   COMPLETE_VALUE,
@@ -138,4 +245,6 @@ export const __ingestIdempotencyTest = {
   pendingValue,
   COMPLETE_IF_OWNER_LUA,
   RELEASE_IF_OWNER_LUA,
+  CLAIM_LUA,
+  COMPLETE_BOTH_IF_OWNER_LUA,
 }

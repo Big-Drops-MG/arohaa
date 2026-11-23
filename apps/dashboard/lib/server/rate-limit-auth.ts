@@ -7,6 +7,7 @@ const GENERIC_AUTH_ERROR = "Invalid credentials or authenticator code."
 const UNAVAILABLE_ERROR = "Service temporarily unavailable. Try again shortly."
 
 let authLimiter: Ratelimit | null | undefined
+const ephemeralCache = new Map()
 
 function getRedis(): Redis | null {
   const url = process.env.KV_REST_API_URL?.trim()
@@ -24,8 +25,9 @@ function getAuthLimiter(): Ratelimit | null {
   }
   authLimiter = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(10, "10 m"),
+    limiter: Ratelimit.cachedFixedWindow(10, "10 m"),
     prefix: "arohaa:auth",
+    ephemeralCache,
   })
   return authLimiter
 }

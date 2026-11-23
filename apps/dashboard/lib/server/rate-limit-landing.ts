@@ -4,6 +4,9 @@ import { NextResponse } from "next/server"
 
 let ratelimit: Ratelimit | null | undefined
 
+/** Process-local cache: skips Redis when the decision is still clearly allowed. */
+const ephemeralCache = new Map()
+
 function getRedis(): Redis | null {
   const url = process.env.KV_REST_API_URL?.trim()
   const token = process.env.KV_REST_API_TOKEN?.trim()
@@ -18,10 +21,13 @@ function getLimiter(): Ratelimit | null {
     ratelimit = null
     return null
   }
+  // cachedFixedWindow + ephemeralCache cuts EVALSHA/INCR chatter vs slidingWindow
+  // without weakening the per-user ceiling under normal dashboard use.
   ratelimit = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(120, "1 m"),
+    limiter: Ratelimit.cachedFixedWindow(120, "1 m"),
     prefix: "arohaa:landing-api",
+    ephemeralCache,
   })
   return ratelimit
 }
