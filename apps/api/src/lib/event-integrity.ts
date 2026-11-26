@@ -2,9 +2,12 @@ import { createHash, randomUUID } from 'node:crypto'
 import { redis } from '../services/redis.service.js'
 import type { IngestEventBody } from '../types/event.js'
 import {
-  completeContentValue,
   contentIdKey,
+  eventIdKey,
+  INGEST_OWNER_LEASE_SEC,
   pendingContentValue,
+  pendingValue,
+  type IngestEventClaim,
 } from './ingest-idempotency.js'
 import { verifySessionToken } from './session-token.js'
 import {
@@ -14,68 +17,62 @@ import {
 
 const SEQ_TTL_SEC = 60 * 60 * 24
 const CONTENT_PENDING_TTL_SEC = 90
-const CONTENT_COMPLETE_TTL_SEC = 60 * 60 * 24 * 30
 const CLOCK_SKEW_MS = 10 * 60_000
 const FUTURE_SKEW_MS = 5 * 60_000
 
 const CONTENT_PENDING = 'pending:'
 const CONTENT_COMPLETE = 'complete:'
 
-/** SADD + EXPIRE in one round-trip. */
-const SEQ_SADD_EXPIRE_LUA = `
-local added = redis.call("SADD", KEYS[1], ARGV[1])
-redis.call("EXPIRE", KEYS[1], tonumber(ARGV[2]))
-return added
-`
-
-const CONTENT_COMPLETE_IF_OWNER_LUA = `
-if redis.call("GET", KEYS[1]) == ARGV[1] then
-  return redis.call("SET", KEYS[1], ARGV[2], "EX", tonumber(ARGV[3]))
+const INGEST_CLAIM_BUNDLE_LUA = `
+local eventStatus = "duplicate"
+if redis.call("SET", KEYS[1], ARGV[1], "EX", tonumber(ARGV[2]), "NX") then
+  eventStatus = "claimed"
 end
-return 0
-`
-
-const CONTENT_RELEASE_IF_OWNER_LUA = `
-if redis.call("GET", KEYS[1]) == ARGV[1] then
-  return redis.call("DEL", KEYS[1])
-end
-return 0
-`
-
-const CONTENT_TAKEOVER_LUA = `
-local cur = redis.call("GET", KEYS[1])
-if (not cur) then
-  redis.call("SET", KEYS[1], ARGV[1], "EX", tonumber(ARGV[2]))
-  return "new"
-end
-local completePrefix = ARGV[3]
-local pendingPrefix = ARGV[4]
-local fingerprint = ARGV[5]
-if cur == (completePrefix .. fingerprint) then
-  return "same_complete"
-end
-if string.sub(cur, 1, #completePrefix) == completePrefix then
-  return "conflict"
-end
-if string.sub(cur, 1, #pendingPrefix) == pendingPrefix then
+local claimed = eventStatus == "claimed"
+local cur = redis.call("GET", KEYS[2])
+local completePrefix = ARGV[5]
+local pendingPrefix = ARGV[6]
+local fingerprint = ARGV[7]
+local contentStatus
+if not cur then
+  if claimed then
+    redis.call("SET", KEYS[2], ARGV[3], "EX", tonumber(ARGV[4]))
+    contentStatus = "new"
+  else
+    contentStatus = "absent"
+  end
+elseif cur == (completePrefix .. fingerprint) then
+  contentStatus = "same_complete"
+elseif string.sub(cur, 1, #completePrefix) == completePrefix then
+  contentStatus = "conflict"
+elseif string.sub(cur, 1, #pendingPrefix) == pendingPrefix then
   local sep = string.find(cur, "|", #pendingPrefix + 1, true)
   if not sep then
-    return "conflict"
+    contentStatus = "conflict"
+  elseif string.sub(cur, sep + 1) ~= fingerprint then
+    contentStatus = "conflict"
+  elseif claimed then
+    redis.call("SET", KEYS[2], ARGV[3], "EX", tonumber(ARGV[4]))
+    contentStatus = "reclaimed"
+  else
+    contentStatus = "same_pending"
   end
-  local fp = string.sub(cur, sep + 1)
-  if fp ~= fingerprint then
-    return "conflict"
-  end
-  if ARGV[6] == "1" then
-    redis.call("SET", KEYS[1], ARGV[1], "EX", tonumber(ARGV[2]))
-    return "reclaimed"
-  end
-  return "same_pending"
+elseif cur == fingerprint then
+  contentStatus = "same_complete"
+else
+  contentStatus = "conflict"
 end
-if cur == fingerprint then
-  return "same_complete"
+local seqStatus = "skipped"
+if claimed and ARGV[8] ~= "" then
+  local added = redis.call("SADD", KEYS[3], ARGV[8])
+  redis.call("EXPIRE", KEYS[3], tonumber(ARGV[9]))
+  if added == 0 then
+    seqStatus = "reused"
+  else
+    seqStatus = "added"
+  end
 end
-return "conflict"
+return {eventStatus, contentStatus, seqStatus}
 `
 
 export type ContentClaimResult =
@@ -83,8 +80,15 @@ export type ContentClaimResult =
   | { status: 'reclaimed'; ownerToken: string }
   | { status: 'same_complete' }
   | { status: 'same_pending' }
+  | { status: 'absent' }
   | { status: 'conflict' }
   | { status: 'unavailable' }
+
+export type IngestClaimBundle = {
+  eventClaim: IngestEventClaim
+  content: ContentClaimResult
+  seqStatus: 'skipped' | 'added' | 'reused'
+}
 
 export type IntegrityResult = {
   findings: AssessmentFinding[]
@@ -94,6 +98,7 @@ export type IntegrityResult = {
   conflictRecordProps: Record<string, unknown> | null
   contentFingerprint: string
   contentOwnerToken: string | null
+  eventClaim: IngestEventClaim
 }
 
 function contentFingerprint(body: IngestEventBody): string {
@@ -113,137 +118,78 @@ function contentFingerprint(body: IngestEventBody): string {
   return createHash('sha256').update(JSON.stringify(stable)).digest('hex')
 }
 
-/**
- * Claim content key in one EVAL (SET NX path folded into takeover script via GET miss).
- */
-export async function claimContentFingerprint(
-  eventId: string,
-  fingerprint: string,
-  opts?: { allowTakeover?: boolean },
-): Promise<ContentClaimResult> {
-  const key = contentIdKey(eventId)
-  const ownerToken = randomUUID()
-  const pendingValue = pendingContentValue(ownerToken, fingerprint)
+function seqSetKey(lpId: string | undefined, sid: string): string {
+  const scope = `${(lpId ?? '').trim() || '_'}:${sid.trim()}`
+  return `ingest:seqset:${scope}`
+}
+
+function seqMemberFor(seq: number | undefined): string {
+  if (typeof seq !== 'number' || !Number.isFinite(seq) || seq <= 0) return ''
+  return String(Math.floor(seq))
+}
+
+function contentResult(
+  status: string,
+  ownerToken: string,
+): ContentClaimResult {
+  if (status === 'new') return { status: 'new', ownerToken }
+  if (status === 'reclaimed') return { status: 'reclaimed', ownerToken }
+  if (status === 'same_complete') return { status: 'same_complete' }
+  if (status === 'same_pending') return { status: 'same_pending' }
+  if (status === 'absent') return { status: 'absent' }
+  if (status === 'conflict') return { status: 'conflict' }
+  return { status: 'unavailable' }
+}
+
+const UNAVAILABLE_BUNDLE: IngestClaimBundle = {
+  eventClaim: { status: 'unavailable' },
+  content: { status: 'unavailable' },
+  seqStatus: 'skipped',
+}
+
+export async function claimIngestBundle(input: {
+  eventId: string
+  fingerprint: string
+  sid?: string
+  lpId?: string
+  seq?: number
+}): Promise<IngestClaimBundle> {
+  const eventId = input.eventId.trim()
+  if (!eventId) return UNAVAILABLE_BUNDLE
+  const eventOwnerToken = randomUUID()
+  const contentOwnerToken = randomUUID()
   try {
-    const outcome = (await redis.eval(
-      CONTENT_TAKEOVER_LUA,
-      1,
-      key,
-      pendingValue,
+    const [eventStatus, contentStatus, seqStatus] = (await redis.eval(
+      INGEST_CLAIM_BUNDLE_LUA,
+      3,
+      eventIdKey(eventId),
+      contentIdKey(eventId),
+      seqSetKey(input.lpId, input.sid ?? ''),
+      pendingValue(eventOwnerToken),
+      String(INGEST_OWNER_LEASE_SEC),
+      pendingContentValue(contentOwnerToken, input.fingerprint),
       String(CONTENT_PENDING_TTL_SEC),
       CONTENT_COMPLETE,
       CONTENT_PENDING,
-      fingerprint,
-      opts?.allowTakeover ? '1' : '0',
-    )) as string
+      input.fingerprint,
+      seqMemberFor(input.seq),
+      String(SEQ_TTL_SEC),
+    )) as [string, string, string]
 
-    if (outcome === 'new' || outcome === 'reclaimed') {
-      return { status: outcome, ownerToken }
-    }
-    if (
-      outcome === 'same_complete' ||
-      outcome === 'same_pending' ||
-      outcome === 'conflict'
-    ) {
-      return { status: outcome }
-    }
-    return { status: 'unavailable' }
-  } catch {
-    return { status: 'unavailable' }
-  }
-}
-
-export async function markContentQueued(
-  eventId: string,
-  fingerprint: string,
-  ownerToken: string,
-): Promise<boolean> {
-  const key = contentIdKey(eventId)
-  try {
-    const result = await redis.eval(
-      CONTENT_COMPLETE_IF_OWNER_LUA,
-      1,
-      key,
-      pendingContentValue(ownerToken, fingerprint),
-      completeContentValue(fingerprint),
-      String(CONTENT_COMPLETE_TTL_SEC),
-    )
-    return result === 'OK' || result === 1
-  } catch {
-    return false
-  }
-}
-
-export async function releaseContentClaim(
-  eventId: string,
-  ownerToken: string,
-  fingerprint: string,
-): Promise<boolean> {
-  const key = contentIdKey(eventId)
-  try {
-    const result = await redis.eval(
-      CONTENT_RELEASE_IF_OWNER_LUA,
-      1,
-      key,
-      pendingContentValue(ownerToken, fingerprint),
-    )
-    return Number(result) === 1
-  } catch {
-    return false
-  }
-}
-
-async function checkSequenceReuse(input: {
-  sid: string
-  lpId?: string
-  seq: number | undefined
-}): Promise<AssessmentFinding | null> {
-  if (
-    typeof input.seq !== 'number' ||
-    !Number.isFinite(input.seq) ||
-    input.seq <= 0
-  ) {
-    return null
-  }
-  const seq = Math.floor(input.seq)
-  const scope = `${(input.lpId ?? '').trim() || '_'}:${input.sid.trim()}`
-  const setKey = `ingest:seqset:${scope}`
-  try {
-    const added = Number(
-      await redis.eval(
-        SEQ_SADD_EXPIRE_LUA,
-        1,
-        setKey,
-        String(seq),
-        String(SEQ_TTL_SEC),
-      ),
-    )
-    if (added === 0) {
-      return createFinding({
-        code: 'event_sequence_reuse',
-        detail: `Session sequence ${seq} was reused for this page/session`,
-        subject: 'visit',
-        severity: 'medium',
-        source: 'telemetry_integrity',
-        availability: 'available',
-        contributesToScore: false,
-        shadow: true,
-        proposedScoreDelta: 4,
-      })
+    const eventClaim: IngestEventClaim =
+      eventStatus === 'claimed'
+        ? { status: 'claimed', ownerToken: eventOwnerToken }
+        : { status: 'duplicate' }
+    const seq =
+      seqStatus === 'added' || seqStatus === 'reused' ? seqStatus : 'skipped'
+    return {
+      eventClaim,
+      content: contentResult(contentStatus, contentOwnerToken),
+      seqStatus: seq,
     }
   } catch {
-    return createFinding({
-      code: 'event_sequence_check_unavailable',
-      detail: 'Sequence integrity check could not run',
-      subject: 'visit',
-      severity: 'info',
-      source: 'telemetry_integrity',
-      availability: 'unavailable',
-      contributesToScore: false,
-      shadow: true,
-    })
+    return UNAVAILABLE_BUNDLE
   }
-  return null
 }
 
 function timestampFindings(body: IngestEventBody): AssessmentFinding[] {
@@ -383,80 +329,92 @@ function tokenFindings(body: IngestEventBody): AssessmentFinding[] {
 
 export async function evaluateEventIntegrity(
   body: IngestEventBody,
-  opts: { duplicateClaim: boolean },
 ): Promise<IntegrityResult> {
-  const findings: AssessmentFinding[] = []
-  findings.push(...tokenFindings(body))
-  findings.push(...timestampFindings(body))
-
-  // Skip seq bookkeeping on known event-id duplicates — saves Redis ops on replays.
-  if (!opts.duplicateClaim) {
-    const seqFinding = await checkSequenceReuse({
-      sid: body.sid,
-      lpId: body.lp_id,
-      seq: body.seq,
-    })
-    if (seqFinding) findings.push(seqFinding)
-  }
-
+  const findings: AssessmentFinding[] = [
+    ...tokenFindings(body),
+    ...timestampFindings(body),
+  ]
   const fingerprint = contentFingerprint(body)
   const eventId = body.event_id?.trim() ?? ''
+  const bundle = await claimIngestBundle({
+    eventId,
+    fingerprint,
+    sid: body.sid,
+    lpId: body.lp_id,
+    seq: body.seq,
+  })
+
+  if (bundle.seqStatus === 'reused') {
+    const seq = Math.floor(body.seq ?? 0)
+    findings.push(
+      createFinding({
+        code: 'event_sequence_reuse',
+        detail: `Session sequence ${seq} was reused for this page/session`,
+        subject: 'visit',
+        severity: 'medium',
+        source: 'telemetry_integrity',
+        availability: 'available',
+        contributesToScore: false,
+        shadow: true,
+        proposedScoreDelta: 4,
+      }),
+    )
+  }
+
+  const duplicateClaim = bundle.eventClaim.status === 'duplicate'
+  const replay = bundle.content
   let contentConflict = false
   let idempotentReplay = false
   let suppressCanonicalInsert = false
   let conflictRecordProps: Record<string, unknown> | null = null
   let contentOwnerToken: string | null = null
 
-  if (eventId) {
-    const replay = await claimContentFingerprint(eventId, fingerprint, {
-      allowTakeover: !opts.duplicateClaim,
+  if (replay.status === 'conflict') {
+    contentConflict = true
+    suppressCanonicalInsert = true
+    const conflictFinding = createFinding({
+      code: 'event_id_content_conflict',
+      detail: 'Same event_id presented with conflicting payload content',
+      subject: 'visit',
+      severity: 'high',
+      source: 'telemetry_integrity',
+      availability: 'available',
+      contributesToScore: false,
+      shadow: true,
+      proposedScoreDelta: 10,
+      evidenceRefs: [eventId],
     })
-    if (replay.status === 'conflict') {
-      contentConflict = true
-      suppressCanonicalInsert = true
-      const conflictFinding = createFinding({
-        code: 'event_id_content_conflict',
-        detail: 'Same event_id presented with conflicting payload content',
+    findings.push(conflictFinding)
+    conflictRecordProps = {
+      kind: 'event_id_content_conflict',
+      canonical_event_id: eventId,
+      conflict_fingerprint: fingerprint.slice(0, 16),
+      findings: [conflictFinding],
+    }
+  } else if (replay.status === 'same_complete') {
+    idempotentReplay = true
+    suppressCanonicalInsert = true
+  } else if (replay.status === 'same_pending') {
+    suppressCanonicalInsert = duplicateClaim
+  } else if (replay.status === 'absent') {
+    suppressCanonicalInsert = true
+  } else if (replay.status === 'unavailable') {
+    findings.push(
+      createFinding({
+        code: 'event_content_check_unavailable',
+        detail: 'Event content integrity check could not run',
         subject: 'visit',
-        severity: 'high',
+        severity: 'info',
         source: 'telemetry_integrity',
-        availability: 'available',
+        availability: 'unavailable',
         contributesToScore: false,
         shadow: true,
-        proposedScoreDelta: 10,
-        evidenceRefs: [eventId],
-      })
-      findings.push(conflictFinding)
-      conflictRecordProps = {
-        kind: 'event_id_content_conflict',
-        canonical_event_id: eventId,
-        conflict_fingerprint: fingerprint.slice(0, 16),
-        findings: [conflictFinding],
-      }
-    } else if (replay.status === 'same_complete') {
-      idempotentReplay = true
+      }),
+    )
+  } else if (replay.status === 'new' || replay.status === 'reclaimed') {
+    contentOwnerToken = replay.ownerToken
+    if (duplicateClaim) {
       suppressCanonicalInsert = true
-    } else if (replay.status === 'same_pending') {
-      idempotentReplay = false
-      suppressCanonicalInsert = opts.duplicateClaim
-    } else if (replay.status === 'unavailable') {
-      findings.push(
-        createFinding({
-          code: 'event_content_check_unavailable',
-          detail: 'Event content integrity check could not run',
-          subject: 'visit',
-          severity: 'info',
-          source: 'telemetry_integrity',
-          availability: 'unavailable',
-          contributesToScore: false,
-          shadow: true,
-        }),
-      )
-    } else if (replay.status === 'new' || replay.status === 'reclaimed') {
-      contentOwnerToken = replay.ownerToken
-      if (opts.duplicateClaim) {
-        suppressCanonicalInsert = true
-      }
     }
   }
 
@@ -468,6 +426,7 @@ export async function evaluateEventIntegrity(
     conflictRecordProps,
     contentFingerprint: fingerprint,
     contentOwnerToken,
+    eventClaim: bundle.eventClaim,
   }
 }
 
@@ -498,5 +457,5 @@ export const __eventIntegrityTest = {
   CONTENT_COMPLETE,
   contentFingerprint,
   pendingContentValue,
-  SEQ_SADD_EXPIRE_LUA,
+  INGEST_CLAIM_BUNDLE_LUA,
 }

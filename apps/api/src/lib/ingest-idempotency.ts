@@ -11,7 +11,6 @@ const EVENT_ID_RE =
 const PENDING_PREFIX = 'pending:'
 const COMPLETE_VALUE = 'complete'
 
-/** Single round-trip claim: SET NX or duplicate. */
 const CLAIM_LUA = `
 if redis.call("SET", KEYS[1], ARGV[1], "EX", tonumber(ARGV[2]), "NX") then
   return "claimed"
@@ -84,7 +83,7 @@ export function contentIdKey(eventId: string): string {
   return `ingest:eid:body:${eventId.trim()}`
 }
 
-function pendingValue(ownerToken: string): string {
+export function pendingValue(ownerToken: string): string {
   return `${PENDING_PREFIX}${ownerToken}`
 }
 

@@ -10,10 +10,8 @@ import {
   isUtmBlocked,
 } from '../services/utm-block.service.js'
 import {
-  claimIngestEventId,
   isValidEventId,
   markIngestOwnershipQueued,
-  releaseIngestEventId,
   releaseIngestOwnership,
 } from '../lib/ingest-idempotency.js'
 import { ALLOWED_INGEST_EVENT_NAMES } from '../lib/allowed-event-names.js'
@@ -22,7 +20,7 @@ import { ingestBodyToEventRow, type IngestEventBody } from '../types/event.js'
 import { buildEnrichmentContext } from '../utils/enrichment.js'
 import { normalizeReferrer } from '../utils/referrer.js'
 import {
-  claimContentFingerprint,
+  claimIngestBundle,
   evaluateEventIntegrity,
   newConflictEventId,
   serializeIntegrityFindings,
@@ -162,16 +160,15 @@ async function ingestOne(
     return { status: 'rejected', error: 'INVALID_EVENT_ID', code: 400 }
   }
 
-  const claim = await claimIngestEventId(eventId)
-  if (claim.status === 'unavailable') {
+  const integrity = await evaluateEventIntegrity(body)
+  if (integrity.eventClaim.status === 'unavailable') {
     return { status: 'unavailable', error: 'IDEMPOTENCY_UNAVAILABLE' }
   }
   const eventOwnerToken =
-    claim.status === 'claimed' ? claim.ownerToken : null
+    integrity.eventClaim.status === 'claimed'
+      ? integrity.eventClaim.ownerToken
+      : null
 
-  const integrity = await evaluateEventIntegrity(body, {
-    duplicateClaim: claim.status === 'duplicate',
-  })
   if (integrity.suppressCanonicalInsert && !integrity.contentConflict) {
     await releaseIngestOwnership({
       eventId,
@@ -332,17 +329,21 @@ async function ingestOne(
         props: integrity.conflictRecordProps,
         seq: undefined,
       }
-      const conflictClaim = await claimIngestEventId(conflictId)
+      const conflictBundle = await claimIngestBundle({
+        eventId: conflictId,
+        fingerprint: integrity.contentFingerprint,
+      })
+      const conflictClaim = conflictBundle.eventClaim
       if (conflictClaim.status === 'claimed') {
-        const conflictContent = await claimContentFingerprint(
-          conflictId,
-          integrity.contentFingerprint,
-        )
+        const conflictContent = conflictBundle.content
         if (
           conflictContent.status !== 'new' &&
           conflictContent.status !== 'reclaimed'
         ) {
-          await releaseIngestEventId(conflictId, conflictClaim.ownerToken)
+          await releaseIngestOwnership({
+            eventId: conflictId,
+            eventOwnerToken: conflictClaim.ownerToken,
+          })
           throw new Error('conflict content claim unavailable')
         }
         const conflictRow = ingestBodyToEventRow(
@@ -394,17 +395,21 @@ async function ingestOne(
       for (const derived of buildShortcutRowsFromFi(row)) {
         const derivedId = derived.event_id.trim()
         if (!derivedId || !isValidEventId(derivedId)) continue
-        const derivedClaim = await claimIngestEventId(derivedId)
+        const derivedBundle = await claimIngestBundle({
+          eventId: derivedId,
+          fingerprint: integrity.contentFingerprint,
+        })
+        const derivedClaim = derivedBundle.eventClaim
         if (derivedClaim.status !== 'claimed') continue
-        const derivedContent = await claimContentFingerprint(
-          derivedId,
-          integrity.contentFingerprint,
-        )
+        const derivedContent = derivedBundle.content
         if (
           derivedContent.status !== 'new' &&
           derivedContent.status !== 'reclaimed'
         ) {
-          await releaseIngestEventId(derivedId, derivedClaim.ownerToken)
+          await releaseIngestOwnership({
+            eventId: derivedId,
+            eventOwnerToken: derivedClaim.ownerToken,
+          })
           continue
         }
         try {

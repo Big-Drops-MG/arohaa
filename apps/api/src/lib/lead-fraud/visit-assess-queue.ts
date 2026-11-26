@@ -34,7 +34,7 @@ export type VisitAssessEnqueueInput = {
 
 const MAX_ATTEMPTS = 8
 const INITIAL_DELAY_MS = 5_000
-const POLL_MS = 2_000
+const POLL_MS = 10_000
 const STALE_IDLE_MS = 60_000
 const CONSUMER =
   typeof process !== 'undefined'
